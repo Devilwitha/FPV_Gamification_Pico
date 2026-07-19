@@ -81,7 +81,7 @@ ota_total_chunks = 0
 ota_received_chunks = 0
 
 TRICK_TUNING_PROFILES = {
-    "soft": {
+    "beginner": {
         "gyro_trick_threshold": 160,
         "stable_threshold": 58,
         "trick_start_hold_ms": 28,
@@ -94,7 +94,7 @@ TRICK_TUNING_PROFILES = {
         "trick_axis_dominance_ratio": 1.10,
         "trick_start_type_weight": 0.88,
     },
-    "medium": {
+    "freestyle": {
         "gyro_trick_threshold": 190,
         "stable_threshold": 65,
         "trick_start_hold_ms": 35,
@@ -151,6 +151,10 @@ def apply_trick_tuning_profile():
 
 def normalize_trick_tuning_profile(profile_name):
     normalized = str(profile_name).strip().lower()
+    if normalized == "soft":
+        normalized = "beginner"
+    elif normalized == "medium":
+        normalized = "freestyle"
     if normalized in TRICK_TUNING_PROFILES:
         return normalized
     return "aggressive"
@@ -653,10 +657,21 @@ def start_access_point():
         if ENABLE_SERIAL_DEBUG:
             print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Aktiviere Access Point")
         ap.active(True)
+        time.sleep_ms(200)
 
         if ENABLE_SERIAL_DEBUG:
             print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze SSID")
-        ap.config(essid=AP_SSID)
+        ssid_set = False
+        for attempt in range(3):
+            try:
+                ap.config(essid=AP_SSID)
+                ssid_set = True
+                break
+            except Exception as ssid_error:
+                debug_log(f"[AP WARN] SSID-Setzen fehlgeschlagen (Versuch {attempt + 1}/3): {ssid_error}")
+                time.sleep_ms(120)
+        if not ssid_set:
+            debug_log("[AP WARN] SSID konnte nicht gesetzt werden, AP laeuft mit Standardnamen weiter.")
 
         if AP_PASSWORD and len(AP_PASSWORD) >= 8:
             try:
@@ -1077,7 +1092,7 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 <div class="top"><h1>🐝 __COPTER_NAME_UPPER__ ARCADE</h1><div class="badge">WLAN / FPV / Tricks</div></div>
 <div id="s">0</div>
 <div class="meta"><div>Highscore: <b id="hs">0</b></div><div>Pilot: <b id="p">__DEFAULT_PILOT_NAME__</b></div></div>
-<div class="card"><h2>Trick-Tuning Profil</h2><select id="prof" onchange="setP()"><option value="soft">Soft</option><option value="medium" selected>Medium</option><option value="aggressive">Aggressive</option></select><div id="pn" class="n">Profil...</div></div>
+<div class="card"><h2>Trick-Tuning Profil</h2><select id="prof" onchange="setP()"><option value="beginner">Beginner</option><option value="freestyle" selected>Freestyle</option><option value="aggressive">Aggressive</option></select><div id="pn" class="n">Profil...</div></div>
 <div class="card"><h2>Detektierte Manöver</h2><div class="t" id="tr">Warte...</div></div>
 <div class="btnrow"><button class="b" onclick="dl()">📥 Download</button><button class="b" onclick="dld()">🧪 Debug-Log</button><button class="b br" onclick="rhs()">🗑️ Reset HS</button></div>
 <a class="admin" href="/admin">⚙️ Admin</a>
@@ -1095,8 +1110,8 @@ setInterval(upd,1000);upd();
 html_template = html_template.replace("__COPTER_NAME__", html_escape(COPTER_NAME))
 html_template = html_template.replace("__COPTER_NAME_UPPER__", html_escape(COPTER_NAME.upper()))
 html_template = html_template.replace("__DEFAULT_PILOT_NAME__", html_escape(DEFAULT_PILOT_NAME))
-html_template = html_template.replace('value="soft"', 'value="soft"' + (' selected' if TRICK_TUNING_PROFILE == 'soft' else ''))
-html_template = html_template.replace('value="medium"', 'value="medium"' + (' selected' if TRICK_TUNING_PROFILE == 'medium' else ''))
+html_template = html_template.replace('value="beginner"', 'value="beginner"' + (' selected' if TRICK_TUNING_PROFILE == 'beginner' else ''))
+html_template = html_template.replace('value="freestyle"', 'value="freestyle"' + (' selected' if TRICK_TUNING_PROFILE == 'freestyle' else ''))
 html_template = html_template.replace('value="aggressive"', 'value="aggressive"' + (' selected' if TRICK_TUNING_PROFILE == 'aggressive' else ''))
 
 

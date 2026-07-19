@@ -42,6 +42,9 @@ LIVE_LOG_INTERVAL_MS = 900
 LIVE_LOG_DELTA_DEG   = 0.8
 DEBUG_LOG_FILE_PATH  = "fpv_debug_session.txt"
 DEBUG_LOG_FILE_MAX_BYTES = 180000
+DEBUG_LOG_BOOT_MARKER = "=== FPV DEBUG SESSION START ===\n"
+SESSION_EXPORT_FILE_PATH = "fpv_arcade_session_export.txt"
+DEBUG_EXPORT_FILE_PATH = "fpv_debug_export.txt"
 HIGHSCORE_FILE_PATH  = "fpv_highscore.json"
 # =======================================================
 
@@ -56,12 +59,19 @@ highscore_data = {"score": 0, "timestamp": "Unbekannt"}
 pending_highscore = {"active": False, "score": 0, "timestamp": "Unbekannt"}
 
 
+def store_debug_entry(entry, line):
+    debug_log_history.append(entry)
+    if len(debug_log_history) > DEBUG_LOG_MAX_LINES:
+        debug_log_history.pop(0)
+    append_debug_file_line(line)
+
+
 def init_debug_log_file():
     global debug_log_file_enabled, debug_log_file_bytes, debug_log_file_limit_reached
     debug_log_file_limit_reached = False
     try:
         with open(DEBUG_LOG_FILE_PATH, 'w') as f:
-            f.write("=== FPV DEBUG SESSION START ===\n")
+            f.write(DEBUG_LOG_BOOT_MARKER)
         debug_log_file_bytes = os.stat(DEBUG_LOG_FILE_PATH)[6]
     except Exception:
         debug_log_file_enabled = False
@@ -100,16 +110,8 @@ def debug_log(message):
     entry = f"[{time.ticks_ms() // 1000}s] {message}"
     line = f"[DEBUG] {entry}"
 
-    # Trick-TXT bewusst schlank halten: nur Trick-Start/Erfolg/Ende speichern.
-    if (
-        "Trick gestartet:" in message
-        or "[SUCCESS] TRICK DETEKTIERT:" in message
-        or "Trick beendet:" in message
-    ):
-        debug_log_history.append(entry)
-        if len(debug_log_history) > DEBUG_LOG_MAX_LINES:
-            debug_log_history.pop(0)
-        append_debug_file_line(line)
+    # Debug-Download soll den tatsaechlichen Verlauf enthalten.
+    store_debug_entry(entry, line)
 
     if ENABLE_SERIAL_DEBUG:
         print(line)
@@ -119,7 +121,9 @@ def debug_console_only(message):
     if not ENABLE_SERIAL_DEBUG:
         return
     entry = f"[{time.ticks_ms() // 1000}s] {message}"
-    print(f"[DEBUG] {entry}")
+    line = f"[DEBUG] {entry}"
+    store_debug_entry(entry, line)
+    print(line)
 
 
 def debug_live_gyro_trick(message):
@@ -130,10 +134,7 @@ def debug_live_gyro_trick(message):
         print(line)
 
     if ENABLE_TRICK_GYRO_IN_TXT_LOG:
-        debug_log_history.append(entry)
-        if len(debug_log_history) > DEBUG_LOG_MAX_LINES:
-            debug_log_history.pop(0)
-        append_debug_file_line(line)
+        store_debug_entry(entry, line)
 
 
 def crc8_dvb_s2(data):
@@ -209,6 +210,80 @@ def get_datetime_string():
     minute = now[4]
     second = now[5]
     return f"{day:02d}.{month:02d}.{year:04d} {hour:02d}:{minute:02d}:{second:02d}"
+
+
+def build_session_txt_content():
+    txt_content = "========================================\n"
+    txt_content += "        ORANGE BEE ARCADE SESSION       \n"
+    txt_content += "========================================\n\n"
+    txt_content += "GELANDETE TRICKS:\n"
+
+    if detector.trick_history:
+        for trick in detector.trick_history:
+            txt_content += f"- {trick}\n"
+    else:
+        txt_content += "- Keine Tricks aufgezeichnet -\n"
+
+    txt_content += "\n----------------------------------------\n"
+    txt_content += f"GESAMT-PUNKTESTAND: {detector.score} PKT\n"
+    txt_content += f"HIGHSCORE: {highscore_data['score']} PKT\n"
+    txt_content += f"HIGHSCORE DATUM/ZEIT: {highscore_data['timestamp']}\n"
+    txt_content += f"HIGHSCORE PILOT: {highscore_data.get('player', 'Unbekannt')}\n"
+    txt_content += "----------------------------------------\n"
+    return txt_content
+
+
+def build_debug_txt_content():
+    txt_content = "========================================\n"
+    txt_content += "         ORANGE BEE DEBUG LOG           \n"
+    txt_content += "========================================\n\n"
+
+    file_loaded = False
+    try:
+        file_size = os.stat(DEBUG_LOG_FILE_PATH)[6]
+        if file_size > len(DEBUG_LOG_BOOT_MARKER):
+            with open(DEBUG_LOG_FILE_PATH, 'r') as f:
+                txt_content += f.read()
+            file_loaded = True
+    except Exception:
+        file_loaded = False
+
+    if not file_loaded:
+        if debug_log_history:
+            txt_content += "\n".join(debug_log_history)
+            txt_content += "\n"
+        else:
+            txt_content += "- Keine Debug-Logs vorhanden -\n"
+
+    return txt_content
+
+
+def write_text_file(path, content):
+    with open(path, 'w') as f:
+        f.write(content)
+
+
+async def send_file_as_download(writer, file_path, download_name):
+    file_size = os.stat(file_path)[6]
+    writer.write(b'HTTP/1.1 200 OK\r\n')
+    writer.write(b'Content-Type: application/octet-stream\r\n')
+    writer.write(b'Content-Disposition: attachment; filename="' + download_name.encode('utf-8') + b'"\r\n')
+    writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+    writer.write(b'Pragma: no-cache\r\n')
+    writer.write(b'Content-Length: ' + str(file_size).encode() + b'\r\n')
+    writer.write(b'Connection: close\r\n\r\n')
+
+    with open(file_path, 'rb') as f:
+        chunk_count = 0
+        while True:
+            chunk = f.read(512)
+            if not chunk:
+                break
+            writer.write(chunk)
+            chunk_count += 1
+            if chunk_count % 4 == 0:
+                await writer.drain()
+    await writer.drain()
 
 
 def load_highscore():
@@ -632,8 +707,8 @@ html_template = """<!DOCTYPE html>
         <h3>Detektierte Manöver Liste:</h3>
         <div class="log-container" id="trick_list">Warte auf erstes Flugmanöver...</div>
         <div class="button-row">
-            <a href="/download" class="btn-download" target="_blank">📥 Session als TXT</a>
-            <a href="/download-debug" class="btn-download" target="_blank">🧪 Debug-Log als TXT</a>
+            <a href="/download?manual=1" class="btn-download" target="_blank" rel="noopener">📥 Session als TXT</a>
+            <a href="/download-debug?manual=1" class="btn-download" target="_blank" rel="noopener">🧪 Debug-Log als TXT</a>
             <a href="/reset-highscore?web=1" class="btn-reset">🗑️ Highscore reset</a>
         </div>
     </div>
@@ -658,7 +733,7 @@ html_template = """<!DOCTYPE html>
 
     function startDataPolling() {
         if (dataPollTimer === null) {
-            dataPollTimer = setInterval(updateData, 250);
+            dataPollTimer = setInterval(updateData, 1000);
         }
     }
 
@@ -807,6 +882,8 @@ async def handle_client(reader, writer):
         parts = request.split(' ')
         request_method = parts[0] if len(parts) >= 1 else 'GET'
         request_target = parts[1] if len(parts) >= 2 else '/'
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [HTTP] {request_method} {request_target}")
         if '?' in request_target:
             request_path, query_string = request_target.split('?', 1)
         else:
@@ -1031,63 +1108,23 @@ async def handle_client(reader, writer):
                 writer.write(b'Connection: close\r\n\r\n')
                 writer.write(payload)
             
-        elif request_path == '/download':
-            # Erstelle den Inhalt des Text-Dokuments
-            txt_content = "========================================\n"
-            txt_content += "        ORANGE BEE ARCADE SESSION       \n"
-            txt_content += "========================================\n\n"
-            txt_content += "GELANDETE TRICKS:\n"
-            
-            if detector.trick_history:
-                for trick in detector.trick_history:
-                    txt_content += f"- {trick}\n"
-            else:
-                txt_content += "- Keine Tricks aufgezeichnet -\n"
-                
-            txt_content += "\n----------------------------------------\n"
-            txt_content += f"GESAMT-PUNKTESTAND: {detector.score} PKT\n"
-            txt_content += f"HIGHSCORE: {highscore_data['score']} PKT\n"
-            txt_content += f"HIGHSCORE DATUM/ZEIT: {highscore_data['timestamp']}\n"
-            txt_content += f"HIGHSCORE PILOT: {highscore_data.get('player', 'Unbekannt')}\n"
-            txt_content += "----------------------------------------\n"
-            
-            response_txt = txt_content.encode('utf-8')
-            
-            # Sende die Header, die den Browser zwingen, eine Datei zu speichern
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: text/plain\r\n')
-            writer.write(b'Content-Disposition: attachment; filename=fpv_arcade_session.txt\r\n')
-            writer.write(b'Content-Length: ' + str(len(response_txt)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response_txt)
+        elif request_path in ('/download', '/download-session'):
+            if ENABLE_SERIAL_DEBUG:
+                print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-SESSION] Exportdatei wird erstellt")
 
-        elif request_path == '/download-debug':
-            txt_content = "========================================\n"
-            txt_content += "         ORANGE BEE DEBUG LOG           \n"
-            txt_content += "========================================\n\n"
+            write_text_file(SESSION_EXPORT_FILE_PATH, build_session_txt_content())
+            await send_file_as_download(writer, SESSION_EXPORT_FILE_PATH, "fpv_arcade_session.txt")
+            if ENABLE_SERIAL_DEBUG:
+                print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-SESSION] Datei versendet")
 
-            file_loaded = False
-            try:
-                with open(DEBUG_LOG_FILE_PATH, 'r') as f:
-                    txt_content += f.read()
-                file_loaded = True
-            except Exception:
-                file_loaded = False
+        elif request_path in ('/download-debug', '/download-debug-raw'):
+            if ENABLE_SERIAL_DEBUG:
+                print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Exportdatei wird erstellt")
 
-            if not file_loaded:
-                if debug_log_history:
-                    txt_content += "\n".join(debug_log_history)
-                    txt_content += "\n"
-                else:
-                    txt_content += "Keine Debug-Logs vorhanden.\n"
-
-            response_txt = txt_content.encode('utf-8')
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: text/plain\r\n')
-            writer.write(b'Content-Disposition: attachment; filename=fpv_debug_log.txt\r\n')
-            writer.write(b'Content-Length: ' + str(len(response_txt)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response_txt)
+            write_text_file(DEBUG_EXPORT_FILE_PATH, build_debug_txt_content())
+            await send_file_as_download(writer, DEBUG_EXPORT_FILE_PATH, "fpv_debug_log.txt")
+            if ENABLE_SERIAL_DEBUG:
+                print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Datei versendet")
             
         else:
             response_html = html_template.encode('utf-8')
@@ -1098,14 +1135,28 @@ async def handle_client(reader, writer):
             writer.write(response_html)
             
         await writer.drain()
-    except Exception as e: 
+    except OSError as e:
+        if len(e.args) > 0 and e.args[0] == 104:
+            if ENABLE_SERIAL_DEBUG:
+                print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [WEB INFO] Client hat Verbindung geschlossen (ECONNRESET)")
+        else:
+            debug_log(f"[WEB ERROR] {e}")
+    except Exception as e:
         debug_log(f"[WEB ERROR] {e}")
     finally:
-        try: 
-            await writer.close()
-            await asyncio.sleep_ms(5)
-        except Exception: 
+        try:
+            writer.close()
+        except Exception:
             pass
+
+        try:
+            wait_closed = getattr(writer, 'wait_closed', None)
+            if wait_closed is not None:
+                await wait_closed()
+        except Exception:
+            pass
+
+        await asyncio.sleep_ms(5)
 
 
 async def main_async():
@@ -1122,4 +1173,5 @@ def run():
         debug_log("System manuell gestoppt.")
 
 run()
+
 

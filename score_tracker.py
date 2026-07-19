@@ -1167,9 +1167,13 @@ html_template = """<!DOCTYPE html>
 html_template = html_template.replace("__COPTER_NAME__", html_escape(COPTER_NAME))
 html_template = html_template.replace("__COPTER_NAME_UPPER__", html_escape(COPTER_NAME.upper()))
 html_template = html_template.replace("__DEFAULT_PILOT_NAME__", html_escape(DEFAULT_PILOT_NAME))
+html_template = html_template.replace('value="soft"', 'value="soft"' + (' selected' if TRICK_TUNING_PROFILE == 'soft' else ''))
+html_template = html_template.replace('value="medium"', 'value="medium"' + (' selected' if TRICK_TUNING_PROFILE == 'medium' else ''))
+html_template = html_template.replace('value="aggressive"', 'value="aggressive"' + (' selected' if TRICK_TUNING_PROFILE == 'aggressive' else ''))
 
 
 async def handle_client(reader, writer):
+    global TRICK_TUNING_PROFILE
     try:
         request_line = await reader.readline()
         if not request_line: 

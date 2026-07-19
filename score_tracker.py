@@ -14,6 +14,8 @@ ENABLE_TRICK_GYRO_IN_TXT_LOG = True
 
 AP_SSID = "FPV_Gamification_Pico"
 AP_PASSWORD = "drohnenspiel"  
+COPTER_NAME = "Orange Bee"
+DEFAULT_PILOT_NAME = "Bollshii"
 
 # GP1 (RX) liest passiv mit 420000 Baud
 uart = machine.UART(0, baudrate=420000, tx=machine.Pin(0), rx=machine.Pin(1), rxbuf=1024)
@@ -56,7 +58,7 @@ debug_log_history = []
 debug_log_file_enabled = True
 debug_log_file_bytes = 0
 debug_log_file_limit_reached = False
-highscore_data = {"score": 0, "timestamp": "Unbekannt"}
+highscore_data = {"score": 0, "timestamp": "Unbekannt", "player": DEFAULT_PILOT_NAME}
 pending_highscore = {"active": False, "score": 0, "timestamp": "Unbekannt"}
 status_led = None
 status_led_available = False
@@ -263,7 +265,7 @@ def get_datetime_string():
 
 def build_session_txt_content():
     txt_content = "========================================\n"
-    txt_content += "        ORANGE BEE ARCADE SESSION       \n"
+    txt_content += f"   {COPTER_NAME.upper()} ARCADE SESSION\n"
     txt_content += "========================================\n\n"
     txt_content += "GELANDETE TRICKS:\n"
 
@@ -277,14 +279,14 @@ def build_session_txt_content():
     txt_content += f"GESAMT-PUNKTESTAND: {detector.score} PKT\n"
     txt_content += f"HIGHSCORE: {highscore_data['score']} PKT\n"
     txt_content += f"HIGHSCORE DATUM/ZEIT: {highscore_data['timestamp']}\n"
-    txt_content += f"HIGHSCORE PILOT: {highscore_data.get('player', 'Unbekannt')}\n"
+    txt_content += f"HIGHSCORE PILOT: {highscore_data.get('player', DEFAULT_PILOT_NAME)}\n"
     txt_content += "----------------------------------------\n"
     return txt_content
 
 
 def build_debug_txt_content():
     txt_content = "========================================\n"
-    txt_content += "         ORANGE BEE DEBUG LOG           \n"
+    txt_content += f"      {COPTER_NAME.upper()} DEBUG LOG\n"
     txt_content += "========================================\n\n"
 
     file_loaded = False
@@ -343,10 +345,10 @@ def load_highscore():
 
         score = int(data.get("score", 0))
         timestamp = str(data.get("timestamp", "Unbekannt"))
-        player = str(data.get("player", "Unbekannt"))
+        player = str(data.get("player", DEFAULT_PILOT_NAME))
         highscore_data = {"score": score, "timestamp": timestamp, "player": player}
     except Exception:
-        highscore_data = {"score": 0, "timestamp": "Unbekannt", "player": "Unbekannt"}
+        highscore_data = {"score": 0, "timestamp": "Unbekannt", "player": DEFAULT_PILOT_NAME}
 
 
 def save_highscore():
@@ -740,7 +742,7 @@ html_template = """<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Orange Bee Ultimate Arcade</title>
+    <title>__COPTER_NAME__ Ultimate Arcade</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { background: #0b0e14; color: #f0f4f8; font-family: sans-serif; text-align: center; padding: 30px 10px; margin: 0; }
@@ -773,11 +775,11 @@ html_template = """<!DOCTYPE html>
 </head>
 <body>
     <div class="card">
-        <h1>🐝 ORANGE BEE ARCADE</h1>
+        <h1>🐝 __COPTER_NAME_UPPER__ ARCADE</h1>
         <div class="score-box" id="total_score">0</div>
         <div class="highscore-box">
             <div>Highscore: <b id="highscore_value">0</b> Pkt</div>
-            <div>Pilot: <span id="highscore_player">Unbekannt</span></div>
+            <div>Pilot: <span id="highscore_player">__DEFAULT_PILOT_NAME__</span></div>
             <div>Seit: <span id="highscore_time">Unbekannt</span></div>
             <div class="highscore-hint" id="highscore_hint">Noch 0 Punkte bis Highscore</div>
         </div>
@@ -794,11 +796,9 @@ html_template = """<!DOCTYPE html>
         <div class="hs-popup">
             <h2 class="hs-title">Herzlichen Glückwunsch!</h2>
             <p class="hs-text">Neuer Highscore erreicht: <span id="hs_popup_score" class="hs-score">0</span> Punkte</p>
-            <form id="hs_form" method="GET" action="/set-highscore-name?web=1" onsubmit="return submitHighscoreName()">
-                <input id="hs_name_input" name="name" class="hs-input" type="text" maxlength="24" placeholder="Dein Name" />
-                <div id="hs_error" class="hs-error"></div>
-                <button id="hs_save_btn" type="submit" class="hs-btn">Highscore speichern</button>
-            </form>
+            <p class="hs-text">Pilot wird als <b>__DEFAULT_PILOT_NAME__</b> gespeichert.</p>
+            <div id="hs_error" class="hs-error"></div>
+            <button id="hs_save_btn" type="button" class="hs-btn" onclick="confirmHighscore()">OK</button>
         </div>
     </div>
 
@@ -824,9 +824,7 @@ html_template = """<!DOCTYPE html>
     function showHighscorePopup(score) {
         document.getElementById('hs_popup_score').innerText = score;
         document.getElementById('hs_error').innerText = '';
-        document.getElementById('hs_name_input').value = '';
         document.getElementById('hs_overlay').classList.add('show');
-        document.getElementById('hs_name_input').focus();
     }
 
     function closeHighscorePopup() {
@@ -836,25 +834,32 @@ html_template = """<!DOCTYPE html>
         document.getElementById('hs_overlay').classList.remove('show');
     }
 
-    function submitHighscoreName() {
-        const input = document.getElementById('hs_name_input');
+    function confirmHighscore() {
         const error = document.getElementById('hs_error');
         const btn = document.getElementById('hs_save_btn');
-        const name = input.value.trim();
-
-        if (!name) {
-            error.innerText = 'Bitte Namen eingeben.';
-            return;
-        }
 
         btn.disabled = true;
         btn.innerText = 'Speichert...';
         error.innerText = '';
         isSavingHighscore = true;
-        stopDataPolling();
 
-        input.value = name;
-        return true;
+        fetch('/confirm-highscore?web=1&t=' + Date.now(), { cache: 'no-store' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    closeHighscorePopup();
+                } else {
+                    error.innerText = data.error || 'Speichern fehlgeschlagen.';
+                }
+            })
+            .catch(() => {
+                error.innerText = 'Verbindung fehlgeschlagen.';
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerText = 'OK';
+                isSavingHighscore = false;
+            });
     }
 
     function blendColor(c1, c2, t) {
@@ -940,13 +945,17 @@ html_template = """<!DOCTYPE html>
                     container.innerHTML = "<div style='color:#7f8c8d;'>Warte auf erstes Flugmanöver...</div>";
                 }
             })
-            .catch(err => console.log("Fetch Error:", err));
+                .catch(err => console.log("Fetch Error:", err));
     }
 
     startDataPolling();
     </script>
 </body>
 </html>"""
+
+html_template = html_template.replace("__COPTER_NAME__", html_escape(COPTER_NAME))
+html_template = html_template.replace("__COPTER_NAME_UPPER__", html_escape(COPTER_NAME.upper()))
+html_template = html_template.replace("__DEFAULT_PILOT_NAME__", html_escape(DEFAULT_PILOT_NAME))
 
 
 async def handle_client(reader, writer):
@@ -999,7 +1008,7 @@ async def handle_client(reader, writer):
                 "history": detector.trick_history,
                 "highscore": highscore_data["score"],
                 "highscore_timestamp": highscore_data["timestamp"],
-                "highscore_player": highscore_data.get("player", "Unbekannt"),
+                "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
                 "pending_highscore": pending_highscore["active"],
                 "pending_highscore_score": pending_highscore["score"]
             }
@@ -1071,7 +1080,7 @@ async def handle_client(reader, writer):
                         "<title>Highscore gespeichert</title></head>"
                         "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
                         "<h2>Highscore gespeichert</h2>"
-                        f"<p>{html_escape(highscore_data.get('player', 'Unbekannt'))} steht jetzt mit {highscore_data['score']} Punkten im Highscore.</p>"
+                        f"<p>{html_escape(highscore_data.get('player', DEFAULT_PILOT_NAME))} steht jetzt mit {highscore_data['score']} Punkten im Highscore.</p>"
                         "<p>Du wirst zur Hauptseite zurückgeleitet...</p>"
                         "</body></html>"
                     ).encode('utf-8')
@@ -1105,7 +1114,7 @@ async def handle_client(reader, writer):
                     "ok": success,
                     "error": error,
                     "highscore": highscore_data["score"],
-                    "highscore_player": highscore_data.get("player", "Unbekannt"),
+                    "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
                     "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
                 }).encode('utf-8')
 
@@ -1117,13 +1126,65 @@ async def handle_client(reader, writer):
                 writer.write(b'Connection: close\r\n\r\n')
                 writer.write(payload)
 
+        elif request_path == '/confirm-highscore':
+            success = False
+            error = ""
+
+            if pending_highscore["active"]:
+                highscore_data["score"] = int(pending_highscore["score"])
+                highscore_data["timestamp"] = pending_highscore["timestamp"] or get_datetime_string()
+                highscore_data["player"] = DEFAULT_PILOT_NAME
+                saved_ok, save_error = save_highscore()
+                if saved_ok:
+                    pending_highscore["active"] = False
+                    pending_highscore["score"] = 0
+                    pending_highscore["timestamp"] = "Unbekannt"
+                    success = True
+                    debug_console_only(
+                        f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
+                    )
+                else:
+                    error = "Speichern fehlgeschlagen: " + str(save_error)
+                    debug_console_only("[HIGHSCORE ERROR] " + error)
+            elif detector.score > highscore_data["score"]:
+                highscore_data["score"] = int(detector.score)
+                highscore_data["timestamp"] = get_datetime_string()
+                highscore_data["player"] = DEFAULT_PILOT_NAME
+                saved_ok, save_error = save_highscore()
+                if saved_ok:
+                    success = True
+                    debug_console_only(
+                        f"[HIGHSCORE] Rekord gespeichert (Fallback): {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
+                    )
+                else:
+                    error = "Speichern fehlgeschlagen: " + str(save_error)
+                    debug_console_only("[HIGHSCORE ERROR] " + error)
+            else:
+                success = True
+
+            payload = json.dumps({
+                "ok": success,
+                "error": error,
+                "highscore": highscore_data["score"],
+                "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
+                "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
+            }).encode('utf-8')
+
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+            writer.write(b'Pragma: no-cache\r\n')
+            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(payload)
+
         elif request_path == '/reset-highscore':
             is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
             debug_console_only(f"[HIGHSCORE] Reset-Route aufgerufen (web={is_web_submit}).")
 
             highscore_data["score"] = 0
             highscore_data["timestamp"] = "Unbekannt"
-            highscore_data["player"] = "Unbekannt"
+            highscore_data["player"] = DEFAULT_PILOT_NAME
             pending_highscore["active"] = False
             pending_highscore["score"] = 0
             pending_highscore["timestamp"] = "Unbekannt"
@@ -1173,7 +1234,7 @@ async def handle_client(reader, writer):
                     "ok": saved_ok,
                     "error": "" if saved_ok else ("Reset fehlgeschlagen: " + str(save_error)),
                     "highscore": highscore_data["score"],
-                    "highscore_player": highscore_data.get("player", "Unbekannt"),
+                    "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
                     "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
                 }).encode('utf-8')
 

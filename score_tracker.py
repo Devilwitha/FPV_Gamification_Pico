@@ -10,6 +10,7 @@ import os
 ENABLE_HOTSPOT = True        
 ENABLE_SERIAL_DEBUG = True   
 ENABLE_LIVE_GYRO_DEBUG = True
+ENABLE_TRICK_GYRO_IN_TXT_LOG = True
 
 AP_SSID = "FPV_Gamification_Pico"
 AP_PASSWORD = "drohnenspiel"  
@@ -96,8 +97,12 @@ def debug_log(message):
     entry = f"[{time.ticks_ms() // 1000}s] {message}"
     line = f"[DEBUG] {entry}"
 
-    # Trick-TXT bewusst schlank halten: nur erkannte Tricks speichern.
-    if "[SUCCESS] TRICK DETEKTIERT:" in message:
+    # Trick-TXT bewusst schlank halten: nur Trick-Start/Erfolg/Ende speichern.
+    if (
+        "Trick gestartet:" in message
+        or "[SUCCESS] TRICK DETEKTIERT:" in message
+        or "Trick beendet:" in message
+    ):
         debug_log_history.append(entry)
         if len(debug_log_history) > DEBUG_LOG_MAX_LINES:
             debug_log_history.pop(0)
@@ -112,6 +117,20 @@ def debug_console_only(message):
         return
     entry = f"[{time.ticks_ms() // 1000}s] {message}"
     print(f"[DEBUG] {entry}")
+
+
+def debug_live_gyro_trick(message):
+    entry = f"[{time.ticks_ms() // 1000}s] {message}"
+    line = f"[DEBUG] {entry}"
+
+    if ENABLE_SERIAL_DEBUG:
+        print(line)
+
+    if ENABLE_TRICK_GYRO_IN_TXT_LOG:
+        debug_log_history.append(entry)
+        if len(debug_log_history) > DEBUG_LOG_MAX_LINES:
+            debug_log_history.pop(0)
+        append_debug_file_line(line)
 
 
 def crc8_dvb_s2(data):
@@ -435,6 +454,12 @@ async def telemetry_loop():
                                         last_live_yaw = yaw_deg
 
                                 detector.update(roll_deg, pitch_deg, yaw_deg)
+
+                                if ENABLE_SERIAL_DEBUG and detector.in_trick:
+                                    debug_live_gyro_trick(
+                                        f"[LIVE GYRO TRICK] Roll: {roll_deg:6.1f}° | "
+                                        f"Pitch: {pitch_deg:6.1f}° | Yaw: {yaw_deg:6.1f}°"
+                                    )
                         else:
                             crc_fail_count += 1
                             if ENABLE_SERIAL_DEBUG and (crc_fail_count % 40 == 0):
@@ -512,6 +537,8 @@ async def handle_client(reader, writer):
             return
         
         request = request_line.decode('utf-8')
+        parts = request.split(' ')
+        request_path = parts[1] if len(parts) >= 2 else '/'
         
         # Header komplett abfrühstücken, um Browser-Hänger zu vermeiden
         while True:
@@ -519,7 +546,7 @@ async def handle_client(reader, writer):
             if line == b'\r\n' or line == b'\n' or not line: 
                 break
                 
-        if 'GET /data' in request:
+        if request_path == '/data':
             data = {"score": detector.score, "history": detector.trick_history}
             response_data = json.dumps(data).encode('utf-8')
             writer.write(b'HTTP/1.1 200 OK\r\n')
@@ -528,7 +555,7 @@ async def handle_client(reader, writer):
             writer.write(b'Connection: close\r\n\r\n')
             writer.write(response_data)
             
-        elif 'GET /download' in request:
+        elif request_path == '/download':
             # Erstelle den Inhalt des Text-Dokuments
             txt_content = "========================================\n"
             txt_content += "        ORANGE BEE ARCADE SESSION       \n"
@@ -555,7 +582,7 @@ async def handle_client(reader, writer):
             writer.write(b'Connection: close\r\n\r\n')
             writer.write(response_txt)
 
-        elif 'GET /download-debug' in request:
+        elif request_path == '/download-debug':
             txt_content = "========================================\n"
             txt_content += "         ORANGE BEE DEBUG LOG           \n"
             txt_content += "========================================\n\n"
@@ -616,3 +643,4 @@ def run():
         debug_log("System manuell gestoppt.")
 
 run()
+

@@ -46,6 +46,7 @@ DEBUG_LOG_BOOT_MARKER = "=== FPV DEBUG SESSION START ===\n"
 SESSION_EXPORT_FILE_PATH = "fpv_arcade_session_export.txt"
 DEBUG_EXPORT_FILE_PATH = "fpv_debug_export.txt"
 HIGHSCORE_FILE_PATH  = "fpv_highscore.json"
+LED_BLINK_INTERVAL_MS = 220
 # =======================================================
 
 # CRSF attitude payload ist in Radiant * 10000 kodiert.
@@ -57,6 +58,54 @@ debug_log_file_bytes = 0
 debug_log_file_limit_reached = False
 highscore_data = {"score": 0, "timestamp": "Unbekannt"}
 pending_highscore = {"active": False, "score": 0, "timestamp": "Unbekannt"}
+status_led = None
+status_led_available = False
+status_led_state = False
+status_led_last_toggle_ms = 0
+system_ready = False
+
+
+def init_status_led():
+    global status_led, status_led_available
+    try:
+        status_led = machine.Pin("LED", machine.Pin.OUT)
+        status_led_available = True
+        return
+    except Exception:
+        status_led = None
+
+    try:
+        status_led = machine.Pin(25, machine.Pin.OUT)
+        status_led_available = True
+    except Exception:
+        status_led = None
+        status_led_available = False
+
+
+def _set_status_led(on):
+    global status_led_state
+    if not status_led_available or status_led is None:
+        return
+    status_led_state = bool(on)
+    status_led.value(1 if on else 0)
+
+
+def update_status_led():
+    global status_led_last_toggle_ms
+    if not status_led_available:
+        return
+
+    if not system_ready:
+        _set_status_led(False)
+        return
+
+    if pending_highscore["active"]:
+        now = time.ticks_ms()
+        if time.ticks_diff(now, status_led_last_toggle_ms) >= LED_BLINK_INTERVAL_MS:
+            _set_status_led(not status_led_state)
+            status_led_last_toggle_ms = now
+    else:
+        _set_status_led(True)
 
 
 def store_debug_entry(entry, line):
@@ -327,21 +376,40 @@ def save_highscore():
 
 init_debug_log_file()
 load_highscore()
+init_status_led()
 
 
 # ==================== WLAN HOTSPOT SETUP ====================
 ap = None
 if ENABLE_HOTSPOT:
     debug_log("Initialisiere WLAN Hotspot (Access Point)...")
-    ap = network.WLAN(network.AP_IF)
-    ap.config(essid=AP_SSID, password=AP_PASSWORD)
-    ap.active(True)
-    ap.config(pm=0xa11140)  
-    ap.ifconfig(('192.168.4.1', '255.255.255.0', '192.168.4.1', '192.168.4.1'))
-    
-    debug_log("WLAN-Hotspot erfolgreich gestartet!")
-    debug_log(f"SSID: {AP_SSID}")
-    debug_log(f"Pico IP-Adresse (Im Browser eingeben): {ap.ifconfig()[0]}")
+    try:
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Erzeuge WLAN-Objekt")
+        ap = network.WLAN(network.AP_IF)
+
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze SSID/Passwort")
+        ap.config(essid=AP_SSID, password=AP_PASSWORD)
+
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Aktiviere Access Point")
+        ap.active(True)
+
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze Power-Management")
+        ap.config(pm=0xa11140)
+
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze statische IP")
+        ap.ifconfig(('192.168.4.1', '255.255.255.0', '192.168.4.1', '192.168.4.1'))
+
+        debug_log("WLAN-Hotspot erfolgreich gestartet!")
+        debug_log(f"SSID: {AP_SSID}")
+        debug_log(f"Pico IP-Adresse (Im Browser eingeben): {ap.ifconfig()[0]}")
+    except Exception as e:
+        ap = None
+        debug_log(f"[AP ERROR] Hotspot-Setup fehlgeschlagen: {e}")
 
 
 class LiveGyroTrickDetector:
@@ -389,7 +457,7 @@ class LiveGyroTrickDetector:
             self.trick_type = "Spin"
 
         if ENABLE_SERIAL_DEBUG:
-            debug_log(f"Trick gestartet: {self.trick_type} | max-rate={max(abs_gx, abs_gy, abs_gz):.0f}°/s")
+            debug_log(f"Trick gestartet: {self.trick_type} | max-rate={max(abs_gx, abs_gy, abs_gz):.0f} deg/s")
 
     def _finish_trick(self, force=False):
         duration = (time.ticks_diff(time.ticks_ms(), self.trick_start_time)) / 1000.0
@@ -496,8 +564,16 @@ class LiveGyroTrickDetector:
     def evaluate_trick(self, duration):
         points = 0
         detected_name = ""
-        
-        if self.trick_type == "Roll":
+
+        # Endgueltigen Trick-Typ aus der gesamten Bewegung bestimmen.
+        if self.accumulated_roll >= self.accumulated_pitch and self.accumulated_roll >= self.accumulated_yaw:
+            eff_type = "Roll"
+        elif self.accumulated_pitch >= self.accumulated_roll and self.accumulated_pitch >= self.accumulated_yaw:
+            eff_type = "Flip"
+        else:
+            eff_type = "Spin"
+
+        if eff_type == "Roll":
             if 70 <= self.accumulated_roll < 170: detected_name = "Barrel Roll"; points = 100
             elif 170 <= self.accumulated_roll < 300: detected_name = "Double Roll"; points = 250
             elif self.accumulated_roll >= 300: detected_name = "Super Multi-Roll"; points = 500
@@ -505,7 +581,7 @@ class LiveGyroTrickDetector:
             if duration < 0.40 and self.accumulated_roll > 120:
                 detected_name = "Juicy Roll Flick"; points = 180
 
-        elif self.trick_type == "Flip":
+        elif eff_type == "Flip":
             if 80 <= self.accumulated_pitch < 190:
                 if self.accumulated_roll > 90: detected_name = "Split-S / Half-Loop"; points = 220
                 else: detected_name = "Power Flip"; points = 100
@@ -518,7 +594,7 @@ class LiveGyroTrickDetector:
             if self.accumulated_pitch > 170 and self.accumulated_yaw > 90:
                 detected_name = "Matty Flip Combo"; points = 350
 
-        elif self.trick_type == "Spin":
+        elif eff_type == "Spin":
             if 90 <= self.accumulated_yaw < 220: detected_name = "Flat Spin 360"; points = 150
             elif self.accumulated_yaw >= 220: detected_name = "Flat Spin 720"; points = 350
 
@@ -541,7 +617,7 @@ class LiveGyroTrickDetector:
                     )
         elif ENABLE_SERIAL_DEBUG:
             debug_log(
-                f"Trick verworfen (unter Schwelle): Typ={self.trick_type} | "
+                f"Trick verworfen (unter Schwelle): Typ={eff_type} | "
                 f"R={self.accumulated_roll:.0f} P={self.accumulated_pitch:.0f} Y={self.accumulated_yaw:.0f}"
             )
 
@@ -567,6 +643,7 @@ async def telemetry_loop():
 
     while True:
         try:
+            update_status_led()
             avail = uart.any()
             if avail > 0:
                 chunk = uart.read(min(avail, 64))
@@ -1160,8 +1237,12 @@ async def handle_client(reader, writer):
 
 
 async def main_async():
+    global system_ready, status_led_last_toggle_ms
     if ENABLE_HOTSPOT:
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
+    system_ready = True
+    status_led_last_toggle_ms = time.ticks_ms()
+    update_status_led()
     await telemetry_loop()
 
 

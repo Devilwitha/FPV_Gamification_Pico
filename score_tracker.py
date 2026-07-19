@@ -42,6 +42,7 @@ LIVE_LOG_INTERVAL_MS = 900
 LIVE_LOG_DELTA_DEG   = 0.8
 DEBUG_LOG_FILE_PATH  = "fpv_debug_session.txt"
 DEBUG_LOG_FILE_MAX_BYTES = 180000
+HIGHSCORE_FILE_PATH  = "fpv_highscore.json"
 # =======================================================
 
 # CRSF attitude payload ist in Radiant * 10000 kodiert.
@@ -51,6 +52,8 @@ debug_log_history = []
 debug_log_file_enabled = True
 debug_log_file_bytes = 0
 debug_log_file_limit_reached = False
+highscore_data = {"score": 0, "timestamp": "Unbekannt"}
+pending_highscore = {"active": False, "score": 0, "timestamp": "Unbekannt"}
 
 
 def init_debug_log_file():
@@ -153,7 +156,102 @@ def normalize_angle_deg(angle):
     return angle
 
 
+def url_decode(value):
+    value = value.replace('+', ' ')
+    out = ""
+    i = 0
+    while i < len(value):
+        ch = value[i]
+        if ch == '%' and i + 2 < len(value):
+            hex_part = value[i + 1:i + 3]
+            try:
+                out += chr(int(hex_part, 16))
+                i += 3
+                continue
+            except Exception:
+                pass
+        out += ch
+        i += 1
+    return out
+
+
+def parse_query(query_string):
+    params = {}
+    if not query_string:
+        return params
+    pairs = query_string.split('&')
+    for pair in pairs:
+        if not pair:
+            continue
+        if '=' in pair:
+            key, value = pair.split('=', 1)
+        else:
+            key, value = pair, ''
+        params[url_decode(key)] = url_decode(value)
+    return params
+
+
+def html_escape(value):
+    text = str(value)
+    text = text.replace('&', '&amp;')
+    text = text.replace('<', '&lt;')
+    text = text.replace('>', '&gt;')
+    text = text.replace('"', '&quot;')
+    return text
+
+
+def get_datetime_string():
+    now = time.localtime()
+    year = now[0]
+    month = now[1]
+    day = now[2]
+    hour = now[3]
+    minute = now[4]
+    second = now[5]
+    return f"{day:02d}.{month:02d}.{year:04d} {hour:02d}:{minute:02d}:{second:02d}"
+
+
+def load_highscore():
+    global highscore_data
+    try:
+        with open(HIGHSCORE_FILE_PATH, 'r') as f:
+            data = json.loads(f.read())
+
+        score = int(data.get("score", 0))
+        timestamp = str(data.get("timestamp", "Unbekannt"))
+        player = str(data.get("player", "Unbekannt"))
+        highscore_data = {"score": score, "timestamp": timestamp, "player": player}
+    except Exception:
+        highscore_data = {"score": 0, "timestamp": "Unbekannt", "player": "Unbekannt"}
+
+
+def save_highscore():
+    payload = json.dumps(highscore_data)
+    try:
+        tmp_path = HIGHSCORE_FILE_PATH + ".tmp"
+        with open(tmp_path, 'w') as f:
+            f.write(payload)
+
+        # Auf MicroPython kann rename über bestehende Datei fehlschlagen.
+        try:
+            os.remove(HIGHSCORE_FILE_PATH)
+        except Exception:
+            pass
+
+        os.rename(tmp_path, HIGHSCORE_FILE_PATH)
+        return True, ""
+    except Exception as e:
+        # Fallback auf direktes Schreiben.
+        try:
+            with open(HIGHSCORE_FILE_PATH, 'w') as f:
+                f.write(payload)
+            return True, ""
+        except Exception as e2:
+            return False, f"{e} | fallback={e2}"
+
+
 init_debug_log_file()
+load_highscore()
 
 
 # ==================== WLAN HOTSPOT SETUP ====================
@@ -356,6 +454,16 @@ class LiveGyroTrickDetector:
             self.trick_history.append(f"[{timestamp:.1f}s] {detected_name} (+{points} Pkt)")
             if len(self.trick_history) > 30: self.trick_history.pop(0)  # Erhöht für längere Listen
             debug_log(f"[SUCCESS] TRICK DETEKTIERT: {detected_name} | Gesamt-Score: {self.score}")
+
+            global highscore_data, pending_highscore
+            if self.score > highscore_data["score"]:
+                if (not pending_highscore["active"]) or self.score > pending_highscore["score"]:
+                    pending_highscore["active"] = True
+                    pending_highscore["score"] = self.score
+                    pending_highscore["timestamp"] = get_datetime_string()
+                    debug_console_only(
+                        f"[HIGHSCORE] Neuer Rekord entdeckt: {pending_highscore['score']} Pkt. Bitte Namen im Web eintragen."
+                    )
         elif ENABLE_SERIAL_DEBUG:
             debug_log(
                 f"Trick verworfen (unter Schwelle): Typ={self.trick_type} | "
@@ -487,6 +595,9 @@ html_template = """<!DOCTYPE html>
         .card { max-width: 500px; margin: 0 auto; background: #141b25; padding: 30px; border-radius: 20px; border: 2px solid #233247; box-shadow: 0 15px 35px rgba(0,0,0,0.6); }
         h1 { color: #f39c12; letter-spacing: 2px; text-transform: uppercase; margin-top: 0; }
         .score-box { font-size: 5.5em; font-weight: bold; color: #2ecc71; text-shadow: 0 0 20px rgba(46,204,113,0.4); margin: 15px 0; font-family: monospace; }
+        .highscore-box { background: #101722; border: 1px solid #223349; border-radius: 10px; padding: 10px 12px; margin: 0 0 14px 0; color: #c9d6e5; font-size: 0.95em; }
+        .highscore-box b { color: #3ddc84; transition: color 0.25s ease; }
+        .highscore-hint { margin-top: 4px; color: #9fb4cb; font-size: 0.86em; }
         h3 { text-align: left; color: #95a5a6; border-bottom: 1px solid #233247; padding-bottom: 8px; margin-top: 25px; }
         .log-container { text-align: left; background: #070a0f; padding: 15px; border-radius: 10px; font-family: monospace; min-height: 180px; max-height: 250px; overflow-y: auto; border: 1px solid #1a2432; margin-bottom: 20px; }
         .trick-item { padding: 6px 0; border-bottom: 1px solid #111822; font-size: 1.1em; color: #ecf0f1; }
@@ -494,26 +605,181 @@ html_template = """<!DOCTYPE html>
         .button-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
         .btn-download { display: inline-block; background: #2980b9; color: #fff; font-size: 1.05em; font-weight: bold; padding: 12px 20px; border-radius: 8px; text-decoration: none; transition: background 0.2s; border: none; cursor: pointer; }
         .btn-download:hover { background: #3498db; }
+        .btn-reset { display: inline-block; background: #c0392b; color: #fff; font-size: 1.05em; font-weight: bold; padding: 12px 20px; border-radius: 8px; text-decoration: none; transition: background 0.2s; border: none; cursor: pointer; }
+        .btn-reset:hover { background: #e74c3c; }
+        .hs-overlay { position: fixed; inset: 0; background: rgba(3, 7, 18, 0.76); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 9999; }
+        .hs-overlay.show { display: flex; }
+        .hs-popup { width: 100%; max-width: 360px; background: linear-gradient(160deg, #1d2d44, #0f1724); border: 1px solid #2f4f72; border-radius: 16px; padding: 18px 16px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55); text-align: center; }
+        .hs-title { color: #ffd166; margin: 0 0 8px 0; font-size: 1.35em; font-weight: 800; letter-spacing: 0.5px; }
+        .hs-text { color: #d7e3f0; margin: 0 0 14px 0; line-height: 1.35; }
+        .hs-score { color: #7bffb5; font-weight: 900; font-size: 1.15em; }
+        .hs-input { width: 100%; box-sizing: border-box; background: #0b1320; border: 1px solid #335174; color: #e8f2ff; border-radius: 8px; padding: 10px 12px; margin: 0 0 10px 0; font-size: 0.98em; }
+        .hs-error { min-height: 18px; color: #ff9aa2; font-size: 0.82em; margin: 0 0 10px 0; }
+        .hs-btn { background: #2c7be5; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; cursor: pointer; font-weight: 700; }
+        .hs-btn:hover { background: #4b93f0; }
     </style>
 </head>
 <body>
     <div class="card">
         <h1>🐝 ORANGE BEE ARCADE</h1>
         <div class="score-box" id="total_score">0</div>
+        <div class="highscore-box">
+            <div>Highscore: <b id="highscore_value">0</b> Pkt</div>
+            <div>Pilot: <span id="highscore_player">Unbekannt</span></div>
+            <div>Seit: <span id="highscore_time">Unbekannt</span></div>
+            <div class="highscore-hint" id="highscore_hint">Noch 0 Punkte bis Highscore</div>
+        </div>
         <h3>Detektierte Manöver Liste:</h3>
         <div class="log-container" id="trick_list">Warte auf erstes Flugmanöver...</div>
         <div class="button-row">
             <a href="/download" class="btn-download" target="_blank">📥 Session als TXT</a>
             <a href="/download-debug" class="btn-download" target="_blank">🧪 Debug-Log als TXT</a>
+            <a href="/reset-highscore?web=1" class="btn-reset">🗑️ Highscore reset</a>
+        </div>
+    </div>
+
+    <div id="hs_overlay" class="hs-overlay">
+        <div class="hs-popup">
+            <h2 class="hs-title">Herzlichen Glückwunsch!</h2>
+            <p class="hs-text">Neuer Highscore erreicht: <span id="hs_popup_score" class="hs-score">0</span> Punkte</p>
+            <form id="hs_form" method="GET" action="/set-highscore-name?web=1" onsubmit="return submitHighscoreName()">
+                <input id="hs_name_input" name="name" class="hs-input" type="text" maxlength="24" placeholder="Dein Name" />
+                <div id="hs_error" class="hs-error"></div>
+                <button id="hs_save_btn" type="submit" class="hs-btn">Highscore speichern</button>
+            </form>
         </div>
     </div>
 
     <script>
+    let previousHighscore = null;
+    let lastShownHighscore = null;
+    let dataPollTimer = null;
+    let isSavingHighscore = false;
+
+    function startDataPolling() {
+        if (dataPollTimer === null) {
+            dataPollTimer = setInterval(updateData, 250);
+        }
+    }
+
+    function stopDataPolling() {
+        if (dataPollTimer !== null) {
+            clearInterval(dataPollTimer);
+            dataPollTimer = null;
+        }
+    }
+
+    function showHighscorePopup(score) {
+        document.getElementById('hs_popup_score').innerText = score;
+        document.getElementById('hs_error').innerText = '';
+        document.getElementById('hs_name_input').value = '';
+        document.getElementById('hs_overlay').classList.add('show');
+        document.getElementById('hs_name_input').focus();
+    }
+
+    function closeHighscorePopup() {
+        if (isSavingHighscore) {
+            return;
+        }
+        document.getElementById('hs_overlay').classList.remove('show');
+    }
+
+    function submitHighscoreName() {
+        const input = document.getElementById('hs_name_input');
+        const error = document.getElementById('hs_error');
+        const btn = document.getElementById('hs_save_btn');
+        const name = input.value.trim();
+
+        if (!name) {
+            error.innerText = 'Bitte Namen eingeben.';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = 'Speichert...';
+        error.innerText = '';
+        isSavingHighscore = true;
+        stopDataPolling();
+
+        input.value = name;
+        return true;
+    }
+
+    function blendColor(c1, c2, t) {
+        const r = Math.round(c1[0] + (c2[0] - c1[0]) * t);
+        const g = Math.round(c1[1] + (c2[1] - c1[1]) * t);
+        const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    function getHighscoreColor(score, highscore) {
+        if (highscore > 0 && score >= highscore) {
+            return '#7dd3fc';
+        }
+
+        if (highscore <= 0) {
+            return '#3ddc84';
+        }
+
+        const ratio = Math.max(0, Math.min(1, score / highscore));
+        const green = [61, 220, 132];
+        const yellow = [255, 209, 102];
+        const red = [255, 77, 79];
+
+        if (ratio < 0.5) {
+            return blendColor(green, yellow, ratio / 0.5);
+        }
+        return blendColor(yellow, red, (ratio - 0.5) / 0.5);
+    }
+
+    function updateHighscoreVisual(score, highscore) {
+        const hsValue = document.getElementById('highscore_value');
+        const hsHint = document.getElementById('highscore_hint');
+
+        hsValue.style.color = getHighscoreColor(score, highscore);
+
+        if (highscore <= 0) {
+            hsHint.innerText = 'Setze den ersten Highscore!';
+            return;
+        }
+
+        if (score >= highscore) {
+            hsHint.innerText = 'Highscore geknackt!';
+            return;
+        }
+
+        hsHint.innerText = `Noch ${highscore - score} Punkte bis Highscore`;
+    }
+
     function updateData() {
-        fetch('/data')
+        fetch('/data?t=' + Date.now(), { cache: 'no-store' })
             .then(res => res.json())
             .then(data => {
-                document.getElementById('total_score').innerText = data.score;
+                const score = Number(data.score || 0);
+                const highscore = Number(data.highscore || 0);
+
+                document.getElementById('total_score').innerText = score;
+                document.getElementById('highscore_value').innerText = highscore;
+                document.getElementById('highscore_player').innerText = data.highscore_player || 'Unbekannt';
+                document.getElementById('highscore_time').innerText = data.highscore_timestamp;
+
+                updateHighscoreVisual(score, highscore);
+
+                const pending = Boolean(data.pending_highscore);
+                const pendingScore = Number(data.pending_highscore_score || 0);
+
+                if (pending) {
+                    const overlay = document.getElementById('hs_overlay');
+                    document.getElementById('hs_popup_score').innerText = pendingScore;
+                    if (!overlay.classList.contains('show')) {
+                        showHighscorePopup(pendingScore);
+                    }
+                } else if (!isSavingHighscore) {
+                    closeHighscorePopup();
+                }
+
+                previousHighscore = highscore;
+
                 const container = document.getElementById('trick_list');
                 if (data.history.length > 0) {
                     const reversed = [...data.history].reverse();
@@ -524,7 +790,8 @@ html_template = """<!DOCTYPE html>
             })
             .catch(err => console.log("Fetch Error:", err));
     }
-    setInterval(updateData, 250);
+
+    startDataPolling();
     </script>
 </body>
 </html>"""
@@ -538,22 +805,231 @@ async def handle_client(reader, writer):
         
         request = request_line.decode('utf-8')
         parts = request.split(' ')
-        request_path = parts[1] if len(parts) >= 2 else '/'
+        request_method = parts[0] if len(parts) >= 1 else 'GET'
+        request_target = parts[1] if len(parts) >= 2 else '/'
+        if '?' in request_target:
+            request_path, query_string = request_target.split('?', 1)
+        else:
+            request_path, query_string = request_target, ''
+        query_params = parse_query(query_string)
+        content_length = 0
         
         # Header komplett abfrühstücken, um Browser-Hänger zu vermeiden
         while True:
             line = await reader.readline()
             if line == b'\r\n' or line == b'\n' or not line: 
                 break
+            try:
+                line_text = line.decode('utf-8').strip()
+            except Exception:
+                line_text = ''
+            line_lower = line_text.lower()
+            if line_lower.startswith('content-length:'):
+                try:
+                    content_length = int(line_text.split(':', 1)[1].strip())
+                except Exception:
+                    content_length = 0
+
+        body_params = {}
+        if request_method == 'POST' and content_length > 0:
+            try:
+                body_bytes = await reader.readexactly(content_length)
+                body_text = body_bytes.decode('utf-8')
+                body_params = parse_query(body_text)
+            except Exception:
+                body_params = {}
                 
         if request_path == '/data':
-            data = {"score": detector.score, "history": detector.trick_history}
+            data = {
+                "score": detector.score,
+                "history": detector.trick_history,
+                "highscore": highscore_data["score"],
+                "highscore_timestamp": highscore_data["timestamp"],
+                "highscore_player": highscore_data.get("player", "Unbekannt"),
+                "pending_highscore": pending_highscore["active"],
+                "pending_highscore_score": pending_highscore["score"]
+            }
             response_data = json.dumps(data).encode('utf-8')
             writer.write(b'HTTP/1.1 200 OK\r\n')
             writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+            writer.write(b'Pragma: no-cache\r\n')
             writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
             writer.write(b'Connection: close\r\n\r\n')
             writer.write(response_data)
+
+        elif request_path == '/set-highscore-name':
+            name = query_params.get('name', '').strip()
+            if not name:
+                name = body_params.get('name', '').strip()
+            is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
+            success = False
+            error = ""
+            score_to_save = None
+            timestamp_to_save = None
+
+            if not name:
+                error = "Name darf nicht leer sein."
+            else:
+                # Primärer Pfad: expliziter Pending-Highscore aus dem Detektor.
+                if pending_highscore["active"]:
+                    score_to_save = pending_highscore["score"]
+                    timestamp_to_save = pending_highscore["timestamp"]
+                # Fallback: falls Pending-Status verloren ging, aber aktueller Score bereits höher ist.
+                elif detector.score > highscore_data["score"]:
+                    score_to_save = detector.score
+                    timestamp_to_save = get_datetime_string()
+                    debug_console_only(
+                        "[HIGHSCORE] Pending-Status war inaktiv, Speichern via Score-Fallback aktiviert."
+                    )
+                # Wenn kein neuer Rekord vorliegt, trotzdem Namen auf bestehendem Highscore erlauben.
+                elif highscore_data["score"] > 0:
+                    score_to_save = highscore_data["score"]
+                    timestamp_to_save = highscore_data.get("timestamp", "Unbekannt")
+                    debug_console_only(
+                        "[HIGHSCORE] Kein neuer Rekord, Name fuer bestehenden Highscore wird aktualisiert."
+                    )
+                else:
+                    error = "Kein neuer Highscore zum Speichern vorhanden."
+
+            if error == "" and score_to_save is not None:
+                highscore_data["score"] = int(score_to_save)
+                highscore_data["timestamp"] = timestamp_to_save or get_datetime_string()
+                highscore_data["player"] = name
+                saved_ok, save_error = save_highscore()
+                if saved_ok:
+                    pending_highscore["active"] = False
+                    pending_highscore["score"] = 0
+                    pending_highscore["timestamp"] = "Unbekannt"
+                    success = True
+                    debug_console_only(
+                        f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
+                    )
+                else:
+                    error = "Speichern fehlgeschlagen: " + str(save_error)
+                    debug_console_only("[HIGHSCORE ERROR] " + error)
+
+            if is_web_submit:
+                if success:
+                    response_html = (
+                        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                        "<meta http-equiv='refresh' content='1; url=/'>"
+                        "<title>Highscore gespeichert</title></head>"
+                        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
+                        "<h2>Highscore gespeichert</h2>"
+                        f"<p>{html_escape(highscore_data.get('player', 'Unbekannt'))} steht jetzt mit {highscore_data['score']} Punkten im Highscore.</p>"
+                        "<p>Du wirst zur Hauptseite zurückgeleitet...</p>"
+                        "</body></html>"
+                    ).encode('utf-8')
+                    writer.write(b'HTTP/1.1 200 OK\r\n')
+                    writer.write(b'Content-Type: text/html\r\n')
+                    writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+                    writer.write(b'Pragma: no-cache\r\n')
+                    writer.write(b'Content-Length: ' + str(len(response_html)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(response_html)
+                else:
+                    response_html = (
+                        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                        "<meta http-equiv='refresh' content='2; url=/'>"
+                        "<title>Speichern fehlgeschlagen</title></head>"
+                        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
+                        "<h2>Speichern fehlgeschlagen</h2>"
+                        f"<p>{html_escape(error or 'Unbekannter Fehler')}</p>"
+                        "<p>Du wirst zur Hauptseite zurückgeleitet...</p>"
+                        "</body></html>"
+                    ).encode('utf-8')
+                    writer.write(b'HTTP/1.1 200 OK\r\n')
+                    writer.write(b'Content-Type: text/html\r\n')
+                    writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+                    writer.write(b'Pragma: no-cache\r\n')
+                    writer.write(b'Content-Length: ' + str(len(response_html)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(response_html)
+            else:
+                payload = json.dumps({
+                    "ok": success,
+                    "error": error,
+                    "highscore": highscore_data["score"],
+                    "highscore_player": highscore_data.get("player", "Unbekannt"),
+                    "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
+                }).encode('utf-8')
+
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+                writer.write(b'Pragma: no-cache\r\n')
+                writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(payload)
+
+        elif request_path == '/reset-highscore':
+            is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
+            debug_console_only(f"[HIGHSCORE] Reset-Route aufgerufen (web={is_web_submit}).")
+
+            highscore_data["score"] = 0
+            highscore_data["timestamp"] = "Unbekannt"
+            highscore_data["player"] = "Unbekannt"
+            pending_highscore["active"] = False
+            pending_highscore["score"] = 0
+            pending_highscore["timestamp"] = "Unbekannt"
+            detector.score = 0
+            detector.trick_history = []
+            detector.last_trick_name = "Keiner"
+
+            saved_ok, save_error = save_highscore()
+            if saved_ok:
+                debug_console_only("[HIGHSCORE] Highscore wurde manuell zurueckgesetzt.")
+            else:
+                debug_console_only("[HIGHSCORE ERROR] Reset-Speichern fehlgeschlagen: " + str(save_error))
+
+            if is_web_submit:
+                if saved_ok:
+                    response_html = (
+                        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                        "<meta http-equiv='refresh' content='1; url=/'>"
+                        "<title>Reset erfolgreich</title></head>"
+                        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
+                        "<h2>Highscore wurde zurueckgesetzt</h2>"
+                        "<p>Highscore und Session-Score stehen jetzt auf 0.</p>"
+                        "<p>Du wirst zur Hauptseite zurueckgeleitet...</p>"
+                        "</body></html>"
+                    ).encode('utf-8')
+                else:
+                    response_html = (
+                        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                        "<meta http-equiv='refresh' content='2; url=/'>"
+                        "<title>Reset fehlgeschlagen</title></head>"
+                        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
+                        "<h2>Reset fehlgeschlagen</h2>"
+                        f"<p>{html_escape(str(save_error))}</p>"
+                        "<p>Du wirst zur Hauptseite zurueckgeleitet...</p>"
+                        "</body></html>"
+                    ).encode('utf-8')
+
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+                writer.write(b'Content-Type: text/html\r\n')
+                writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+                writer.write(b'Pragma: no-cache\r\n')
+                writer.write(b'Content-Length: ' + str(len(response_html)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response_html)
+            else:
+                payload = json.dumps({
+                    "ok": saved_ok,
+                    "error": "" if saved_ok else ("Reset fehlgeschlagen: " + str(save_error)),
+                    "highscore": highscore_data["score"],
+                    "highscore_player": highscore_data.get("player", "Unbekannt"),
+                    "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
+                }).encode('utf-8')
+
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+                writer.write(b'Pragma: no-cache\r\n')
+                writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(payload)
             
         elif request_path == '/download':
             # Erstelle den Inhalt des Text-Dokuments
@@ -570,6 +1046,9 @@ async def handle_client(reader, writer):
                 
             txt_content += "\n----------------------------------------\n"
             txt_content += f"GESAMT-PUNKTESTAND: {detector.score} PKT\n"
+            txt_content += f"HIGHSCORE: {highscore_data['score']} PKT\n"
+            txt_content += f"HIGHSCORE DATUM/ZEIT: {highscore_data['timestamp']}\n"
+            txt_content += f"HIGHSCORE PILOT: {highscore_data.get('player', 'Unbekannt')}\n"
             txt_content += "----------------------------------------\n"
             
             response_txt = txt_content.encode('utf-8')

@@ -11,6 +11,7 @@ ENABLE_HOTSPOT = True
 ENABLE_SERIAL_DEBUG = True   
 ENABLE_LIVE_GYRO_DEBUG = True
 ENABLE_TRICK_GYRO_IN_TXT_LOG = True
+TRICK_TUNING_PROFILE = "aggressive"
 
 AP_SSID = "FPV_Gamification_Pico"
 AP_PASSWORD = "drohnenspiel"  
@@ -39,6 +40,10 @@ GYRO_DEADBAND        = 12
 GYRO_LOWPASS_ALPHA   = 0.30
 MIN_TRICK_DURATION   = 0.12
 MAX_TRICK_DURATION   = 2.5
+TRICK_MIN_ACCUM_DEG  = 80
+TRICK_SPIN_MIN_ACCUM_DEG = 120
+TRICK_AXIS_DOMINANCE_RATIO = 1.18
+TRICK_START_TYPE_WEIGHT = 0.92
 DEBUG_LOG_MAX_LINES  = 300
 LIVE_LOG_INTERVAL_MS = 900
 LIVE_LOG_DELTA_DEG   = 0.8
@@ -48,6 +53,7 @@ DEBUG_LOG_BOOT_MARKER = "=== FPV DEBUG SESSION START ===\n"
 SESSION_EXPORT_FILE_PATH = "fpv_arcade_session_export.txt"
 DEBUG_EXPORT_FILE_PATH = "fpv_debug_export.txt"
 HIGHSCORE_FILE_PATH  = "fpv_highscore.json"
+TRICK_SETTINGS_FILE_PATH = "fpv_trick_settings.json"
 LED_BLINK_INTERVAL_MS = 220
 # =======================================================
 
@@ -65,6 +71,114 @@ status_led_available = False
 status_led_state = False
 status_led_last_toggle_ms = 0
 system_ready = False
+
+TRICK_TUNING_PROFILES = {
+    "soft": {
+        "gyro_trick_threshold": 160,
+        "stable_threshold": 58,
+        "trick_start_hold_ms": 28,
+        "stable_hold_ms": 120,
+        "gyro_deadband": 10,
+        "gyro_lowpass_alpha": 0.24,
+        "min_trick_duration": 0.10,
+        "trick_min_accum_deg": 65,
+        "trick_spin_min_accum_deg": 100,
+        "trick_axis_dominance_ratio": 1.10,
+        "trick_start_type_weight": 0.88,
+    },
+    "medium": {
+        "gyro_trick_threshold": 190,
+        "stable_threshold": 65,
+        "trick_start_hold_ms": 35,
+        "stable_hold_ms": 140,
+        "gyro_deadband": 12,
+        "gyro_lowpass_alpha": 0.30,
+        "min_trick_duration": 0.12,
+        "trick_min_accum_deg": 80,
+        "trick_spin_min_accum_deg": 120,
+        "trick_axis_dominance_ratio": 1.18,
+        "trick_start_type_weight": 0.92,
+    },
+    "aggressive": {
+        "gyro_trick_threshold": 230,
+        "stable_threshold": 72,
+        "trick_start_hold_ms": 45,
+        "stable_hold_ms": 155,
+        "gyro_deadband": 14,
+        "gyro_lowpass_alpha": 0.36,
+        "min_trick_duration": 0.14,
+        "trick_min_accum_deg": 95,
+        "trick_spin_min_accum_deg": 145,
+        "trick_axis_dominance_ratio": 1.26,
+        "trick_start_type_weight": 0.95,
+    },
+}
+
+
+def apply_trick_tuning_profile():
+    global TRICK_TUNING_PROFILE
+    global GYRO_TRICK_THRESHOLD, STABLE_THRESHOLD, TRICK_START_HOLD_MS
+    global STABLE_HOLD_MS, GYRO_DEADBAND, GYRO_LOWPASS_ALPHA
+    global MIN_TRICK_DURATION, TRICK_MIN_ACCUM_DEG, TRICK_SPIN_MIN_ACCUM_DEG
+    global TRICK_AXIS_DOMINANCE_RATIO, TRICK_START_TYPE_WEIGHT
+
+    profile_name = normalize_trick_tuning_profile(TRICK_TUNING_PROFILE)
+    profile = TRICK_TUNING_PROFILES[profile_name]
+
+    GYRO_TRICK_THRESHOLD = profile["gyro_trick_threshold"]
+    STABLE_THRESHOLD = profile["stable_threshold"]
+    TRICK_START_HOLD_MS = profile["trick_start_hold_ms"]
+    STABLE_HOLD_MS = profile["stable_hold_ms"]
+    GYRO_DEADBAND = profile["gyro_deadband"]
+    GYRO_LOWPASS_ALPHA = profile["gyro_lowpass_alpha"]
+    MIN_TRICK_DURATION = profile["min_trick_duration"]
+    TRICK_MIN_ACCUM_DEG = profile["trick_min_accum_deg"]
+    TRICK_SPIN_MIN_ACCUM_DEG = profile["trick_spin_min_accum_deg"]
+    TRICK_AXIS_DOMINANCE_RATIO = profile["trick_axis_dominance_ratio"]
+    TRICK_START_TYPE_WEIGHT = profile["trick_start_type_weight"]
+    TRICK_TUNING_PROFILE = profile_name
+
+    debug_log(f"[TRICK PROFILE] Aktiv: {profile_name}")
+
+
+def normalize_trick_tuning_profile(profile_name):
+    normalized = str(profile_name).strip().lower()
+    if normalized in TRICK_TUNING_PROFILES:
+        return normalized
+    return "aggressive"
+
+
+def load_trick_tuning_profile():
+    global TRICK_TUNING_PROFILE
+    try:
+        with open(TRICK_SETTINGS_FILE_PATH, 'r') as f:
+            data = json.loads(f.read())
+        TRICK_TUNING_PROFILE = normalize_trick_tuning_profile(data.get("profile", "aggressive"))
+    except Exception:
+        TRICK_TUNING_PROFILE = "aggressive"
+
+
+def save_trick_tuning_profile():
+    payload = json.dumps({"profile": normalize_trick_tuning_profile(TRICK_TUNING_PROFILE)})
+    try:
+        tmp_path = TRICK_SETTINGS_FILE_PATH + ".tmp"
+        with open(tmp_path, 'w') as f:
+            f.write(payload)
+
+        try:
+            os.remove(TRICK_SETTINGS_FILE_PATH)
+        except Exception:
+            pass
+
+        os.rename(tmp_path, TRICK_SETTINGS_FILE_PATH)
+        return True, ""
+    except Exception as e:
+        try:
+            with open(TRICK_SETTINGS_FILE_PATH, 'w') as f:
+                f.write(payload)
+            return True, ""
+        except Exception as e2:
+            return False, f"{e} | fallback={e2}"
 
 
 def init_status_led():
@@ -379,6 +493,8 @@ def save_highscore():
 init_debug_log_file()
 load_highscore()
 init_status_led()
+load_trick_tuning_profile()
+apply_trick_tuning_profile()
 
 
 # ==================== WLAN HOTSPOT SETUP ====================
@@ -391,12 +507,22 @@ if ENABLE_HOTSPOT:
         ap = network.WLAN(network.AP_IF)
 
         if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze SSID/Passwort")
-        ap.config(essid=AP_SSID, password=AP_PASSWORD)
-
-        if ENABLE_SERIAL_DEBUG:
             print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Aktiviere Access Point")
         ap.active(True)
+
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze SSID")
+        ap.config(essid=AP_SSID)
+
+        if AP_PASSWORD and len(AP_PASSWORD) >= 8:
+            try:
+                if ENABLE_SERIAL_DEBUG:
+                    print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze Passwort")
+                ap.config(password=AP_PASSWORD)
+            except Exception as pw_error:
+                debug_log(f"[AP WARN] Passwort-Konfiguration nicht verfuegbar, starte offenes WLAN: {pw_error}")
+        elif ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Kein Passwort gesetzt, offenes WLAN")
 
         if ENABLE_SERIAL_DEBUG:
             print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze Power-Management")
@@ -426,6 +552,9 @@ class LiveGyroTrickDetector:
         self.accumulated_roll = 0.0
         self.accumulated_pitch = 0.0
         self.accumulated_yaw = 0.0
+        self.accumulated_roll_signed = 0.0
+        self.accumulated_pitch_signed = 0.0
+        self.accumulated_yaw_signed = 0.0
         
         self.last_roll = 0.0
         self.last_pitch = 0.0
@@ -449,6 +578,9 @@ class LiveGyroTrickDetector:
         self.accumulated_roll = 0.0
         self.accumulated_pitch = 0.0
         self.accumulated_yaw = 0.0
+        self.accumulated_roll_signed = 0.0
+        self.accumulated_pitch_signed = 0.0
+        self.accumulated_yaw_signed = 0.0
         self.stable_since = None
 
         if abs_gx > abs_gy and abs_gx > abs_gz:
@@ -551,6 +683,9 @@ class LiveGyroTrickDetector:
             self.accumulated_roll += abs_gx * dt
             self.accumulated_pitch += abs_gy * dt
             self.accumulated_yaw += abs_gz * dt
+            self.accumulated_roll_signed += f_gx * dt
+            self.accumulated_pitch_signed += f_gy * dt
+            self.accumulated_yaw_signed += f_gz * dt
 
             if abs_gx < STABLE_THRESHOLD and abs_gy < STABLE_THRESHOLD and abs_gz < STABLE_THRESHOLD:
                 if self.stable_since is None:
@@ -567,38 +702,63 @@ class LiveGyroTrickDetector:
         points = 0
         detected_name = ""
 
-        # Endgueltigen Trick-Typ aus der gesamten Bewegung bestimmen.
-        if self.accumulated_roll >= self.accumulated_pitch and self.accumulated_roll >= self.accumulated_yaw:
-            eff_type = "Roll"
-        elif self.accumulated_pitch >= self.accumulated_roll and self.accumulated_pitch >= self.accumulated_yaw:
-            eff_type = "Flip"
-        else:
-            eff_type = "Spin"
+        axis_totals = {
+            "Roll": self.accumulated_roll,
+            "Flip": self.accumulated_pitch,
+            "Spin": self.accumulated_yaw,
+        }
+        axis_sorted = sorted(axis_totals.items(), key=lambda item: item[1], reverse=True)
+        eff_type = axis_sorted[0][0]
+        dominant_value = axis_sorted[0][1]
+        second_value = axis_sorted[1][1]
+        dominance_ratio = dominant_value / max(1.0, second_value)
+
+        # Starttyp als Hilfsanker verwenden, falls die Endwerte sehr nah beieinander liegen.
+        if self.trick_type in axis_totals:
+            start_value = axis_totals[self.trick_type]
+            if start_value >= dominant_value * TRICK_START_TYPE_WEIGHT:
+                eff_type = self.trick_type
+                dominant_value = axis_totals[eff_type]
+                second_value = max(
+                    v for k, v in axis_totals.items() if k != eff_type
+                )
+                dominance_ratio = dominant_value / max(1.0, second_value)
+
+        if dominant_value < TRICK_MIN_ACCUM_DEG:
+            eff_type = "Noise"
+        elif eff_type == "Spin" and dominant_value < TRICK_SPIN_MIN_ACCUM_DEG:
+            eff_type = "Noise"
+        elif dominance_ratio < TRICK_AXIS_DOMINANCE_RATIO and dominant_value < (TRICK_MIN_ACCUM_DEG + 60):
+            eff_type = "Noise"
+
+        roll_dir = "Right" if self.accumulated_roll_signed >= 0 else "Left"
+        pitch_dir = "Forward" if self.accumulated_pitch_signed >= 0 else "Backward"
+        yaw_dir = "CW" if self.accumulated_yaw_signed >= 0 else "CCW"
 
         if eff_type == "Roll":
-            if 70 <= self.accumulated_roll < 170: detected_name = "Barrel Roll"; points = 100
-            elif 170 <= self.accumulated_roll < 300: detected_name = "Double Roll"; points = 250
-            elif self.accumulated_roll >= 300: detected_name = "Super Multi-Roll"; points = 500
+            if 70 <= self.accumulated_roll < 170: detected_name = f"{roll_dir} Barrel Roll"; points = 100
+            elif 170 <= self.accumulated_roll < 300: detected_name = f"{roll_dir} Double Roll"; points = 250
+            elif self.accumulated_roll >= 300: detected_name = f"{roll_dir} Super Multi-Roll"; points = 500
             
             if duration < 0.40 and self.accumulated_roll > 120:
-                detected_name = "Juicy Roll Flick"; points = 180
+                detected_name = f"{roll_dir} Juicy Roll Flick"; points = 180
 
         elif eff_type == "Flip":
             if 80 <= self.accumulated_pitch < 190:
-                if self.accumulated_roll > 90: detected_name = "Split-S / Half-Loop"; points = 220
-                else: detected_name = "Power Flip"; points = 100
-            elif 190 <= self.accumulated_pitch < 320: detected_name = "Double Flip"; points = 250
-            elif self.accumulated_pitch >= 320: detected_name = "Super Multi-Flip"; points = 500
+                if self.accumulated_roll > 90: detected_name = f"{pitch_dir} Split-S / Half-Loop"; points = 220
+                else: detected_name = f"{pitch_dir} Power Flip"; points = 100
+            elif 190 <= self.accumulated_pitch < 320: detected_name = f"{pitch_dir} Double Flip"; points = 250
+            elif self.accumulated_pitch >= 320: detected_name = f"{pitch_dir} Super Multi-Flip"; points = 500
                 
             if duration < 0.40 and self.accumulated_pitch > 120:
-                detected_name = "Juicy Pitch Flick"; points = 180
+                detected_name = f"{pitch_dir} Juicy Pitch Flick"; points = 180
                 
             if self.accumulated_pitch > 170 and self.accumulated_yaw > 90:
-                detected_name = "Matty Flip Combo"; points = 350
+                detected_name = f"{pitch_dir} Matty Flip Combo"; points = 350
 
         elif eff_type == "Spin":
-            if 90 <= self.accumulated_yaw < 220: detected_name = "Flat Spin 360"; points = 150
-            elif self.accumulated_yaw >= 220: detected_name = "Flat Spin 720"; points = 350
+            if 90 <= self.accumulated_yaw < 220: detected_name = f"{yaw_dir} Flat Spin 360"; points = 150
+            elif self.accumulated_yaw >= 220: detected_name = f"{yaw_dir} Flat Spin 720"; points = 350
 
         if points > 0:
             self.score += points
@@ -615,11 +775,11 @@ class LiveGyroTrickDetector:
                     pending_highscore["score"] = self.score
                     pending_highscore["timestamp"] = get_datetime_string()
                     debug_console_only(
-                        f"[HIGHSCORE] Neuer Rekord entdeckt: {pending_highscore['score']} Pkt. Bitte Namen im Web eintragen."
+                        f"[HIGHSCORE] Neuer Rekord entdeckt: {pending_highscore['score']} Pkt. Bitte im Web bestaetigen."
                     )
         elif ENABLE_SERIAL_DEBUG:
             debug_log(
-                f"Trick verworfen (unter Schwelle): Typ={eff_type} | "
+                f"Trick verworfen: Typ={eff_type} | dom={dominant_value:.0f} ratio={dominance_ratio:.2f} | "
                 f"R={self.accumulated_roll:.0f} P={self.accumulated_pitch:.0f} Y={self.accumulated_yaw:.0f}"
             )
 
@@ -752,6 +912,10 @@ html_template = """<!DOCTYPE html>
         .highscore-box { background: #101722; border: 1px solid #223349; border-radius: 10px; padding: 10px 12px; margin: 0 0 14px 0; color: #c9d6e5; font-size: 0.95em; }
         .highscore-box b { color: #3ddc84; transition: color 0.25s ease; }
         .highscore-hint { margin-top: 4px; color: #9fb4cb; font-size: 0.86em; }
+        .tuning-box { background: #101722; border: 1px solid #223349; border-radius: 10px; padding: 10px 12px; margin: 0 0 14px 0; color: #c9d6e5; font-size: 0.95em; text-align: left; }
+        .tuning-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+        .tuning-select { flex: 1; min-width: 170px; background: #0b1320; border: 1px solid #335174; color: #e8f2ff; border-radius: 8px; padding: 9px 10px; }
+        .tuning-note { margin-top: 6px; color: #9fb4cb; font-size: 0.82em; min-height: 18px; }
         h3 { text-align: left; color: #95a5a6; border-bottom: 1px solid #233247; padding-bottom: 8px; margin-top: 25px; }
         .log-container { text-align: left; background: #070a0f; padding: 15px; border-radius: 10px; font-family: monospace; min-height: 180px; max-height: 250px; overflow-y: auto; border: 1px solid #1a2432; margin-bottom: 20px; }
         .trick-item { padding: 6px 0; border-bottom: 1px solid #111822; font-size: 1.1em; color: #ecf0f1; }
@@ -783,6 +947,17 @@ html_template = """<!DOCTYPE html>
             <div>Seit: <span id="highscore_time">Unbekannt</span></div>
             <div class="highscore-hint" id="highscore_hint">Noch 0 Punkte bis Highscore</div>
         </div>
+        <div class="tuning-box">
+            <div>Trick-Tuning Profil</div>
+            <div class="tuning-row">
+                <select id="trick_tuning_profile" class="tuning-select" onchange="setTrickTuningProfile()">
+                    <option value="soft">Soft</option>
+                    <option value="medium">Medium</option>
+                    <option value="aggressive">Aggressive</option>
+                </select>
+            </div>
+            <div id="trick_tuning_note" class="tuning-note">Wird vom Pico gespeichert.</div>
+        </div>
         <h3>Detektierte Manöver Liste:</h3>
         <div class="log-container" id="trick_list">Warte auf erstes Flugmanöver...</div>
         <div class="button-row">
@@ -807,6 +982,7 @@ html_template = """<!DOCTYPE html>
     let lastShownHighscore = null;
     let dataPollTimer = null;
     let isSavingHighscore = false;
+    let isSavingTrickProfile = false;
 
     function startDataPolling() {
         if (dataPollTimer === null) {
@@ -859,6 +1035,34 @@ html_template = """<!DOCTYPE html>
                 btn.disabled = false;
                 btn.innerText = 'OK';
                 isSavingHighscore = false;
+            });
+    }
+
+    function setTrickTuningProfile() {
+        const select = document.getElementById('trick_tuning_profile');
+        const note = document.getElementById('trick_tuning_note');
+        const profile = select.value;
+
+        select.disabled = true;
+        note.innerText = 'Speichert Profil...';
+        isSavingTrickProfile = true;
+
+        fetch('/set-trick-profile?profile=' + encodeURIComponent(profile) + '&t=' + Date.now(), { cache: 'no-store' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    select.value = data.trick_tuning_profile || profile;
+                    note.innerText = 'Profil gespeichert.';
+                } else {
+                    note.innerText = data.error || 'Speichern fehlgeschlagen.';
+                }
+            })
+            .catch(() => {
+                note.innerText = 'Verbindung fehlgeschlagen.';
+            })
+            .finally(() => {
+                select.disabled = false;
+                isSavingTrickProfile = false;
             });
     }
 
@@ -919,6 +1123,13 @@ html_template = """<!DOCTYPE html>
                 document.getElementById('highscore_value').innerText = highscore;
                 document.getElementById('highscore_player').innerText = data.highscore_player || 'Unbekannt';
                 document.getElementById('highscore_time').innerText = data.highscore_timestamp;
+
+                const tuningSelect = document.getElementById('trick_tuning_profile');
+                const tuningNote = document.getElementById('trick_tuning_note');
+                if (!isSavingTrickProfile && data.trick_tuning_profile) {
+                    tuningSelect.value = data.trick_tuning_profile;
+                    tuningNote.innerText = 'Aktiv auf dem Pico gespeichert.';
+                }
 
                 updateHighscoreVisual(score, highscore);
 
@@ -1009,6 +1220,7 @@ async def handle_client(reader, writer):
                 "highscore": highscore_data["score"],
                 "highscore_timestamp": highscore_data["timestamp"],
                 "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
+                "trick_tuning_profile": TRICK_TUNING_PROFILE,
                 "pending_highscore": pending_highscore["active"],
                 "pending_highscore_score": pending_highscore["score"]
             }
@@ -1125,6 +1337,29 @@ async def handle_client(reader, writer):
                 writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
                 writer.write(b'Connection: close\r\n\r\n')
                 writer.write(payload)
+
+        elif request_path == '/set-trick-profile':
+            profile_name = normalize_trick_tuning_profile(query_params.get('profile', 'aggressive'))
+            TRICK_TUNING_PROFILE = profile_name
+            apply_trick_tuning_profile()
+            saved_ok, save_error = save_trick_tuning_profile()
+
+            if saved_ok:
+                debug_console_only(f"[TRICK PROFILE] Profil gespeichert: {TRICK_TUNING_PROFILE}")
+
+            payload = json.dumps({
+                "ok": saved_ok,
+                "error": "" if saved_ok else ("Speichern fehlgeschlagen: " + str(save_error)),
+                "trick_tuning_profile": TRICK_TUNING_PROFILE
+            }).encode('utf-8')
+
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+            writer.write(b'Pragma: no-cache\r\n')
+            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(payload)
 
         elif request_path == '/confirm-highscore':
             success = False

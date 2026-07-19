@@ -42,6 +42,33 @@ Wichtig:
 - Niemals 5V auf den 3V3-Pin geben.
 - Gemeinsame Masse (GND) ist Pflicht, sonst kommen keine stabilen Daten an.
 
+## Betaflight-Dump: Einordnung fuer dein Setup
+
+Dein geposteter Dump zeigt unter anderem:
+
+- Betaflight 4.5.1 auf GEPRCF405
+- `feature RX_SERIAL` ist aktiv
+- `set serialrx_provider = CRSF`
+- `set tlm_halfduplex = ON`
+
+Das bedeutet:
+
+- Dein Receiver-Link laeuft als Serial RX im CRSF-Protokoll.
+- Fuer den Pico musst du das CRSF-Signal passiv mitlesen.
+
+Praktisch anschliessen:
+
+1. Nimm den CRSF-Ausgang, der am FC als RX-Serial genutzt wird (in Betaflight Ports sichtbar).
+2. Fuehre dieses Signal auf GP1 (RX) des Pico.
+3. GND von FC und Pico verbinden.
+4. Pico separat versorgen (USB oder VSYS).
+
+Hinweis:
+
+- Der Pico sendet in diesem Projekt nicht zurueck, er liest nur mit.
+- Wenn kein Signal ankommt, zuerst in Betaflight Configurator im Tab Ports pruefen, auf welchem UART "Serial RX" aktiv ist.
+- Falls du unsicher bist, kannst du in der README-Logik bei Bedarf GP1 auf einen anderen RX-Pin umlegen, musst dann aber auch die UART-Konfiguration in `score_tracker.py` anpassen.
+
 ## Installation
 
 1. MicroPython auf den Pico flashen.
@@ -94,11 +121,32 @@ Diese Variablen kannst du direkt in `score_tracker.py` oben anpassen:
 
 - `COPTER_NAME`: Name des Copters (UI + Exporte)
 - `DEFAULT_PILOT_NAME`: Standard-Pilot fuer Highscore
+- `TRICK_TUNING_PROFILE`: `soft`, `medium` oder `aggressive`
 - `ENABLE_HOTSPOT`: Hotspot an/aus
 - `ENABLE_SERIAL_DEBUG`: Serielle Logs an/aus
 - `ENABLE_LIVE_GYRO_DEBUG`: Live-Gyro Konsolenlogs an/aus
 - `AP_SSID`: WLAN Name
 - `AP_PASSWORD`: WLAN Passwort
+
+## Trick-Tuning-Profile
+
+Du kannst das Erkennungsverhalten jetzt direkt im Webinterface umstellen. Der Pico speichert die Auswahl dauerhaft in einer Datei und lädt sie beim nächsten Start wieder.
+
+Wenn noch keine gespeicherte Einstellung vorhanden ist, startet das System automatisch mit:
+
+- `aggressive`
+
+Optional kannst du den Startwert auch oben im Code setzen:
+
+- `TRICK_TUNING_PROFILE = "soft"`
+- `TRICK_TUNING_PROFILE = "medium"`
+- `TRICK_TUNING_PROFILE = "aggressive"`
+
+Empfehlung:
+
+- `soft`: erkennt leichter, gut fuer kleinere oder weichere Manoever, kann aber eher zu False Positives neigen
+- `medium`: Standardprofil, guter Mittelweg
+- `aggressive`: strenger, besser gegen Fehltrigger bei wilden Bewegungen, braucht aber deutlichere Tricks
 
 ## Trick-Erkennung feinjustieren
 
@@ -135,6 +183,7 @@ Je nach Copter, Rate und Filter koennen diese Werte angepasst werden:
 - CRSF TX wirklich auf GP1?
 - Gemeinsame GND vorhanden?
 - FC sendet wirklich CRSF Attitude?
+- In Betaflight Ports pruefen, welcher UART "Serial RX" hat, und genau diesen Datenpfad passiv abgreifen.
 
 ### Falsche oder keine Trick-Erkennung
 

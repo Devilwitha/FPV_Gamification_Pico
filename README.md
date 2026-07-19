@@ -42,6 +42,21 @@ Wichtig:
 - Niemals 5V auf den 3V3-Pin geben.
 - Gemeinsame Masse (GND) ist Pflicht, sonst kommen keine stabilen Daten an.
 
+## Installation und Setup
+
+### Erste Installation auf dem Pico
+
+1. Lade das Skript `score_tracker.py` via **Thonny** oder **ampy** auf den Pico
+2. **Wichtig:** Speichere es als `main.py` auf dem Pico (nicht als `score_tracker.py`)
+   - Thonny: Rechtsklick auf die Datei → "Rename on device" → `main.py`
+   - ampy: `ampy put score_tracker.py main.py`
+3. Der Pico startet jetzt automatisch und zeigt das WLAN-Hotspot an
+
+### Nach Änderungen
+
+- Nutze das **OTA Update System** (siehe unten)
+- Oder bearbeite die `main.py` direkt via Thonny und drücke F5 zum Neuladen
+
 ## Betaflight-Dump: Einordnung fuer dein Setup
 
 Dein geposteter Dump zeigt unter anderem:
@@ -200,3 +215,29 @@ Je nach Copter, Rate und Filter koennen diese Werte angepasst werden:
 ## Hinweis zur Sicherheit
 
 Dieses Projekt ist fuer Logging/Gamification gedacht. Es ersetzt keine sicherheitskritischen Funktionen des Flight Controllers.
+
+## OTA Updates über WiFi
+
+Der Pico unterstützt **Over-the-Air (OTA) Updates** - du kannst das Skript direkt über die WebUI aktualisieren, ohne den Pico per USB anzuschließen.
+
+### Wie man ein Update durchführt:
+
+1. Verbinde dich mit dem WLAN `FPV_Gamification_Pico` (Passwort: `drohnenspiel`)
+2. Öffne `http://192.168.4.1` im Browser
+3. Klicke auf den **⚙️ Admin-Link** unten rechts
+4. Klicke auf das **Datei-Eingabefeld** und wähle dein aktualisiertes Python-Skript (benannt als `main.py` oder `score_tracker.py`)
+5. Klicke **📤 Update speichern**
+6. Der Pico speichert die alte Version als `main_backup.py` und lädt das neue Skript als `main.py`
+7. Der Pico startet automatisch neu und lädt die neue Version
+
+### Wichtig:
+
+- Stelle sicher, dass dein neues Python-Skript **syntaktisch korrekt** ist
+- Das Skript wird als **`main.py`** gespeichert - das ist die Bootdatei, die der Pico beim Start automatisch ausführt
+- Falls etwas schief läuft, kannst du die alte Version später via Thonny oder ähnlich wiederherstellen (Datei: `main_backup.py`)
+- Während des Updates solltest du nicht fliegen
+- Das Update speichert ein komplettes Backup, falls etwas schiefgeht
+
+### Manueller Restart:
+
+Im Admin-Panel gibt es auch einen Button **🔄 Pico jetzt neustarten**, um den Pico neu zu starten ohne das Skript zu ändern.

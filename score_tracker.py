@@ -55,6 +55,7 @@ DEBUG_EXPORT_FILE_PATH = "fpv_debug_export.txt"
 HIGHSCORE_FILE_PATH  = "fpv_highscore.json"
 TRICK_SETTINGS_FILE_PATH = "fpv_trick_settings.json"
 LED_BLINK_INTERVAL_MS = 220
+OTA_LED_BLINK_INTERVAL_MS = 90
 # =======================================================
 
 # CRSF attitude payload ist in Radiant * 10000 kodiert.
@@ -71,6 +72,13 @@ status_led_available = False
 status_led_state = False
 status_led_last_toggle_ms = 0
 system_ready = False
+ota_update_active = False
+ota_led_cycle_start_ms = 0
+
+# ==================== OTA CHUNK STORAGE ====================
+ota_chunks = {}  # { "chunk_index": "base64_data", ... }
+ota_total_chunks = 0
+ota_received_chunks = 0
 
 TRICK_TUNING_PROFILES = {
     "soft": {
@@ -207,13 +215,25 @@ def _set_status_led(on):
 
 
 def update_status_led():
-    global status_led_last_toggle_ms
+    global status_led_last_toggle_ms, ota_led_cycle_start_ms
     if not status_led_available:
         return
 
     if not system_ready:
         _set_status_led(False)
         return
+
+    if ota_update_active:
+        now = time.ticks_ms()
+        if ota_led_cycle_start_ms == 0:
+            ota_led_cycle_start_ms = now
+            _set_status_led(True)
+        elif time.ticks_diff(now, ota_led_cycle_start_ms) >= OTA_LED_BLINK_INTERVAL_MS:
+            _set_status_led(not status_led_state)
+            ota_led_cycle_start_ms = now
+        return
+    else:
+        ota_led_cycle_start_ms = 0
 
     if pending_highscore["active"]:
         now = time.ticks_ms()
@@ -377,6 +397,136 @@ def get_datetime_string():
     return f"{day:02d}.{month:02d}.{year:04d} {hour:02d}:{minute:02d}:{second:02d}"
 
 
+def base64_decode(s):
+    """Simple Base64 decoder for MicroPython."""
+    import base64
+    try:
+        return base64.b2a_base64(base64.a2b_base64(s + b'==')).decode('utf-8').strip()
+    except Exception:
+        return None
+
+
+def safe_base64_decode_to_file(b64_string, output_file):
+    """Dekodiere Base64 direkt in Datei um RAM zu sparen."""
+    try:
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+        
+        with open(output_file, 'wb') as f:
+            # Verarbeite in kleineren Chunks
+            chunk_size = 512
+            for chunk_start in range(0, len(b64_string), chunk_size):
+                chunk = b64_string[chunk_start:chunk_start + chunk_size]
+                
+                # Dekodiere diesen Chunk
+                chunk_result = bytearray()
+                padding = (4 - len(chunk) % 4) % 4
+                chunk_padded = chunk + "=" * padding
+                
+                for i in range(0, len(chunk_padded), 4):
+                    group = chunk_padded[i:i+4]
+                    if len(group) < 4:
+                        continue
+                    
+                    nums = []
+                    for c in group:
+                        idx = alphabet.find(c)
+                        nums.append(idx if idx >= 0 else 0)
+                    
+                    b1 = (nums[0] << 2) | (nums[1] >> 4)
+                    b2 = ((nums[1] & 0xF) << 4) | (nums[2] >> 2)
+                    b3 = ((nums[2] & 0x3) << 6) | nums[3]
+                    
+                    chunk_result.append(b1)
+                    if group[2] != '=':
+                        chunk_result.append(b2)
+                    if group[3] != '=':
+                        chunk_result.append(b3)
+                
+                # Schreibe aus RAM direkt zur Datei
+                f.write(chunk_result)
+        
+        return True
+    except Exception as e:
+        debug_log(f"[BASE64-FILE] Fehler: {e}")
+        return False
+
+
+def safe_base64_file_to_file(input_file, output_file):
+    """Dekodiere Base64 aus Datei direkt in Ziel-Datei (RAM-sparend)."""
+    try:
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+        carry = ""
+
+        with open(input_file, 'r') as fin:
+            with open(output_file, 'wb') as fout:
+                while True:
+                    chunk = fin.read(512)
+                    if not chunk:
+                        break
+
+                    data = carry + chunk
+                    usable_len = (len(data) // 4) * 4
+                    to_decode = data[:usable_len]
+                    carry = data[usable_len:]
+
+                    out_bytes = bytearray()
+                    for i in range(0, len(to_decode), 4):
+                        group = to_decode[i:i+4]
+                        if len(group) < 4:
+                            continue
+
+                        nums = []
+                        for c in group:
+                            idx = alphabet.find(c)
+                            nums.append(idx if idx >= 0 else 0)
+
+                        b1 = (nums[0] << 2) | (nums[1] >> 4)
+                        b2 = ((nums[1] & 0xF) << 4) | (nums[2] >> 2)
+                        b3 = ((nums[2] & 0x3) << 6) | nums[3]
+
+                        out_bytes.append(b1)
+                        if group[2] != '=':
+                            out_bytes.append(b2)
+                        if group[3] != '=':
+                            out_bytes.append(b3)
+
+                    if out_bytes:
+                        fout.write(out_bytes)
+
+                # Rest verarbeiten
+                if carry:
+                    padding = (4 - len(carry) % 4) % 4
+                    group = carry + ("=" * padding)
+                    out_bytes = bytearray()
+                    for i in range(0, len(group), 4):
+                        g = group[i:i+4]
+                        if len(g) < 4:
+                            continue
+
+                        nums = []
+                        for c in g:
+                            idx = alphabet.find(c)
+                            nums.append(idx if idx >= 0 else 0)
+
+                        b1 = (nums[0] << 2) | (nums[1] >> 4)
+                        b2 = ((nums[1] & 0xF) << 4) | (nums[2] >> 2)
+                        b3 = ((nums[2] & 0x3) << 6) | nums[3]
+
+                        out_bytes.append(b1)
+                        if g[2] != '=':
+                            out_bytes.append(b2)
+                        if g[3] != '=':
+                            out_bytes.append(b3)
+
+                    if out_bytes:
+                        fout.write(out_bytes)
+
+        return True
+    except Exception as e:
+        debug_log(f"[BASE64-FILE-STREAM] Fehler: {e}")
+        return False
+
+
 def build_session_txt_content():
     txt_content = "========================================\n"
     txt_content += f"   {COPTER_NAME.upper()} ARCADE SESSION\n"
@@ -497,15 +647,9 @@ load_trick_tuning_profile()
 apply_trick_tuning_profile()
 
 
-# ==================== WLAN HOTSPOT SETUP ====================
-ap = None
-if ENABLE_HOTSPOT:
-    debug_log("Initialisiere WLAN Hotspot (Access Point)...")
+def start_access_point():
+    ap = network.WLAN(network.AP_IF)
     try:
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Erzeuge WLAN-Objekt")
-        ap = network.WLAN(network.AP_IF)
-
         if ENABLE_SERIAL_DEBUG:
             print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Aktiviere Access Point")
         ap.active(True)
@@ -536,8 +680,10 @@ if ENABLE_HOTSPOT:
         debug_log(f"SSID: {AP_SSID}")
         debug_log(f"Pico IP-Adresse (Im Browser eingeben): {ap.ifconfig()[0]}")
     except Exception as e:
-        ap = None
         debug_log(f"[AP ERROR] Hotspot-Setup fehlgeschlagen: {e}")
+
+
+# ==================== WEBSERVER TEMPLATE ====================
 
 
 class LiveGyroTrickDetector:
@@ -901,268 +1047,50 @@ async def telemetry_loop():
 html_template = """<!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>__COPTER_NAME__ Ultimate Arcade</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { background: #0b0e14; color: #f0f4f8; font-family: sans-serif; text-align: center; padding: 30px 10px; margin: 0; }
-        .card { max-width: 500px; margin: 0 auto; background: #141b25; padding: 30px; border-radius: 20px; border: 2px solid #233247; box-shadow: 0 15px 35px rgba(0,0,0,0.6); }
-        h1 { color: #f39c12; letter-spacing: 2px; text-transform: uppercase; margin-top: 0; }
-        .score-box { font-size: 5.5em; font-weight: bold; color: #2ecc71; text-shadow: 0 0 20px rgba(46,204,113,0.4); margin: 15px 0; font-family: monospace; }
-        .highscore-box { background: #101722; border: 1px solid #223349; border-radius: 10px; padding: 10px 12px; margin: 0 0 14px 0; color: #c9d6e5; font-size: 0.95em; }
-        .highscore-box b { color: #3ddc84; transition: color 0.25s ease; }
-        .highscore-hint { margin-top: 4px; color: #9fb4cb; font-size: 0.86em; }
-        .tuning-box { background: #101722; border: 1px solid #223349; border-radius: 10px; padding: 10px 12px; margin: 0 0 14px 0; color: #c9d6e5; font-size: 0.95em; text-align: left; }
-        .tuning-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-        .tuning-select { flex: 1; min-width: 170px; background: #0b1320; border: 1px solid #335174; color: #e8f2ff; border-radius: 8px; padding: 9px 10px; }
-        .tuning-note { margin-top: 6px; color: #9fb4cb; font-size: 0.82em; min-height: 18px; }
-        h3 { text-align: left; color: #95a5a6; border-bottom: 1px solid #233247; padding-bottom: 8px; margin-top: 25px; }
-        .log-container { text-align: left; background: #070a0f; padding: 15px; border-radius: 10px; font-family: monospace; min-height: 180px; max-height: 250px; overflow-y: auto; border: 1px solid #1a2432; margin-bottom: 20px; }
-        .trick-item { padding: 6px 0; border-bottom: 1px solid #111822; font-size: 1.1em; color: #ecf0f1; }
-        .trick-item:first-child { color: #f1c40f; font-weight: bold; }
-        .button-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-        .btn-download { display: inline-block; background: #2980b9; color: #fff; font-size: 1.05em; font-weight: bold; padding: 12px 20px; border-radius: 8px; text-decoration: none; transition: background 0.2s; border: none; cursor: pointer; }
-        .btn-download:hover { background: #3498db; }
-        .btn-reset { display: inline-block; background: #c0392b; color: #fff; font-size: 1.05em; font-weight: bold; padding: 12px 20px; border-radius: 8px; text-decoration: none; transition: background 0.2s; border: none; cursor: pointer; }
-        .btn-reset:hover { background: #e74c3c; }
-        .hs-overlay { position: fixed; inset: 0; background: rgba(3, 7, 18, 0.76); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 9999; }
-        .hs-overlay.show { display: flex; }
-        .hs-popup { width: 100%; max-width: 360px; background: linear-gradient(160deg, #1d2d44, #0f1724); border: 1px solid #2f4f72; border-radius: 16px; padding: 18px 16px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55); text-align: center; }
-        .hs-title { color: #ffd166; margin: 0 0 8px 0; font-size: 1.35em; font-weight: 800; letter-spacing: 0.5px; }
-        .hs-text { color: #d7e3f0; margin: 0 0 14px 0; line-height: 1.35; }
-        .hs-score { color: #7bffb5; font-weight: 900; font-size: 1.15em; }
-        .hs-input { width: 100%; box-sizing: border-box; background: #0b1320; border: 1px solid #335174; color: #e8f2ff; border-radius: 8px; padding: 10px 12px; margin: 0 0 10px 0; font-size: 0.98em; }
-        .hs-error { min-height: 18px; color: #ff9aa2; font-size: 0.82em; margin: 0 0 10px 0; }
-        .hs-btn { background: #2c7be5; color: #fff; border: none; border-radius: 8px; padding: 10px 18px; cursor: pointer; font-weight: 700; }
-        .hs-btn:hover { background: #4b93f0; }
-    </style>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__COPTER_NAME__ Arcade</title>
+<style>
+:root{--bg:#070b12;--panel:#111824;--panel2:#0d141f;--line:#26354a;--text:#eef4fb;--muted:#9fb4cb;--accent:#f39c12;--good:#2ecc71;--blue:#2d86d9;--red:#c0392b}
+*{box-sizing:border-box}body{margin:0;padding:18px;font-family:sans-serif;background:radial-gradient(circle at top,#10203a 0,#070b12 45%,#04070c 100%);color:var(--text)}
+.c{max-width:620px;margin:0 auto;background:linear-gradient(180deg,rgba(20,27,37,.96),rgba(12,18,28,.98));padding:22px;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 45px rgba(0,0,0,.45)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+h1{margin:0;color:var(--accent);font-size:1.5em;letter-spacing:1px;text-transform:uppercase}
+.badge{color:var(--muted);font-size:.82em;padding:.35rem .6rem;border:1px solid #30465f;border-radius:999px;background:#0e1622}
+#s{font-size:3.2em;font-weight:800;line-height:1;color:var(--good);margin:14px 0 10px;text-shadow:0 0 16px rgba(46,204,113,.22)}
+.meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:.92em;margin-bottom:12px}
+.card{background:linear-gradient(180deg,rgba(13,20,31,.98),rgba(9,14,22,.98));border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:14px}
+.card h2{margin:0 0 10px;font-size:1em;color:#d8e5f4;letter-spacing:.4px}
+select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;border-radius:10px;padding:10px 12px;font-size:1em;outline:none}
+.n{min-height:18px;margin-top:8px;color:var(--muted);font-size:.82em}
+.t{max-height:220px;overflow:auto;background:var(--panel2);border:1px solid #1f2a3a;border-radius:12px;padding:10px 12px;font-family:monospace;font-size:.88em;line-height:1.45}
+.td{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.td:last-child{border-bottom:0}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.b{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1 1 150px;background:var(--blue);color:#fff;border:none;border-radius:11px;padding:11px 14px;cursor:pointer;font-weight:700;text-decoration:none}
+.b:hover{filter:brightness(1.08)}
+.br{background:var(--red)}
+.admin{display:block;margin-top:12px;text-align:right;color:#89a7c4;font-size:.78em;text-decoration:none}
+</style>
 </head>
 <body>
-    <div class="card">
-        <h1>🐝 __COPTER_NAME_UPPER__ ARCADE</h1>
-        <div class="score-box" id="total_score">0</div>
-        <div class="highscore-box">
-            <div>Highscore: <b id="highscore_value">0</b> Pkt</div>
-            <div>Pilot: <span id="highscore_player">__DEFAULT_PILOT_NAME__</span></div>
-            <div>Seit: <span id="highscore_time">Unbekannt</span></div>
-            <div class="highscore-hint" id="highscore_hint">Noch 0 Punkte bis Highscore</div>
-        </div>
-        <div class="tuning-box">
-            <div>Trick-Tuning Profil</div>
-            <div class="tuning-row">
-                <select id="trick_tuning_profile" class="tuning-select" onchange="setTrickTuningProfile()">
-                    <option value="soft">Soft</option>
-                    <option value="medium">Medium</option>
-                    <option value="aggressive">Aggressive</option>
-                </select>
-            </div>
-            <div id="trick_tuning_note" class="tuning-note">Wird vom Pico gespeichert.</div>
-        </div>
-        <h3>Detektierte Manöver Liste:</h3>
-        <div class="log-container" id="trick_list">Warte auf erstes Flugmanöver...</div>
-        <div class="button-row">
-            <a href="/download?manual=1" class="btn-download" target="_blank" rel="noopener">📥 Session als TXT</a>
-            <a href="/download-debug?manual=1" class="btn-download" target="_blank" rel="noopener">🧪 Debug-Log als TXT</a>
-            <a href="/reset-highscore?web=1" class="btn-reset">🗑️ Highscore reset</a>
-        </div>
-    </div>
-
-    <div id="hs_overlay" class="hs-overlay">
-        <div class="hs-popup">
-            <h2 class="hs-title">Herzlichen Glückwunsch!</h2>
-            <p class="hs-text">Neuer Highscore erreicht: <span id="hs_popup_score" class="hs-score">0</span> Punkte</p>
-            <p class="hs-text">Pilot wird als <b>__DEFAULT_PILOT_NAME__</b> gespeichert.</p>
-            <div id="hs_error" class="hs-error"></div>
-            <button id="hs_save_btn" type="button" class="hs-btn" onclick="confirmHighscore()">OK</button>
-        </div>
-    </div>
-
-    <script>
-    let previousHighscore = null;
-    let lastShownHighscore = null;
-    let dataPollTimer = null;
-    let isSavingHighscore = false;
-    let isSavingTrickProfile = false;
-
-    function startDataPolling() {
-        if (dataPollTimer === null) {
-            dataPollTimer = setInterval(updateData, 1000);
-        }
-    }
-
-    function stopDataPolling() {
-        if (dataPollTimer !== null) {
-            clearInterval(dataPollTimer);
-            dataPollTimer = null;
-        }
-    }
-
-    function showHighscorePopup(score) {
-        document.getElementById('hs_popup_score').innerText = score;
-        document.getElementById('hs_error').innerText = '';
-        document.getElementById('hs_overlay').classList.add('show');
-    }
-
-    function closeHighscorePopup() {
-        if (isSavingHighscore) {
-            return;
-        }
-        document.getElementById('hs_overlay').classList.remove('show');
-    }
-
-    function confirmHighscore() {
-        const error = document.getElementById('hs_error');
-        const btn = document.getElementById('hs_save_btn');
-
-        btn.disabled = true;
-        btn.innerText = 'Speichert...';
-        error.innerText = '';
-        isSavingHighscore = true;
-
-        fetch('/confirm-highscore?web=1&t=' + Date.now(), { cache: 'no-store' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.ok) {
-                    closeHighscorePopup();
-                } else {
-                    error.innerText = data.error || 'Speichern fehlgeschlagen.';
-                }
-            })
-            .catch(() => {
-                error.innerText = 'Verbindung fehlgeschlagen.';
-            })
-            .finally(() => {
-                btn.disabled = false;
-                btn.innerText = 'OK';
-                isSavingHighscore = false;
-            });
-    }
-
-    function setTrickTuningProfile() {
-        const select = document.getElementById('trick_tuning_profile');
-        const note = document.getElementById('trick_tuning_note');
-        const profile = select.value;
-
-        select.disabled = true;
-        note.innerText = 'Speichert Profil...';
-        isSavingTrickProfile = true;
-
-        fetch('/set-trick-profile?profile=' + encodeURIComponent(profile) + '&t=' + Date.now(), { cache: 'no-store' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.ok) {
-                    select.value = data.trick_tuning_profile || profile;
-                    note.innerText = 'Profil gespeichert.';
-                } else {
-                    note.innerText = data.error || 'Speichern fehlgeschlagen.';
-                }
-            })
-            .catch(() => {
-                note.innerText = 'Verbindung fehlgeschlagen.';
-            })
-            .finally(() => {
-                select.disabled = false;
-                isSavingTrickProfile = false;
-            });
-    }
-
-    function blendColor(c1, c2, t) {
-        const r = Math.round(c1[0] + (c2[0] - c1[0]) * t);
-        const g = Math.round(c1[1] + (c2[1] - c1[1]) * t);
-        const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
-        return `rgb(${r}, ${g}, ${b})`;
-    }
-
-    function getHighscoreColor(score, highscore) {
-        if (highscore > 0 && score >= highscore) {
-            return '#7dd3fc';
-        }
-
-        if (highscore <= 0) {
-            return '#3ddc84';
-        }
-
-        const ratio = Math.max(0, Math.min(1, score / highscore));
-        const green = [61, 220, 132];
-        const yellow = [255, 209, 102];
-        const red = [255, 77, 79];
-
-        if (ratio < 0.5) {
-            return blendColor(green, yellow, ratio / 0.5);
-        }
-        return blendColor(yellow, red, (ratio - 0.5) / 0.5);
-    }
-
-    function updateHighscoreVisual(score, highscore) {
-        const hsValue = document.getElementById('highscore_value');
-        const hsHint = document.getElementById('highscore_hint');
-
-        hsValue.style.color = getHighscoreColor(score, highscore);
-
-        if (highscore <= 0) {
-            hsHint.innerText = 'Setze den ersten Highscore!';
-            return;
-        }
-
-        if (score >= highscore) {
-            hsHint.innerText = 'Highscore geknackt!';
-            return;
-        }
-
-        hsHint.innerText = `Noch ${highscore - score} Punkte bis Highscore`;
-    }
-
-    function updateData() {
-        fetch('/data?t=' + Date.now(), { cache: 'no-store' })
-            .then(res => res.json())
-            .then(data => {
-                const score = Number(data.score || 0);
-                const highscore = Number(data.highscore || 0);
-
-                document.getElementById('total_score').innerText = score;
-                document.getElementById('highscore_value').innerText = highscore;
-                document.getElementById('highscore_player').innerText = data.highscore_player || 'Unbekannt';
-                document.getElementById('highscore_time').innerText = data.highscore_timestamp;
-
-                const tuningSelect = document.getElementById('trick_tuning_profile');
-                const tuningNote = document.getElementById('trick_tuning_note');
-                if (!isSavingTrickProfile && data.trick_tuning_profile) {
-                    tuningSelect.value = data.trick_tuning_profile;
-                    tuningNote.innerText = 'Aktiv auf dem Pico gespeichert.';
-                }
-
-                updateHighscoreVisual(score, highscore);
-
-                const pending = Boolean(data.pending_highscore);
-                const pendingScore = Number(data.pending_highscore_score || 0);
-
-                if (pending) {
-                    const overlay = document.getElementById('hs_overlay');
-                    document.getElementById('hs_popup_score').innerText = pendingScore;
-                    if (!overlay.classList.contains('show')) {
-                        showHighscorePopup(pendingScore);
-                    }
-                } else if (!isSavingHighscore) {
-                    closeHighscorePopup();
-                }
-
-                previousHighscore = highscore;
-
-                const container = document.getElementById('trick_list');
-                if (data.history.length > 0) {
-                    const reversed = [...data.history].reverse();
-                    container.innerHTML = reversed.map(item => `<div class="trick-item">${item}</div>`).join('');
-                } else {
-                    container.innerHTML = "<div style='color:#7f8c8d;'>Warte auf erstes Flugmanöver...</div>";
-                }
-            })
-                .catch(err => console.log("Fetch Error:", err));
-    }
-
-    startDataPolling();
-    </script>
-</body>
-</html>"""
+<div class="c">
+<div class="top"><h1>🐝 __COPTER_NAME_UPPER__ ARCADE</h1><div class="badge">WLAN / FPV / Tricks</div></div>
+<div id="s">0</div>
+<div class="meta"><div>Highscore: <b id="hs">0</b></div><div>Pilot: <b id="p">__DEFAULT_PILOT_NAME__</b></div></div>
+<div class="card"><h2>Trick-Tuning Profil</h2><select id="prof" onchange="setP()"><option value="soft">Soft</option><option value="medium" selected>Medium</option><option value="aggressive">Aggressive</option></select><div id="pn" class="n">Profil...</div></div>
+<div class="card"><h2>Detektierte Manöver</h2><div class="t" id="tr">Warte...</div></div>
+<div class="btnrow"><button class="b" onclick="dl()">📥 Download</button><button class="b" onclick="dld()">🧪 Debug-Log</button><button class="b br" onclick="rhs()">🗑️ Reset HS</button></div>
+<a class="admin" href="/admin">⚙️ Admin</a>
+</div>
+<script>
+function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):"Keine Tricks";if(d.trick_tuning_profile)document.getElementById("prof").value=d.trick_tuning_profile}).catch(e=>0)}
+function setP(){let p=document.getElementById("prof").value;document.getElementById("pn").innerText="Speichert...";fetch("/set-trick-profile?profile="+p).then(r=>r.json()).then(d=>{document.getElementById("pn").innerText="OK"}).catch(e=>{document.getElementById("pn").innerText="Fehler"})}
+function dl(){window.open("/download?manual=1","_blank")}
+function dld(){window.open("/download-debug?manual=1","_blank")}
+function rhs(){if(confirm("Highscore löschen?")){fetch("/reset-highscore?web=1").then(()=>upd()).catch(e=>0)}}
+setInterval(upd,1000);upd();
+</script>
+</body></html>"""
 
 html_template = html_template.replace("__COPTER_NAME__", html_escape(COPTER_NAME))
 html_template = html_template.replace("__COPTER_NAME_UPPER__", html_escape(COPTER_NAME.upper()))
@@ -1170,6 +1098,214 @@ html_template = html_template.replace("__DEFAULT_PILOT_NAME__", html_escape(DEFA
 html_template = html_template.replace('value="soft"', 'value="soft"' + (' selected' if TRICK_TUNING_PROFILE == 'soft' else ''))
 html_template = html_template.replace('value="medium"', 'value="medium"' + (' selected' if TRICK_TUNING_PROFILE == 'medium' else ''))
 html_template = html_template.replace('value="aggressive"', 'value="aggressive"' + (' selected' if TRICK_TUNING_PROFILE == 'aggressive' else ''))
+
+
+# ==================== OTA UPDATE SYSTEM ====================
+admin_upload_template = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>OTA Update - Admin Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { background: #0b0e14; color: #f0f4f8; font-family: monospace; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: #141b25; padding: 30px; border-radius: 10px; border: 2px solid #e74c3c; }
+        h1 { color: #e74c3c; text-align: center; }
+        .warning { background: #522; padding: 15px; border-radius: 5px; border-left: 4px solid #e74c3c; margin-bottom: 20px; color: #faa; }
+        .upload-section { background: #1a2637; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #335174; }
+        textarea { width: 100%; height: 400px; background: #0b1320; color: #00ff00; border: 1px solid #335174; border-radius: 5px; padding: 10px; box-sizing: border-box; font-family: monospace; font-size: 11px; }
+        .btn-upload { background: #e74c3c; color: #fff; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; font-weight: bold; margin-right: 10px; }
+        .btn-upload:hover { background: #ff6b5b; }
+        .btn-back { background: #2980b9; color: #fff; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; }
+        .btn-back:hover { background: #3498db; }
+        .btn-restart { background: #8b0000; color: #fff; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; font-weight: bold; }
+        .btn-restart:hover { background: #c00000; }
+        .status { margin-top: 20px; padding: 10px; border-radius: 5px; display: none; }
+        .status.success { background: #1a4d2e; color: #2ecc71; border: 1px solid #2ecc71; }
+        .status.error { background: #4d1a1a; color: #ff6b6b; border: 1px solid #ff6b6b; }
+        .button-row { text-align: center; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚠️ OTA UPDATE PANEL</h1>
+        <div class="warning">
+            <strong>WARNUNG:</strong> Nur Python-Code einfügen! Falscher Code kann den Pico unbrauchbar machen.
+            Stelle sicher, dass dein Code syntaktisch korrekt ist. Die Datei wird als <code>main.py</code> gespeichert.
+        </div>
+        
+        <div class="upload-section">
+            <h3>Schritt 1: main.py Datei auswählen</h3>
+            <input type="file" id="script_file" accept=".py" style="display: block; margin: 15px 0; padding: 10px; background: #0b1320; color: #e8f2ff; border: 1px solid #335174; border-radius: 5px; width: 100%; box-sizing: border-box;">
+            <div id="file_info" style="color: #9fb4cb; font-size: 0.9em; margin-bottom: 15px;">Wähle dein main.py (oder score_tracker.py) aus</div>
+            <div id="status" class="status"></div>
+            <div class="button-row">
+                <button class="btn-upload" onclick="uploadUpdate()">📤 Update speichern</button>
+                <button class="btn-back" onclick="window.location.href='/'">Zurück zur Hauptseite</button>
+                <button class="btn-restart" onclick="restartPico()">🔄 Pico jetzt neustarten</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.getElementById('script_file').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        const info = document.getElementById('file_info');
+        if (file) {
+            info.innerText = '✅ Datei: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB) → wird als main.py gespeichert';
+        } else {
+            info.innerText = 'Wähle dein main.py (oder score_tracker.py) aus';
+        }
+    });
+
+    function uploadUpdate() {
+        const file = document.getElementById('script_file').files[0];
+        const status = document.getElementById('status');
+        
+        if (!file) {
+            status.className = 'status error';
+            status.innerText = '❌ Fehler: Keine Datei ausgewählt!';
+            status.style.display = 'block';
+            return;
+        }
+
+        const btn = event.target;
+        btn.disabled = true;
+        btn.innerText = 'Speichert...';
+        
+        // Lese die Datei und konvertiere zu Base64
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const content = e.target.result;
+                
+                // Konvertiere zu Uint8Array für UTF-8 Encoding
+                const encoder = new TextEncoder();
+                const bytes = encoder.encode(content);
+                
+                // Konvertiere Bytes zu Base64 mit Chunking
+                let binary = '';
+                const chunkSize = 10240;  // 10KB chunks für Base64 Konvertierung
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                    const chunk = bytes.slice(i, i + chunkSize);
+                    for (let j = 0; j < chunk.length; j++) {
+                        binary += String.fromCharCode(chunk[j]);
+                    }
+                }
+                const b64content = btoa(binary);
+                
+                // Teile Base64 in kleinere Upload-Chunks fuer stabile Pico-RAM-Nutzung
+                const uploadChunkSize = 1024;  // 1KB pro HTTP-Request
+                let chunkIndex = 0;
+                const totalChunks = Math.ceil(b64content.length / uploadChunkSize);
+                
+                status.innerText = '⏳ Uploade Chunk 1/' + totalChunks + '...';
+                status.className = 'status';
+                status.style.display = 'block';
+                
+                function uploadNextChunk() {
+                    if (chunkIndex >= totalChunks) {
+                        // Alle Chunks hochgeladen, starte Finalisierung
+                        status.innerText = '⏳ Kombiniere und starte Neustart...';
+                        fetchFinalize();
+                        return;
+                    }
+                    
+                    const start = chunkIndex * uploadChunkSize;
+                    const end = Math.min(start + uploadChunkSize, b64content.length);
+                    const chunkData = b64content.substring(start, end);
+                    
+                    fetch('/upload-chunk', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'index=' + chunkIndex + '&total=' + totalChunks + '&data=' + encodeURIComponent(chunkData),
+                        cache: 'no-store'
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.ok) {
+                            chunkIndex++;
+                            const progress = Math.round((chunkIndex / totalChunks) * 100);
+                            status.innerText = '⏳ Uploade Chunk ' + (chunkIndex+1) + '/' + totalChunks + ' (' + progress + '%)...';
+                            uploadNextChunk();
+                        } else {
+                            status.className = 'status error';
+                            status.innerText = '❌ Fehler bei Chunk ' + chunkIndex + ': ' + data.error;
+                        }
+                    })
+                    .catch(err => {
+                        status.className = 'status error';
+                        status.innerText = '❌ Upload Chunk ' + chunkIndex + ' fehlgeschlagen: ' + err;
+                        console.log('Chunk Upload Error:', err);
+                    });
+                }
+                
+                function fetchFinalize() {
+                    fetch('/finalize-upload', { cache: 'no-store' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.ok) {
+                            status.className = 'status success';
+                            status.innerText = '✅ ' + data.message + ' - Verbindung wird getrennt...';
+                            setTimeout(() => {
+                                window.location.href = '/';
+                            }, 3000);
+                        } else {
+                            status.className = 'status error';
+                            status.innerText = '❌ Finalisierung fehlgeschlagen: ' + data.error;
+                        }
+                    })
+                    .catch(err => {
+                        status.className = 'status error';
+                        status.innerText = '❌ Finalisierung fehlgeschlagen: ' + err;
+                    })
+                    .finally(() => {
+                        btn.disabled = false;
+                        btn.innerText = '📤 Update speichern';
+                    });
+                }
+                
+                uploadNextChunk();
+            } catch (err) {
+                status.className = 'status error';
+                status.innerText = '❌ Fehler beim Verarbeiten der Datei: ' + err;
+                status.style.display = 'block';
+                btn.disabled = false;
+                btn.innerText = '📤 Update speichern';
+            }
+        };
+        reader.onerror = function() {
+            status.className = 'status error';
+            status.innerText = '❌ Fehler beim Lesen der Datei';
+            status.style.display = 'block';
+            btn.disabled = false;
+            btn.innerText = '📤 Update speichern';
+        };
+        reader.readAsText(file, 'utf-8');
+    }
+
+    function restartPico() {
+        if (!confirm('Pico wirklich neu starten?')) {
+            return;
+        }
+        
+        const btn = event.target;
+        btn.disabled = true;
+        btn.innerText = 'Startet neu...';
+        
+        fetch('/restart-pico', { cache: 'no-store' })
+        .then(() => {
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 2000);
+        })
+        .catch(() => {
+            alert('Neustart eingeleitet. Verbindung wird unterbrochen...');
+        });
+    }
+    </script>
+</body>
+</html>"""
 
 
 async def handle_client(reader, writer):
@@ -1209,15 +1345,230 @@ async def handle_client(reader, writer):
                     content_length = 0
 
         body_params = {}
+        body_text = ""
         if request_method == 'POST' and content_length > 0:
             try:
-                body_bytes = await reader.readexactly(content_length)
-                body_text = body_bytes.decode('utf-8')
-                body_params = parse_query(body_text)
-            except Exception:
+                # Lese Body in Chunks um Stack zu schonen
+                body_buffer = bytearray()
+                bytes_remaining = content_length
+                chunk_size = 2048  # 2KB chunks
+                
+                while bytes_remaining > 0:
+                    to_read = min(chunk_size, bytes_remaining)
+                    chunk = await reader.read(to_read)
+                    
+                    if not chunk:
+                        debug_log(f"[HTTP] EOF beim Lesen (bytes_remaining={bytes_remaining})")
+                        break
+                    
+                    body_buffer.extend(chunk)
+                    bytes_remaining -= len(chunk)
+                
+                if len(body_buffer) > 0:
+                    try:
+                        body_text = body_buffer.decode('utf-8')
+                        if request_path == '/upload-chunk':
+                            # Bei OTA-Chunks vermeiden wir parse_query auf dem kompletten Body,
+                            # weil das auf dem Pico unnötige große Speicherallokationen erzeugt.
+                            body_params = {}
+                        else:
+                            body_params = parse_query(body_text)
+                        debug_log(f"[HTTP] POST Body erfolgreich gelesen: {len(body_text)} bytes")
+                    except Exception as e:
+                        debug_log(f"[HTTP] Fehler beim Dekodieren des Body: {e}")
+                        body_params = {}
+            except Exception as e:
+                debug_log(f"[HTTP] Fehler beim Lesen des POST Body: {e}")
                 body_params = {}
                 
-        if request_path == '/data':
+        if request_path == '/admin':
+            # Admin Panel für OTA Updates
+            response_html = admin_upload_template.encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: text/html\r\n')
+            writer.write(b'Content-Length: ' + str(len(response_html)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response_html)
+                
+        elif request_path == '/upload-chunk' and request_method == 'POST':
+            # OTA Chunk Upload
+            global ota_total_chunks, ota_received_chunks, ota_update_active
+
+            # index/total direkt aus Body lesen (parse_query auf vollem Body wird bewusst vermieden)
+            chunk_index_str = '-1'
+            total_str = '0'
+            if body_text:
+                idx_pos = body_text.find('index=')
+                if idx_pos >= 0:
+                    idx_start = idx_pos + 6
+                    idx_end = body_text.find('&', idx_start)
+                    if idx_end < 0:
+                        idx_end = len(body_text)
+                    chunk_index_str = url_decode(body_text[idx_start:idx_end])
+
+                total_pos = body_text.find('total=')
+                if total_pos >= 0:
+                    total_start = total_pos + 6
+                    total_end = body_text.find('&', total_start)
+                    if total_end < 0:
+                        total_end = len(body_text)
+                    total_str = url_decode(body_text[total_start:total_end])
+
+            # RAM-sparend: Data-Feld direkt aus Body extrahieren und nur dieses URL-dekodieren.
+            chunk_data = ''
+            if body_text:
+                marker = '&data='
+                pos = body_text.find(marker)
+                if pos >= 0:
+                    chunk_data = url_decode(body_text[pos + len(marker):])
+                elif body_text.startswith('data='):
+                    chunk_data = url_decode(body_text[5:])
+                else:
+                    chunk_data = body_params.get('data', '')
+            else:
+                chunk_data = body_params.get('data', '')
+            
+            try:
+                chunk_index = int(chunk_index_str)
+                total = int(total_str)
+                
+                if chunk_index == 0:
+                    # Reset bei erstem Chunk + neue Pufferdatei
+                    ota_total_chunks = total
+                    ota_received_chunks = 0
+                    ota_update_active = True
+                    try:
+                        os.remove('update.pbp')
+                    except Exception:
+                        pass
+                    debug_log(f"[OTA] Chunk-Transfer gestartet: {total} Chunks erwartet")
+                
+                if chunk_data:
+                    with open('update.pbp', 'a') as f:
+                        f.write(chunk_data)
+                    ota_received_chunks += 1
+                    debug_log(f"[OTA] Chunk {chunk_index+1}/{total} empfangen ({len(chunk_data)} bytes)")
+                
+                response = json.dumps({"ok": True, "message": f"Chunk {chunk_index+1}/{total} gespeichert"}).encode('utf-8')
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+                if chunk_index + 1 == total and ota_received_chunks == ota_total_chunks:
+                    debug_log("[OTA] Alle Chunks empfangen, bitte /finalize-upload aufrufen")
+                
+            except Exception as e:
+                debug_log(f"[OTA CHUNK] Fehler: {e}")
+                ota_update_active = False
+                response = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+                writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+                
+        elif request_path == '/finalize-upload':
+            # OTA Finalisierung: kombiniere alle Chunks
+            global ota_total_chunks, ota_received_chunks, ota_update_active
+            
+            try:
+                debug_log(f"[OTA] Finalisierung: {ota_received_chunks}/{ota_total_chunks} Chunks vorhanden")
+                
+                if ota_received_chunks != ota_total_chunks:
+                    raise Exception(f"Incomplete upload: {ota_received_chunks}/{ota_total_chunks}")
+
+                # Dekodiere direkt aus update.pbp in main_temp.py
+                decode_ok = safe_base64_file_to_file('update.pbp', 'main_temp.py')
+                
+                if not decode_ok:
+                    raise Exception("Base64 Dekodierung fehlgeschlagen")
+                
+                # Prüfe Dateigröße
+                try:
+                    temp_size = os.stat('main_temp.py')[6]
+                    debug_log(f"[OTA] Temp-Datei: {temp_size} bytes")
+                except Exception:
+                    temp_size = 0
+                
+                # Backup
+                try:
+                    with open('main.py', 'r') as f:
+                        old_content = f.read()
+                    with open('main_backup.py', 'w') as f:
+                        f.write(old_content)
+                    debug_log(f"[OTA] Backup erstellt: {len(old_content)} bytes")
+                except Exception as e:
+                    debug_log(f"[OTA] Backup-Fehler: {e}")
+                
+                # Verschiebe
+                try:
+                    os.remove('main.py')
+                except Exception:
+                    pass
+                
+                os.rename('main_temp.py', 'main.py')
+                debug_log(f"[OTA] Finale Datei gespeichert: main.py ({temp_size} bytes)")
+                
+                response = json.dumps({"ok": True, "message": f"Update erfolgreich gespeichert ({temp_size} bytes)! Starte Neustart..."}).encode('utf-8')
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+                
+                # Reset globals
+                ota_total_chunks = 0
+                ota_received_chunks = 0
+                ota_update_active = False
+                try:
+                    os.remove('update.pbp')
+                except Exception:
+                    pass
+                
+                # Drain und Reset
+                try:
+                    await writer.drain()
+                except Exception:
+                    pass
+                
+                await asyncio.sleep_ms(2000)
+                debug_log("[OTA] Starte machine.reset()...")
+                machine.reset()
+                
+            except Exception as e:
+                debug_log(f"[OTA FINALIZE] Fehler: {str(e)[:100]}")
+                response = json.dumps({"ok": False, "error": str(e)[:100]}).encode('utf-8')
+                writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+                ota_total_chunks = 0
+                ota_received_chunks = 0
+                ota_update_active = False
+                try:
+                    os.remove('update.pbp')
+                except Exception:
+                    pass
+                
+        elif request_path == '/restart-pico':
+            # Restart ohne Update
+            response = json.dumps({"ok": True, "message": "Pico startet neu..."}).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response)
+            try:
+                await writer.drain()
+            except Exception:
+                pass
+            await asyncio.sleep_ms(1000)
+            debug_log("[RESTART] machine.reset() wird aufgerufen...")
+            machine.reset()
+                
+        elif request_path == '/data':
             data = {
                 "score": detector.score,
                 "history": detector.trick_history,
@@ -1539,6 +1890,7 @@ async def handle_client(reader, writer):
 async def main_async():
     global system_ready, status_led_last_toggle_ms
     if ENABLE_HOTSPOT:
+        start_access_point()
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
     system_ready = True
     status_led_last_toggle_ms = time.ticks_ms()

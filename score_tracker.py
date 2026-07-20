@@ -97,17 +97,17 @@ TRICK_TUNING_PROFILES = {
         "trick_start_type_weight": 0.88,
     },
     "freestyle": {
-        "gyro_trick_threshold": 190,
-        "stable_threshold": 65,
-        "trick_start_hold_ms": 35,
-        "stable_hold_ms": 140,
-        "gyro_deadband": 12,
-        "gyro_lowpass_alpha": 0.30,
-        "min_trick_duration": 0.12,
-        "trick_min_accum_deg": 80,
-        "trick_spin_min_accum_deg": 120,
-        "trick_axis_dominance_ratio": 1.18,
-        "trick_start_type_weight": 0.92,
+        "gyro_trick_threshold": 205,
+        "stable_threshold": 70,
+        "trick_start_hold_ms": 45,
+        "stable_hold_ms": 150,
+        "gyro_deadband": 14,
+        "gyro_lowpass_alpha": 0.28,
+        "min_trick_duration": 0.14,
+        "trick_min_accum_deg": 95,
+        "trick_spin_min_accum_deg": 135,
+        "trick_axis_dominance_ratio": 1.32,
+        "trick_start_type_weight": 0.85,
     },
     "aggressive": {
         "gyro_trick_threshold": 230,
@@ -158,19 +158,29 @@ def apply_trick_tuning_profile():
 
 
 def normalize_trick_tuning_profile(profile_name):
-    normalized = str(profile_name).strip().lower()
+    original = str(profile_name).strip()
+    normalized = original.lower()
     if normalized == "soft":
         normalized = "beginner"
     elif normalized == "medium":
         normalized = "freestyle"
     if normalized in TRICK_TUNING_PROFILES:
         return normalized
-    
-    try:
-        os.stat(normalized + ".pro")
-        return normalized
-    except Exception:
-        pass
+
+    # Custom .pro Dateien behalten die Original-Gross-/Kleinschreibung.
+    # Zuerst Original-Schreibweise pruefen, dann als Fallback lowercase.
+    if original:
+        try:
+            os.stat(original + ".pro")
+            return original
+        except Exception:
+            pass
+    if normalized and normalized != original:
+        try:
+            os.stat(normalized + ".pro")
+            return normalized
+        except Exception:
+            pass
     return "aggressive"
 
 
@@ -225,28 +235,43 @@ def get_profile_data(profile_name):
     """Hole Profil-Daten: entweder eingebaut oder aus .pro Datei"""
     if profile_name in TRICK_TUNING_PROFILES:
         return TRICK_TUNING_PROFILES[profile_name]
-    normalized = str(profile_name).strip().lower()
+    original = str(profile_name).strip()
+    normalized = original.lower()
     if normalized in TRICK_TUNING_PROFILES:
         return TRICK_TUNING_PROFILES[normalized]
 
-    try:
-        file_path = normalized + ".pro"
-        with open(file_path, 'r') as f:
-            data = json.loads(f.read())
-        if "settings" in data and isinstance(data["settings"], dict):
-            data = data["settings"]
-        
-        required = ["gyro_trick_threshold", "stable_threshold", "trick_start_hold_ms",
-                    "stable_hold_ms", "gyro_deadband", "gyro_lowpass_alpha",
-                    "min_trick_duration", "trick_min_accum_deg", "trick_spin_min_accum_deg",
-                    "trick_axis_dominance_ratio", "trick_start_type_weight"]
-        for key in required:
-            if key not in data:
-                debug_log(f"[PROFILE] Schluessel fehlt in {normalized}.pro: {key}")
-                return None
-        return data
-    except Exception:
-        return None
+    # Custom .pro Dateien behalten die Original-Gross-/Kleinschreibung.
+    # Zuerst Original-Schreibweise pruefen, dann als Fallback lowercase.
+    candidates = []
+    if original:
+        candidates.append(original)
+    if normalized and normalized != original:
+        candidates.append(normalized)
+
+    required = ["gyro_trick_threshold", "stable_threshold", "trick_start_hold_ms",
+                "stable_hold_ms", "gyro_deadband", "gyro_lowpass_alpha",
+                "min_trick_duration", "trick_min_accum_deg", "trick_spin_min_accum_deg",
+                "trick_axis_dominance_ratio", "trick_start_type_weight"]
+
+    for candidate in candidates:
+        try:
+            file_path = candidate + ".pro"
+            with open(file_path, 'r') as f:
+                data = json.loads(f.read())
+            if "settings" in data and isinstance(data["settings"], dict):
+                data = data["settings"]
+
+            missing_key = False
+            for key in required:
+                if key not in data:
+                    debug_log(f"[PROFILE] Schluessel fehlt in {candidate}.pro: {key}")
+                    missing_key = True
+                    break
+            if not missing_key:
+                return data
+        except Exception:
+            continue
+    return None
 
 
 def save_custom_profile(profile_name, profile_data):
@@ -1366,8 +1391,6 @@ async def handle_client(reader, writer):
                 writer.write(response)
                 
         elif request_path == '/finalize-upload':
-            global ota_total_chunks, ota_received_chunks, ota_update_active
-            
             try:
                 debug_log(f"[OTA] Finalisierung: {ota_received_chunks}/{ota_total_chunks} Chunks vorhanden")
                 if ota_received_chunks != ota_total_chunks:
@@ -1556,7 +1579,6 @@ async def handle_client(reader, writer):
             writer.write(response)
         
         elif request_path == '/apply-profile':
-            global TRICK_TUNING_PROFILE
             profile_name = query_params.get('name', '').strip()
             
             if not profile_name:

@@ -25,12 +25,12 @@ uart = machine.UART(0, baudrate=420000, tx=machine.Pin(0), rx=machine.Pin(1), rx
 CRSF_ADDRESS_FLIGHT_CONTROLLER = 0xC8
 CRSF_FRAMETYPE_ATTITUDE        = 0x1E  
 
-# CRSF Frame- und Plausibilitätsgrenzen
+# CRSF Frame- und PlausibilitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤tsgrenzen
 CRSF_MAX_FRAME_LEN     = 64
 MAX_SAMPLE_DELTA_DEG   = 140
 MIN_ACCUM_FOR_TIMEOUT_DEG = 160
 
-# Bewegungsschwellenwerte (°/s berechnet aus Winkeln)
+# Bewegungsschwellenwerte (ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°/s berechnet aus Winkeln)
 GYRO_TRICK_THRESHOLD = 190
 STABLE_THRESHOLD     = 65
 TRICK_START_HOLD_MS  = 35
@@ -131,7 +131,13 @@ def apply_trick_tuning_profile():
     global TRICK_AXIS_DOMINANCE_RATIO, TRICK_START_TYPE_WEIGHT
 
     profile_name = normalize_trick_tuning_profile(TRICK_TUNING_PROFILE)
-    profile = TRICK_TUNING_PROFILES[profile_name]
+    if profile_name in TRICK_TUNING_PROFILES:
+        profile = TRICK_TUNING_PROFILES[profile_name]
+    else:
+        profile = get_profile_data(profile_name)
+        if profile is None:
+            profile_name = "aggressive"
+            profile = TRICK_TUNING_PROFILES[profile_name]
 
     GYRO_TRICK_THRESHOLD = profile["gyro_trick_threshold"]
     STABLE_THRESHOLD = profile["stable_threshold"]
@@ -157,6 +163,12 @@ def normalize_trick_tuning_profile(profile_name):
         normalized = "freestyle"
     if normalized in TRICK_TUNING_PROFILES:
         return normalized
+    # Accept custom profiles that exist as .pro files
+    try:
+        os.stat(normalized + ".pro")
+        return normalized
+    except Exception:
+        pass
     return "aggressive"
 
 
@@ -191,6 +203,89 @@ def save_trick_tuning_profile():
             return True, ""
         except Exception as e2:
             return False, f"{e} | fallback={e2}"
+
+
+def list_profile_files():
+    """Liefert Liste aller Profile: eingebaut + custom .pro Dateien"""
+    profiles = list(TRICK_TUNING_PROFILES.keys())
+    try:
+        for filename in os.listdir():
+            if filename.endswith(".pro") and filename != "fpv_trick_settings.json":
+                profile_name = filename[:-4]  # Entferne .pro
+                if profile_name not in profiles:
+                    profiles.append(profile_name)
+    except Exception:
+        pass
+    return profiles
+
+
+def get_profile_data(profile_name):
+    """Hole Profil-Daten: entweder eingebaut oder aus .pro Datei"""
+    if profile_name in TRICK_TUNING_PROFILES:
+        return TRICK_TUNING_PROFILES[profile_name]
+    normalized = str(profile_name).strip().lower()
+    if normalized in TRICK_TUNING_PROFILES:
+        return TRICK_TUNING_PROFILES[normalized]
+
+    # Versuche aus Custom-Datei zu laden
+    try:
+        file_path = normalized + ".pro"
+        with open(file_path, 'r') as f:
+            data = json.loads(f.read())
+        # Unterstuetze beide Formate: flach und {name, settings}-Wrapper
+        if "settings" in data and isinstance(data["settings"], dict):
+            data = data["settings"]
+        # Validiere Pflichtfelder
+        required = ["gyro_trick_threshold", "stable_threshold", "trick_start_hold_ms",
+                    "stable_hold_ms", "gyro_deadband", "gyro_lowpass_alpha",
+                    "min_trick_duration", "trick_min_accum_deg", "trick_spin_min_accum_deg",
+                    "trick_axis_dominance_ratio", "trick_start_type_weight"]
+        for key in required:
+            if key not in data:
+                debug_log(f"[PROFILE] Schluessel fehlt in {normalized}.pro: {key}")
+                return None
+        return data
+    except Exception:
+        return None
+
+
+def save_custom_profile(profile_name, profile_data):
+    """Speichere ein Custom-Profil als .pro Datei"""
+    if profile_name.lower() in ["beginner", "freestyle", "aggressive"]:
+        return False, "Kann nicht ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼ber eingebaute Profile schreiben"
+    
+    try:
+        payload = json.dumps(profile_data)
+        file_path = profile_name + ".pro"
+        tmp_path = file_path + ".tmp"
+        
+        with open(tmp_path, 'w') as f:
+            f.write(payload)
+        
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+        
+        os.rename(tmp_path, file_path)
+        debug_log(f"[PROFILE] Custom-Profil gespeichert: {profile_name}")
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def delete_custom_profile(profile_name):
+    """LÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶sche ein Custom-Profil"""
+    if profile_name.lower() in ["beginner", "freestyle", "aggressive"]:
+        return False, "Kann nicht ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼ber eingebaute Profile lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶schen"
+    
+    try:
+        file_path = profile_name + ".pro"
+        os.remove(file_path)
+        debug_log(f"[PROFILE] Custom-Profil gelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶scht: {profile_name}")
+        return True, ""
+    except Exception as e:
+        return False, str(e)
 
 
 def init_status_led():
@@ -626,7 +721,7 @@ def save_highscore():
         with open(tmp_path, 'w') as f:
             f.write(payload)
 
-        # Auf MicroPython kann rename über bestehende Datei fehlschlagen.
+        # Auf MicroPython kann rename ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼ber bestehende Datei fehlschlagen.
         try:
             os.remove(HIGHSCORE_FILE_PATH)
         except Exception:
@@ -697,6 +792,21 @@ def start_access_point():
     except Exception as e:
         debug_log(f"[AP ERROR] Hotspot-Setup fehlgeschlagen: {e}")
 
+
+# ==================== MEMORY OPTIMIZATION ====================
+import gc
+
+def write_html_response(writer, html_content):
+    """Schreibe HTML mit Memory-Optimierung"""
+    gc.collect()  # Freigabe vor groÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸em Alloc
+    html_bytes = html_content.encode('utf-8')
+    writer.write(b'HTTP/1.1 200 OK\r\n')
+    writer.write(b'Content-Type: text/html\r\n')
+    writer.write(b'Content-Length: ' + str(len(html_bytes)).encode() + b'\r\n')
+    writer.write(b'Connection: close\r\n\r\n')
+    writer.write(html_bytes)
+    del html_bytes
+    gc.collect()
 
 # ==================== WEBSERVER TEMPLATE ====================
 
@@ -795,7 +905,7 @@ class LiveGyroTrickDetector:
             while diff < -180: diff += 360
             return diff
 
-        # Berechne die aktuelle Drehrate (°/s)
+        # Berechne die aktuelle Drehrate (ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°/s)
         gyro_x = delta_deg(roll_deg, self.last_roll) / dt
         gyro_y = delta_deg(pitch_deg, self.last_pitch) / dt
         gyro_z = delta_deg(yaw_deg, self.last_yaw) / dt
@@ -926,7 +1036,7 @@ class LiveGyroTrickDetector:
             self.last_trick_name = detected_name
             timestamp = time.ticks_ms() / 1000.0
             self.trick_history.append(f"[{timestamp:.1f}s] {detected_name} (+{points} Pkt)")
-            if len(self.trick_history) > 30: self.trick_history.pop(0)  # Erhöht für längere Listen
+            if len(self.trick_history) > 30: self.trick_history.pop(0)  # ErhÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶ht fÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼r lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤ngere Listen
             debug_log(f"[SUCCESS] TRICK DETEKTIERT: {detected_name} | Gesamt-Score: {self.score}")
 
             global highscore_data, pending_highscore
@@ -1030,7 +1140,7 @@ async def telemetry_loop():
                                             should_log_live = True
 
                                     if should_log_live and time.ticks_diff(time.ticks_ms(), last_live_log_ms) >= LIVE_LOG_INTERVAL_MS:
-                                        debug_console_only(f"[LIVE GYRO DATA] Roll: {roll_deg:6.1f}° | Pitch: {pitch_deg:6.1f}° | Yaw: {yaw_deg:6.1f}°")
+                                        debug_console_only(f"[LIVE GYRO DATA] Roll: {roll_deg:6.1f}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° | Pitch: {pitch_deg:6.1f}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° | Yaw: {yaw_deg:6.1f}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°")
                                         last_live_log_ms = time.ticks_ms()
                                         last_live_roll = roll_deg
                                         last_live_pitch = pitch_deg
@@ -1040,8 +1150,8 @@ async def telemetry_loop():
 
                                 if ENABLE_SERIAL_DEBUG and detector.in_trick:
                                     debug_live_gyro_trick(
-                                        f"[LIVE GYRO TRICK] Roll: {roll_deg:6.1f}° | "
-                                        f"Pitch: {pitch_deg:6.1f}° | Yaw: {yaw_deg:6.1f}°"
+                                        f"[LIVE GYRO TRICK] Roll: {roll_deg:6.1f}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° | "
+                                        f"Pitch: {pitch_deg:6.1f}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â° | Yaw: {yaw_deg:6.1f}ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°"
                                     )
                         else:
                             crc_fail_count += 1
@@ -1059,8 +1169,7 @@ async def telemetry_loop():
 
 
 # ==================== WEBSERVER TEMPLATE ====================
-html_template = """<!DOCTYPE html>
-<html>
+html_template = """<!DOCTYPE html><html>
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>__COPTER_NAME__ Arcade</title>
@@ -1089,21 +1198,22 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 </head>
 <body>
 <div class="c">
-<div class="top"><h1>🐝 __COPTER_NAME_UPPER__ ARCADE</h1><div class="badge">WLAN / FPV / Tricks</div></div>
+<div class="top"><h1>&#128029; __COPTER_NAME_UPPER__ ARCADE</h1><div class="badge">WLAN / FPV / Tricks</div></div>
 <div id="s">0</div>
 <div class="meta"><div>Highscore: <b id="hs">0</b></div><div>Pilot: <b id="p">__DEFAULT_PILOT_NAME__</b></div></div>
-<div class="card"><h2>Trick-Tuning Profil</h2><select id="prof" onchange="setP()"><option value="beginner">Beginner</option><option value="freestyle" selected>Freestyle</option><option value="aggressive">Aggressive</option></select><div id="pn" class="n">Profil...</div></div>
-<div class="card"><h2>Detektierte Manöver</h2><div class="t" id="tr">Warte...</div></div>
-<div class="btnrow"><button class="b" onclick="dl()">📥 Download</button><button class="b" onclick="dld()">🧪 Debug-Log</button><button class="b br" onclick="rhs()">🗑️ Reset HS</button></div>
-<a class="admin" href="/admin">⚙️ Admin</a>
+<div class="card"><h2>Trick-Tuning Profil</h2><select id="prof" onchange="setP()"><option value="freestyle">Freestyle</option></select><div id="pn" class="n">Profil...</div></div>
+<div class="card"><h2>Detektierte Man&#246;ver</h2><div class="t" id="tr">Warte...</div></div>
+<div class="btnrow"><button class="b" onclick="dl()">&#128229; Download</button><button class="b" onclick="dld()">&#129514; Debug-Log</button><button class="b br" onclick="rhs()">&#128465;&#65039; Reset HS</button></div>
+<a class="admin" href="/admin">&#9881;&#65039; Admin</a>
 </div>
 <script>
-function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):"Keine Tricks";if(d.trick_tuning_profile)document.getElementById("prof").value=d.trick_tuning_profile}).catch(e=>0)}
+function loadProfiles(activeProfile){fetch("/profiles-list",{cache:"no-store"}).then(r=>r.json()).then(d=>{const sel=document.getElementById("prof");const cur=activeProfile||sel.value;sel.innerHTML="";for(let p of(d.profiles||[])){const o=document.createElement("option");o.value=p.name;o.innerText=p.name.charAt(0).toUpperCase()+p.name.slice(1);if(p.name===cur)o.selected=true;sel.appendChild(o);}}).catch(e=>0)}
+function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):"Keine Tricks";if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}}).catch(e=>0)}
 function setP(){let p=document.getElementById("prof").value;document.getElementById("pn").innerText="Speichert...";fetch("/set-trick-profile?profile="+p).then(r=>r.json()).then(d=>{document.getElementById("pn").innerText="OK"}).catch(e=>{document.getElementById("pn").innerText="Fehler"})}
 function dl(){window.open("/download?manual=1","_blank")}
 function dld(){window.open("/download-debug?manual=1","_blank")}
-function rhs(){if(confirm("Highscore löschen?")){fetch("/reset-highscore?web=1").then(()=>upd()).catch(e=>0)}}
-setInterval(upd,1000);upd();
+function rhs(){if(confirm("Highscore lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶schen?")){fetch("/reset-highscore?web=1").then(()=>upd()).catch(e=>0)}}
+setInterval(upd,1000);loadProfiles();upd();
 </script>
 </body></html>"""
 
@@ -1116,212 +1226,12 @@ html_template = html_template.replace('value="aggressive"', 'value="aggressive"'
 
 
 # ==================== OTA UPDATE SYSTEM ====================
-admin_upload_template = """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>OTA Update - Admin Panel</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { background: #0b0e14; color: #f0f4f8; font-family: monospace; padding: 20px; }
-        .container { max-width: 900px; margin: 0 auto; background: #141b25; padding: 30px; border-radius: 10px; border: 2px solid #e74c3c; }
-        h1 { color: #e74c3c; text-align: center; }
-        .warning { background: #522; padding: 15px; border-radius: 5px; border-left: 4px solid #e74c3c; margin-bottom: 20px; color: #faa; }
-        .upload-section { background: #1a2637; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #335174; }
-        textarea { width: 100%; height: 400px; background: #0b1320; color: #00ff00; border: 1px solid #335174; border-radius: 5px; padding: 10px; box-sizing: border-box; font-family: monospace; font-size: 11px; }
-        .btn-upload { background: #e74c3c; color: #fff; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; font-weight: bold; margin-right: 10px; }
-        .btn-upload:hover { background: #ff6b5b; }
-        .btn-back { background: #2980b9; color: #fff; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; }
-        .btn-back:hover { background: #3498db; }
-        .btn-restart { background: #8b0000; color: #fff; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; font-weight: bold; }
-        .btn-restart:hover { background: #c00000; }
-        .status { margin-top: 20px; padding: 10px; border-radius: 5px; display: none; }
-        .status.success { background: #1a4d2e; color: #2ecc71; border: 1px solid #2ecc71; }
-        .status.error { background: #4d1a1a; color: #ff6b6b; border: 1px solid #ff6b6b; }
-        .button-row { text-align: center; margin-top: 20px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>⚠️ OTA UPDATE PANEL</h1>
-        <div class="warning">
-            <strong>WARNUNG:</strong> Nur Python-Code einfügen! Falscher Code kann den Pico unbrauchbar machen.
-            Stelle sicher, dass dein Code syntaktisch korrekt ist. Die Datei wird als <code>main.py</code> gespeichert.
-        </div>
-        
-        <div class="upload-section">
-            <h3>Schritt 1: main.py Datei auswählen</h3>
-            <input type="file" id="script_file" accept=".py" style="display: block; margin: 15px 0; padding: 10px; background: #0b1320; color: #e8f2ff; border: 1px solid #335174; border-radius: 5px; width: 100%; box-sizing: border-box;">
-            <div id="file_info" style="color: #9fb4cb; font-size: 0.9em; margin-bottom: 15px;">Wähle dein main.py (oder score_tracker.py) aus</div>
-            <div id="status" class="status"></div>
-            <div class="button-row">
-                <button class="btn-upload" onclick="uploadUpdate()">📤 Update speichern</button>
-                <button class="btn-back" onclick="window.location.href='/'">Zurück zur Hauptseite</button>
-                <button class="btn-restart" onclick="restartPico()">🔄 Pico jetzt neustarten</button>
-            </div>
-        </div>
-    </div>
+admin_upload_template_mini = """<!DOCTYPE html><html><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>OTA</title><style>body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}h1{color:#e74c3c;font-size:1.3em;margin:0 0 10px}.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #e74c3c;border-radius:8px}input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;width:100%;box-sizing:border-box}.b{background:#e74c3c;color:#fff;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px;font-weight:bold;font-family:monospace}.b:hover{filter:brightness(1.1)}.s{margin:10px 0;padding:10px;border-radius:4px;display:none}.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}</style></head><body><div class=c><h1>OTA UPDATE</h1><input type=file id=f accept=.py><div id=fi style=\"color:#9fb4cb;font-size:0.9em\">Datei waehlen...</div><div id=s class=s></div><button class=b onclick=u()>Upload</button><button class=b onclick=\"location.href='/'\" style=\"background:#2980b9\">Home</button><button class=b onclick=\"location.href='/admin-profiles'\" style=\"background:#27ae60\">Profile</button><button class=b onclick=r() style=\"background:#c00\">Restart</button></div><script>document.getElementById('f').addEventListener('change',function(e){const f=e.target.files[0];document.getElementById('fi').innerText=f?'Datei: '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)':'Datei waehlen...'});function u(){const f=document.getElementById('f').files[0],s=document.getElementById('s');if(!f){s.className='s err';s.innerText='Keine Datei!';s.style.display='block';return;}const rd=new FileReader();rd.onload=function(e){try{const ct=e.target.result,enc=new TextEncoder(),b=enc.encode(ct);let bn='';for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);}const b64=btoa(bn),tc=Math.ceil(b64.length/1024);let idx=0;s.innerText='Chunk 1/'+tc;s.className='s';s.style.display='block';function nc(){if(idx>=tc){fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){s.className='s ok';s.innerText='Fertig: '+d.message}else{s.className='s err';s.innerText='Fehler: '+d.error;}}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});return;}const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){idx++;s.innerText='Chunk '+(idx+1)+'/'+tc;nc();}else{s.className='s err';s.innerText='Fehler: '+d.error;}}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});}nc();}catch(er){s.className='s err';s.innerText='Fehler: '+er;s.style.display='block';}};rd.readAsText(f);}function r(){if(confirm('Restart Pico?')){fetch('/restart-pico',{cache:'no-store'}).catch(()=>{});setTimeout(()=>location.href='/',2000);}}</script></body></html>"""
 
-    <script>
-    document.getElementById('script_file').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        const info = document.getElementById('file_info');
-        if (file) {
-            info.innerText = '✅ Datei: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB) → wird als main.py gespeichert';
-        } else {
-            info.innerText = 'Wähle dein main.py (oder score_tracker.py) aus';
-        }
-    });
+# ==================== PROFILE ADMIN TEMPLATE ====================
+# (large template removed for RAM optimization - using profile_admin_template_mini instead)
 
-    function uploadUpdate() {
-        const file = document.getElementById('script_file').files[0];
-        const status = document.getElementById('status');
-        
-        if (!file) {
-            status.className = 'status error';
-            status.innerText = '❌ Fehler: Keine Datei ausgewählt!';
-            status.style.display = 'block';
-            return;
-        }
-
-        const btn = event.target;
-        btn.disabled = true;
-        btn.innerText = 'Speichert...';
-        
-        // Lese die Datei und konvertiere zu Base64
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const content = e.target.result;
-                
-                // Konvertiere zu Uint8Array für UTF-8 Encoding
-                const encoder = new TextEncoder();
-                const bytes = encoder.encode(content);
-                
-                // Konvertiere Bytes zu Base64 mit Chunking
-                let binary = '';
-                const chunkSize = 10240;  // 10KB chunks für Base64 Konvertierung
-                for (let i = 0; i < bytes.length; i += chunkSize) {
-                    const chunk = bytes.slice(i, i + chunkSize);
-                    for (let j = 0; j < chunk.length; j++) {
-                        binary += String.fromCharCode(chunk[j]);
-                    }
-                }
-                const b64content = btoa(binary);
-                
-                // Teile Base64 in kleinere Upload-Chunks fuer stabile Pico-RAM-Nutzung
-                const uploadChunkSize = 1024;  // 1KB pro HTTP-Request
-                let chunkIndex = 0;
-                const totalChunks = Math.ceil(b64content.length / uploadChunkSize);
-                
-                status.innerText = '⏳ Uploade Chunk 1/' + totalChunks + '...';
-                status.className = 'status';
-                status.style.display = 'block';
-                
-                function uploadNextChunk() {
-                    if (chunkIndex >= totalChunks) {
-                        // Alle Chunks hochgeladen, starte Finalisierung
-                        status.innerText = '⏳ Kombiniere und starte Neustart...';
-                        fetchFinalize();
-                        return;
-                    }
-                    
-                    const start = chunkIndex * uploadChunkSize;
-                    const end = Math.min(start + uploadChunkSize, b64content.length);
-                    const chunkData = b64content.substring(start, end);
-                    
-                    fetch('/upload-chunk', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: 'index=' + chunkIndex + '&total=' + totalChunks + '&data=' + encodeURIComponent(chunkData),
-                        cache: 'no-store'
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.ok) {
-                            chunkIndex++;
-                            const progress = Math.round((chunkIndex / totalChunks) * 100);
-                            status.innerText = '⏳ Uploade Chunk ' + (chunkIndex+1) + '/' + totalChunks + ' (' + progress + '%)...';
-                            uploadNextChunk();
-                        } else {
-                            status.className = 'status error';
-                            status.innerText = '❌ Fehler bei Chunk ' + chunkIndex + ': ' + data.error;
-                        }
-                    })
-                    .catch(err => {
-                        status.className = 'status error';
-                        status.innerText = '❌ Upload Chunk ' + chunkIndex + ' fehlgeschlagen: ' + err;
-                        console.log('Chunk Upload Error:', err);
-                    });
-                }
-                
-                function fetchFinalize() {
-                    fetch('/finalize-upload', { cache: 'no-store' })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.ok) {
-                            status.className = 'status success';
-                            status.innerText = '✅ ' + data.message + ' - Verbindung wird getrennt...';
-                            setTimeout(() => {
-                                window.location.href = '/';
-                            }, 3000);
-                        } else {
-                            status.className = 'status error';
-                            status.innerText = '❌ Finalisierung fehlgeschlagen: ' + data.error;
-                        }
-                    })
-                    .catch(err => {
-                        status.className = 'status error';
-                        status.innerText = '❌ Finalisierung fehlgeschlagen: ' + err;
-                    })
-                    .finally(() => {
-                        btn.disabled = false;
-                        btn.innerText = '📤 Update speichern';
-                    });
-                }
-                
-                uploadNextChunk();
-            } catch (err) {
-                status.className = 'status error';
-                status.innerText = '❌ Fehler beim Verarbeiten der Datei: ' + err;
-                status.style.display = 'block';
-                btn.disabled = false;
-                btn.innerText = '📤 Update speichern';
-            }
-        };
-        reader.onerror = function() {
-            status.className = 'status error';
-            status.innerText = '❌ Fehler beim Lesen der Datei';
-            status.style.display = 'block';
-            btn.disabled = false;
-            btn.innerText = '📤 Update speichern';
-        };
-        reader.readAsText(file, 'utf-8');
-    }
-
-    function restartPico() {
-        if (!confirm('Pico wirklich neu starten?')) {
-            return;
-        }
-        
-        const btn = event.target;
-        btn.disabled = true;
-        btn.innerText = 'Startet neu...';
-        
-        fetch('/restart-pico', { cache: 'no-store' })
-        .then(() => {
-            setTimeout(() => {
-                window.location.href = '/';
-            }, 2000);
-        })
-        .catch(() => {
-            alert('Neustart eingeleitet. Verbindung wird unterbrochen...');
-        });
-    }
-    </script>
-</body>
-</html>"""
-
+profile_admin_template_mini = """<!DOCTYPE html><html><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Profile</title><style>body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}h1{color:#27ae60;font-size:1.3em;margin:0 0 10px}.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #27ae60;border-radius:8px}.s{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:10px 0}.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}.p{background:#161e2e;padding:8px;margin:5px 0;border-left:3px solid #2980b9;display:flex;justify-content:space-between;align-items:center}.p.a{border-left-color:#27ae60;background:#1a3a2a}.b{padding:8px 12px;border:0;border-radius:4px;cursor:pointer;margin:2px;font-weight:bold;font-family:monospace;font-size:0.9em}.bp{background:#27ae60;color:#fff}.bp:hover{filter:brightness(1.1)}.bs{background:#2980b9;color:#fff}.bs:hover{filter:brightness(1.1)}.bd{background:#c0392b;color:#fff}.bd:hover{filter:brightness(1.1)}.bb{background:#555;color:#fff}.bb:hover{filter:brightness(1.1)}textarea{width:100%;height:200px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;padding:8px;box-sizing:border-box;font:11px monospace}input[type=text],input[type=file]{width:100%;padding:8px;margin:8px 0;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;box-sizing:border-box}.st{margin:10px 0;padding:10px;border-radius:4px;display:none}.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}.nav{text-align:center;margin-top:20px;border-top:1px solid #335174;padding-top:15px}</style></head><body><div class=c><h1>PROFILE</h1><div class=s><h2>Available Profiles</h2><div id=L style=\"max-height:200px;overflow-y:auto;background:#0b1320;padding:10px;border-radius:4px\">Loading...</div></div><div class=s><h2>New Profile</h2><input type=text id=N placeholder=\"Name\"><textarea id=D placeholder='{"gyro_trick_threshold":190,"stable_threshold":65,"trick_start_hold_ms":35,"stable_hold_ms":140,"gyro_deadband":12,"gyro_lowpass_alpha":0.3,"min_trick_duration":0.12,"trick_min_accum_deg":80,"trick_spin_min_accum_deg":120,"trick_axis_dominance_ratio":1.18,"trick_start_type_weight":0.92}'></textarea><div id=CS class=st></div><button class=\"b bp\" onclick=c()>Create</button></div><div class=s><h2>Upload Profile</h2><input type=file id=F accept=.pro><div id=FI style=\"color:#9fb4cb;font-size:0.9em\">No file</div><div id=US class=st></div><button class=\"b bp\" onclick=f()>Upload</button></div><div class=nav><button class=\"b bb\" onclick=\"location.href='/admin'\" style=\"background:#2980b9\">OTA Update</button><button class=\"b bb\" onclick=\"location.href='/'\" style=\"background:#555\">Home</button></div></div><script>let sf=null;function l(){fetch('/profiles-list',{cache:'no-store'}).then(r=>r.json()).then(d=>{const pl=document.getElementById('L');if(!d.profiles||d.profiles.length===0){pl.innerHTML='No profiles';return;}let h='';for(let p of d.profiles){const bi=['beginner','freestyle','aggressive'].includes(p.name);const ac=p.active?' a':'';h+='<div class=\"p'+ac+'\"><span>'+p.name+(p.active?' ACTIVE':'')+'</span><div>';h+='<button class=\"b bs\" onclick=\"dl(\\''+p.name+'\\')\" title=Download>DL</button>';if(!bi)h+='<button class=\"b bd\" onclick=\"del(\\''+p.name+'\\')\" title=Delete>DEL</button>';h+='<button class=\"b bp\" onclick=\"ap(\\''+p.name+'\\')\" title=Apply>Apply</button>';h+='</div></div>';}pl.innerHTML=h;}).catch(e=>{document.getElementById('L').innerHTML='Error: '+e;});}function c(){const n=document.getElementById('N').value.trim(),d=document.getElementById('D').value.trim(),s=document.getElementById('CS');if(!n){s.className='st err';s.innerText='Name required';s.style.display='block';return;}if(['beginner','freestyle','aggressive'].includes(n.toLowerCase())){s.className='st err';s.innerText='Cannot overwrite built-in profile';s.style.display='block';return;}let pd;try{pd=JSON.parse(d);}catch(e){s.className='st err';s.innerText='Invalid JSON: '+e;s.style.display='block';return;}const fd=new URLSearchParams();fd.append('name',n);fd.append('data',JSON.stringify(pd));fetch('/create-profile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){s.className='st ok';s.innerText='Created: '+n;document.getElementById('N').value='';document.getElementById('D').value='';l();}else{s.className='st err';s.innerText='Error: '+d.error;}s.style.display='block';}).catch(e=>{s.className='st err';s.innerText='Error: '+e;s.style.display='block';});}document.getElementById('F').addEventListener('change',function(e){const f=e.target.files[0];if(f){sf=f;document.getElementById('FI').innerText='File: '+f.name;}});function f(){if(!sf){document.getElementById('US').className='st err';document.getElementById('US').innerText='No file';document.getElementById('US').style.display='block';return;}const rd=new FileReader();rd.onload=function(e){try{const ct=e.target.result;let pd=JSON.parse(ct);const pn=sf.name.endsWith('.pro')?sf.name.slice(0,-4):sf.name;const fd=new URLSearchParams();fd.append('name',pn);fd.append('data',JSON.stringify(pd));document.getElementById('US').innerText='Uploading...';document.getElementById('US').className='st';document.getElementById('US').style.display='block';fetch('/create-profile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById('US').className='st ok';document.getElementById('US').innerText='Uploaded: '+pn;l();sf=null;document.getElementById('F').value='';document.getElementById('FI').innerText='No file';}else{document.getElementById('US').className='st err';document.getElementById('US').innerText='Error: '+d.error;}}).catch(e=>{document.getElementById('US').className='st err';document.getElementById('US').innerText='Error: '+e;});}catch(e){document.getElementById('US').className='st err';document.getElementById('US').innerText='Error: '+e;document.getElementById('US').style.display='block';}};rd.readAsText(sf);}function dl(n){fetch('/download-profile?name='+encodeURIComponent(n),{cache:'no-store'}).then(r=>r.blob()).then(b=>{const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=n+'.pro';a.click();URL.revokeObjectURL(u);}).catch(e=>alert('Error: '+e));}function del(n){if(!confirm('Delete '+n+'?'))return;fetch('/delete-profile?name='+encodeURIComponent(n),{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){l();}else{alert('Error: '+d.error);}}).catch(e=>alert('Error: '+e));}function ap(n){fetch('/apply-profile?name='+encodeURIComponent(n),{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){l();}else{alert('Error: '+d.error);}}).catch(e=>alert('Error: '+e));}l();setInterval(l,3000);</script></body></html>"""
 
 async def handle_client(reader, writer):
     global TRICK_TUNING_PROFILE
@@ -1343,7 +1253,7 @@ async def handle_client(reader, writer):
         query_params = parse_query(query_string)
         content_length = 0
         
-        # Header komplett abfrühstücken, um Browser-Hänger zu vermeiden
+        # Header komplett abfrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼hstÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼cken, um Browser-HÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤nger zu vermeiden
         while True:
             line = await reader.readline()
             if line == b'\r\n' or line == b'\n' or not line: 
@@ -1384,7 +1294,7 @@ async def handle_client(reader, writer):
                         body_text = body_buffer.decode('utf-8')
                         if request_path == '/upload-chunk':
                             # Bei OTA-Chunks vermeiden wir parse_query auf dem kompletten Body,
-                            # weil das auf dem Pico unnötige große Speicherallokationen erzeugt.
+                            # weil das auf dem Pico unnÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶tige groÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸e Speicherallokationen erzeugt.
                             body_params = {}
                         else:
                             body_params = parse_query(body_text)
@@ -1397,13 +1307,10 @@ async def handle_client(reader, writer):
                 body_params = {}
                 
         if request_path == '/admin':
-            # Admin Panel für OTA Updates
-            response_html = admin_upload_template.encode('utf-8')
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: text/html\r\n')
-            writer.write(b'Content-Length: ' + str(len(response_html)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response_html)
+            # Admin Panel fÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼r OTA Updates (minimiert fÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼r RAM)
+            gc.collect()
+            response_html = admin_upload_template_mini.encode('utf-8')
+            write_html_response(writer, admin_upload_template_mini)
                 
         elif request_path == '/upload-chunk' and request_method == 'POST':
             # OTA Chunk Upload
@@ -1499,7 +1406,7 @@ async def handle_client(reader, writer):
                 if not decode_ok:
                     raise Exception("Base64 Dekodierung fehlgeschlagen")
                 
-                # Prüfe Dateigröße
+                # PrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼fe DateigrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸e
                 try:
                     temp_size = os.stat('main_temp.py')[6]
                     debug_log(f"[OTA] Temp-Datei: {temp_size} bytes")
@@ -1582,6 +1489,139 @@ async def handle_client(reader, writer):
             await asyncio.sleep_ms(1000)
             debug_log("[RESTART] machine.reset() wird aufgerufen...")
             machine.reset()
+        
+        elif request_path == '/admin-profiles':
+            # Profil-Verwaltungs-Panel (minimiert fÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼r RAM)
+            gc.collect()
+            write_html_response(writer, profile_admin_template_mini)
+        
+        elif request_path == '/profiles-list':
+            # API: Liste aller Profile
+            profiles_list = list_profile_files()
+            profiles_data = []
+            for prof in profiles_list:
+                profiles_data.append({
+                    "name": prof,
+                    "active": prof == TRICK_TUNING_PROFILE
+                })
+            
+            response_data = json.dumps({"ok": True, "profiles": profiles_data}).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+            writer.write(b'Pragma: no-cache\r\n')
+            writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response_data)
+        
+        elif request_path == '/create-profile' and request_method == 'POST':
+            # POST: Neues Profil erstellen/hochladen
+            profile_name = body_params.get('name', '').strip()
+            profile_data_str = body_params.get('data', '').strip()
+            
+            if not profile_name or not profile_data_str:
+                response = json.dumps({"ok": False, "error": "Name oder Daten fehlen"}).encode('utf-8')
+                writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+            else:
+                try:
+                    profile_data = json.loads(profile_data_str)
+                    success, error = save_custom_profile(profile_name, profile_data)
+                    if success:
+                        response = json.dumps({"ok": True, "message": f"Profil {profile_name} erstellt"}).encode('utf-8')
+                        writer.write(b'HTTP/1.1 200 OK\r\n')
+                    else:
+                        response = json.dumps({"ok": False, "error": error}).encode('utf-8')
+                        writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                    writer.write(b'Content-Type: application/json\r\n')
+                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(response)
+                except Exception as e:
+                    response = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+                    writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+                    writer.write(b'Content-Type: application/json\r\n')
+                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(response)
+        
+        elif request_path == '/download-profile':
+            # GET: Profil als Datei runterladen
+            profile_name = query_params.get('name', '').strip()
+            if not profile_name:
+                response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
+                writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+            else:
+                profile_data = get_profile_data(profile_name)
+                if profile_data is None:
+                    response = json.dumps({"ok": False, "error": f"Profil nicht gefunden: {profile_name}"}).encode('utf-8')
+                    writer.write(b'HTTP/1.1 404 Not Found\r\n')
+                    writer.write(b'Content-Type: application/json\r\n')
+                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(response)
+                else:
+                    response_data = json.dumps(profile_data).encode('utf-8')
+                    writer.write(b'HTTP/1.1 200 OK\r\n')
+                    writer.write(b'Content-Type: application/json\r\n')
+                    writer.write(b'Content-Disposition: attachment; filename="' + profile_name.encode('utf-8') + b'.pro"\r\n')
+                    writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(response_data)
+        
+        elif request_path == '/delete-profile':
+            # GET: Profil lÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶schen
+            profile_name = query_params.get('name', '').strip()
+            if not profile_name:
+                response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
+            else:
+                success, error = delete_custom_profile(profile_name)
+                if success:
+                    response = json.dumps({"ok": True, "message": f"Profil {profile_name} gelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶scht"}).encode('utf-8')
+                else:
+                    response = json.dumps({"ok": False, "error": error}).encode('utf-8')
+            
+            response = response.encode('utf-8') if isinstance(response, str) else response
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response)
+        
+        elif request_path == '/apply-profile':
+            # GET: Profil anwenden
+            global TRICK_TUNING_PROFILE
+            profile_name = query_params.get('name', '').strip()
+            
+            if not profile_name:
+                response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
+            else:
+                profile_name = normalize_trick_tuning_profile(profile_name)
+                TRICK_TUNING_PROFILE = profile_name
+                apply_trick_tuning_profile()
+                saved_ok, save_error = save_trick_tuning_profile()
+                
+                if saved_ok:
+                    response = json.dumps({"ok": True, "profile": profile_name}).encode('utf-8')
+                    debug_log(f"[PROFILE] Angewendet: {profile_name}")
+                else:
+                    response = json.dumps({"ok": False, "error": save_error}).encode('utf-8')
+            
+            response = response.encode('utf-8') if isinstance(response, str) else response
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+            writer.write(b'Pragma: no-cache\r\n')
+            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response)
                 
         elif request_path == '/data':
             data = {
@@ -1616,11 +1656,11 @@ async def handle_client(reader, writer):
             if not name:
                 error = "Name darf nicht leer sein."
             else:
-                # Primärer Pfad: expliziter Pending-Highscore aus dem Detektor.
+                # PrimÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤rer Pfad: expliziter Pending-Highscore aus dem Detektor.
                 if pending_highscore["active"]:
                     score_to_save = pending_highscore["score"]
                     timestamp_to_save = pending_highscore["timestamp"]
-                # Fallback: falls Pending-Status verloren ging, aber aktueller Score bereits höher ist.
+                # Fallback: falls Pending-Status verloren ging, aber aktueller Score bereits hÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶her ist.
                 elif detector.score > highscore_data["score"]:
                     score_to_save = detector.score
                     timestamp_to_save = get_datetime_string()
@@ -1663,7 +1703,7 @@ async def handle_client(reader, writer):
                         "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
                         "<h2>Highscore gespeichert</h2>"
                         f"<p>{html_escape(highscore_data.get('player', DEFAULT_PILOT_NAME))} steht jetzt mit {highscore_data['score']} Punkten im Highscore.</p>"
-                        "<p>Du wirst zur Hauptseite zurückgeleitet...</p>"
+                        "<p>Du wirst zur Hauptseite zurÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼ckgeleitet...</p>"
                         "</body></html>"
                     ).encode('utf-8')
                     writer.write(b'HTTP/1.1 200 OK\r\n')
@@ -1681,7 +1721,7 @@ async def handle_client(reader, writer):
                         "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
                         "<h2>Speichern fehlgeschlagen</h2>"
                         f"<p>{html_escape(error or 'Unbekannter Fehler')}</p>"
-                        "<p>Du wirst zur Hauptseite zurückgeleitet...</p>"
+                        "<p>Du wirst zur Hauptseite zurÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¼ckgeleitet...</p>"
                         "</body></html>"
                     ).encode('utf-8')
                     writer.write(b'HTTP/1.1 200 OK\r\n')
@@ -1921,5 +1961,3 @@ def run():
         debug_log("System manuell gestoppt.")
 
 run()
-
-

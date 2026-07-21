@@ -81,6 +81,15 @@ ota_led_cycle_start_ms = 0
 ota_chunks = {}  # { "chunk_index": "base64_data", ... }
 ota_total_chunks = 0
 ota_received_chunks = 0
+ota_target_file = "main.py"
+OTA_STAGING_PATH = "ota_staging.tmp"
+# Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
+# keine beliebigen Dateinamen vom Client).
+OTA_ALLOWED_TARGETS = (
+    "main.py", "index.html",
+    "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
+    "admin_profiles.html", "admin_system.html",
+)
 
 TRICK_TUNING_PROFILES = {
     "beginner": {
@@ -808,20 +817,6 @@ def start_access_point():
         debug_log(f"[AP ERROR] Hotspot-Setup fehlgeschlagen: {e}")
 
 
-# ==================== MEMORY OPTIMIZATION ====================
-def write_html_response(writer, html_content):
-    """Schreibe HTML mit Memory-Optimierung"""
-    gc.collect()  
-    html_bytes = html_content.encode('utf-8')
-    writer.write(b'HTTP/1.1 200 OK\r\n')
-    writer.write(b'Content-Type: text/html\r\n')
-    writer.write(b'Content-Length: ' + str(len(html_bytes)).encode() + b'\r\n')
-    writer.write(b'Connection: close\r\n\r\n')
-    writer.write(html_bytes)
-    del html_bytes
-    gc.collect()
-
-
 # ==================== WEBSERVER TEMPLATE ====================
 class LiveGyroTrickDetector:
     def __init__(self):
@@ -1222,82 +1217,29 @@ async def telemetry_loop():
 
 
 # ==================== WEBSERVER TEMPLATE ====================
-html_template = """<!DOCTYPE html><html>
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>__COPTER_NAME__ Arcade</title>
-<style>
-:root{--bg:#070b12;--panel:#111824;--panel2:#0d141f;--line:#26354a;--text:#eef4fb;--muted:#9fb4cb;--accent:#f39c12;--good:#2ecc71;--blue:#2d86d9;--red:#c0392b}
-*{box-sizing:border-box}body{margin:0;padding:18px;font-family:sans-serif;background:radial-gradient(circle at top,#10203a 0,#070b12 45%,#04070c 100%);color:var(--text)}
-.c{max-width:620px;margin:0 auto;background:linear-gradient(180deg,rgba(20,27,37,.96),rgba(12,18,28,.98));padding:22px;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 45px rgba(0,0,0,.45)}
-.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
-h1{margin:0;color:var(--accent);font-size:1.5em;letter-spacing:1px;text-transform:uppercase}
-.badge{color:var(--muted);font-size:.82em;padding:.35rem .6rem;border:1px solid #30465f;border-radius:999px;background:#0e1622}
-#s{font-size:3.2em;font-weight:800;line-height:1;color:var(--good);margin:14px 0 10px;text-shadow:0 0 16px rgba(46,204,113,.22)}
-.meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:.92em;margin-bottom:12px}
-.card{background:linear-gradient(180deg,rgba(13,20,31,.98),rgba(9,14,22,.98));border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:14px}
-.card h2{margin:0 0 10px;font-size:1em;color:#d8e5f4;letter-spacing:.4px}
-select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;border-radius:10px;padding:10px 12px;font-size:1em;outline:none}
-.n{min-height:18px;margin-top:8px;color:var(--muted);font-size:.82em}
-.t{max-height:220px;overflow:auto;background:var(--panel2);border:1px solid #1f2a3a;border-radius:12px;padding:10px 12px;font-family:monospace;font-size:.88em;line-height:1.45}
-.td{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07)}
-.td:last-child{border-bottom:0}
-.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
-.b{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1 1 150px;background:var(--blue);color:#fff;border:none;border-radius:11px;padding:11px 14px;cursor:pointer;font-weight:700;text-decoration:none}
-.b:hover{filter:brightness(1.08)}
-.br{background:var(--red)}
-.admin{display:block;margin-top:12px;text-align:right;color:#89a7c4;font-size:.78em;text-decoration:none}
-</style>
-</head>
-<body>
-<div class="c">
-<div class="top"><h1>&#128029; __COPTER_NAME_UPPER__ ARCADE</h1><div class="badge">WLAN / FPV / Tricks</div></div>
-<div id="s">0</div>
-<div class="meta"><div>Highscore: <b id="hs">0</b></div><div>Pilot: <b id="p">__DEFAULT_PILOT_NAME__</b></div></div>
-<div class="card"><h2>Trick-Tuning Profil</h2><select id="prof" onchange="setP()"><option value="freestyle">Freestyle</option></select><div id="pn" class="n">Profil...</div></div>
-<div class="card"><h2>Detektierte Manoever</h2><div class="t" id="tr">Warte...</div></div>
-<div class="btnrow"><button class="b" onclick="dl()">&#128229; Download</button><button class="b" onclick="dld()">&#129514; Debug-Log</button><button class="b br" onclick="rhs()">&#128465;&#65039; Reset HS</button></div>
-<a class="admin" href="/admin">&#9881;&#65039; Admin</a>
-</div>
-<script>
-function loadProfiles(activeProfile){fetch("/profiles-list",{cache:"no-store"}).then(r=>r.json()).then(d=>{const sel=document.getElementById("prof");const cur=activeProfile||sel.value;sel.innerHTML="";for(let p of(d.profiles||[])){const o=document.createElement("option");o.value=p.name;o.innerText=p.name.charAt(0).toUpperCase()+p.name.slice(1);if(p.name===cur)o.selected=true;sel.appendChild(o);}}).catch(e=>0)}
-function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):"Keine Tricks";if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}}).catch(e=>0)}
-function setP(){let p=document.getElementById("prof").value;document.getElementById("pn").innerText="Speichert...";fetch("/set-trick-profile?profile="+p).then(r=>r.json()).then(d=>{document.getElementById("pn").innerText="OK"}).catch(e=>{document.getElementById("pn").innerText="Fehler"})}
-function dl(){window.open("/download?manual=1","_blank")}
-function dld(){window.open("/download-debug?manual=1","_blank")}
-function rhs(){if(confirm("Highscore loeschen?")){fetch("/reset-highscore?web=1").then(()=>upd()).catch(e=>0)}}
-setInterval(upd,1000);loadProfiles();upd();
-</script>
-</body></html>"""
-
-# Jede .replace()-Operation erzeugt eine komplette neue Kopie des (grossen)
-# Templates im RAM. gc.collect() zwischen den Schritten gibt die jeweils
-# vorherige Kopie sofort frei, um MemoryError auf dem Pico zu vermeiden.
-gc.collect()
-html_template = html_template.replace("__COPTER_NAME__", html_escape(COPTER_NAME))
-gc.collect()
-html_template = html_template.replace("__COPTER_NAME_UPPER__", html_escape(COPTER_NAME.upper()))
-gc.collect()
-html_template = html_template.replace("__DEFAULT_PILOT_NAME__", html_escape(DEFAULT_PILOT_NAME))
-gc.collect()
-html_template = html_template.replace('value="beginner"', 'value="beginner"' + (' selected' if TRICK_TUNING_PROFILE == 'beginner' else ''))
-gc.collect()
-html_template = html_template.replace('value="freestyle"', 'value="freestyle"' + (' selected' if TRICK_TUNING_PROFILE == 'freestyle' else ''))
-gc.collect()
-html_template = html_template.replace('value="aggressive"', 'value="aggressive"' + (' selected' if TRICK_TUNING_PROFILE == 'aggressive' else ''))
-gc.collect()
-
-
-# ==================== OTA UPDATE SYSTEM ====================
-# Die grossen Admin-HTML-Seiten (OTA-Upload, Profile) sind NICHT mehr als
-# Python-String-Literale im Code eingebettet. Auf dem Pico ist RAM extrem
-# knapp - jedes grosse Literal wird beim Parsen des kompletten Skripts
-# (z.B. via Thonny "Run current script") dauerhaft resident gehalten,
-# selbst wenn die Seite nur selten aufgerufen wird. Stattdessen werden
-# die Seiten aus separaten .html Dateien gestreamt (analog zu
-# send_file_as_download) und belegen nur waehrend einer Anfrage RAM.
-ADMIN_OTA_HTML_PATH = "admin_ota.html"
+# Alle HTML-Seiten (Hauptseite + Admin-Bereich mit Unterseiten) liegen als
+# eigene .html Dateien auf dem Pico-Dateisystem und werden per
+# send_html_file() in 512-Byte-Haeppchen gestreamt. Kein einziges grosses
+# HTML-String-Literal ist mehr dauerhaft im Modul-RAM resident - das war
+# die Ursache der MemoryErrors beim Modul-Start.
+#
+# WICHTIG: COPTER_NAME/DEFAULT_PILOT_NAME sind in index.html fest als Text
+# eingetragen (kein Runtime-Replace mehr moeglich ohne die Datei wieder in
+# RAM zu laden). Wenn du COPTER_NAME hier oben aenderst, passe Titel/H1 in
+# index.html manuell mit an.
+#
+# Admin-Bereich (Unterseiten, wie ein Einstellungen-Menue):
+#   /admin           -> Dashboard/Uebersicht mit Links zu den Unterseiten
+#   /admin-update    -> OTA-Update (Datei-Upload)
+#   /admin-simulate  -> Trick-Simulation (Testen ohne Drohne)
+#   /admin-profiles  -> Trick-Tuning-Profile verwalten
+#   /admin-system    -> System-Info + manueller Restart
+INDEX_HTML_PATH = "index.html"
+ADMIN_DASHBOARD_HTML_PATH = "admin_dashboard.html"
+ADMIN_UPDATE_HTML_PATH = "admin_update.html"
+ADMIN_SIMULATE_HTML_PATH = "admin_simulate.html"
 ADMIN_PROFILES_HTML_PATH = "admin_profiles.html"
+ADMIN_SYSTEM_HTML_PATH = "admin_system.html"
 
 
 async def send_html_file(writer, file_path):
@@ -1394,13 +1336,20 @@ async def handle_client(reader, writer):
                 body_params = {}
                 
         if request_path == '/admin':
-            await send_html_file(writer, ADMIN_OTA_HTML_PATH)
+            await send_html_file(writer, ADMIN_DASHBOARD_HTML_PATH)
+
+        elif request_path == '/admin-update':
+            await send_html_file(writer, ADMIN_UPDATE_HTML_PATH)
+
+        elif request_path == '/admin-simulate':
+            await send_html_file(writer, ADMIN_SIMULATE_HTML_PATH)
                 
         elif request_path == '/upload-chunk' and request_method == 'POST':
-            global ota_total_chunks, ota_received_chunks, ota_update_active
+            global ota_total_chunks, ota_received_chunks, ota_update_active, ota_target_file
 
             chunk_index_str = '-1'
             total_str = '0'
+            target_str = 'main.py'
             if body_text:
                 idx_pos = body_text.find('index=')
                 if idx_pos >= 0:
@@ -1418,6 +1367,14 @@ async def handle_client(reader, writer):
                         total_end = len(body_text)
                     total_str = url_decode(body_text[total_start:total_end])
 
+                target_pos = body_text.find('target=')
+                if target_pos >= 0:
+                    target_start = target_pos + 7
+                    target_end = body_text.find('&', target_start)
+                    if target_end < 0:
+                        target_end = len(body_text)
+                    target_str = url_decode(body_text[target_start:target_end])
+
             chunk_data = ''
             if body_text:
                 marker = '&data='
@@ -1434,32 +1391,45 @@ async def handle_client(reader, writer):
             try:
                 chunk_index = int(chunk_index_str)
                 total = int(total_str)
-                
+                target_valid = True
+
                 if chunk_index == 0:
-                    ota_total_chunks = total
-                    ota_received_chunks = 0
-                    ota_update_active = True
-                    try:
-                        os.remove('update.pbp')
-                    except Exception:
-                        pass
-                    debug_log(f"[OTA] Chunk-Transfer gestartet: {total} Chunks erwartet")
-                
-                if chunk_data:
-                    with open('update.pbp', 'a') as f:
-                        f.write(chunk_data)
-                    ota_received_chunks += 1
-                    debug_log(f"[OTA] Chunk {chunk_index+1}/{total} empfangen ({len(chunk_data)} bytes)")
-                
-                response = json.dumps({"ok": True, "message": f"Chunk {chunk_index+1}/{total} gespeichert"}).encode('utf-8')
-                writer.write(b'HTTP/1.1 200 OK\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response)
-                
-                if chunk_index + 1 == total and ota_received_chunks == ota_total_chunks:
-                    debug_log("[OTA] Alle Chunks empfangen, bitte /finalize-upload aufrufen")
+                    if target_str not in OTA_ALLOWED_TARGETS:
+                        target_valid = False
+                    else:
+                        ota_total_chunks = total
+                        ota_received_chunks = 0
+                        ota_update_active = True
+                        ota_target_file = target_str
+                        try:
+                            os.remove('update.pbp')
+                        except Exception:
+                            pass
+                        debug_log(f"[OTA] Chunk-Transfer gestartet: {total} Chunks erwartet, Ziel={target_str}")
+
+                if not target_valid:
+                    response = json.dumps({"ok": False, "error": f"Ungueltiges Ziel: {target_str}"}).encode('utf-8')
+                    writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                    writer.write(b'Content-Type: application/json\r\n')
+                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(response)
+                else:
+                    if chunk_data:
+                        with open('update.pbp', 'a') as f:
+                            f.write(chunk_data)
+                        ota_received_chunks += 1
+                        debug_log(f"[OTA] Chunk {chunk_index+1}/{total} empfangen ({len(chunk_data)} bytes)")
+
+                    response = json.dumps({"ok": True, "message": f"Chunk {chunk_index+1}/{total} gespeichert"}).encode('utf-8')
+                    writer.write(b'HTTP/1.1 200 OK\r\n')
+                    writer.write(b'Content-Type: application/json\r\n')
+                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(response)
+
+                    if chunk_index + 1 == total and ota_received_chunks == ota_total_chunks:
+                        debug_log("[OTA] Alle Chunks empfangen, bitte /finalize-upload aufrufen")
                 
             except Exception as e:
                 debug_log(f"[OTA CHUNK] Fehler: {e}")
@@ -1477,34 +1447,41 @@ async def handle_client(reader, writer):
                 if ota_received_chunks != ota_total_chunks:
                     raise Exception(f"Incomplete upload: {ota_received_chunks}/{ota_total_chunks}")
 
-                decode_ok = safe_base64_file_to_file('update.pbp', 'main_temp.py')
+                target = ota_target_file if ota_target_file in OTA_ALLOWED_TARGETS else "main.py"
+
+                decode_ok = safe_base64_file_to_file('update.pbp', OTA_STAGING_PATH)
                 if not decode_ok:
                     raise Exception("Base64 Dekodierung fehlgeschlagen")
                 
                 try:
-                    temp_size = os.stat('main_temp.py')[6]
-                    debug_log(f"[OTA] Temp-Datei: {temp_size} bytes")
+                    staged_size = os.stat(OTA_STAGING_PATH)[6]
+                    debug_log(f"[OTA] Staging-Datei: {staged_size} bytes (Ziel: {target})")
                 except Exception:
-                    temp_size = 0
+                    staged_size = 0
                 
+                backup_path = "main_backup.py" if target == "main.py" else (target + ".bak")
                 try:
-                    with open('main.py', 'r') as f:
+                    with open(target, 'r') as f:
                         old_content = f.read()
-                    with open('main_backup.py', 'w') as f:
+                    with open(backup_path, 'w') as f:
                         f.write(old_content)
-                    debug_log(f"[OTA] Backup erstellt: {len(old_content)} bytes")
+                    debug_log(f"[OTA] Backup erstellt: {backup_path} ({len(old_content)} bytes)")
                 except Exception as e:
-                    debug_log(f"[OTA] Backup-Fehler: {e}")
+                    debug_log(f"[OTA] Backup-Fehler ({target}): {e}")
                 
                 try:
-                    os.remove('main.py')
+                    os.remove(target)
                 except Exception:
                     pass
                 
-                os.rename('main_temp.py', 'main.py')
-                debug_log(f"[OTA] Finale Datei gespeichert: main.py ({temp_size} bytes)")
-                
-                response = json.dumps({"ok": True, "message": f"Update erfolgreich gespeichert ({temp_size} bytes)! Starte Neustart..."}).encode('utf-8')
+                os.rename(OTA_STAGING_PATH, target)
+                debug_log(f"[OTA] Finale Datei gespeichert: {target} ({staged_size} bytes)")
+
+                needs_restart = (target == "main.py")
+                message = f"Update erfolgreich gespeichert: {target} ({staged_size} bytes)!"
+                if needs_restart:
+                    message += " Starte Neustart..."
+                response = json.dumps({"ok": True, "message": message, "restart": needs_restart}).encode('utf-8')
                 writer.write(b'HTTP/1.1 200 OK\r\n')
                 writer.write(b'Content-Type: application/json\r\n')
                 writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
@@ -1524,9 +1501,10 @@ async def handle_client(reader, writer):
                 except Exception:
                     pass
                 
-                await asyncio.sleep_ms(2000)
-                debug_log("[OTA] Starte machine.reset()...")
-                machine.reset()
+                if needs_restart:
+                    await asyncio.sleep_ms(2000)
+                    debug_log("[OTA] Starte machine.reset()...")
+                    machine.reset()
                 
             except Exception as e:
                 debug_log(f"[OTA FINALIZE] Fehler: {str(e)[:100]}")
@@ -1541,6 +1519,10 @@ async def handle_client(reader, writer):
                 ota_update_active = False
                 try:
                     os.remove('update.pbp')
+                except Exception:
+                    pass
+                try:
+                    os.remove(OTA_STAGING_PATH)
                 except Exception:
                     pass
                 
@@ -1561,6 +1543,47 @@ async def handle_client(reader, writer):
         
         elif request_path == '/admin-profiles':
             await send_html_file(writer, ADMIN_PROFILES_HTML_PATH)
+
+        elif request_path == '/admin-system':
+            await send_html_file(writer, ADMIN_SYSTEM_HTML_PATH)
+
+        elif request_path == '/system-info':
+            try:
+                mem_free = gc.mem_free()
+            except Exception:
+                mem_free = -1
+            try:
+                mem_alloc = gc.mem_alloc()
+            except Exception:
+                mem_alloc = -1
+
+            ip_addr = ""
+            if ENABLE_HOTSPOT:
+                try:
+                    ip_addr = network.WLAN(network.AP_IF).ifconfig()[0]
+                except Exception:
+                    ip_addr = ""
+
+            info_data = {
+                "mem_free": mem_free,
+                "mem_alloc": mem_alloc,
+                "uptime_s": time.ticks_ms() // 1000,
+                "ssid": AP_SSID,
+                "ip": ip_addr,
+                "hotspot_enabled": ENABLE_HOTSPOT,
+                "trick_tuning_profile": TRICK_TUNING_PROFILE,
+                "score": detector.score,
+                "highscore": highscore_data["score"],
+                "ota_active": ota_update_active,
+            }
+            response_data = json.dumps(info_data).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+            writer.write(b'Pragma: no-cache\r\n')
+            writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response_data)
         
         elif request_path == '/profiles-list':
             profiles_list = list_profile_files()
@@ -1982,12 +2005,7 @@ async def handle_client(reader, writer):
             writer.write(payload)
             
         else:
-            response_html = html_template.encode('utf-8')
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: text/html\r\n')
-            writer.write(b'Content-Length: ' + str(len(response_html)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response_html)
+            await send_html_file(writer, INDEX_HTML_PATH)
             
         await writer.drain()
     except OSError as e:

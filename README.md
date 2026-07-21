@@ -2,16 +2,44 @@
 
 FPV Score-Tracker auf einem Raspberry Pi Pico/Pico W mit passivem CRSF-Readout.
 
-Das Skript liest Attitude-Daten (Roll/Pitch/Yaw), erkennt Tricks, vergibt Punkte und zeigt alles live im Browser an. Zusätzlich gibt es Session- und Debug-TXT-Downloads direkt aus dem Webinterface.
+Das Skript liest Attitude-Daten (Roll/Pitch/Yaw), erkennt Tricks, vergibt Punkte und zeigt alles live im Browser an. Zusätzlich gibt es Session- und Debug-TXT-Downloads, eine Trick-Simulation zum Testen ohne Drohne, und ein OTA-Update-System direkt aus dem Webinterface.
 
 ## Features
 
 - Passives CRSF-UART Parsing (Attitude Frames)
 - Trick-Erkennung mit Punktesystem
-- Highscore mit Zeitstempel und Pilot
+- Highscore mit Zeitstempel und Pilot, inkl. Bestaetigungs-Popup bei neuem Rekord
 - WLAN Access Point direkt auf dem Pico
 - Web-UI mit Live-Score, Trick-Historie und Downloads
+- Trick-Simulation im Admin-Bereich (Roll/Flip/Spin ohne echte Drohne testen)
+- OTA-Update-System (main.py und alle HTML-Seiten per Browser aktualisieren, kein USB noetig)
+- Mehrstufiger Admin-Bereich mit eigenen Unterseiten (Dashboard, Update, Simulation, Profile, System)
+- Mehrere Trick-Tuning-Profile inkl. eigener Custom-Profile (`.pro` Dateien)
 - LED-Statusanzeige auf dem Pico
+
+## Benoetigte Dateien auf dem Pico
+
+Damit die Web-Oberflaeche funktioniert, muessen **alle folgenden Dateien** im selben Verzeichnis auf dem Pico liegen (nicht nur `main.py`):
+
+| Datei | Zweck |
+|---|---|
+| `main.py` | Hauptskript (Bootdatei, wird beim Start automatisch ausgefuehrt) |
+| `index.html` | Hauptseite (Score, Highscore, Trick-Historie, Downloads) |
+| `admin_dashboard.html` | Admin-Startseite: Uebersicht + Navigation zu den Unterseiten |
+| `admin_update.html` | Admin-Unterseite: OTA-Update (Datei-Upload) |
+| `admin_simulate.html` | Admin-Unterseite: Trick-Simulation |
+| `admin_profiles.html` | Admin-Unterseite: Trick-Profile verwalten |
+| `admin_system.html` | Admin-Unterseite: System-Info + manueller Restart |
+
+**Wichtig:** Die HTML-Seiten sind bewusst **nicht** als Python-Strings im Skript eingebettet, sondern eigenstaendige Dateien, die bei Bedarf vom Dateisystem gestreamt werden (siehe [Speicher-Architektur](#speicher-architektur-warum-so-viele-dateien)). Fehlen sie auf dem Pico, schlagen `/` bzw. die jeweilige Admin-Unterseite mit einem Dateifehler fehl.
+
+Laufzeit-/Datendateien, die das Skript selbst anlegt (kein manuelles Hochladen noetig):
+
+- `fpv_debug_session.txt`, `fpv_highscore.json`, `fpv_trick_settings.json`
+- `fpv_arcade_session_export.txt`, `fpv_debug_export.txt`
+- `<name>.pro` (Custom-Trick-Profile)
+- `update.pbp`, `ota_staging.tmp` (nur waehrend eines OTA-Uploads)
+- `main_backup.py` bzw. `<datei>.bak` (Backup der zuletzt per OTA ersetzten Datei)
 
 ## Hardware
 
@@ -46,49 +74,28 @@ Wichtig:
 
 ### Erste Installation auf dem Pico
 
-1. Lade das Skript `score_tracker.py` via **Thonny** oder **ampy** auf den Pico
-2. **Wichtig:** Speichere es als `main.py` auf dem Pico (nicht als `score_tracker.py`)
-   - Thonny: Rechtsklick auf die Datei → "Rename on device" → `main.py`
-   - ampy: `ampy put score_tracker.py main.py`
-3. Der Pico startet jetzt automatisch und zeigt das WLAN-Hotspot an
+1. Lade **alle sechs Dateien** (`main.py`, `index.html`, `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`) via **Thonny** (Dateien-Ansicht → Rechtsklick → "Upload to /") oder **ampy** auf den Pico.
+2. `main.py` muss exakt so heissen (ist die Bootdatei, die MicroPython beim Start automatisch ausfuehrt).
+3. Starte den Pico neu (Hardware-Reset oder Stromzyklus). Der Hotspot sollte danach automatisch erscheinen.
 
 ### Nach Änderungen
 
-- Nutze das **OTA Update System** (siehe unten)
-- Oder bearbeite die `main.py` direkt via Thonny und drücke F5 zum Neuladen
+- Sowohl `main.py` als auch alle Admin-/HTML-Seiten koennen ueber das OTA-Update-System (siehe unten) direkt per Browser aktualisiert werden - kein USB/Thonny mehr noetig.
+- Alternativ kannst du jede der sechs Dateien jederzeit auch manuell per Thonny erneut hochladen.
+- Zum Testen waehrend der Entwicklung: Speichere als `main.py` auf dem Pico und starte per Hardware-Reset, statt "Run current script" in Thonny zu benutzen (siehe [Speicher-Architektur](#speicher-architektur-warum-so-viele-dateien) fuer den Grund).
 
-## Betaflight-Dump: Einordnung fuer dein Setup
+## Speicher-Architektur (warum so viele Dateien?)
 
-Dein geposteter Dump zeigt unter anderem:
+Der Pico hat nur sehr wenig RAM (ca. 190-260 KB, abzueglich WLAN-Treiber, Stack etc.). Grosse HTML/JS-Strings, die permanent als Python-Variablen im Modul resident sind, haben in fruehen Versionen dieses Projekts zu `MemoryError` beim Booten gefuehrt (das Skript ist gewachsen, u.a. durch die Trick-Simulation-Buttons).
 
-- Betaflight 4.5.1 auf GEPRCF405
-- `feature RX_SERIAL` ist aktiv
-- `set serialrx_provider = CRSF`
-- `set tlm_halfduplex = ON`
+Loesung:
 
-Das bedeutet:
+- Jede HTML-Seite liegt als eigene `.html` Datei auf dem Dateisystem.
+- Beim Request wird die Datei in 512-Byte-Haeppchen direkt an den Browser gestreamt (`send_html_file()`), **ohne** den kompletten Inhalt als RAM-String zu halten.
+- Dadurch belegen die Seiten nur kurzzeitig waehrend einer Anfrage Speicher, statt dauerhaft im Modul-RAM zu liegen.
+- `index.html` enthaelt den Copter-Namen als festen Text (kein Runtime-Replace mehr). Wenn du `COPTER_NAME` in `main.py` aenderst, passe Titel/Ueberschrift in `index.html` manuell mit an.
 
-- Dein Receiver-Link laeuft als Serial RX im CRSF-Protokoll.
-- Fuer den Pico musst du das CRSF-Signal passiv mitlesen.
-
-Praktisch anschliessen:
-
-1. Nimm den CRSF-Ausgang, der am FC als RX-Serial genutzt wird (in Betaflight Ports sichtbar).
-2. Fuehre dieses Signal auf GP1 (RX) des Pico.
-3. GND von FC und Pico verbinden.
-4. Pico separat versorgen (USB oder VSYS).
-
-Hinweis:
-
-- Der Pico sendet in diesem Projekt nicht zurueck, er liest nur mit.
-- Wenn kein Signal ankommt, zuerst in Betaflight Configurator im Tab Ports pruefen, auf welchem UART "Serial RX" aktiv ist.
-- Falls du unsicher bist, kannst du in der README-Logik bei Bedarf GP1 auf einen anderen RX-Pin umlegen, musst dann aber auch die UART-Konfiguration in `score_tracker.py` anpassen.
-
-## Installation
-
-1. MicroPython auf den Pico flashen.
-2. Datei `score_tracker.py` auf den Pico kopieren.
-3. Skript starten (manuell oder als `main.py`).
+**Hinweis zu Thonny:** "Run current script" (`%Run -c $EDITOR_CONTENT`) schickt den kompletten Skript-Text als einen String ueber die serielle Verbindung und braucht dabei spuerbar mehr RAM als ein bereits als `main.py` gespeichertes Skript, das per Hardware-Reset gestartet wird. Wenn trotz aller Optimierungen ein `MemoryError` beim Booten auftritt, zuerst pruefen, ob das Problem auch beim Start via `main.py` + Reset auftritt.
 
 ## Start und Zugriff
 
@@ -107,19 +114,40 @@ Auf der Startseite siehst du:
 - Detektierte Manoever (Historie)
 - Buttons fuer Session- und Debug-TXT Download
 - Highscore Reset
+- Link zum Admin-Bereich (Dashboard mit Unterseiten fuer Update, Simulation, Profile, System)
+
+## Admin-Bereich
+
+Der Admin-Bereich ist wie ein Einstellungen-Menue mit Unterseiten aufgebaut, erreichbar ueber `/admin`:
+
+| Unterseite | Route | Zweck |
+|---|---|---|
+| Dashboard | `/admin` | Uebersicht (Score, Highscore, aktives Profil, freier Speicher) + Navigation |
+| Update | `/admin-update` | OTA-Update: `main.py` oder HTML-Dateien per Browser hochladen |
+| Simulation | `/admin-simulate` | Tricks (Roll/Flip/Spin) ohne Drohne simulieren |
+| Profile | `/admin-profiles` | Trick-Tuning-Profile verwalten (anlegen, hoch-/runterladen, loeschen, anwenden) |
+| System | `/admin-system` | System-Info (Speicher, Uptime, SSID/IP) + manueller Restart |
+
+Alle Unterseiten teilen sich eine gemeinsame Navigationsleiste, ueber die man zwischen ihnen und zurueck zur Startseite wechseln kann.
 
 ## LED-Verhalten
 
 - LED dauerhaft AN: System ist bereit (Webserver/Hotspot gestartet)
 - LED blinkt: Neuer Highscore wurde geknackt und wartet auf Bestaetigung
+- LED blinkt schnell: OTA-Update laeuft
 
-Die Blinkgeschwindigkeit stellst du mit `LED_BLINK_INTERVAL_MS` ein.
+Die Blinkgeschwindigkeit stellst du mit `LED_BLINK_INTERVAL_MS` (Highscore) bzw. `OTA_LED_BLINK_INTERVAL_MS` (OTA) ein.
 
 ## Highscore-Flow
 
-- Wenn ein neuer Rekord erkannt wird, erscheint ein einfacher OK-Dialog.
-- Beim Klick auf OK wird der Highscore gespeichert.
-- Der Pilotenname kommt aus der Variable `DEFAULT_PILOT_NAME`.
+- Wenn ein neuer Rekord erkannt wird, poppt beim naechsten Laden der Startseite ein Browser-Dialog auf (`prompt()`) mit dem erreichten Score.
+- Pilot-Namen eingeben und bestaetigen -> Highscore wird unter diesem Namen gespeichert.
+- Dialog abbrechen/leer lassen -> Highscore wird automatisch mit `DEFAULT_PILOT_NAME` bestaetigt.
+- Solange der Dialog offen ist, wird kein zweiter Dialog geoeffnet (client-seitig abgesichert ueber ein Sperr-Flag).
+
+## Trick-Simulation (ohne Drohne testen)
+
+Auf der Admin-Unterseite `/admin-simulate` gibt es drei Buttons (Roll/Flip/Spin), die synthetische Gyro-Daten durch denselben Erkennungscode (`detector.update()`) schicken wie echte Telemetrie. Damit kannst du das Punktesystem testen, ohne eine Drohne anzuschliessen.
 
 ## Downloads
 
@@ -128,15 +156,15 @@ Es gibt zwei Downloads im UI:
 - Session TXT: erkannte Tricks + Scores
 - Debug TXT: Debug-Verlauf/Logs
 
-Technisch wird zuerst eine Exportdatei geschrieben und danach als Download gesendet.
+Technisch wird zuerst eine Exportdatei geschrieben (in 512-Byte-Haeppchen gestreamt, nicht als ein grosser RAM-String) und danach als Download gesendet.
 
 ## Wichtige Konfigurationsvariablen
 
-Diese Variablen kannst du direkt in `score_tracker.py` oben anpassen:
+Diese Variablen kannst du direkt in `main.py` oben anpassen:
 
-- `COPTER_NAME`: Name des Copters (UI + Exporte)
+- `COPTER_NAME`: Name des Copters (Exporte; fuer die Web-UI siehe Hinweis in [Speicher-Architektur](#speicher-architektur-warum-so-viele-dateien))
 - `DEFAULT_PILOT_NAME`: Standard-Pilot fuer Highscore
-- `TRICK_TUNING_PROFILE`: `soft`, `medium` oder `aggressive`
+- `TRICK_TUNING_PROFILE`: `beginner`, `freestyle` oder `aggressive`
 - `ENABLE_HOTSPOT`: Hotspot an/aus
 - `ENABLE_SERIAL_DEBUG`: Serielle Logs an/aus
 - `ENABLE_LIVE_GYRO_DEBUG`: Live-Gyro Konsolenlogs an/aus
@@ -145,27 +173,21 @@ Diese Variablen kannst du direkt in `score_tracker.py` oben anpassen:
 
 ## Trick-Tuning-Profile
 
-Du kannst das Erkennungsverhalten jetzt direkt im Webinterface umstellen. Der Pico speichert die Auswahl dauerhaft in einer Datei und lädt sie beim nächsten Start wieder.
+Du kannst das Erkennungsverhalten direkt im Webinterface (Startseite) oder im Admin-Bereich (`/admin-profiles`) umstellen. Der Pico speichert die Auswahl dauerhaft in `fpv_trick_settings.json` und laedt sie beim naechsten Start wieder.
 
-Wenn noch keine gespeicherte Einstellung vorhanden ist, startet das System automatisch mit:
+Eingebaute Profile: `beginner`, `freestyle`, `aggressive`. Zusaetzlich kannst du im Admin-Bereich eigene Profile als `.pro` Dateien anlegen, hoch-/runterladen und loeschen.
 
-- `aggressive`
-
-Optional kannst du den Startwert auch oben im Code setzen:
-
-- `TRICK_TUNING_PROFILE = "soft"`
-- `TRICK_TUNING_PROFILE = "medium"`
-- `TRICK_TUNING_PROFILE = "aggressive"`
+Wenn noch keine gespeicherte Einstellung vorhanden ist, startet das System automatisch mit `aggressive`.
 
 Empfehlung:
 
-- `soft`: erkennt leichter, gut fuer kleinere oder weichere Manoever, kann aber eher zu False Positives neigen
-- `medium`: Standardprofil, guter Mittelweg
+- `beginner`: erkennt leichter, gut fuer kleinere oder weichere Manoever, kann aber eher zu False Positives neigen
+- `freestyle`: guter Mittelweg
 - `aggressive`: strenger, besser gegen Fehltrigger bei wilden Bewegungen, braucht aber deutlichere Tricks
 
 ## Trick-Erkennung feinjustieren
 
-Je nach Copter, Rate und Filter koennen diese Werte angepasst werden:
+Je nach Copter, Rate und Filter koennen diese Werte angepasst werden (entweder global in `main.py` oder pro Profil):
 
 - `GYRO_TRICK_THRESHOLD`
 - `STABLE_THRESHOLD`
@@ -179,12 +201,30 @@ Je nach Copter, Rate und Filter koennen diese Werte angepasst werden:
 
 ## HTTP-Routen
 
-- `/` -> Webinterface
-- `/data` -> Live JSON Daten
-- `/download` und `/download-session` -> Session Export
-- `/download-debug` und `/download-debug-raw` -> Debug Export
-- `/confirm-highscore` -> Highscore per OK bestaetigen
-- `/reset-highscore` -> Highscore und Session zuruecksetzen
+| Route | Zweck |
+|---|---|
+| `/` | Webinterface (Hauptseite, `index.html`) |
+| `/data` | Live JSON Daten (Score, Highscore, Historie, pending Highscore, aktives Profil) |
+| `/download`, `/download-session` | Session Export (TXT) |
+| `/download-debug`, `/download-debug-raw` | Debug Export (TXT) |
+| `/confirm-highscore` | Highscore mit `DEFAULT_PILOT_NAME` bestaetigen |
+| `/set-highscore-name?name=...` | Highscore mit eigenem Pilot-Namen bestaetigen |
+| `/reset-highscore` | Highscore und Session-Score zuruecksetzen |
+| `/set-trick-profile?profile=...` | Aktives Trick-Profil setzen |
+| `/profiles-list` | Liste aller Profile (eingebaut + custom) |
+| `/apply-profile?name=...` | Profil anwenden (Admin) |
+| `/create-profile` (POST) | Custom-Profil anlegen/ueberschreiben |
+| `/download-profile?name=...` | Profil als `.pro` herunterladen |
+| `/delete-profile?name=...` | Custom-Profil loeschen |
+| `/admin` | Admin-Dashboard: Uebersicht + Navigation zu den Unterseiten |
+| `/admin-update` | Admin-Seite: OTA-Update |
+| `/admin-simulate` | Admin-Seite: Trick-Simulation |
+| `/admin-profiles` | Admin-Seite: Profile verwalten |
+| `/admin-system` | Admin-Seite: System-Info + Restart |
+| `/system-info` | Live JSON Daten (freier/belegter Speicher, Uptime, SSID, IP, aktives Profil, OTA-Status) |
+| `/upload-chunk`, `/finalize-upload` | OTA-Update Datenuebertragung (Ziel: `main.py` oder eine der Admin-/HTML-Seiten, siehe Whitelist unten) |
+| `/restart-pico` | Pico manuell neu starten |
+| `/simulate-trick?type=roll\|flip\|spin` | Trick-Simulation ohne Drohne |
 
 ## Troubleshooting
 
@@ -199,6 +239,17 @@ Je nach Copter, Rate und Filter koennen diese Werte angepasst werden:
 - Gemeinsame GND vorhanden?
 - FC sendet wirklich CRSF Attitude?
 - In Betaflight Ports pruefen, welcher UART "Serial RX" hat, und genau diesen Datenpfad passiv abgreifen.
+
+### `/` oder eine Admin-Unterseite liefert einen Fehler
+
+- Pruefen, ob `index.html`, `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html` und `admin_system.html` tatsaechlich auf dem Pico liegen (Thonny Dateien-Ansicht).
+- Diese Dateien werden **nicht** automatisch mitgeliefert - beim ersten Setup manuell per Thonny hochladen. Danach koennen sie auch per OTA aktualisiert werden.
+
+### `MemoryError` beim Booten
+
+- Pruefen, ob du ueber "Run current script" (`%Run -c $EDITOR_CONTENT`) testest - das braucht mehr RAM als ein gespeichertes `main.py` + Hardware-Reset.
+- Pruefen, ob alle sechs Dateien vorhanden sind (fehlende Dateien fuehren zu Fehlern, aber keinem MemoryError direkt - trotzdem als erstes ausschliessen).
+- Falls das Skript weiter waechst (neue Features/HTML), im Zweifel weitere grosse Textbloecke ebenfalls in eigene Dateien auslagern statt als Python-String einzubetten.
 
 ### Falsche oder keine Trick-Erkennung
 
@@ -218,26 +269,30 @@ Dieses Projekt ist fuer Logging/Gamification gedacht. Es ersetzt keine sicherhei
 
 ## OTA Updates über WiFi
 
-Der Pico unterstützt **Over-the-Air (OTA) Updates** - du kannst das Skript direkt über die WebUI aktualisieren, ohne den Pico per USB anzuschließen.
+Der Pico unterstützt **Over-the-Air (OTA) Updates** - du kannst sowohl `main.py` als auch alle HTML-Seiten direkt über die WebUI aktualisieren, ohne den Pico per USB anzuschließen.
+
+**Erlaubte Ziel-Dateien:** `main.py`, `index.html`, `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`. Welche Datei ersetzt wird, entscheidet der **Dateiname** der ausgewählten Datei: Waehlst du eine Datei, die exakt einem dieser HTML-Dateinamen entspricht, wird genau diese Datei auf dem Pico ersetzt. Jede andere `.py`-Datei wird immer als `main.py` gespeichert (unabhaengig vom lokalen Dateinamen). Andere Ziel-Dateinamen werden serverseitig abgelehnt (Whitelist, kein beliebiges Ueberschreiben von Dateien moeglich).
 
 ### Wie man ein Update durchführt:
 
 1. Verbinde dich mit dem WLAN `FPV_Gamification_Pico` (Passwort: `drohnenspiel`)
 2. Öffne `http://192.168.4.1` im Browser
-3. Klicke auf den **⚙️ Admin-Link** unten rechts
-4. Klicke auf das **Datei-Eingabefeld** und wähle dein aktualisiertes Python-Skript (benannt als `main.py` oder `score_tracker.py`)
-5. Klicke **📤 Update speichern**
-6. Der Pico speichert die alte Version als `main_backup.py` und lädt das neue Skript als `main.py`
-7. Der Pico startet automatisch neu und lädt die neue Version
+3. Klicke auf den **⚙️ Admin-Link** unten rechts und dann auf **Update** in der Navigation (`/admin-update`)
+4. Klicke auf das **Datei-Eingabefeld** und wähle die aktualisierte Datei:
+   - Ein beliebig benanntes `.py`-Skript wird als `main.py` gespeichert.
+   - Eine Datei, die exakt einem der Admin-/HTML-Dateinamen entspricht, ersetzt genau diese Datei.
+5. Klicke **📤 Upload**
+6. Der Pico sichert die bisherige Version der Zieldatei (`main_backup.py` bzw. `<datei>.bak`) und speichert die neue Version unter dem Zieldateinamen.
+7. **Nur bei `main.py`:** Der Pico startet automatisch neu und lädt die neue Version. Bei HTML-Dateien ist kein Neustart noetig - einfach die Seite im Browser neu laden.
 
 ### Wichtig:
 
-- Stelle sicher, dass dein neues Python-Skript **syntaktisch korrekt** ist
-- Das Skript wird als **`main.py`** gespeichert - das ist die Bootdatei, die der Pico beim Start automatisch ausführt
-- Falls etwas schief läuft, kannst du die alte Version später via Thonny oder ähnlich wiederherstellen (Datei: `main_backup.py`)
-- Während des Updates solltest du nicht fliegen
-- Das Update speichert ein komplettes Backup, falls etwas schiefgeht
+- Stelle sicher, dass ein neues `main.py` **syntaktisch korrekt** ist (z.B. lokal mit `python -m py_compile main.py` pruefen) - fehlerhafter Code fuehrt sonst zu einem Bootloop.
+- Falls etwas schief läuft, kannst du die alte Version später via Thonny wiederherstellen (`main_backup.py` bzw. `<datei>.bak`).
+- Während eines `main.py`-Updates solltest du nicht fliegen.
+- Das Update speichert vor jedem Ueberschreiben ein Backup der bisherigen Zieldatei.
 
 ### Manueller Restart:
 
-Im Admin-Panel gibt es auch einen Button **🔄 Pico jetzt neustarten**, um den Pico neu zu starten ohne das Skript zu ändern.
+Auf der Admin-Unterseite `/admin-system` gibt es einen Button **🔄 Restart**, um den Pico neu zu starten ohne eine Datei zu ändern.
+

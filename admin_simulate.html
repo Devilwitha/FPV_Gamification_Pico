@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - Simulation</title>
+<style>
+body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}
+h1{color:#2980b9;font-size:1.3em;margin:0 0 10px}
+.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #2980b9;border-radius:8px}
+.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:#1a2637;color:#9fb4cb;border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}
+.nv a.on{background:#2980b9;color:#fff;border-color:#2980b9;font-weight:bold}
+.s{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:10px 0}
+.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}
+.b{background:#2980b9;color:#fff;padding:12px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px;font-weight:bold;font-family:monospace;font-size:1em}
+.b:hover{filter:brightness(1.1)}
+.b.flip{background:#8e44ad}
+.b.spin{background:#16a085}
+#simst{color:#9fb4cb;font-size:.9em;margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>&#127917; TRICK-SIMULATION</h1>
+<div class="nv">
+<a href="/admin">Dashboard</a>
+<a href="/admin-update">Update</a>
+<a href="/admin-simulate" class="on">Simulation</a>
+<a href="/admin-profiles">Profile</a>
+<a href="/admin-system">System</a>
+<a href="/">Home</a>
+</div>
+<div class="s">
+<h2>Ohne Drohne testen</h2>
+<div id="simst">Bereit...</div>
+<button class="b" onclick="sim('roll')">Roll</button>
+<button class="b flip" onclick="sim('flip')">Flip</button>
+<button class="b spin" onclick="sim('spin')">Spin</button>
+</div>
+</div>
+<script>
+function sim(t){
+const s=document.getElementById('simst');
+s.innerText='Simuliere '+t+'...';
+fetch('/simulate-trick?type='+t,{cache:'no-store'}).then(r=>r.json()).then(d=>{
+s.innerText=d.ok?(d.trick?('OK: '+d.trick+' (+'+d.points+' Pkt)'):'Kein Trick erkannt (Schwellenwerte pruefen)'):'Fehler: '+d.error;
+}).catch(er=>{s.innerText='Fehler: '+er;});
+}
+</script>
+</body>
+</html>

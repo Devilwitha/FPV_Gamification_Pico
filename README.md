@@ -333,34 +333,51 @@ Jeder im Bundle enthaltene Dateiname wird auf dem Pico gegen `OTA_ALLOWED_TARGET
 bevor irgendetwas geschrieben wird - ein manipuliertes Bundle kann also keine beliebigen
 Dateien überschreiben.
 
-## Recovery-Modus fuer sehr alte/kaputte Installationen (`main2.py`)
+## Developer-Modus (Einzeldatei-OTA erlauben/sperren)
 
-`main2.py` ist ein eigenstaendiges Notfall-Skript fuer den Fall, dass auf einem Pico noch
+Auf der Admin-Unterseite **System** (`/admin-system`) gibt es einen Schiebeschalter
+**Developer-Modus**:
+
+- **Aus (Standard):** OTA akzeptiert nur komplette `firmware.nbo` Bundles. Einzelne
+  `main.py`/`admin_*.html`/`index.html` Uploads werden serverseitig abgelehnt.
+- **An:** Zusätzlich zu Bundles dürfen auch einzelne `.py`/`.html` Dateien per OTA
+  hochgeladen werden (schneller für kleine Fixes, aber riskanter, da einzelne Dateien
+  ohne den Rest des Bundles ersetzt werden).
+
+Die Einstellung wird in `fpv_system_settings.json` gespeichert und übersteht einen Neustart.
+Die Durchsetzung erfolgt serverseitig in `/upload-chunk` (nicht nur im Browser) - ein
+direkter Request an die OTA-Routen kann die Sperre also nicht umgehen.
+
+## Recovery-Modus fuer sehr alte/kaputte Installationen (`mainLight.py`)
+
+`mainLight.py` ist ein eigenstaendiges Notfall-Skript fuer den Fall, dass auf einem Pico noch
 eine sehr alte Firmware-Version laeuft (ohne modernes OTA-System) oder `main.py` defekt ist.
 Es macht **nur** zwei Dinge: WLAN-Hotspot starten und eine minimale OTA-Update-Seite anzeigen -
 keine Telemetrie, keine Trick-Erkennung. Die komplette OTA-Seite ist direkt als Python-String
-in `main2.py` eingebettet (kein `index.html`/`admin_*.html` noetig), damit das Update auch
+in `mainLight.py` eingebettet (kein `index.html`/`admin_*.html` noetig), damit das Update auch
 funktioniert, wenn auf dem Pico ausser einer alten `main.py` gar keine anderen Dateien liegen.
 
 ### Verwendung:
 
 1. Pico per USB mit Thonny verbinden.
-2. `main2.py` auf den Pico hochladen.
-3. Datei auf dem Pico von `main2.py` in `main.py` **umbenennen** (die alte `main.py` wird
+2. `mainLight.py` auf den Pico hochladen.
+3. Datei auf dem Pico von `mainLight.py` in `main.py` **umbenennen** (die alte `main.py` wird
    dabei ueberschrieben - vorher lokal sichern, falls du sie behalten willst). MicroPython
-   fuehrt beim Booten immer `main.py` aus, niemals `main2.py` - daher ist die Umbenennung
+   fuehrt beim Booten immer `main.py` aus, niemals `mainLight.py` - daher ist die Umbenennung
    zwingend noetig.
 4. Pico per Hardware-Reset neu starten. Jetzt laeuft der Recovery-Server statt der alten
    Firmware.
-5. Mit dem WLAN verbinden (SSID/Passwort siehe `AP_SSID`/`AP_PASSWORD` oben in `main2.py`,
+5. Mit dem WLAN verbinden (SSID/Passwort siehe `AP_SSID`/`AP_PASSWORD` oben in `mainLight.py`,
    standardmaessig identisch zur normalen Firmware) und `http://192.168.4.1` im Browser
    aufrufen.
 6. Empfohlen: das komplette `firmware.nbo` Bundle hochladen (siehe oben) - das entpackt und
    ersetzt `main.py` + alle `admin_*.html` + `index.html` in einem Rutsch. Alternativ reicht
    auch ein einzelnes `main.py` fuer einen minimalen Fix.
 7. Sobald `main.py` Teil des Uploads war, startet der Pico automatisch neu und bootet danach
-   wieder ganz normal mit der neuen Firmware (nicht mehr mit `main2.py`).
+   wieder ganz normal mit der neuen Firmware (nicht mehr mit `mainLight.py`).
 
-`main2.py` nutzt exakt dasselbe OTA-Chunk-Upload-, Backup- und Bundle-Format wie die normale
-Firmware, ist aber komplett unabhaengig von den `admin_*.html`-Dateien.
+`mainLight.py` nutzt exakt dasselbe OTA-Chunk-Upload-, Backup- und Bundle-Format wie die normale
+Firmware, ist aber komplett unabhaengig von den `admin_*.html`-Dateien (und vom Developer-Modus-
+Schalter - im Recovery-Modus sind Einzeldatei-Uploads immer erlaubt, damit ein kaputtes System
+auf jeden Fall reparierbar bleibt).
 

@@ -56,6 +56,7 @@ SESSION_EXPORT_FILE_PATH  = "fpv_arcade_session_export.txt"
 DEBUG_EXPORT_FILE_PATH    = "fpv_debug_export.txt"
 HIGHSCORE_FILE_PATH       = "fpv_highscore.json"
 TRICK_SETTINGS_FILE_PATH  = "fpv_trick_settings.json"
+SYSTEM_SETTINGS_FILE_PATH = "fpv_system_settings.json"
 LED_BLINK_INTERVAL_MS     = 220
 OTA_LED_BLINK_INTERVAL_MS = 90
 # =======================================================
@@ -76,6 +77,10 @@ status_led_last_toggle_ms = 0
 system_ready = False
 ota_update_active = False
 ota_led_cycle_start_ms = 0
+# Developer-Modus (Schiebeschalter auf der System-Seite): standardmaessig AUS,
+# dann akzeptiert OTA nur komplette firmware.nbo Bundles. Erst wenn aktiviert,
+# duerfen auch einzelne .py/.html Dateien per OTA hochgeladen werden.
+DEVELOPER_MODE_ENABLED = False
 
 # ==================== OTA CHUNK STORAGE ====================
 ota_chunks = {}  # { "chunk_index": "base64_data", ... }
@@ -225,6 +230,39 @@ def save_trick_tuning_profile():
     except Exception as e:
         try:
             with open(TRICK_SETTINGS_FILE_PATH, 'w') as f:
+                f.write(payload)
+            return True, ""
+        except Exception as e2:
+            return False, f"{e} | fallback={e2}"
+
+
+def load_system_settings():
+    global DEVELOPER_MODE_ENABLED
+    try:
+        with open(SYSTEM_SETTINGS_FILE_PATH, 'r') as f:
+            data = json.loads(f.read())
+        DEVELOPER_MODE_ENABLED = bool(data.get("developer_mode", False))
+    except Exception:
+        DEVELOPER_MODE_ENABLED = False
+
+
+def save_system_settings():
+    payload = json.dumps({"developer_mode": DEVELOPER_MODE_ENABLED})
+    try:
+        tmp_path = SYSTEM_SETTINGS_FILE_PATH + ".tmp"
+        with open(tmp_path, 'w') as f:
+            f.write(payload)
+
+        try:
+            os.remove(SYSTEM_SETTINGS_FILE_PATH)
+        except Exception:
+            pass
+
+        os.rename(tmp_path, SYSTEM_SETTINGS_FILE_PATH)
+        return True, ""
+    except Exception as e:
+        try:
+            with open(SYSTEM_SETTINGS_FILE_PATH, 'w') as f:
                 f.write(payload)
             return True, ""
         except Exception as e2:
@@ -866,6 +904,7 @@ load_highscore()
 init_status_led()
 load_trick_tuning_profile()
 apply_trick_tuning_profile()
+load_system_settings()
 
 
 def start_access_point():
@@ -1366,7 +1405,7 @@ async def send_html_file(writer, file_path):
 
 
 async def handle_client(reader, writer):
-    global TRICK_TUNING_PROFILE
+    global TRICK_TUNING_PROFILE, DEVELOPER_MODE_ENABLED
     try:
         request_line = await reader.readline()
         if not request_line: 
@@ -1494,11 +1533,23 @@ async def handle_client(reader, writer):
                 chunk_index = int(chunk_index_str)
                 total = int(total_str)
                 target_valid = True
+                target_error = ""
 
                 if chunk_index == 0:
-                    if target_str not in OTA_ALLOWED_TARGETS and target_str != OTA_BUNDLE_TARGET:
-                        target_valid = False
+                    if target_str == OTA_BUNDLE_TARGET:
+                        target_valid = True
+                    elif target_str in OTA_ALLOWED_TARGETS:
+                        # Einzeldatei-Uploads (main.py/*.html) nur erlaubt, wenn
+                        # der Developer-Modus auf der System-Seite aktiviert ist.
+                        # Standardmaessig (Developer-Modus AUS) wird nur ein
+                        # komplettes firmware.nbo Bundle akzeptiert.
+                        target_valid = DEVELOPER_MODE_ENABLED
+                        if not target_valid:
+                            target_error = "Einzeldatei-Uploads sind deaktiviert. Aktiviere den Developer-Modus (System-Seite) oder lade ein firmware.nbo Bundle hoch."
                     else:
+                        target_valid = False
+
+                    if target_valid:
                         ota_total_chunks = total
                         ota_received_chunks = 0
                         ota_update_active = True
@@ -1510,7 +1561,7 @@ async def handle_client(reader, writer):
                         debug_log(f"[OTA] Chunk-Transfer gestartet: {total} Chunks erwartet, Ziel={target_str}")
 
                 if not target_valid:
-                    response = json.dumps({"ok": False, "error": f"Ungueltiges Ziel: {target_str}"}).encode('utf-8')
+                    response = json.dumps({"ok": False, "error": target_error or f"Ungueltiges Ziel: {target_str}"}).encode('utf-8')
                     writer.write(b'HTTP/1.1 400 Bad Request\r\n')
                     writer.write(b'Content-Type: application/json\r\n')
                     writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
@@ -1691,6 +1742,7 @@ async def handle_client(reader, writer):
                 "ota_active": ota_update_active,
                 "ota_received_chunks": ota_received_chunks,
                 "ota_total_chunks": ota_total_chunks,
+                "developer_mode": DEVELOPER_MODE_ENABLED,
             }
             response_data = json.dumps(info_data).encode('utf-8')
             writer.write(b'HTTP/1.1 200 OK\r\n')
@@ -1948,6 +2000,27 @@ async def handle_client(reader, writer):
                 "ok": saved_ok,
                 "error": "" if saved_ok else ("Speichern fehlgeschlagen: " + str(save_error)),
                 "trick_tuning_profile": TRICK_TUNING_PROFILE
+            }).encode('utf-8')
+
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+            writer.write(b'Pragma: no-cache\r\n')
+            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(payload)
+
+        elif request_path == '/set-developer-mode':
+            DEVELOPER_MODE_ENABLED = query_params.get('enabled', '0') == '1'
+            saved_ok, save_error = save_system_settings()
+
+            if saved_ok:
+                debug_console_only(f"[SYSTEM] Developer-Modus: {'AN' if DEVELOPER_MODE_ENABLED else 'AUS'}")
+
+            payload = json.dumps({
+                "ok": saved_ok,
+                "error": "" if saved_ok else ("Speichern fehlgeschlagen: " + str(save_error)),
+                "developer_mode": DEVELOPER_MODE_ENABLED
             }).encode('utf-8')
 
             writer.write(b'HTTP/1.1 200 OK\r\n')

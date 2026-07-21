@@ -30,8 +30,8 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 <a href="/admin-system">System</a>
 <a href="/">Home</a>
 </div>
-<div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html</div>
-<input type="file" id="f" accept=".py,.html">
+<div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html - oder ein komplettes <b>firmware.nbo</b> Bundle (alle Dateien auf einmal, siehe build_firmware.py)</div>
+<input type="file" id="f" accept=".py,.html,.nbo">
 <div id="fi" style="color:#9fb4cb;font-size:0.9em">Datei waehlen...</div>
 <div id="s" class="s"></div>
 <button class="b" onclick="u()">Upload</button>
@@ -43,18 +43,26 @@ document.getElementById('fi').innerText=f?'Datei: '+f.name+' ('+(f.size/1024).to
 });
 function tgtFromName(n){
 const a=['index.html','admin_dashboard.html','admin_update.html','admin_simulate.html','admin_profiles.html','admin_system.html'];
+if(n&&n.toLowerCase().endsWith('.nbo'))return 'firmware.nbo';
 return (n&&a.indexOf(n)>=0)?n:'main.py';
 }
 function u(){
 const f=document.getElementById('f').files[0],s=document.getElementById('s');
 if(!f){s.className='s err';s.innerText='Keine Datei!';s.style.display='block';return;}
 const nl=f.name.toLowerCase();
-if(!nl.endsWith('.py')&&!nl.endsWith('.html')){s.className='s err';s.innerText='Nur .py oder .html Dateien erlaubt!';s.style.display='block';return;}
+if(!nl.endsWith('.py')&&!nl.endsWith('.html')&&!nl.endsWith('.nbo')){s.className='s err';s.innerText='Nur .py, .html oder .nbo Dateien erlaubt!';s.style.display='block';return;}
 const tgt=tgtFromName(f.name);
+const isBinary=nl.endsWith('.nbo');
 const rd=new FileReader();
 rd.onload=function(e){
 try{
-const ct=e.target.result,enc=new TextEncoder(),b=enc.encode(ct);
+let b;
+if(isBinary){
+b=new Uint8Array(e.target.result);
+}else{
+const ct=e.target.result,enc=new TextEncoder();
+b=enc.encode(ct);
+}
 let bn='';
 for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);}
 const b64=btoa(bn),tc=Math.ceil(b64.length/1024);
@@ -77,7 +85,7 @@ else{s.className='s err';s.innerText='Fehler: '+d.error;}
 nc();
 }catch(er){s.className='s err';s.innerText='Fehler: '+er;s.style.display='block';}
 };
-rd.readAsText(f);
+if(isBinary){rd.readAsArrayBuffer(f);}else{rd.readAsText(f);}
 }
 </script>
 </body>

@@ -13,6 +13,7 @@ Das Skript liest Attitude-Daten (Roll/Pitch/Yaw), erkennt Tricks, vergibt Punkte
 - Web-UI mit Live-Score, Trick-Historie und Downloads
 - Trick-Simulation im Admin-Bereich (Roll/Flip/Spin ohne echte Drohne testen)
 - OTA-Update-System (main.py und alle HTML-Seiten per Browser aktualisieren, kein USB noetig)
+- Firmware-Bundle-Update: alle Dateien auf einmal per `firmware.nbo` hochladen (siehe `build_firmware.py`)
 - Mehrstufiger Admin-Bereich mit eigenen Unterseiten (Dashboard, Update, Simulation, Profile, System)
 - Mehrere Trick-Tuning-Profile inkl. eigener Custom-Profile (`.pro` Dateien)
 - LED-Statusanzeige auf dem Pico
@@ -222,7 +223,7 @@ Je nach Copter, Rate und Filter koennen diese Werte angepasst werden (entweder g
 | `/admin-profiles` | Admin-Seite: Profile verwalten |
 | `/admin-system` | Admin-Seite: System-Info + Restart |
 | `/system-info` | Live JSON Daten (freier/belegter Speicher, Uptime, SSID, IP, aktives Profil, OTA-Status) |
-| `/upload-chunk`, `/finalize-upload` | OTA-Update Datenuebertragung (Ziel: `main.py` oder eine der Admin-/HTML-Seiten, siehe Whitelist unten) |
+| `/upload-chunk`, `/finalize-upload` | OTA-Update Datenuebertragung (Ziel: `main.py`, eine der Admin-/HTML-Seiten, oder `firmware.nbo` fuer ein komplettes Bundle) |
 | `/restart-pico` | Pico manuell neu starten |
 | `/simulate-trick?type=roll\|flip\|spin` | Trick-Simulation ohne Drohne |
 
@@ -295,4 +296,71 @@ Der Pico unterstützt **Over-the-Air (OTA) Updates** - du kannst sowohl `main.py
 ### Manueller Restart:
 
 Auf der Admin-Unterseite `/admin-system` gibt es einen Button **🔄 Restart**, um den Pico neu zu starten ohne eine Datei zu ändern.
+
+## Firmware-Bundle-Update (alle Dateien auf einmal)
+
+Statt jede Datei einzeln hochzuladen, kannst du mit `build_firmware.py` alle Firmware-Dateien
+(`main.py` + alle `admin_*.html` + `index.html`) in eine einzige Datei `firmware.nbo` verpacken
+und diese in **einem** OTA-Upload auf den Pico bringen. Der Pico entpackt das Bundle
+serverseitig und ersetzt jede enthaltene Datei einzeln (inkl. Backup, genau wie beim
+Einzeldatei-Update).
+
+### Bundle erstellen (auf dem PC, normales Python 3 - nicht auf dem Pico ausführen):
+
+```
+python build_firmware.py
+```
+
+Erzeugt `firmware.nbo` im Projektverzeichnis. Optional kannst du einen anderen Ausgabepfad
+angeben: `python build_firmware.py pfad/zu/firmware.nbo`. Das Skript listet fehlende Dateien
+als Warnung auf und packt nur vorhandene Dateien ein.
+
+### Bundle hochladen:
+
+1. Gehe im Admin-Bereich auf **Update** (`/admin-update`).
+2. Wähle die `firmware.nbo` Datei aus (Dateiauswahl akzeptiert jetzt auch `.nbo`).
+3. Klicke **Upload**. Der Pico erkennt am Dateinamen automatisch, dass es sich um ein
+   Bundle handelt (Ziel `firmware.nbo`), entpackt es und ersetzt alle enthaltenen Dateien.
+4. Ist `main.py` Teil des Bundles, startet der Pico danach automatisch neu (wie beim
+   normalen `main.py`-Update). Enthält das Bundle nur HTML-Dateien, ist kein Neustart nötig.
+
+### Bundle-Format (Hintergrund):
+
+Einfaches, abhängigkeitsfreies Binaerformat (kein zip/tar, damit MicroPython es ohne
+Zusatzmodule einlesen kann): 8-Byte Magic-Header `FPVBNDL1`, gefolgt von der Dateianzahl
+und pro Datei Name + Inhalt, jeweils mit vorangestellter 4-Byte-Längenangabe (big-endian).
+Jeder im Bundle enthaltene Dateiname wird auf dem Pico gegen `OTA_ALLOWED_TARGETS` geprüft,
+bevor irgendetwas geschrieben wird - ein manipuliertes Bundle kann also keine beliebigen
+Dateien überschreiben.
+
+## Recovery-Modus fuer sehr alte/kaputte Installationen (`main2.py`)
+
+`main2.py` ist ein eigenstaendiges Notfall-Skript fuer den Fall, dass auf einem Pico noch
+eine sehr alte Firmware-Version laeuft (ohne modernes OTA-System) oder `main.py` defekt ist.
+Es macht **nur** zwei Dinge: WLAN-Hotspot starten und eine minimale OTA-Update-Seite anzeigen -
+keine Telemetrie, keine Trick-Erkennung. Die komplette OTA-Seite ist direkt als Python-String
+in `main2.py` eingebettet (kein `index.html`/`admin_*.html` noetig), damit das Update auch
+funktioniert, wenn auf dem Pico ausser einer alten `main.py` gar keine anderen Dateien liegen.
+
+### Verwendung:
+
+1. Pico per USB mit Thonny verbinden.
+2. `main2.py` auf den Pico hochladen.
+3. Datei auf dem Pico von `main2.py` in `main.py` **umbenennen** (die alte `main.py` wird
+   dabei ueberschrieben - vorher lokal sichern, falls du sie behalten willst). MicroPython
+   fuehrt beim Booten immer `main.py` aus, niemals `main2.py` - daher ist die Umbenennung
+   zwingend noetig.
+4. Pico per Hardware-Reset neu starten. Jetzt laeuft der Recovery-Server statt der alten
+   Firmware.
+5. Mit dem WLAN verbinden (SSID/Passwort siehe `AP_SSID`/`AP_PASSWORD` oben in `main2.py`,
+   standardmaessig identisch zur normalen Firmware) und `http://192.168.4.1` im Browser
+   aufrufen.
+6. Empfohlen: das komplette `firmware.nbo` Bundle hochladen (siehe oben) - das entpackt und
+   ersetzt `main.py` + alle `admin_*.html` + `index.html` in einem Rutsch. Alternativ reicht
+   auch ein einzelnes `main.py` fuer einen minimalen Fix.
+7. Sobald `main.py` Teil des Uploads war, startet der Pico automatisch neu und bootet danach
+   wieder ganz normal mit der neuen Firmware (nicht mehr mit `main2.py`).
+
+`main2.py` nutzt exakt dasselbe OTA-Chunk-Upload-, Backup- und Bundle-Format wie die normale
+Firmware, ist aber komplett unabhaengig von den `admin_*.html`-Dateien.
 

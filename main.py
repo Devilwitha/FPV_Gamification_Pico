@@ -90,6 +90,11 @@ OTA_ALLOWED_TARGETS = (
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html",
 )
+# Spezial-Ziel: ein Firmware-Bundle (siehe build_firmware.py), das mehrere
+# der obigen Dateien in einem Rutsch aktualisiert. Wird in /finalize-upload
+# gesondert behandelt (entpackt statt direkt umbenannt).
+OTA_BUNDLE_TARGET = "firmware.nbo"
+OTA_BUNDLE_MAGIC = b"FPVBNDL1"
 
 TRICK_TUNING_PROFILES = {
     "beginner": {
@@ -442,6 +447,17 @@ def debug_console_only(message):
     print(line)
 
 
+def debug_http_console_only(message):
+    """Wie debug_console_only(), aber OHNE store_debug_entry(): landet NIE in
+    debug_log_history / fpv_debug_session.txt bzw. dem Debug-TXT-Download,
+    sondern erscheint ausschliesslich live in Thonny/Seriell. Fuer haeufige
+    HTTP-Ereignisse (Polling von /data, /system-info, Body-Parsing etc.),
+    damit die Debug-Datei nicht mit Request-Rauschen zugemuellt wird."""
+    if not ENABLE_SERIAL_DEBUG:
+        return
+    print(f"[DEBUG] [{time.ticks_ms() // 1000}s] {message}")
+
+
 def debug_live_gyro_trick(message):
     entry = f"[{time.ticks_ms() // 1000}s] {message}"
     line = f"[DEBUG] {entry}"
@@ -644,6 +660,88 @@ def safe_base64_file_to_file(input_file, output_file):
     except Exception as e:
         debug_log(f"[BASE64-FILE-STREAM] Fehler: {e}")
         return False
+
+
+def read_exact(f, n):
+    """Liest exakt n Bytes aus einer binaer geoeffneten Datei (oder weniger
+    bei EOF). Noetig, weil f.read(n) theoretisch weniger als n Bytes liefern
+    kann, auch wenn noch nicht das Dateiende erreicht ist."""
+    data = bytearray()
+    while len(data) < n:
+        chunk = f.read(n - len(data))
+        if not chunk:
+            break
+        data.extend(chunk)
+    return bytes(data)
+
+
+def apply_firmware_bundle(bundle_path):
+    """Entpackt ein per build_firmware.py erzeugtes Firmware-Bundle
+    (firmware.nbo) und ersetzt jede enthaltene Datei einzeln auf dem
+    Pico-Dateisystem (mit Backup, wie beim Einzeldatei-OTA-Update).
+    Jeder Dateiname im Bundle wird gegen OTA_ALLOWED_TARGETS geprueft,
+    bevor irgendetwas geschrieben wird (kein beliebiges Ueberschreiben
+    von Dateien moeglich)."""
+    extracted_files = []
+    with open(bundle_path, 'rb') as f:
+        magic = read_exact(f, len(OTA_BUNDLE_MAGIC))
+        if magic != OTA_BUNDLE_MAGIC:
+            raise Exception("Ungueltiges Firmware-Bundle (Magic-Header falsch)")
+
+        count_bytes = read_exact(f, 4)
+        if len(count_bytes) < 4:
+            raise Exception("Bundle beschaedigt (Dateianzahl fehlt)")
+        (file_count,) = struct.unpack('>I', count_bytes)
+
+        for _ in range(file_count):
+            name_len_bytes = read_exact(f, 4)
+            if len(name_len_bytes) < 4:
+                raise Exception("Bundle beschaedigt (Namenslaenge fehlt)")
+            (name_len,) = struct.unpack('>I', name_len_bytes)
+
+            name_bytes = read_exact(f, name_len)
+            if len(name_bytes) < name_len:
+                raise Exception("Bundle beschaedigt (Dateiname unvollstaendig)")
+            filename = name_bytes.decode('utf-8')
+
+            content_len_bytes = read_exact(f, 4)
+            if len(content_len_bytes) < 4:
+                raise Exception(f"Bundle beschaedigt (Inhaltslaenge fehlt: {filename})")
+            (content_len,) = struct.unpack('>I', content_len_bytes)
+
+            if filename not in OTA_ALLOWED_TARGETS:
+                raise Exception(f"Datei im Bundle nicht erlaubt: {filename}")
+
+            tmp_name = filename + ".bndl_tmp"
+            remaining = content_len
+            with open(tmp_name, 'wb') as out:
+                while remaining > 0:
+                    chunk = f.read(min(512, remaining))
+                    if not chunk:
+                        raise Exception(f"Bundle beschaedigt (Inhalt unvollstaendig: {filename})")
+                    out.write(chunk)
+                    remaining -= len(chunk)
+
+            backup_path = "main_backup.py" if filename == "main.py" else (filename + ".bak")
+            try:
+                with open(filename, 'r') as old_f:
+                    old_content = old_f.read()
+                with open(backup_path, 'w') as bk:
+                    bk.write(old_content)
+            except Exception as e:
+                debug_log(f"[OTA BUNDLE] Backup-Fehler ({filename}): {e}")
+
+            try:
+                os.remove(filename)
+            except Exception:
+                pass
+            os.rename(tmp_name, filename)
+
+            extracted_files.append(filename)
+            debug_log(f"[OTA BUNDLE] Datei ersetzt: {filename} ({content_len} bytes)")
+
+    needs_restart = "main.py" in extracted_files
+    return extracted_files, needs_restart
 
 
 def build_session_txt_content():
@@ -1279,8 +1377,12 @@ async def handle_client(reader, writer):
         request_method = parts[0] if len(parts) >= 1 else 'GET'
         request_target = parts[1] if len(parts) >= 2 else '/'
         
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [HTTP] {request_method} {request_target}")
+        # Bewusst debug_http_console_only() statt debug_log()/debug_console_only(): Alle
+        # [HTTP]-Ereignisse (Request-Zeile, Body-Parsing etc.) sollen NUR live in
+        # Thonny/Seriell auftauchen und NICHT in fpv_debug_session.txt bzw. den
+        # Debug-TXT-Download wandern (sonst wuerde jeder Poll von /data und
+        # /system-info die Debug-Datei mit HTTP-Zeilen zumuellen).
+        debug_http_console_only(f"[HTTP] {request_method} {request_target}")
         
         if '?' in request_target:
             request_path, query_string = request_target.split('?', 1)
@@ -1317,7 +1419,7 @@ async def handle_client(reader, writer):
                     to_read = min(chunk_size, bytes_remaining)
                     chunk = await reader.read(to_read)
                     if not chunk:
-                        debug_log(f"[HTTP] EOF beim Lesen (bytes_remaining={bytes_remaining})")
+                        debug_http_console_only(f"[HTTP] EOF beim Lesen (bytes_remaining={bytes_remaining})")
                         break
                     body_buffer.extend(chunk)
                     bytes_remaining -= len(chunk)
@@ -1327,12 +1429,12 @@ async def handle_client(reader, writer):
                         body_text = body_buffer.decode('utf-8')
                         if request_path != '/upload-chunk':
                             body_params = parse_query(body_text)
-                        debug_log(f"[HTTP] POST Body erfolgreich gelesen: {len(body_text)} bytes")
+                        debug_http_console_only(f"[HTTP] POST Body erfolgreich gelesen: {len(body_text)} bytes")
                     except Exception as e:
-                        debug_log(f"[HTTP] Fehler beim Dekodieren des Body: {e}")
+                        debug_http_console_only(f"[HTTP] Fehler beim Dekodieren des Body: {e}")
                         body_params = {}
             except Exception as e:
-                debug_log(f"[HTTP] Fehler beim Lesen des POST Body: {e}")
+                debug_http_console_only(f"[HTTP] Fehler beim Lesen des POST Body: {e}")
                 body_params = {}
                 
         if request_path == '/admin':
@@ -1394,7 +1496,7 @@ async def handle_client(reader, writer):
                 target_valid = True
 
                 if chunk_index == 0:
-                    if target_str not in OTA_ALLOWED_TARGETS:
+                    if target_str not in OTA_ALLOWED_TARGETS and target_str != OTA_BUNDLE_TARGET:
                         target_valid = False
                     else:
                         ota_total_chunks = total
@@ -1447,7 +1549,8 @@ async def handle_client(reader, writer):
                 if ota_received_chunks != ota_total_chunks:
                     raise Exception(f"Incomplete upload: {ota_received_chunks}/{ota_total_chunks}")
 
-                target = ota_target_file if ota_target_file in OTA_ALLOWED_TARGETS else "main.py"
+                is_bundle = (ota_target_file == OTA_BUNDLE_TARGET)
+                target = ota_target_file if (is_bundle or ota_target_file in OTA_ALLOWED_TARGETS) else "main.py"
 
                 decode_ok = safe_base64_file_to_file('update.pbp', OTA_STAGING_PATH)
                 if not decode_ok:
@@ -1458,29 +1561,40 @@ async def handle_client(reader, writer):
                     debug_log(f"[OTA] Staging-Datei: {staged_size} bytes (Ziel: {target})")
                 except Exception:
                     staged_size = 0
-                
-                backup_path = "main_backup.py" if target == "main.py" else (target + ".bak")
-                try:
-                    with open(target, 'r') as f:
-                        old_content = f.read()
-                    with open(backup_path, 'w') as f:
-                        f.write(old_content)
-                    debug_log(f"[OTA] Backup erstellt: {backup_path} ({len(old_content)} bytes)")
-                except Exception as e:
-                    debug_log(f"[OTA] Backup-Fehler ({target}): {e}")
-                
-                try:
-                    os.remove(target)
-                except Exception:
-                    pass
-                
-                os.rename(OTA_STAGING_PATH, target)
-                debug_log(f"[OTA] Finale Datei gespeichert: {target} ({staged_size} bytes)")
 
-                needs_restart = (target == "main.py")
-                message = f"Update erfolgreich gespeichert: {target} ({staged_size} bytes)!"
-                if needs_restart:
-                    message += " Starte Neustart..."
+                if is_bundle:
+                    extracted_files, needs_restart = apply_firmware_bundle(OTA_STAGING_PATH)
+                    try:
+                        os.remove(OTA_STAGING_PATH)
+                    except Exception:
+                        pass
+                    message = f"Firmware-Bundle angewendet: {len(extracted_files)} Datei(en) ersetzt ({', '.join(extracted_files)})"
+                    if needs_restart:
+                        message += " Starte Neustart..."
+                else:
+                    backup_path = "main_backup.py" if target == "main.py" else (target + ".bak")
+                    try:
+                        with open(target, 'r') as f:
+                            old_content = f.read()
+                        with open(backup_path, 'w') as f:
+                            f.write(old_content)
+                        debug_log(f"[OTA] Backup erstellt: {backup_path} ({len(old_content)} bytes)")
+                    except Exception as e:
+                        debug_log(f"[OTA] Backup-Fehler ({target}): {e}")
+
+                    try:
+                        os.remove(target)
+                    except Exception:
+                        pass
+
+                    os.rename(OTA_STAGING_PATH, target)
+                    debug_log(f"[OTA] Finale Datei gespeichert: {target} ({staged_size} bytes)")
+
+                    needs_restart = (target == "main.py")
+                    message = f"Update erfolgreich gespeichert: {target} ({staged_size} bytes)!"
+                    if needs_restart:
+                        message += " Starte Neustart..."
+
                 response = json.dumps({"ok": True, "message": message, "restart": needs_restart}).encode('utf-8')
                 writer.write(b'HTTP/1.1 200 OK\r\n')
                 writer.write(b'Content-Type: application/json\r\n')

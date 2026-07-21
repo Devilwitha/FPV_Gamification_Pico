@@ -658,29 +658,35 @@ def build_session_txt_content():
     return txt_content
 
 
-def build_debug_txt_content():
-    txt_content = "========================================\n"
-    txt_content += f"      {COPTER_NAME.upper()} DEBUG LOG\n"
-    txt_content += "========================================\n\n"
+def build_debug_export_file():
+    """Schreibt das Debug-Export direkt in eine Datei, ohne den kompletten
+    Log-Inhalt gleichzeitig als RAM-String zu halten (verhindert MemoryError
+    bei grossen Logs, z.B. nach vielen erkannten Tricks)."""
+    with open(DEBUG_EXPORT_FILE_PATH, 'w') as out:
+        out.write("========================================\n")
+        out.write(f"      {COPTER_NAME.upper()} DEBUG LOG\n")
+        out.write("========================================\n\n")
 
-    file_loaded = False
-    try:
-        file_size = os.stat(DEBUG_LOG_FILE_PATH)[6]
-        if file_size > len(DEBUG_LOG_BOOT_MARKER):
-            with open(DEBUG_LOG_FILE_PATH, 'r') as f:
-                txt_content += f.read()
-            file_loaded = True
-    except Exception:
         file_loaded = False
+        try:
+            file_size = os.stat(DEBUG_LOG_FILE_PATH)[6]
+            if file_size > len(DEBUG_LOG_BOOT_MARKER):
+                with open(DEBUG_LOG_FILE_PATH, 'r') as f:
+                    while True:
+                        chunk = f.read(512)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                file_loaded = True
+        except Exception:
+            file_loaded = False
 
-    if not file_loaded:
-        if debug_log_history:
-            txt_content += "\n".join(debug_log_history)
-            txt_content += "\n"
-        else:
-            txt_content += "- Keine Debug-Logs vorhanden -\n"
-
-    return txt_content
+        if not file_loaded:
+            if debug_log_history:
+                out.write("\n".join(debug_log_history))
+                out.write("\n")
+            else:
+                out.write("- Keine Debug-Logs vorhanden -\n")
 
 
 def write_text_file(path, content):
@@ -1068,6 +1074,42 @@ class LiveGyroTrickDetector:
 detector = LiveGyroTrickDetector()
 
 
+async def simulate_trick(trick_kind="roll"):
+    """Speist synthetische Gyro-Daten in den echten Trick-Detector ein,
+    damit Tricks ohne angeschlossene Drohne/Telemetrie getestet werden koennen.
+    Nutzt exakt denselben Code-Pfad (detector.update) wie die echte Telemetrie."""
+    axis_map = {"roll": "roll", "flip": "pitch", "spin": "yaw"}
+    axis = axis_map.get(trick_kind, "roll")
+
+    rate = GYRO_TRICK_THRESHOLD + 80.0
+    step_ms = 15
+    dt = step_ms / 1000.0
+    target_accum_deg = 220.0
+    hold_delay_s = (TRICK_START_HOLD_MS / 1000.0) + 0.05
+    active_duration_s = hold_delay_s + (target_accum_deg / rate)
+    active_steps = max(1, int(active_duration_s / dt))
+    stable_steps = max(1, int(((STABLE_HOLD_MS / 1000.0) + 0.15) / dt))
+
+    roll = 0.0
+    pitch = 0.0
+    yaw = 0.0
+
+    for _ in range(active_steps):
+        delta = rate * dt
+        if axis == "roll":
+            roll = normalize_angle_deg(roll + delta)
+        elif axis == "pitch":
+            pitch = normalize_angle_deg(pitch + delta)
+        else:
+            yaw = normalize_angle_deg(yaw + delta)
+        detector.update(roll, pitch, yaw)
+        await asyncio.sleep_ms(step_ms)
+
+    for _ in range(stable_steps):
+        detector.update(roll, pitch, yaw)
+        await asyncio.sleep_ms(step_ms)
+
+
 async def telemetry_loop():
     debug_log("Passiver CRSF-Telemetrie-Loop gestartet.")
     
@@ -1228,19 +1270,59 @@ setInterval(upd,1000);loadProfiles();upd();
 </script>
 </body></html>"""
 
+# Jede .replace()-Operation erzeugt eine komplette neue Kopie des (grossen)
+# Templates im RAM. gc.collect() zwischen den Schritten gibt die jeweils
+# vorherige Kopie sofort frei, um MemoryError auf dem Pico zu vermeiden.
+gc.collect()
 html_template = html_template.replace("__COPTER_NAME__", html_escape(COPTER_NAME))
+gc.collect()
 html_template = html_template.replace("__COPTER_NAME_UPPER__", html_escape(COPTER_NAME.upper()))
+gc.collect()
 html_template = html_template.replace("__DEFAULT_PILOT_NAME__", html_escape(DEFAULT_PILOT_NAME))
+gc.collect()
 html_template = html_template.replace('value="beginner"', 'value="beginner"' + (' selected' if TRICK_TUNING_PROFILE == 'beginner' else ''))
+gc.collect()
 html_template = html_template.replace('value="freestyle"', 'value="freestyle"' + (' selected' if TRICK_TUNING_PROFILE == 'freestyle' else ''))
+gc.collect()
 html_template = html_template.replace('value="aggressive"', 'value="aggressive"' + (' selected' if TRICK_TUNING_PROFILE == 'aggressive' else ''))
+gc.collect()
 
 
 # ==================== OTA UPDATE SYSTEM ====================
-admin_upload_template_mini = """<!DOCTYPE html><html><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>OTA</title><style>body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}h1{color:#e74c3c;font-size:1.3em;margin:0 0 10px}.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #e74c3c;border-radius:8px}input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;width:100%;box-sizing:border-box}.b{background:#e74c3c;color:#fff;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px;font-weight:bold;font-family:monospace}.b:hover{filter:brightness(1.1)}.s{margin:10px 0;padding:10px;border-radius:4px;display:none}.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}</style></head><body><div class=c><h1>OTA UPDATE</h1><input type=file id=f accept=.py><div id=fi style=\"color:#9fb4cb;font-size:0.9em\">Datei waehlen...</div><div id=s class=s></div><button class=b onclick=u()>Upload</button><button class=b onclick=\"location.href='/'\" style=\"background:#2980b9\">Home</button><button class=b onclick=\"location.href='/admin-profiles'\" style=\"background:#27ae60\">Profile</button><button class=b onclick=r() style=\"background:#c00\">Restart</button></div><script>document.getElementById('f').addEventListener('change',function(e){const f=e.target.files[0];document.getElementById('fi').innerText=f?'Datei: '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)':'Datei waehlen...'});function u(){const f=document.getElementById('f').files[0],s=document.getElementById('s');if(!f){s.className='s err';s.innerText='Keine Datei!';s.style.display='block';return;}const rd=new FileReader();rd.onload=function(e){try{const ct=e.target.result,enc=new TextEncoder(),b=enc.encode(ct);let bn='';for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);}const b64=btoa(bn),tc=Math.ceil(b64.length/1024);let idx=0;s.innerText='Chunk 1/'+tc;s.className='s';s.style.display='block';function nc(){if(idx>=tc){fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){s.className='s ok';s.innerText='Fertig: '+d.message}else{s.className='s err';s.innerText='Fehler: '+d.error;}}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});return;}const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){idx++;s.innerText='Chunk '+(idx+1)+'/'+tc;nc();}else{s.className='s err';s.innerText='Fehler: '+d.error;}}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});}nc();}catch(er){s.className='s err';s.innerText='Fehler: '+er;s.style.display='block';}};rd.readAsText(f);}function r(){if(confirm('Restart Pico?')){fetch('/restart-pico',{cache:'no-store'}).catch(()=>{});setTimeout(()=>location.href='/',2000);}}</script></body></html>"""
+# Die grossen Admin-HTML-Seiten (OTA-Upload, Profile) sind NICHT mehr als
+# Python-String-Literale im Code eingebettet. Auf dem Pico ist RAM extrem
+# knapp - jedes grosse Literal wird beim Parsen des kompletten Skripts
+# (z.B. via Thonny "Run current script") dauerhaft resident gehalten,
+# selbst wenn die Seite nur selten aufgerufen wird. Stattdessen werden
+# die Seiten aus separaten .html Dateien gestreamt (analog zu
+# send_file_as_download) und belegen nur waehrend einer Anfrage RAM.
+ADMIN_OTA_HTML_PATH = "admin_ota.html"
+ADMIN_PROFILES_HTML_PATH = "admin_profiles.html"
 
-# ==================== PROFILE ADMIN TEMPLATE ====================
-profile_admin_template_mini = """<!DOCTYPE html><html><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Profile</title><style>body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}h1{color:#27ae60;font-size:1.3em;margin:0 0 10px}.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #27ae60;border-radius:8px}.s{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:10px 0}.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}.p{background:#161e2e;padding:8px;margin:5px 0;border-left:3px solid #2980b9;display:flex;justify-content:space-between;align-items:center}.p.a{border-left-color:#27ae60;background:#1a3a2a}.b{padding:8px 12px;border:0;border-radius:4px;cursor:pointer;margin:2px;font-weight:bold;font-family:monospace;font-size:0.9em}.bp{background:#27ae60;color:#fff}.bp:hover{filter:brightness(1.1)}.bs{background:#2980b9;color:#fff}.bs:hover{filter:brightness(1.1)}.bd{background:#c0392b;color:#fff}.bd:hover{filter:brightness(1.1)}.bb{background:#555;color:#fff}.bb:hover{filter:brightness(1.1)}textarea{width:100%;height:200px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;padding:8px;box-sizing:border-box;font:11px monospace}input[type=text],input[type=file]{width:100%;padding:8px;margin:8px 0;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;box-sizing:border-box}.st{margin:10px 0;padding:10px;border-radius:4px;display:none}.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}</style></head><body><div class=c><h1>PROFILE</h1><div class=s><h2>Available Profiles</h2><div id=L style=\"max-height:200px;overflow-y:auto;background:#0b1320;padding:10px;border-radius:4px\">Loading...</div></div><div class=s><h2>New Profile</h2><input type=text id=N placeholder=\"Name\"><textarea id=D placeholder='{"gyro_trick_threshold":190,"stable_threshold":65,"trick_start_hold_ms":35,"stable_hold_ms":140,"gyro_deadband":12,"gyro_lowpass_alpha":0.3,"min_trick_duration":0.12,"trick_min_accum_deg":80,"trick_spin_min_accum_deg":120,"trick_axis_dominance_ratio":1.18,"trick_start_type_weight":0.92}'></textarea><div id=CS class=st></div><button class=\"b bp\" onclick=c()>Create</button></div><div class=s><h2>Upload Profile</h2><input type=file id=F accept=.pro><div id=FI style=\"color:#9fb4cb;font-size:0.9em\">No file</div><div id=US class=st></div><button class=\"b bp\" onclick=f()>Upload</button></div><div class=nav><button class=\"b bb\" onclick=\"location.href='/admin'\" style=\"background:#2980b9\">OTA Update</button><button class=\"b bb\" onclick=\"location.href='/'\" style=\"background:#555\">Home</button></div></div><script>let sf=null;function l(){fetch('/profiles-list',{cache:'no-store'}).then(r=>r.json()).then(d=>{const pl=document.getElementById('L');if(!d.profiles||d.profiles.length===0){pl.innerHTML='No profiles';return;}let h='';for(let p of d.profiles){const bi=['beginner','freestyle','aggressive'].includes(p.name);const ac=p.active?' a':'';h+='<div class=\"p'+ac+'\"><span>'+p.name+(p.active?' ACTIVE':'')+'</span><div>';h+='<button class=\"b bs\" onclick=\"dl(\\''+p.name+'\\')\" title=Download>DL</button>';if(!bi)h+='<button class=\"b bd\" onclick=\"del(\\''+p.name+'\\')\" title=Delete>DEL</button>';h+='<button class=\"b bp\" onclick=\"ap(\\''+p.name+'\\')\" title=Apply>Apply</button>';h+='</div></div>';}pl.innerHTML=h;}).catch(e=>{document.getElementById('L').innerHTML='Error: '+e;});}function c(){const n=document.getElementById('N').value.trim(),d=document.getElementById('D').value.trim(),s=document.getElementById('CS');if(!n){s.className='st err';s.innerText='Name required';s.style.display='block';return;}if(['beginner','freestyle','aggressive'].includes(n.toLowerCase())){s.className='st err';s.innerText='Cannot overwrite built-in profile';s.style.display='block';return;}let pd;try{pd=JSON.parse(d);}catch(e){s.className='st err';s.innerText='Invalid JSON: '+e;s.style.display='block';return;}const fd=new URLSearchParams();fd.append('name',n);fd.append('data',JSON.stringify(pd));fetch('/create-profile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){s.className='st ok';s.innerText='Created: '+n;document.getElementById('N').value='';document.getElementById('D').value='';l();}else{s.className='st err';s.innerText='Error: '+d.error;}s.style.display='block';}).catch(e=>{s.className='st err';s.innerText='Error: '+e;s.style.display='block';});}document.getElementById('F').addEventListener('change',function(e){const f=e.target.files[0];if(f){sf=f;document.getElementById('FI').innerText='File: '+f.name;}});function f(){if(!sf){document.getElementById('US').className='st err';document.getElementById('US').innerText='No file';document.getElementById('US').style.display='block';return;}const rd=new FileReader();rd.onload=function(e){try{const ct=e.target.result;let pd=JSON.parse(ct);const pn=sf.name.endsWith('.pro')?sf.name.slice(0,-4):sf.name;const fd=new URLSearchParams();fd.append('name',pn);fd.append('data',JSON.stringify(pd));document.getElementById('US').innerText='Uploading...';document.getElementById('US').className='st';document.getElementById('US').style.display='block';fetch('/create-profile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById('US').className='st ok';document.getElementById('US').innerText='Uploaded: '+pn;l();sf=null;document.getElementById('F').value='';document.getElementById('FI').innerText='No file';}else{document.getElementById('US').className='st err';document.getElementById('US').innerText='Error: '+d.error;}}).catch(e=>{document.getElementById('US').className='st err';document.getElementById('US').innerText='Error: '+e;});}catch(e){document.getElementById('US').className='st err';document.getElementById('US').innerText='Error: '+e;document.getElementById('US').style.display='block';}};rd.readAsText(sf);}function dl(n){fetch('/download-profile?name='+encodeURIComponent(n),{cache:'no-store'}).then(r=>r.blob()).then(b=>{const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=n+'.pro';a.click();URL.revokeObjectURL(u);}).catch(e=>alert('Error: '+e));}function del(n){if(!confirm('Delete '+n+'?'))return;fetch('/delete-profile?name='+encodeURIComponent(n),{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){l();}else{alert('Error: '+d.error);}}).catch(e=>alert('Error: '+e));}function ap(n){fetch('/apply-profile?name='+encodeURIComponent(n),{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){l();}else{alert('Error: '+d.error);}}).catch(e=>alert('Error: '+e));}l();setInterval(l,3000);</script></body></html>"""
+
+async def send_html_file(writer, file_path):
+    """Streamt eine HTML-Datei vom Dateisystem, ohne den kompletten Inhalt
+    als einzelnen RAM-String zu halten (verhindert MemoryError bei grossen
+    Admin-Seiten)."""
+    gc.collect()
+    file_size = os.stat(file_path)[6]
+    writer.write(b'HTTP/1.1 200 OK\r\n')
+    writer.write(b'Content-Type: text/html\r\n')
+    writer.write(b'Content-Length: ' + str(file_size).encode() + b'\r\n')
+    writer.write(b'Connection: close\r\n\r\n')
+
+    with open(file_path, 'r') as f:
+        chunk_count = 0
+        while True:
+            chunk = f.read(512)
+            if not chunk:
+                break
+            writer.write(chunk)
+            chunk_count += 1
+            if chunk_count % 4 == 0:
+                await writer.drain()
+    await writer.drain()
+    gc.collect()
 
 
 async def handle_client(reader, writer):
@@ -1312,8 +1394,7 @@ async def handle_client(reader, writer):
                 body_params = {}
                 
         if request_path == '/admin':
-            gc.collect()
-            write_html_response(writer, admin_upload_template_mini)
+            await send_html_file(writer, ADMIN_OTA_HTML_PATH)
                 
         elif request_path == '/upload-chunk' and request_method == 'POST':
             global ota_total_chunks, ota_received_chunks, ota_update_active
@@ -1479,8 +1560,7 @@ async def handle_client(reader, writer):
             machine.reset()
         
         elif request_path == '/admin-profiles':
-            gc.collect()
-            write_html_response(writer, profile_admin_template_mini)
+            await send_html_file(writer, ADMIN_PROFILES_HTML_PATH)
         
         elif request_path == '/profiles-list':
             profiles_list = list_profile_files()
@@ -1870,10 +1950,36 @@ async def handle_client(reader, writer):
         elif request_path in ('/download-debug', '/download-debug-raw'):
             if ENABLE_SERIAL_DEBUG:
                 print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Exportdatei wird erstellt")
-            write_text_file(DEBUG_EXPORT_FILE_PATH, build_debug_txt_content())
+            build_debug_export_file()
             await send_file_as_download(writer, DEBUG_EXPORT_FILE_PATH, "fpv_debug_log.txt")
             if ENABLE_SERIAL_DEBUG:
                 print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Datei versendet")
+
+        elif request_path == '/simulate-trick':
+            trick_kind = query_params.get('type', 'roll').strip().lower()
+            if trick_kind not in ('roll', 'flip', 'spin'):
+                trick_kind = 'roll'
+
+            score_before = detector.score
+            debug_console_only(f"[SIMULATE] Starte Trick-Simulation: {trick_kind}")
+            await simulate_trick(trick_kind)
+            points_gained = detector.score - score_before
+
+            payload = json.dumps({
+                "ok": True,
+                "type": trick_kind,
+                "trick": detector.last_trick_name if points_gained > 0 else None,
+                "points": points_gained,
+                "score": detector.score
+            }).encode('utf-8')
+
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+            writer.write(b'Pragma: no-cache\r\n')
+            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(payload)
             
         else:
             response_html = html_template.encode('utf-8')

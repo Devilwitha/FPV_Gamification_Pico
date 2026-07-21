@@ -17,6 +17,9 @@ h1{color:#8e44ad;font-size:1.3em;margin:0 0 10px}
 .st2:last-child{border-bottom:0}
 .b{background:#c0392b;color:#fff;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px;font-weight:bold;font-family:monospace}
 .b:hover{filter:brightness(1.1)}
+.pbwrap{display:none;margin:8px 0 0;height:18px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
+.pbbar{height:100%;width:0%;background:#8e44ad;transition:width .3s ease}
+.pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.7em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
 </style>
 </head>
 <body>
@@ -39,6 +42,7 @@ h1{color:#8e44ad;font-size:1.3em;margin:0 0 10px}
 <div class="st2"><span>Laufzeit</span><b id="v_uptime">-</b></div>
 <div class="st2"><span>Aktives Trick-Profil</span><b id="v_prof">-</b></div>
 <div class="st2"><span>OTA aktiv</span><b id="v_ota">-</b></div>
+<div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
 </div>
 <div class="s">
 <h2>Restart</h2>
@@ -60,6 +64,13 @@ document.getElementById('v_memalloc').innerText=(d.mem_alloc>=0)?(d.mem_alloc/10
 document.getElementById('v_uptime').innerText=fmtUptime(d.uptime_s||0);
 document.getElementById('v_prof').innerText=d.trick_tuning_profile||'-';
 document.getElementById('v_ota').innerText=d.ota_active?'Ja':'Nein';
+const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
+if(d.ota_active&&d.ota_total_chunks>0){
+const pct=Math.round((d.ota_received_chunks/d.ota_total_chunks)*100);
+pbwrap.style.display='block';pbbar.style.width=pct+'%';pbtxt.innerText=pct+'%';
+}else{
+pbwrap.style.display='none';pbbar.style.width='0%';pbtxt.innerText='';
+}
 }).catch(e=>0);
 }
 function r(){

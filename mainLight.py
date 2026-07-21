@@ -325,6 +325,9 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 .st2{margin:0;padding:10px;border-radius:4px;display:none;font-size:.85em}
 .ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}
 .err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}
+.pbwrap{display:none;margin:10px 0;height:20px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
+.pbbar{height:100%;width:0%;background:#e74c3c;transition:width .15s ease}
+.pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.72em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
 </style>
 </head>
 <body>
@@ -344,6 +347,7 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 <div style="color:#9fb4cb;font-size:.78em;margin-bottom:6px">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html - oder ein komplettes <b>firmware.nbo</b> Bundle (empfohlen, siehe build_firmware.py)</div>
 <input type="file" id="f" accept=".py,.html,.nbo">
 <div id="fi" style="color:#9fb4cb;font-size:0.85em">Datei waehlen...</div>
+<div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
 <div id="s" class="st2"></div>
 <button class="b" onclick="u()">Upload</button>
 <button class="b grey" onclick="r()">Restart</button>
@@ -353,6 +357,10 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 document.getElementById('f').addEventListener('change',function(e){
 const f=e.target.files[0];
 document.getElementById('fi').innerText=f?'Datei: '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)':'Datei waehlen...';
+document.getElementById('pbwrap').style.display='none';
+document.getElementById('pbbar').style.width='0%';
+document.getElementById('pbtxt').innerText='';
+document.getElementById('s').style.display='none';
 });
 function tgtFromName(n){
 const a=['index.html','admin_dashboard.html','admin_update.html','admin_simulate.html','admin_profiles.html','admin_system.html'];
@@ -380,9 +388,13 @@ let bn='';
 for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);}
 const b64=btoa(bn),tc=Math.ceil(b64.length/1024);
 let idx=0;
-s.innerText='Ziel: '+tgt+' | Chunk 1/'+tc;s.className='st2';s.style.display='block';
+const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
+function setProgress(p){pbbar.style.width=p+'%';pbtxt.innerText=p+'%';}
+pbwrap.style.display='block';setProgress(0);
+s.innerText='Ziel: '+tgt+' | Upload laeuft...';s.className='st2';s.style.display='block';
 function nc(){
 if(idx>=tc){
+setProgress(100);
 fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{
 if(d.ok){s.className='st2 ok';s.innerText='Fertig: '+d.message+(d.restart?' Neustart laeuft...':' Bitte manuell neu starten (Restart-Button), um in die normale Firmware zu booten.');}
 else{s.className='st2 err';s.innerText='Fehler: '+d.error;}
@@ -391,7 +403,7 @@ return;
 }
 const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);
 fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&target='+encodeURIComponent(tgt)+'&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{
-if(d.ok){idx++;s.innerText='Ziel: '+tgt+' | Chunk '+(idx+1)+'/'+tc;nc();}
+if(d.ok){idx++;setProgress(Math.round((idx/tc)*100));nc();}
 else{s.className='st2 err';s.innerText='Fehler: '+d.error;}
 }).catch(er=>{s.className='st2 err';s.innerText='Fehler: '+er;});
 }

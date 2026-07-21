@@ -1689,6 +1689,8 @@ async def handle_client(reader, writer):
                 "score": detector.score,
                 "highscore": highscore_data["score"],
                 "ota_active": ota_update_active,
+                "ota_received_chunks": ota_received_chunks,
+                "ota_total_chunks": ota_total_chunks,
             }
             response_data = json.dumps(info_data).encode('utf-8')
             writer.write(b'HTTP/1.1 200 OK\r\n')

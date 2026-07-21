@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin</title>
+<style>
+body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}
+h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
+.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #f39c12;border-radius:8px}
+.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:#1a2637;color:#9fb4cb;border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}
+.nv a.on{background:#f39c12;color:#1a1204;border-color:#f39c12;font-weight:bold}
+.s{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:10px 0}
+.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.st2{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.9em}
+.st2:last-child{border-bottom:0}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.card{background:#161e2e;border-left:3px solid #2980b9;border-radius:6px;padding:12px;text-decoration:none;color:#e8f0f8;display:block}
+.card:hover{filter:brightness(1.1)}
+.card h3{margin:0 0 4px;font-size:.95em;color:#fff}
+.card p{margin:0;font-size:.78em;color:#9fb4cb}
+.card.upd{border-left-color:#e74c3c}
+.card.sim{border-left-color:#2980b9}
+.card.prof{border-left-color:#27ae60}
+.card.sys{border-left-color:#8e44ad}
+@media(max-width:480px){.grid,.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>&#9881;&#65039; ADMIN</h1>
+<div class="nv">
+<a href="/admin" class="on">Dashboard</a>
+<a href="/admin-update">Update</a>
+<a href="/admin-simulate">Simulation</a>
+<a href="/admin-profiles">Profile</a>
+<a href="/admin-system">System</a>
+<a href="/">Home</a>
+</div>
+
+<div class="s">
+<h2>Status</h2>
+<div class="grid">
+<div class="st2"><span>Score</span><b id="v_score">-</b></div>
+<div class="st2"><span>Highscore</span><b id="v_hs">-</b></div>
+<div class="st2"><span>Aktives Profil</span><b id="v_prof">-</b></div>
+<div class="st2"><span>Freier Speicher</span><b id="v_mem">-</b></div>
+</div>
+</div>
+
+<div class="cards">
+<a class="card upd" href="/admin-update"><h3>&#128228; Update</h3><p>main.py oder HTML-Dateien per Browser aktualisieren (OTA)</p></a>
+<a class="card sim" href="/admin-simulate"><h3>&#127917; Simulation</h3><p>Tricks ohne Drohne testen (Roll/Flip/Spin)</p></a>
+<a class="card prof" href="/admin-profiles"><h3>&#127919; Profile</h3><p>Trick-Tuning-Profile verwalten und anwenden</p></a>
+<a class="card sys" href="/admin-system"><h3>&#128295; System</h3><p>Speicher/Netzwerk-Info, manueller Restart</p></a>
+</div>
+</div>
+<script>
+function upd(){
+fetch('/data',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+document.getElementById('v_score').innerText=d.score;
+document.getElementById('v_hs').innerText=d.highscore;
+document.getElementById('v_prof').innerText=d.trick_tuning_profile||'-';
+}).catch(e=>0);
+fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+document.getElementById('v_mem').innerText=(d.mem_free>=0)?(d.mem_free/1024).toFixed(1)+' KB':'?';
+}).catch(e=>0);
+}
+upd();setInterval(upd,3000);
+</script>
+</body>
+</html>

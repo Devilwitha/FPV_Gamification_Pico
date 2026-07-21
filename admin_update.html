@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - Update</title>
+<style>
+body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}
+h1{color:#e74c3c;font-size:1.3em;margin:0 0 10px}
+.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #e74c3c;border-radius:8px}
+.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:#1a2637;color:#9fb4cb;border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}
+.nv a.on{background:#e74c3c;color:#fff;border-color:#e74c3c;font-weight:bold}
+input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;width:100%;box-sizing:border-box}
+.b{background:#e74c3c;color:#fff;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px;font-weight:bold;font-family:monospace}
+.b:hover{filter:brightness(1.1)}
+.s{margin:10px 0;padding:10px;border-radius:4px;display:none}
+.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}
+.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}
+.pbwrap{display:none;margin:10px 0;height:20px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
+.pbbar{height:100%;width:0%;background:#e74c3c;transition:width .15s ease}
+.pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.72em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>&#128228; OTA UPDATE</h1>
+<div class="nv">
+<a href="/admin">Dashboard</a>
+<a href="/admin-update" class="on">Update</a>
+<a href="/admin-simulate">Simulation</a>
+<a href="/admin-profiles">Profile</a>
+<a href="/admin-system">System</a>
+<a href="/">Home</a>
+</div>
+<div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html - oder ein komplettes <b>firmware.nbo</b> Bundle (alle Dateien auf einmal, siehe build_firmware.py)</div>
+<div id="devhint" style="color:#9fb4cb;font-size:.78em;margin-bottom:6px"></div>
+<input type="file" id="f" accept=".py,.html,.nbo">
+<div id="fi" style="color:#9fb4cb;font-size:0.9em">Datei waehlen...</div>
+<div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
+<div id="s" class="s"></div>
+<button class="b" onclick="u()">Upload</button>
+</div>
+<script>
+document.getElementById('f').addEventListener('change',function(e){
+const f=e.target.files[0];
+document.getElementById('fi').innerText=f?'Datei: '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)':'Datei waehlen...';
+document.getElementById('pbwrap').style.display='none';
+document.getElementById('pbbar').style.width='0%';
+document.getElementById('pbtxt').innerText='';
+document.getElementById('s').style.display='none';
+});
+function tgtFromName(n){
+const a=['index.html','admin_dashboard.html','admin_update.html','admin_simulate.html','admin_profiles.html','admin_system.html'];
+if(n&&n.toLowerCase().endsWith('.nbo'))return 'firmware.nbo';
+return (n&&a.indexOf(n)>=0)?n:'main.py';
+}
+let devMode=false;
+function refreshDevMode(){
+fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+devMode=!!d.developer_mode;
+const fEl=document.getElementById('f'),hint=document.getElementById('devhint');
+if(devMode){
+fEl.setAttribute('accept','.py,.html,.nbo');
+hint.innerText='Developer-Modus AN: Einzeldateien (.py/.html) und .nbo Bundles erlaubt.';
+}else{
+fEl.setAttribute('accept','.nbo');
+hint.innerText='Developer-Modus AUS: Nur komplette firmware.nbo Bundles erlaubt (siehe System-Seite).';
+}
+}).catch(()=>{});
+}
+refreshDevMode();
+function u(){
+const f=document.getElementById('f').files[0],s=document.getElementById('s');
+if(!f){s.className='s err';s.innerText='Keine Datei!';s.style.display='block';return;}
+const nl=f.name.toLowerCase();
+if(!nl.endsWith('.py')&&!nl.endsWith('.html')&&!nl.endsWith('.nbo')){s.className='s err';s.innerText='Nur .py, .html oder .nbo Dateien erlaubt!';s.style.display='block';return;}
+if(!devMode&&!nl.endsWith('.nbo')){s.className='s err';s.innerText='Developer-Modus ist aus: Nur firmware.nbo Bundles erlaubt (siehe System-Seite).';s.style.display='block';return;}
+const tgt=tgtFromName(f.name);
+const isBinary=nl.endsWith('.nbo');
+const rd=new FileReader();
+rd.onload=function(e){
+try{
+let b;
+if(isBinary){
+b=new Uint8Array(e.target.result);
+}else{
+const ct=e.target.result,enc=new TextEncoder();
+b=enc.encode(ct);
+}
+let bn='';
+for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);}
+const b64=btoa(bn),tc=Math.ceil(b64.length/1024);
+let idx=0;
+const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
+function setProgress(p){pbbar.style.width=p+'%';pbtxt.innerText=p+'%';}
+pbwrap.style.display='block';setProgress(0);
+s.innerText='Ziel: '+tgt+' | Upload laeuft...';s.className='s';s.style.display='block';
+function nc(){
+if(idx>=tc){
+setProgress(100);
+fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){s.className='s ok';s.innerText='Fertig: '+d.message+(d.restart?' Neustart laeuft...':' Seite neu laden, um Aenderung zu sehen.');}
+else{s.className='s err';s.innerText='Fehler: '+d.error;}
+}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});
+return;
+}
+const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);
+fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&target='+encodeURIComponent(tgt)+'&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){idx++;setProgress(Math.round((idx/tc)*100));nc();}
+else{s.className='s err';s.innerText='Fehler: '+d.error;}
+}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});
+}
+nc();
+}catch(er){s.className='s err';s.innerText='Fehler: '+er;s.style.display='block';}
+};
+if(isBinary){rd.readAsArrayBuffer(f);}else{rd.readAsText(f);}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+name: Firmware bauen & releasen
+
+# Baut firmware.nbo mit build_firmware.py (Kommandozeilen-Modus, kein GUI
+# noetig) und veroeffentlicht das Ergebnis als:
+#   1. Download-Artefakt des Workflow-Laufs (Actions-Tab, ~90 Tage gueltig)
+#   2. Anhang einer neuen GitHub Release mit automatisch generierter
+#      Versionsnummer (Datum + Lauf-Nummer)
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "main.py"
+      - "index.html"
+      - "admin_*.html"
+      - "build_firmware.py"
+  workflow_dispatch: {}
+    # Manuelles Ausloesen ueber den "Run workflow"-Button im Actions-Tab.
+
+permissions:
+  contents: write
+    # Noetig, damit der Workflow eine GitHub Release erstellen darf.
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Firmware-Bundle bauen (firmware.nbo)
+        run: python build_firmware.py firmware.nbo
+
+      - name: Versionsnummer bestimmen
+        id: version
+        run: echo "tag=v$(date +%Y.%m.%d)-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: firmware.nbo als Download-Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware.nbo
+          path: firmware.nbo
+          retention-days: 90
+
+      - name: GitHub Release erstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Firmware ${{ steps.version.outputs.tag }}
+          files: firmware.nbo
+          generate_release_notes: true

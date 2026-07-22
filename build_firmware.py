@@ -55,6 +55,15 @@ DEVICE_BUNDLE_PATH = ":firmware.nbo"
 DEBUG_ENABLED = True
 DEBUG_LOG_FILE = "build_firmware_debug.log"
 
+# Versionsnummer (Format X.Y.Z): version.json ist die persistente Quelle der
+# Wahrheit im Repo, firmware_version.txt ist die simple Textdatei, die mit ins
+# Bundle gepackt wird, damit main.py sie auf dem Pico anzeigen kann. Bei jedem
+# Bundle-Build (GUI, Kommandozeile, GitHub Actions) wird die letzte Ziffer
+# automatisch um 1 erhoeht (z.B. 1.0.0 -> 1.0.1).
+VERSION_STATE_FILE = "version.json"
+FIRMWARE_VERSION_FILE = "firmware_version.txt"
+DEFAULT_VERSION = "1.0.0"
+
 # Bundle-Modi:
 # - Mit Boot-Stack: boot/recovery + app/web
 # - Ohne Boot-Stack: nur main.py + html/admin Dateien
@@ -66,6 +75,8 @@ BOOT_STACK_FILES_TO_BUNDLE = [
 ]
 
 APP_FILES_TO_BUNDLE = [
+    "firmware_version.txt",
+    "ota_helpers.py",
     "main.py",
     "index.html",
     "admin_dashboard.html",
@@ -107,10 +118,52 @@ def _shorten(text, max_len=800):
     return text[:max_len] + "...<truncated>"
 
 
+def _read_version_state(source_dir):
+    path = os.path.join(source_dir, VERSION_STATE_FILE)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        version = str(data.get("version", DEFAULT_VERSION)).strip()
+        return version or DEFAULT_VERSION
+    except Exception:
+        return DEFAULT_VERSION
+
+
+def bump_firmware_version(source_dir):
+    """Erhoeht die Patch-Ziffer der Versionsnummer (X.Y.Z -> X.Y.(Z+1)) bei
+    jedem Bundle-Build, persistiert sie in version.json (Quelle der Wahrheit
+    im Repo) und schreibt den neuen Wert zusaetzlich in firmware_version.txt,
+    damit die Firmware selbst (main.py/index.html/admin_system.html) sie
+    anzeigen kann. Wird von build_bundle() automatisch aufgerufen - egal ob
+    ueber GUI, Kommandozeile oder GitHub Actions gebaut wird."""
+    current = _read_version_state(source_dir)
+    parts = current.split(".")
+    while len(parts) < 3:
+        parts.append("0")
+    try:
+        parts[2] = str(int(parts[2]) + 1)
+    except ValueError:
+        parts = ["1", "0", "1"]
+    new_version = ".".join(parts[:3])
+
+    version_state_path = os.path.join(source_dir, VERSION_STATE_FILE)
+    with open(version_state_path, "w", encoding="utf-8") as f:
+        json.dump({"version": new_version}, f)
+
+    version_txt_path = os.path.join(source_dir, FIRMWARE_VERSION_FILE)
+    with open(version_txt_path, "w", encoding="utf-8") as f:
+        f.write(new_version)
+
+    _debug(f"bump_firmware_version: {current} -> {new_version}")
+    return new_version
+
+
 def build_bundle(source_dir, output_path, progress_callback=None, include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK):
     """Baut das Bundle. progress_callback(done, total, filename) wird nach
     jeder verpackten Datei aufgerufen (fuer Fortschrittsanzeigen in der GUI)."""
     _debug(f"build_bundle start: source_dir={source_dir} output_path={output_path}")
+    new_version = bump_firmware_version(source_dir)
+    _debug(f"build_bundle version bumped to {new_version}")
     files_to_bundle = get_files_to_bundle(include_boot_stack)
     _debug(f"build_bundle mode: include_boot_stack={include_boot_stack} files={files_to_bundle}")
     included = []
@@ -234,7 +287,15 @@ def upload_bundle_to_pico(bundle_path, base_url, progress_callback=None):
         if (idx + 1) % 25 == 0 or (idx + 1) == total_chunks:
             _debug(f"upload_bundle_to_pico chunk progress: {idx + 1}/{total_chunks}")
 
-    finalize = _get_json(base_url + "/finalize-upload")
+    # Grosszuegiger Timeout: /finalize-upload dekodiert das komplette Bundle
+    # (Base64) und schreibt bei einem Firmware-Bundle alle enthaltenen
+    # Dateien (inkl. Backup der jeweils vorherigen Version) einzeln auf das
+    # Pico-Flash-Dateisystem - bei 13 Dateien/~160KB kann das auf dem Pico
+    # deutlich laenger als 12s dauern, obwohl der Vorgang selbst erfolgreich
+    # ist (der alte 12s-Timeout fuehrte hier zu False-Positive "timed out"
+    # Fehlern in der GUI, obwohl das Bundle serverseitig korrekt uebernommen
+    # wurde).
+    finalize = _get_json(base_url + "/finalize-upload", timeout=90)
     if not finalize.get("ok"):
         err = finalize.get("error", "Finalisierung fehlgeschlagen")
         raise Exception(f"{err} (URL: {base_url}/finalize-upload)")

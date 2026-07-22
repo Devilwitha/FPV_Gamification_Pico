@@ -1,6 +1,7 @@
 import machine
 import time
 import network
+import gc
 
 try:
     from hotspot_common import configure_hotspot
@@ -45,6 +46,19 @@ def debug_log(msg):
         print(f"[BOOT] [{time.ticks_ms() // 1000}s] {msg}")
 
 
+def debug_log_mem(label):
+    """Diagnose-Hilfe: loggt freien/zugewiesenen Heap an einer bestimmten
+    Boot-Phase, um Speicherengpaesse vor "import main" nachvollziehen zu
+    koennen (z.B. bei wiederholten "memory allocation failed"-Abstuerzen)."""
+    if not ENABLE_SERIAL_DEBUG:
+        return
+    try:
+        gc.collect()
+        debug_log(f"[MEM] {label}: frei={gc.mem_free()}B belegt={gc.mem_alloc()}B")
+    except Exception as e:
+        debug_log(f"[MEM] {label}: nicht verfuegbar ({e})")
+
+
 def start_shared_hotspot():
     configure_hotspot(
         AP_SSID,
@@ -56,19 +70,32 @@ def start_shared_hotspot():
 
 def run_recovery(reason):
     debug_log(f"Wechsle auf recovery.py: {reason}")
+    # Vor dem (Kompilieren+Ausfuehren von) recovery.py den Heap defragmentieren -
+    # gleicher Grund wie vor "import main" unten (siehe Kommentar dort).
+    gc.collect()
     try:
         import recovery
     except Exception as e:
         debug_log(f"Recovery Start fehlgeschlagen: {e}")
         try:
             debug_log("Versuche main_backup.py als Notfall-Fallback...")
+            gc.collect()
             import main_backup
         except Exception as e2:
             debug_log(f"main_backup.py Start fehlgeschlagen: {e2}")
 
 
+try:
+    import sys
+    debug_log(f"[SYS] {sys.implementation}")
+except Exception:
+    pass
+
+debug_log_mem("vor AP-Start")
+
 # AP so frueh wie moeglich starten, damit das Geraet im Fehlerfall erreichbar bleibt.
 start_shared_hotspot()
+debug_log_mem("nach AP-Start")
 
 # Watchdog aktivieren: Wenn main haengt und nicht mehr feedet, rebootet der Pico.
 try:
@@ -78,6 +105,7 @@ try:
     debug_log("Watchdog aktiviert")
 except Exception as e:
     debug_log(f"Watchdog nicht verfuegbar: {e}")
+debug_log_mem("nach Watchdog-Setup")
 
 force_main_retry = False
 try:
@@ -97,8 +125,17 @@ if should_recovery and not force_main_retry:
     run_recovery(f"zu viele Main-Fehler ({fail_count})")
 else:
     boot_runtime.mark_main_attempt_failed_or_unhealthy()
+    # main.py ist sehr gross (>90KB Quelltext); das Kompilieren beim Import
+    # braucht deutlich mehr RAM als der resultierende Bytecode selbst. Nach
+    # AP-Start + Watchdog-Setup + boot_state.json-I/O ist der Heap oft schon
+    # fragmentiert genug, dass selbst kleine Allokationen (wenige KB) waehrend
+    # des Kompilierens fehlschlagen ("memory allocation failed") - deshalb hier
+    # explizit aufraeumen, bevor der teure Import beginnt.
+    gc.collect()
+    debug_log_mem("direkt vor import main")
     try:
         import main
     except Exception as e:
         debug_log(f"main.py Crash: {e}")
+        debug_log_mem("direkt nach main.py Crash")
         run_recovery("main.py Exception")

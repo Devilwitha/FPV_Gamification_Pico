@@ -22,7 +22,9 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 .b{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1 1 150px;background:var(--blue);color:#fff;border:none;border-radius:11px;padding:11px 14px;cursor:pointer;font-weight:700;text-decoration:none}
 .b:hover{filter:brightness(1.08)}
 .br{background:var(--red)}
-.admin{display:block;margin-top:12px;text-align:right;color:#89a7c4;font-size:.78em;text-decoration:none}
+.footer-row{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+.ver{color:#89a7c4;font-size:.78em}
+.admin{color:#89a7c4;font-size:.78em;text-decoration:none}
 </style>
 </head>
 <body>
@@ -33,7 +35,7 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 <div class="card"><h2>Trick-Tuning Profil</h2><select id="prof" onchange="setP()"><option value="freestyle">Freestyle</option></select><div id="pn" class="n">Profil...</div></div>
 <div class="card"><h2>Detektierte Manoever</h2><div class="t" id="tr">Warte...</div></div>
 <div class="btnrow"><button class="b" onclick="dl()">&#128229; Download</button><button class="b" onclick="dld()">&#129514; Debug-Log</button><button class="b br" onclick="rhs()">&#128465;&#65039; Reset HS</button></div>
-<a class="admin" href="/admin">&#9881;&#65039; Admin</a>
+<div class="footer-row"><span class="ver" id="ver">v-.-.-</span><a class="admin" href="/admin">&#9881;&#65039; Admin</a></div>
 </div>
 <script>
 let hsPromptOpen=false;
@@ -49,7 +51,7 @@ function handleHighscorePopup(d){
     fetch("/confirm-highscore",{cache:"no-store"}).then(r=>r.json()).then(()=>{hsPromptOpen=false;upd();}).catch(e=>{hsPromptOpen=false;});
   }
 }
-function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):"Keine Tricks";if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}handleHighscorePopup(d);}).catch(e=>0)}
+function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):"Keine Tricks";if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}document.getElementById("ver").innerText="v"+(d.firmware_version||"?");handleHighscorePopup(d);}).catch(e=>0)}
 function setP(){let p=document.getElementById("prof").value;document.getElementById("pn").innerText="Speichert...";fetch("/set-trick-profile?profile="+p).then(r=>r.json()).then(d=>{document.getElementById("pn").innerText="OK"}).catch(e=>{document.getElementById("pn").innerText="Fehler"})}
 function dl(){window.open("/download?manual=1","_blank")}
 function dld(){window.open("/download-debug?manual=1","_blank")}

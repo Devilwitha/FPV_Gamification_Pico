@@ -1,0 +1,4 @@
+# Add Python packages here, one per line.
+# Example:
+# requests==2.32.3
+mpremote>=1.26.1

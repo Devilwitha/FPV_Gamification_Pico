@@ -357,35 +357,33 @@ Die Einstellung wird in `fpv_system_settings.json` gespeichert und übersteht ei
 Die Durchsetzung erfolgt serverseitig in `/upload-chunk` (nicht nur im Browser) - ein
 direkter Request an die OTA-Routen kann die Sperre also nicht umgehen.
 
-## Recovery-Modus fuer sehr alte/kaputte Installationen (`mainLight.py`)
+## Recovery-Modus fuer sehr alte/kaputte Installationen (`recovery.py`)
 
-`mainLight.py` ist ein eigenstaendiges Notfall-Skript fuer den Fall, dass auf einem Pico noch
+`recovery.py` ist ein eigenstaendiges Notfall-Skript fuer den Fall, dass auf einem Pico noch
 eine sehr alte Firmware-Version laeuft (ohne modernes OTA-System) oder `main.py` defekt ist.
 Es macht **nur** zwei Dinge: WLAN-Hotspot starten und eine minimale OTA-Update-Seite anzeigen -
 keine Telemetrie, keine Trick-Erkennung. Die komplette OTA-Seite ist direkt als Python-String
-in `mainLight.py` eingebettet (kein `index.html`/`admin_*.html` noetig), damit das Update auch
+in `recovery.py` eingebettet (kein `index.html`/`admin_*.html` noetig), damit das Update auch
 funktioniert, wenn auf dem Pico ausser einer alten `main.py` gar keine anderen Dateien liegen.
 
 ### Verwendung:
 
 1. Pico per USB mit Thonny verbinden.
-2. `mainLight.py` auf den Pico hochladen.
-3. Datei auf dem Pico von `mainLight.py` in `main.py` **umbenennen** (die alte `main.py` wird
-   dabei ueberschrieben - vorher lokal sichern, falls du sie behalten willst). MicroPython
-   fuehrt beim Booten immer `main.py` aus, niemals `mainLight.py` - daher ist die Umbenennung
-   zwingend noetig.
-4. Pico per Hardware-Reset neu starten. Jetzt laeuft der Recovery-Server statt der alten
+2. `recovery.py` auf den Pico hochladen (falls sie nicht bereits vorhanden ist).
+3. Pico per Hardware-Reset neu starten. Beim Boot-Failover startet `boot.py` automatisch
+   `recovery.py`, wenn `main.py` crasht oder wiederholt ungesund startet.
+4. Jetzt laeuft der Recovery-Server statt der alten
    Firmware.
-5. Mit dem WLAN verbinden (SSID/Passwort siehe `AP_SSID`/`AP_PASSWORD` oben in `mainLight.py`,
+5. Mit dem WLAN verbinden (SSID/Passwort siehe `AP_SSID`/`AP_PASSWORD` oben in `recovery.py`,
    standardmaessig identisch zur normalen Firmware) und `http://192.168.4.1` im Browser
    aufrufen.
 6. Empfohlen: das komplette `firmware.nbo` Bundle hochladen (siehe oben) - das entpackt und
    ersetzt `main.py` + alle `admin_*.html` + `index.html` in einem Rutsch. Alternativ reicht
    auch ein einzelnes `main.py` fuer einen minimalen Fix.
 7. Sobald `main.py` Teil des Uploads war, startet der Pico automatisch neu und bootet danach
-   wieder ganz normal mit der neuen Firmware (nicht mehr mit `mainLight.py`).
+   wieder ganz normal mit der neuen Firmware (nicht mehr im Recovery-Modus).
 
-`mainLight.py` nutzt exakt dasselbe OTA-Chunk-Upload-, Backup- und Bundle-Format wie die normale
+`recovery.py` nutzt exakt dasselbe OTA-Chunk-Upload-, Backup- und Bundle-Format wie die normale
 Firmware, ist aber komplett unabhaengig von den `admin_*.html`-Dateien (und vom Developer-Modus-
 Schalter - im Recovery-Modus sind Einzeldatei-Uploads immer erlaubt, damit ein kaputtes System
 auf jeden Fall reparierbar bleibt).

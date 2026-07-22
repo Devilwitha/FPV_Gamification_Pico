@@ -42,6 +42,12 @@ import json
 import os
 import gc
 import struct
+from hotspot_common import configure_hotspot
+
+try:
+    import boot_runtime
+except Exception:
+    boot_runtime = None
 
 # ==================== CONFIGURATION ====================
 ENABLE_SERIAL_DEBUG = True
@@ -54,6 +60,7 @@ OTA_STAGING_PATH = "ota_staging.tmp"
 # Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
 # keine beliebigen Dateinamen vom Client) - identische Whitelist wie in main.py.
 OTA_ALLOWED_TARGETS = (
+    "boot.py", "recovery.py", "hotspot_common.py", "boot_runtime.py",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html",
@@ -72,6 +79,15 @@ ota_update_active = False
 def debug_log(message):
     if ENABLE_SERIAL_DEBUG:
         print(f"[DEBUG] [{time.ticks_ms() // 1000}s] {message}")
+
+
+def _boot_feed_watchdog():
+    if boot_runtime is None:
+        return
+    try:
+        boot_runtime.feed_wdt()
+    except Exception:
+        pass
 
 
 def url_decode(value):
@@ -265,38 +281,12 @@ def apply_firmware_bundle(bundle_path):
 
 
 def start_access_point():
-    ap = network.WLAN(network.AP_IF)
-    try:
-        debug_log("[AP] Aktiviere Access Point")
-        ap.active(True)
-        time.sleep_ms(200)
-
-        ssid_set = False
-        for attempt in range(3):
-            try:
-                ap.config(essid=AP_SSID)
-                ssid_set = True
-                break
-            except Exception as ssid_error:
-                debug_log(f"[AP WARN] SSID-Setzen fehlgeschlagen (Versuch {attempt + 1}/3): {ssid_error}")
-                time.sleep_ms(120)
-        if not ssid_set:
-            debug_log("[AP WARN] SSID konnte nicht gesetzt werden, AP laeuft mit Standardnamen weiter.")
-
-        if AP_PASSWORD and len(AP_PASSWORD) >= 8:
-            try:
-                ap.config(password=AP_PASSWORD)
-            except Exception as pw_error:
-                debug_log(f"[AP WARN] Passwort-Konfiguration nicht verfuegbar, starte offenes WLAN: {pw_error}")
-
-        ap.config(pm=0xa11140)
-        ap.ifconfig(('192.168.4.1', '255.255.255.0', '192.168.4.1', '192.168.4.1'))
-
-        debug_log("WLAN-Hotspot (Recovery) erfolgreich gestartet!")
-        debug_log(f"SSID: {AP_SSID}")
-        debug_log(f"Pico IP-Adresse (Im Browser eingeben): {ap.ifconfig()[0]}")
-    except Exception as e:
-        debug_log(f"[AP ERROR] Hotspot-Setup fehlgeschlagen: {e}")
+    configure_hotspot(
+        AP_SSID,
+        AP_PASSWORD,
+        debug_log=lambda m: debug_log(f"[AP] {m}"),
+        serial_debug=ENABLE_SERIAL_DEBUG,
+    )
 
 
 # ==================== EINGEBETTETE OTA-SEITE ====================
@@ -655,6 +645,13 @@ async def handle_client(reader, writer):
                 writer.write(b'Connection: close\r\n\r\n')
                 writer.write(response)
 
+                # Nach erfolgreichem Update den naechsten Main-Start wieder erlauben.
+                if boot_runtime is not None:
+                    try:
+                        boot_runtime.request_main_retry_once()
+                    except Exception:
+                        pass
+
                 ota_total_chunks = 0
                 ota_received_chunks = 0
                 ota_update_active = False
@@ -700,6 +697,14 @@ async def handle_client(reader, writer):
             writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
             writer.write(b'Connection: close\r\n\r\n')
             writer.write(response)
+
+            # Manueller Neustart aus Recovery soll ebenfalls einen Main-Test erlauben.
+            if boot_runtime is not None:
+                try:
+                    boot_runtime.request_main_retry_once()
+                except Exception:
+                    pass
+
             try:
                 await writer.drain()
             except Exception:
@@ -770,6 +775,7 @@ async def main_async():
     await asyncio.start_server(handle_client, "0.0.0.0", 80)
     debug_log("Recovery-OTA-Server laeuft. WLAN verbinden und http://192.168.4.1 aufrufen.")
     while True:
+        _boot_feed_watchdog()
         await asyncio.sleep_ms(1000)
 
 

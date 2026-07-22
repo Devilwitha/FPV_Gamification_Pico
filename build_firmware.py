@@ -236,11 +236,29 @@ def _post_form_json(url, form_data, timeout=8):
             text = resp.read().decode("utf-8")
         return json.loads(text)
     except error.HTTPError as e:
-        raise Exception(f"HTTP {e.code} bei {url}: {e.reason}") from e
+        raise Exception(f"HTTP {e.code} bei {url}: {_http_error_detail(e)}") from e
     except error.URLError as e:
         raise Exception(f"Netzwerkfehler bei {url}: {e.reason}") from e
     except json.JSONDecodeError as e:
         raise Exception(f"Ungueltige JSON-Antwort von {url}: {e}") from e
+
+
+def _http_error_detail(e):
+    """Liest den Response-Body eines HTTPError aus und extrahiert - falls
+    vorhanden - das JSON-Feld 'error', damit die tatsaechliche Fehlermeldung
+    des Pico (statt nur der generischen HTTP-Reason-Phrase wie 'Internal
+    Server Error') im Log/der Fehlermeldung landet."""
+    try:
+        body = e.read().decode("utf-8")
+    except Exception:
+        return e.reason
+    try:
+        parsed = json.loads(body)
+        if isinstance(parsed, dict) and parsed.get("error"):
+            return f"{e.reason} - {parsed['error']}"
+    except Exception:
+        pass
+    return f"{e.reason} - {body}" if body else e.reason
 
 
 def _get_json(url, timeout=12):
@@ -250,7 +268,7 @@ def _get_json(url, timeout=12):
             text = resp.read().decode("utf-8")
         return json.loads(text)
     except error.HTTPError as e:
-        raise Exception(f"HTTP {e.code} bei {url}: {e.reason}") from e
+        raise Exception(f"HTTP {e.code} bei {url}: {_http_error_detail(e)}") from e
     except error.URLError as e:
         raise Exception(f"Netzwerkfehler bei {url}: {e.reason}") from e
     except json.JSONDecodeError as e:
@@ -692,9 +710,11 @@ def run_cli(output_path=None):
 
     total_size = sum(size for _, size in included)
     bundle_size = os.path.getsize(output_path)
+    current_version = _read_version_state(source_dir)
 
     print()
     print(f"Firmware-Bundle erstellt: {output_path}")
+    print(f"Firmware-Version: {current_version}")
     print()
     print(f"{'Datei':<28} {'Groesse':>10}")
     print("-" * 40)
@@ -821,10 +841,11 @@ def launch_gui():
             )
             total_size = sum(size for _, size in included)
             bundle_size = os.path.getsize(output_path)
+            current_version = _read_version_state(source_dir)
 
             def finish():
                 progress_var.set(100)
-                msg = f"Fertig: {output_path}\n{len(included)} Datei(en), {total_size} B Inhalt, {bundle_size} B Bundle."
+                msg = f"Fertig: {output_path}\nFirmware-Version: {current_version}\n{len(included)} Datei(en), {total_size} B Inhalt, {bundle_size} B Bundle."
                 if missing:
                     msg += f"\nFehlend (uebersprungen): {', '.join(missing)}"
                 status_var.set(msg)

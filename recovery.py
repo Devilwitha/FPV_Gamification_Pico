@@ -105,13 +105,13 @@ def _boot_feed_watchdog():
 # eigenes debug_log() als log-Callback durchreichen.
 
 def safe_base64_file_to_file(input_file, output_file):
-    return _ota_safe_base64_file_to_file(input_file, output_file, log=debug_log)
+    return _ota_safe_base64_file_to_file(input_file, output_file, log=debug_log, feed_wdt=_boot_feed_watchdog)
 
 
 def apply_firmware_bundle(bundle_path):
     """Entpackt ein per build_firmware.py erzeugtes Firmware-Bundle
     (firmware.nbo) - duenner Wrapper um ota_helpers.apply_firmware_bundle()."""
-    return _ota_apply_firmware_bundle(bundle_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log)
+    return _ota_apply_firmware_bundle(bundle_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
 
 
 def start_access_point():
@@ -409,6 +409,11 @@ async def handle_client(reader, writer):
 
                     if chunk_index + 1 == total and ota_received_chunks == ota_total_chunks:
                         debug_log("[OTA] Alle Chunks empfangen, bitte /finalize-upload aufrufen")
+
+                # Nach jedem Chunk aufraeumen (siehe main.py fuer Begruendung):
+                # verhindert Heap-Fragmentierung ueber die ~200+ Requests
+                # eines grossen Bundle-Uploads hinweg.
+                gc.collect()
 
             except Exception as e:
                 debug_log(f"[OTA CHUNK] Fehler: {e}")

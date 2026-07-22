@@ -1,0 +1,18 @@
+{
+  "pico_w": {
+    "mem_free_kb": 100,
+    "mem_alloc_kb": 80,
+    "cpu_freq_mhz": 125,
+    "cpu_scale": 1.0,
+    "net_latency_ms": 2,
+    "real_ram_limit_mb": null
+  },
+  "pico2": {
+    "mem_free_kb": 180,
+    "mem_alloc_kb": 96,
+    "cpu_freq_mhz": 150,
+    "cpu_scale": 1.0,
+    "net_latency_ms": 1,
+    "real_ram_limit_mb": null
+  }
+}

@@ -1,1 +1,0 @@
-{"stable_hold_ms": 140, "trick_start_hold_ms": 35, "trick_min_accum_deg": 80, "trick_axis_dominance_ratio": 1.18, "gyro_trick_threshold": 190, "trick_start_type_weight": 0.92, "stable_threshold": 65, "gyro_lowpass_alpha": 0.3, "min_trick_duration": 0.12, "gyro_deadband": 12, "trick_spin_min_accum_deg": 120}

@@ -60,8 +60,10 @@ TRICK_TUNING_PROFILE = "aggressive"
 
 AP_SSID = "FPV_Gamification_Pico"
 AP_PASSWORD = "drohnenspiel"  
-COPTER_NAME = "Orange Bee"
-DEFAULT_PILOT_NAME = "Bollshii"
+COPTER_NAME = "Test"
+DEFAULT_PILOT_NAME = "Test"
+COPIL_FILE_PATH = "copil"
+COPIL_DEFAULT_NAME = "Test"
 
 # UART wird lazy initialisiert, damit beim Import kein zusaetzlicher
 # zusammenhaengender RAM-Block benoetigt wird.
@@ -108,6 +110,73 @@ LED_BLINK_INTERVAL_MS     = 220
 OTA_LED_BLINK_INTERVAL_MS = 90
 # =======================================================
 
+
+def _load_or_create_copil_names():
+    default_payload = {
+        "copter_name": COPIL_DEFAULT_NAME,
+        "pilot_name": COPIL_DEFAULT_NAME,
+    }
+
+    try:
+        with open(COPIL_FILE_PATH, "r") as f:
+            data = json.loads(f.read())
+        copter_name = str(data.get("copter_name", COPIL_DEFAULT_NAME)).strip() or COPIL_DEFAULT_NAME
+        pilot_name = str(data.get("pilot_name", COPIL_DEFAULT_NAME)).strip() or COPIL_DEFAULT_NAME
+        return copter_name, pilot_name
+    except Exception:
+        try:
+            with open(COPIL_FILE_PATH, "w") as f:
+                f.write(json.dumps(default_payload))
+        except Exception:
+            pass
+        return COPIL_DEFAULT_NAME, COPIL_DEFAULT_NAME
+
+
+def _save_copil_names(copter_name, pilot_name):
+    global COPTER_NAME, DEFAULT_PILOT_NAME, highscore_data
+
+    copter_name = str(copter_name or "").strip() or COPIL_DEFAULT_NAME
+    pilot_name = str(pilot_name or "").strip() or COPIL_DEFAULT_NAME
+    payload = {
+        "copter_name": copter_name,
+        "pilot_name": pilot_name,
+    }
+
+    try:
+        tmp_path = COPIL_FILE_PATH + ".tmp"
+        with open(tmp_path, "w") as f:
+            f.write(json.dumps(payload))
+        try:
+            os.remove(COPIL_FILE_PATH)
+        except Exception:
+            pass
+        os.rename(tmp_path, COPIL_FILE_PATH)
+    except Exception as e:
+        return False, str(e)
+
+    old_default = DEFAULT_PILOT_NAME
+    COPTER_NAME = copter_name
+    DEFAULT_PILOT_NAME = pilot_name
+    try:
+        if int(highscore_data.get("score", 0)) <= 0:
+            highscore_data["player"] = pilot_name
+        elif str(highscore_data.get("player", "")).strip() == str(old_default).strip():
+            highscore_data["player"] = pilot_name
+    except Exception:
+        pass
+
+    return True, ""
+
+
+def _get_copil_payload():
+    return {
+        "copter_name": COPTER_NAME,
+        "pilot_name": DEFAULT_PILOT_NAME,
+    }
+
+
+COPTER_NAME, DEFAULT_PILOT_NAME = _load_or_create_copil_names()
+
 # CRSF attitude payload ist in Radiant * 10000 kodiert.
 CRSF_RAD1E4_TO_DEG = 180.0 / (3.141592653589793 * 10000.0)
 
@@ -141,6 +210,7 @@ OTA_STAGING_PATH = "ota_staging.tmp"
 OTA_ALLOWED_TARGETS = (
     "boot.py", "recovery.py", "hotspot_common.py", "boot_runtime.py",
     "ota_helpers.py",
+    "copil",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html",
@@ -1226,10 +1296,9 @@ async def telemetry_loop():
 # HTML-String-Literal ist mehr dauerhaft im Modul-RAM resident - das war
 # die Ursache der MemoryErrors beim Modul-Start.
 #
-# WICHTIG: COPTER_NAME/DEFAULT_PILOT_NAME sind in index.html fest als Text
-# eingetragen (kein Runtime-Replace mehr moeglich ohne die Datei wieder in
-# RAM zu laden). Wenn du COPTER_NAME hier oben aenderst, passe Titel/H1 in
-# index.html manuell mit an.
+# WICHTIG: Die Hauptseite wird als Datei gestreamt; Copter/Pilot-Daten werden
+# clientseitig per /copil-info geladen, ohne dass die HTML-Datei serverseitig
+# per String-Replacement im RAM bearbeitet werden muss.
 #
 # Admin-Bereich (Unterseiten, wie ein Einstellungen-Menue):
 #   /admin           -> Dashboard/Uebersicht mit Links zu den Unterseiten
@@ -1252,11 +1321,11 @@ async def send_html_file(writer, file_path):
     gc.collect()
     file_size = os.stat(file_path)[6]
     writer.write(b'HTTP/1.1 200 OK\r\n')
-    writer.write(b'Content-Type: text/html\r\n')
+    writer.write(b'Content-Type: text/html; charset=utf-8\r\n')
     writer.write(b'Content-Length: ' + str(file_size).encode() + b'\r\n')
     writer.write(b'Connection: close\r\n\r\n')
 
-    with open(file_path, 'r') as f:
+    with open(file_path, 'rb') as f:
         chunk_count = 0
         while True:
             chunk = f.read(512)
@@ -1788,6 +1857,33 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
         writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
         writer.write(b'Connection: close\r\n\r\n')
         writer.write(response_data)
+        return True
+
+    if request_path == '/copil-info':
+        response_data = json.dumps({"ok": True, "copil": _get_copil_payload()}).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True
+
+    if request_path == '/set-copil' and request_method == 'POST':
+        copter_name = body_params.get('copter_name', '').strip()
+        pilot_name = body_params.get('pilot_name', '').strip()
+        ok, err = _save_copil_names(copter_name, pilot_name)
+        if ok:
+            response = json.dumps({"ok": True, "copil": _get_copil_payload()}).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+        else:
+            response = json.dumps({"ok": False, "error": err}).encode('utf-8')
+            writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response)
         return True
 
     if request_path == '/create-profile' and request_method == 'POST':

@@ -31,6 +31,7 @@ main.py es mit reinem MicroPython + struct wieder einlesen kann):
               M Bytes   Dateiinhalt (roh, binaer)
 """
 import os
+import argparse
 import re
 import shutil
 import struct
@@ -39,6 +40,7 @@ import sys
 import threading
 import base64
 import json
+import hashlib
 import tempfile
 from datetime import datetime
 from urllib import error, parse, request
@@ -90,7 +92,20 @@ APP_FILES_TO_BUNDLE = [
     "admin_system.html",
 ]
 
-DEFAULT_INCLUDE_BOOT_STACK = True
+RECOVERY_FILES_TO_BUNDLE = [
+    "boot.py",
+    "recovery.py",
+    "hotspot_common.py",
+    "boot_runtime.py",
+    "ota_helpers.py",
+    "firmware_version.txt",
+]
+
+DEFAULT_INCLUDE_BOOT_STACK = False
+DEFAULT_BUILD_COMPLETE_FIRMWARE = False
+DEFAULT_BUILD_LIGHT_FIRMWARE = False
+DEFAULT_BUILD_RECOVERY_FIRMWARE = False
+MANIFEST_FILE = os.path.join(BUILD_DIR, ".last_bundle_manifest.json")
 
 
 def get_files_to_bundle(include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK):
@@ -100,6 +115,75 @@ def get_files_to_bundle(include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK):
     return files
 
 OPTIONAL_FILES_TO_BUNDLE = []
+
+
+def _read_bundle_file_bytes(source_dir, filename):
+    file_path = os.path.join(source_dir, filename)
+    if os.path.isfile(file_path):
+        with open(file_path, "rb") as f:
+            return f.read()
+    return None
+
+
+def _build_file_signature_map(source_dir):
+    signatures = {}
+    tracked = get_files_to_bundle(True) + OPTIONAL_FILES_TO_BUNDLE
+    for filename in tracked:
+        content = _read_bundle_file_bytes(source_dir, filename)
+        if content is None:
+            signatures[filename] = None
+            continue
+        signatures[filename] = hashlib.sha256(content).hexdigest()
+    return signatures
+
+
+def _load_manifest():
+    try:
+        with open(MANIFEST_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_manifest(source_dir):
+    os.makedirs(BUILD_DIR, exist_ok=True)
+    data = _build_file_signature_map(source_dir)
+    with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
+def _resolve_files_to_bundle(source_dir, include_boot_stack, light_mode, recovery_mode=False):
+    if recovery_mode:
+        base = list(RECOVERY_FILES_TO_BUNDLE)
+    else:
+        base = get_files_to_bundle(include_boot_stack)
+
+    optional_present = []
+    for filename in OPTIONAL_FILES_TO_BUNDLE:
+        if os.path.isfile(os.path.join(source_dir, filename)):
+            optional_present.append(filename)
+
+    selected = list(base)
+    if light_mode and not recovery_mode:
+        previous = _load_manifest()
+        current = _build_file_signature_map(source_dir)
+        changed = []
+        for filename in base:
+            now_sig = current.get(filename)
+            old_sig = previous.get(filename)
+            if now_sig != old_sig:
+                changed.append(filename)
+        # Light-Firmware soll immer recovery.py enthalten.
+        if "recovery.py" not in changed and "recovery.py" in base:
+            changed.append("recovery.py")
+        selected = changed
+
+    selected.extend(optional_present)
+    return selected
 
 
 def _debug(message):
@@ -162,27 +246,39 @@ def bump_firmware_version(source_dir):
     return new_version
 
 
-def build_bundle(source_dir, output_path, progress_callback=None, include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK):
+def build_bundle(
+    source_dir,
+    output_path,
+    progress_callback=None,
+    include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK,
+    light_mode=DEFAULT_BUILD_LIGHT_FIRMWARE,
+    recovery_mode=DEFAULT_BUILD_RECOVERY_FIRMWARE,
+    bump_version=True,
+):
     """Baut das Bundle. progress_callback(done, total, filename) wird nach
     jeder verpackten Datei aufgerufen (fuer Fortschrittsanzeigen in der GUI)."""
     _debug(f"build_bundle start: source_dir={source_dir} output_path={output_path}")
-    new_version = bump_firmware_version(source_dir)
-    _debug(f"build_bundle version bumped to {new_version}")
-    files_to_bundle = get_files_to_bundle(include_boot_stack)
-    _debug(f"build_bundle mode: include_boot_stack={include_boot_stack} files={files_to_bundle}")
+    if bump_version:
+        new_version = bump_firmware_version(source_dir)
+        _debug(f"build_bundle version bumped to {new_version}")
+    else:
+        new_version = _read_version_state(source_dir)
+        _debug(f"build_bundle version kept at {new_version}")
+    files_to_bundle = _resolve_files_to_bundle(source_dir, include_boot_stack, light_mode, recovery_mode)
+    _debug(
+        "build_bundle mode: "
+        f"include_boot_stack={include_boot_stack} light_mode={light_mode} recovery_mode={recovery_mode} files={files_to_bundle}"
+    )
     included = []
     missing = []
 
+    bundle_entries = []
     for filename in files_to_bundle:
-        file_path = os.path.join(source_dir, filename)
-        if not os.path.isfile(file_path):
+        content = _read_bundle_file_bytes(source_dir, filename)
+        if content is None:
             missing.append(filename)
-
-    optional_present = []
-    for filename in OPTIONAL_FILES_TO_BUNDLE:
-        file_path = os.path.join(source_dir, filename)
-        if os.path.isfile(file_path):
-            optional_present.append(filename)
+            continue
+        bundle_entries.append((filename, content))
 
     if missing:
         print("WARNUNG: Folgende Dateien fehlen und werden NICHT ins Bundle aufgenommen:")
@@ -191,9 +287,7 @@ def build_bundle(source_dir, output_path, progress_callback=None, include_boot_s
         print()
         _debug(f"build_bundle missing files: {missing}")
 
-    files_present = [f for f in files_to_bundle if f not in missing]
-    files_present.extend(optional_present)
-    total = len(files_present)
+    total = len(bundle_entries)
 
     output_dir = os.path.dirname(os.path.abspath(output_path))
     if output_dir:
@@ -203,11 +297,7 @@ def build_bundle(source_dir, output_path, progress_callback=None, include_boot_s
         out.write(BUNDLE_MAGIC)
         out.write(struct.pack(">I", total))
 
-        for i, filename in enumerate(files_present, start=1):
-            file_path = os.path.join(source_dir, filename)
-            with open(file_path, "rb") as f:
-                content = f.read()
-
+        for i, (filename, content) in enumerate(bundle_entries, start=1):
             name_bytes = filename.encode("utf-8")
             out.write(struct.pack(">I", len(name_bytes)))
             out.write(name_bytes)
@@ -220,6 +310,7 @@ def build_bundle(source_dir, output_path, progress_callback=None, include_boot_s
                 progress_callback(i, total, filename)
 
     _debug(f"build_bundle done: included={len(included)} total_bytes={sum(size for _, size in included)}")
+    _save_manifest(source_dir)
 
     return included, missing
 
@@ -702,7 +793,7 @@ print("SERIAL_NEEDS_RESTART:" + ("1" if needs_restart else "0"))
     }
 
 
-def run_cli(output_path=None):
+def run_cli(output_path=None, include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK, light_mode=False, recovery_mode=False, bump_version=True):
     source_dir = SOURCE_DIR
     output_path = output_path or os.path.join(BUILD_DIR, "firmware.nbo")
 
@@ -713,7 +804,10 @@ def run_cli(output_path=None):
         source_dir,
         output_path,
         progress_callback=report,
-        include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK,
+        include_boot_stack=include_boot_stack,
+        light_mode=light_mode,
+        recovery_mode=recovery_mode,
+        bump_version=bump_version,
     )
 
     total_size = sum(size for _, size in included)
@@ -768,12 +862,20 @@ def launch_gui():
     tree.tag_configure("ok", foreground="#1a7a3c")
     tree.tag_configure("missing", foreground="#b03030")
 
-    include_boot_stack_var = tk.BooleanVar(value=DEFAULT_INCLUDE_BOOT_STACK)
+    include_boot_stack_var = tk.BooleanVar(value=DEFAULT_BUILD_COMPLETE_FIRMWARE)
+    build_light_var = tk.BooleanVar(value=DEFAULT_BUILD_LIGHT_FIRMWARE)
+    build_recovery_var = tk.BooleanVar(value=DEFAULT_BUILD_RECOVERY_FIRMWARE)
 
     def scan_files():
         _debug("GUI scan_files triggered")
         tree.delete(*tree.get_children())
-        for filename in get_files_to_bundle(include_boot_stack_var.get()):
+        selected = _resolve_files_to_bundle(
+            source_dir,
+            include_boot_stack=include_boot_stack_var.get(),
+            light_mode=build_light_var.get(),
+            recovery_mode=build_recovery_var.get(),
+        )
+        for filename in selected:
             file_path = os.path.join(source_dir, filename)
             if os.path.isfile(file_path):
                 size = os.path.getsize(file_path)
@@ -781,14 +883,29 @@ def launch_gui():
             else:
                 tree.insert("", "end", text=filename, values=("Fehlt", "-"), tags=("missing",))
 
+        if not selected:
+            tree.insert("", "end", text="(keine geaenderten Dateien)", values=("Hinweis", "-"), tags=("missing",))
+
     scan_files()
 
     mode_frame = ttk.Frame(frame)
     mode_frame.pack(fill="x", pady=(0, 10))
     ttk.Checkbutton(
         mode_frame,
-        text="Boot-/Recovery-Dateien mit ins Bundle aufnehmen",
+        text="Builde Komplette Firmware",
         variable=include_boot_stack_var,
+        command=scan_files,
+    ).pack(anchor="w")
+    ttk.Checkbutton(
+        mode_frame,
+        text="Builde Ligth Firmware",
+        variable=build_light_var,
+        command=scan_files,
+    ).pack(anchor="w")
+    ttk.Checkbutton(
+        mode_frame,
+        text="Builde Recovery",
+        variable=build_recovery_var,
         command=scan_files,
     ).pack(anchor="w")
 
@@ -834,7 +951,15 @@ def launch_gui():
 
     def build_worker(output_path):
         include_boot_stack = include_boot_stack_var.get()
-        _debug(f"GUI build_worker start: output_path={output_path} include_boot_stack={include_boot_stack}")
+        light_mode = build_light_var.get()
+        recovery_mode = build_recovery_var.get()
+        if recovery_mode:
+            include_boot_stack = False
+            light_mode = False
+        _debug(
+            "GUI build_worker start: "
+            f"output_path={output_path} include_boot_stack={include_boot_stack} light_mode={light_mode} recovery_mode={recovery_mode}"
+        )
         def report(done, total, filename):
             def update():
                 progress_var.set(done / total * 100 if total else 100)
@@ -847,6 +972,8 @@ def launch_gui():
                 output_path,
                 progress_callback=report,
                 include_boot_stack=include_boot_stack,
+                light_mode=light_mode,
+                recovery_mode=recovery_mode,
             )
             total_size = sum(size for _, size in included)
             bundle_size = os.path.getsize(output_path)
@@ -883,7 +1010,12 @@ def launch_gui():
         if not output_path:
             messagebox.showerror("Fehler", "Bitte einen Ausgabepfad angeben.")
             return
-        active_files = get_files_to_bundle(include_boot_stack_var.get())
+        active_files = _resolve_files_to_bundle(
+            source_dir,
+            include_boot_stack=(False if build_recovery_var.get() else include_boot_stack_var.get()),
+            light_mode=(False if build_recovery_var.get() else build_light_var.get()),
+            recovery_mode=build_recovery_var.get(),
+        )
         present = [f for f in active_files if os.path.isfile(os.path.join(source_dir, f))]
         if not present:
             messagebox.showerror("Fehler", "Keine der erwarteten Firmware-Dateien gefunden.")
@@ -1007,14 +1139,37 @@ def launch_gui():
 
 
 def main():
-    if len(sys.argv) > 1:
-        run_cli(sys.argv[1])
-    else:
+    if len(sys.argv) == 1:
         try:
             launch_gui()
         except Exception as e:
             print(f"GUI konnte nicht gestartet werden ({e}), verwende Kommandozeilen-Modus.")
             run_cli(None)
+        return
+
+    parser = argparse.ArgumentParser(description="FPV Firmware Bundle Builder")
+    parser.add_argument("output_path", nargs="?", default=os.path.join(BUILD_DIR, "firmware.nbo"))
+    parser.add_argument("--mode", choices=["normal", "complete", "light", "recovery"], default="normal")
+    parser.add_argument("--no-version-bump", action="store_true", help="Version nicht automatisch erhoehen")
+    args = parser.parse_args()
+
+    include_boot_stack = False
+    light_mode = False
+    recovery_mode = False
+    if args.mode == "complete":
+        include_boot_stack = True
+    elif args.mode == "light":
+        light_mode = True
+    elif args.mode == "recovery":
+        recovery_mode = True
+
+    run_cli(
+        args.output_path,
+        include_boot_stack=include_boot_stack,
+        light_mode=light_mode,
+        recovery_mode=recovery_mode,
+        bump_version=(not args.no_version_bump),
+    )
 
 
 if __name__ == "__main__":

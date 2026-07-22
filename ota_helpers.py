@@ -35,6 +35,10 @@ def _noop_log(_message):
     pass
 
 
+def _noop_feed_wdt():
+    pass
+
+
 def url_decode(value):
     value = value.replace('+', ' ')
     out = ""
@@ -116,7 +120,7 @@ def safe_base64_decode_to_file(b64_string, output_file, log=_noop_log):
         return False
 
 
-def safe_base64_file_to_file(input_file, output_file, log=_noop_log):
+def safe_base64_file_to_file(input_file, output_file, log=_noop_log, feed_wdt=_noop_feed_wdt):
     try:
         alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
         carry = ""
@@ -124,6 +128,14 @@ def safe_base64_file_to_file(input_file, output_file, log=_noop_log):
         with open(input_file, 'r') as fin:
             with open(output_file, 'wb') as fout:
                 while True:
+                    # Watchdog jeden Chunk fuettern: diese Funktion ist rein
+                    # synchron (kein await), blockiert also die komplette
+                    # asyncio-Eventloop (inkl. der Task, die sonst den
+                    # Watchdog fuettert) - bei grossen Bundles (>8s Gesamt-
+                    # dauer) wuerde sonst der Hardware-Watchdog (siehe
+                    # boot.py, Timeout 8000ms) mitten im Request feuern und
+                    # die TCP-Verbindung abrupt beenden ("Connection reset").
+                    feed_wdt()
                     chunk = fin.read(512)
                     if not chunk:
                         break
@@ -202,13 +214,19 @@ def read_exact(f, n):
     return bytes(data)
 
 
-def apply_firmware_bundle(bundle_path, allowed_targets, bundle_magic, log=_noop_log):
+def apply_firmware_bundle(bundle_path, allowed_targets, bundle_magic, log=_noop_log, feed_wdt=_noop_feed_wdt):
     """Entpackt ein per build_firmware.py erzeugtes Firmware-Bundle
     (firmware.nbo) und ersetzt jede enthaltene Datei einzeln auf dem
     Pico-Dateisystem (mit Backup, wie beim Einzeldatei-OTA-Update).
     Jeder Dateiname im Bundle wird gegen `allowed_targets` geprueft, bevor
     irgendetwas geschrieben wird (kein beliebiges Ueberschreiben von
-    Dateien moeglich)."""
+    Dateien moeglich).
+
+    `feed_wdt` wird bei jeder Datei UND bei jedem Schreib-Chunk aufgerufen -
+    diese Funktion ist komplett synchron (kein await) und kann bei grossen
+    Bundles (viele/grosse Dateien) laenger als der Hardware-Watchdog-Timeout
+    (8000ms, siehe boot.py) brauchen; ohne diese Callbacks wuerde der
+    Watchdog mitten im Entpacken feuern und die Verbindung abrupt kappen."""
     extracted_files = []
     with open(bundle_path, 'rb') as f:
         magic = read_exact(f, len(bundle_magic))
@@ -221,6 +239,7 @@ def apply_firmware_bundle(bundle_path, allowed_targets, bundle_magic, log=_noop_
         (file_count,) = struct.unpack('>I', count_bytes)
 
         for _ in range(file_count):
+            feed_wdt()
             name_len_bytes = read_exact(f, 4)
             if len(name_len_bytes) < 4:
                 raise Exception("Bundle beschaedigt (Namenslaenge fehlt)")
@@ -243,12 +262,14 @@ def apply_firmware_bundle(bundle_path, allowed_targets, bundle_magic, log=_noop_
             remaining = content_len
             with open(tmp_name, 'wb') as out:
                 while remaining > 0:
+                    feed_wdt()
                     chunk = f.read(min(512, remaining))
                     if not chunk:
                         raise Exception(f"Bundle beschaedigt (Inhalt unvollstaendig: {filename})")
                     out.write(chunk)
                     remaining -= len(chunk)
 
+            feed_wdt()
             backup_path = "main_backup.py" if filename == "main.py" else (filename + ".bak")
             try:
                 with open(filename, 'r') as old_f:

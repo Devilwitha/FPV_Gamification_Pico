@@ -25,12 +25,14 @@ Damit die Web-Oberflaeche funktioniert, muessen **alle folgenden Dateien** im se
 | Datei | Zweck |
 |---|---|
 | `main.py` | Hauptskript (Bootdatei, wird beim Start automatisch ausgefuehrt) |
+| `ota_helpers.py` | Gemeinsame OTA-/Kodier-Hilfsfunktionen fuer `main.py` und `recovery.py` (ausgelagert, um `main.py` kleiner zu halten - siehe unten). **main.py startet ohne diese Datei nicht** (ImportError). |
 | `index.html` | Hauptseite (Score, Highscore, Trick-Historie, Downloads) |
 | `admin_dashboard.html` | Admin-Startseite: Uebersicht + Navigation zu den Unterseiten |
 | `admin_update.html` | Admin-Unterseite: OTA-Update (Datei-Upload) |
 | `admin_simulate.html` | Admin-Unterseite: Trick-Simulation |
 | `admin_profiles.html` | Admin-Unterseite: Trick-Profile verwalten |
 | `admin_system.html` | Admin-Unterseite: System-Info + manueller Restart |
+| `firmware_version.txt` | Enthaelt nur die aktuelle Firmware-Versionsnummer (`X.Y.Z`), wird von `build_firmware.py` bei **jedem** Bundle-Build automatisch erzeugt/erhoeht (siehe [Versionsnummer](#versionsnummer)). Nicht manuell bearbeiten. |
 
 **Wichtig:** Die HTML-Seiten sind bewusst **nicht** als Python-Strings im Skript eingebettet, sondern eigenstaendige Dateien, die bei Bedarf vom Dateisystem gestreamt werden (siehe [Speicher-Architektur](#speicher-architektur-warum-so-viele-dateien)). Fehlen sie auf dem Pico, schlagen `/` bzw. die jeweilige Admin-Unterseite mit einem Dateifehler fehl.
 
@@ -75,13 +77,22 @@ Wichtig:
 
 ### Erste Installation auf dem Pico
 
-1. Lade **alle sechs Dateien** (`main.py`, `index.html`, `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`) via **Thonny** (Dateien-Ansicht → Rechtsklick → "Upload to /") oder **ampy** auf den Pico.
+1. Lade **alle Dateien** (`main.py`, `ota_helpers.py`, `firmware_version.txt`, `index.html`, `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`) via **Thonny** (Dateien-Ansicht → Rechtsklick → "Upload to /") oder **ampy** auf den Pico.
 2. `main.py` muss exakt so heissen (ist die Bootdatei, die MicroPython beim Start automatisch ausfuehrt).
 3. Starte den Pico neu (Hardware-Reset oder Stromzyklus). Der Hotspot sollte danach automatisch erscheinen.
 
 ### Nach Änderungen
 
 - Sowohl `main.py` als auch alle Admin-/HTML-Seiten koennen ueber das OTA-Update-System (siehe unten) direkt per Browser aktualisiert werden - kein USB/Thonny mehr noetig.
+
+## Versionsnummer
+
+Die Firmware zeigt unten auf der Hauptseite (neben "Admin") sowie auf der Admin-Unterseite **System** eine Versionsnummer im Format `X.Y.Z` an (z.B. `1.0.0`). Diese Nummer wird **automatisch** verwaltet:
+
+- Quelle der Wahrheit ist `version.json` im Repo-Root.
+- Bei **jedem** Bundle-Build - egal ob per `python build_firmware.py` (GUI oder Kommandozeile) oder automatisch durch den GitHub-Actions-Workflow (`.github/workflows/build-and-release-firmware.yml`) - wird die letzte Ziffer automatisch um 1 erhoeht (`1.0.0` -> `1.0.1`) und in `version.json` sowie `firmware_version.txt` (die Datei, die auf den Pico gelangt) gespeichert.
+- Der GitHub-Workflow schreibt die erhoehte Versionsnummer anschliessend automatisch zurueck ins Repo, damit lokale Builds und Actions-Builds sich eine fortlaufende Nummer teilen.
+- `version.json`/`firmware_version.txt` sollten nicht manuell bearbeitet werden.
 - Alternativ kannst du jede der sechs Dateien jederzeit auch manuell per Thonny erneut hochladen.
 - Zum Testen waehrend der Entwicklung: Speichere als `main.py` auf dem Pico und starte per Hardware-Reset, statt "Run current script" in Thonny zu benutzen (siehe [Speicher-Architektur](#speicher-architektur-warum-so-viele-dateien) fuer den Grund).
 
@@ -315,6 +326,15 @@ Erzeugt `firmware.nbo` im Projektverzeichnis. Optional kannst du einen anderen A
 angeben: `python build_firmware.py pfad/zu/firmware.nbo`. Das Skript listet fehlende Dateien
 als Warnung auf und packt nur vorhandene Dateien ein.
 
+Im GUI von `build_firmware.py` gibt es zusätzlich den Button **Bundle hochladen + entpacken**.
+Damit kannst du ein bereits erstelltes `firmware.nbo` direkt an den Pico senden (Standard-URL
+`http://192.168.4.1`) und sofort serverseitig per `/finalize-upload` entpacken lassen.
+
+Zusätzlich gibt es den Button **Seriell hochladen + entpacken (Auto)**. Damit wird ein per USB
+verbundener Pico automatisch gesucht und ausgewählt, `firmware.nbo` per serieller Verbindung
+übertragen und direkt auf dem Pico entpackt. Voraussetzung: `mpremote` ist auf dem PC installiert
+(`pip install mpremote`).
+
 ### Bundle hochladen:
 
 1. Gehe im Admin-Bereich auf **Update** (`/admin-update`).
@@ -348,36 +368,33 @@ Die Einstellung wird in `fpv_system_settings.json` gespeichert und übersteht ei
 Die Durchsetzung erfolgt serverseitig in `/upload-chunk` (nicht nur im Browser) - ein
 direkter Request an die OTA-Routen kann die Sperre also nicht umgehen.
 
-## Recovery-Modus fuer sehr alte/kaputte Installationen (`mainLight.py`)
+## Recovery-Modus fuer sehr alte/kaputte Installationen (`recovery.py`)
 
-`mainLight.py` ist ein eigenstaendiges Notfall-Skript fuer den Fall, dass auf einem Pico noch
+`recovery.py` ist ein eigenstaendiges Notfall-Skript fuer den Fall, dass auf einem Pico noch
 eine sehr alte Firmware-Version laeuft (ohne modernes OTA-System) oder `main.py` defekt ist.
 Es macht **nur** zwei Dinge: WLAN-Hotspot starten und eine minimale OTA-Update-Seite anzeigen -
 keine Telemetrie, keine Trick-Erkennung. Die komplette OTA-Seite ist direkt als Python-String
-in `mainLight.py` eingebettet (kein `index.html`/`admin_*.html` noetig), damit das Update auch
+in `recovery.py` eingebettet (kein `index.html`/`admin_*.html` noetig), damit das Update auch
 funktioniert, wenn auf dem Pico ausser einer alten `main.py` gar keine anderen Dateien liegen.
 
 ### Verwendung:
 
 1. Pico per USB mit Thonny verbinden.
-2. `mainLight.py` auf den Pico hochladen.
-3. Datei auf dem Pico von `mainLight.py` in `main.py` **umbenennen** (die alte `main.py` wird
-   dabei ueberschrieben - vorher lokal sichern, falls du sie behalten willst). MicroPython
-   fuehrt beim Booten immer `main.py` aus, niemals `mainLight.py` - daher ist die Umbenennung
-   zwingend noetig.
-4. Pico per Hardware-Reset neu starten. Jetzt laeuft der Recovery-Server statt der alten
+2. `recovery.py` auf den Pico hochladen (falls sie nicht bereits vorhanden ist).
+3. Pico per Hardware-Reset neu starten. Beim Boot-Failover startet `boot.py` automatisch
+   `recovery.py`, wenn `main.py` crasht oder wiederholt ungesund startet.
+4. Jetzt laeuft der Recovery-Server statt der alten
    Firmware.
-5. Mit dem WLAN verbinden (SSID/Passwort siehe `AP_SSID`/`AP_PASSWORD` oben in `mainLight.py`,
+5. Mit dem WLAN verbinden (SSID/Passwort siehe `AP_SSID`/`AP_PASSWORD` oben in `recovery.py`,
    standardmaessig identisch zur normalen Firmware) und `http://192.168.4.1` im Browser
    aufrufen.
 6. Empfohlen: das komplette `firmware.nbo` Bundle hochladen (siehe oben) - das entpackt und
    ersetzt `main.py` + alle `admin_*.html` + `index.html` in einem Rutsch. Alternativ reicht
    auch ein einzelnes `main.py` fuer einen minimalen Fix.
 7. Sobald `main.py` Teil des Uploads war, startet der Pico automatisch neu und bootet danach
-   wieder ganz normal mit der neuen Firmware (nicht mehr mit `mainLight.py`).
+   wieder ganz normal mit der neuen Firmware (nicht mehr im Recovery-Modus).
 
-`mainLight.py` nutzt exakt dasselbe OTA-Chunk-Upload-, Backup- und Bundle-Format wie die normale
+`recovery.py` nutzt exakt dasselbe OTA-Chunk-Upload-, Backup- und Bundle-Format wie die normale
 Firmware, ist aber komplett unabhaengig von den `admin_*.html`-Dateien (und vom Developer-Modus-
 Schalter - im Recovery-Modus sind Einzeldatei-Uploads immer erlaubt, damit ein kaputtes System
 auf jeden Fall reparierbar bleibt).
-

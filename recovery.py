@@ -42,6 +42,19 @@ import json
 import os
 import gc
 import struct
+from hotspot_common import configure_hotspot
+from ota_helpers import (
+    url_decode,
+    parse_query,
+    read_exact,
+    safe_base64_file_to_file as _ota_safe_base64_file_to_file,
+    apply_firmware_bundle as _ota_apply_firmware_bundle,
+)
+
+try:
+    import boot_runtime
+except Exception:
+    boot_runtime = None
 
 # ==================== CONFIGURATION ====================
 ENABLE_SERIAL_DEBUG = True
@@ -54,9 +67,12 @@ OTA_STAGING_PATH = "ota_staging.tmp"
 # Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
 # keine beliebigen Dateinamen vom Client) - identische Whitelist wie in main.py.
 OTA_ALLOWED_TARGETS = (
+    "boot.py", "recovery.py", "hotspot_common.py", "boot_runtime.py",
+    "ota_helpers.py",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html",
+    "firmware_version.txt",
 )
 # Spezial-Ziel: komplettes Firmware-Bundle (siehe build_firmware.py), das
 # mehrere der obigen Dateien in einem Rutsch aktualisiert.
@@ -74,229 +90,37 @@ def debug_log(message):
         print(f"[DEBUG] [{time.ticks_ms() // 1000}s] {message}")
 
 
-def url_decode(value):
-    value = value.replace('+', ' ')
-    out = ""
-    i = 0
-    while i < len(value):
-        ch = value[i]
-        if ch == '%' and i + 2 < len(value):
-            hex_part = value[i + 1:i + 3]
-            try:
-                out += chr(int(hex_part, 16))
-                i += 3
-                continue
-            except Exception:
-                pass
-        out += ch
-        i += 1
-    return out
+def _boot_feed_watchdog():
+    if boot_runtime is None:
+        return
+    try:
+        boot_runtime.feed_wdt()
+    except Exception:
+        pass
 
 
-def parse_query(query_string):
-    params = {}
-    if not query_string:
-        return params
-    pairs = query_string.split('&')
-    for pair in pairs:
-        if not pair:
-            continue
-        if '=' in pair:
-            key, value = pair.split('=', 1)
-        else:
-            key, value = pair, ''
-        params[url_decode(key)] = url_decode(value)
-    return params
-
+# url_decode, parse_query, read_exact sind jetzt in ota_helpers.py (siehe
+# Import oben) - gemeinsam mit main.py genutzt statt manuell dupliziert.
+# Die folgenden zwei Funktionen sind duenne Wrapper, die recovery.py's
+# eigenes debug_log() als log-Callback durchreichen.
 
 def safe_base64_file_to_file(input_file, output_file):
-    """Dekodiert eine Base64-Textdatei streamend in eine Binaerdatei,
-    ohne den kompletten Inhalt gleichzeitig im RAM zu halten."""
-    try:
-        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-        carry = ""
-
-        with open(input_file, 'r') as fin:
-            with open(output_file, 'wb') as fout:
-                while True:
-                    chunk = fin.read(512)
-                    if not chunk:
-                        break
-
-                    data = carry + chunk
-                    usable_len = (len(data) // 4) * 4
-                    to_decode = data[:usable_len]
-                    carry = data[usable_len:]
-
-                    out_bytes = bytearray()
-                    for i in range(0, len(to_decode), 4):
-                        group = to_decode[i:i + 4]
-                        if len(group) < 4:
-                            continue
-
-                        nums = []
-                        for c in group:
-                            idx = alphabet.find(c)
-                            nums.append(idx if idx >= 0 else 0)
-
-                        b1 = (nums[0] << 2) | (nums[1] >> 4)
-                        b2 = ((nums[1] & 0xF) << 4) | (nums[2] >> 2)
-                        b3 = ((nums[2] & 0x3) << 6) | nums[3]
-
-                        out_bytes.append(b1)
-                        if group[2] != '=':
-                            out_bytes.append(b2)
-                        if group[3] != '=':
-                            out_bytes.append(b3)
-
-                    if out_bytes:
-                        fout.write(out_bytes)
-
-                if carry:
-                    padding = (4 - len(carry) % 4) % 4
-                    group = carry + ("=" * padding)
-                    out_bytes = bytearray()
-                    for i in range(0, len(group), 4):
-                        g = group[i:i + 4]
-                        if len(g) < 4:
-                            continue
-
-                        nums = []
-                        for c in g:
-                            idx = alphabet.find(c)
-                            nums.append(idx if idx >= 0 else 0)
-
-                        b1 = (nums[0] << 2) | (nums[1] >> 4)
-                        b2 = ((nums[1] & 0xF) << 4) | (nums[2] >> 2)
-                        b3 = ((nums[2] & 0x3) << 6) | nums[3]
-
-                        out_bytes.append(b1)
-                        if g[2] != '=':
-                            out_bytes.append(b2)
-                        if g[3] != '=':
-                            out_bytes.append(b3)
-
-                    if out_bytes:
-                        fout.write(out_bytes)
-        return True
-    except Exception as e:
-        debug_log(f"[BASE64-FILE-STREAM] Fehler: {e}")
-        return False
-
-
-def read_exact(f, n):
-    """Liest exakt n Bytes aus einer binaer geoeffneten Datei (oder weniger
-    bei EOF)."""
-    data = bytearray()
-    while len(data) < n:
-        chunk = f.read(n - len(data))
-        if not chunk:
-            break
-        data.extend(chunk)
-    return bytes(data)
+    return _ota_safe_base64_file_to_file(input_file, output_file, log=debug_log)
 
 
 def apply_firmware_bundle(bundle_path):
     """Entpackt ein per build_firmware.py erzeugtes Firmware-Bundle
-    (firmware.nbo) und ersetzt jede enthaltene Datei einzeln auf dem
-    Pico-Dateisystem (mit Backup, wie beim Einzeldatei-OTA-Update).
-    Jeder Dateiname im Bundle wird gegen OTA_ALLOWED_TARGETS geprueft,
-    bevor irgendetwas geschrieben wird."""
-    extracted_files = []
-    with open(bundle_path, 'rb') as f:
-        magic = read_exact(f, len(OTA_BUNDLE_MAGIC))
-        if magic != OTA_BUNDLE_MAGIC:
-            raise Exception("Ungueltiges Firmware-Bundle (Magic-Header falsch)")
-
-        count_bytes = read_exact(f, 4)
-        if len(count_bytes) < 4:
-            raise Exception("Bundle beschaedigt (Dateianzahl fehlt)")
-        (file_count,) = struct.unpack('>I', count_bytes)
-
-        for _ in range(file_count):
-            name_len_bytes = read_exact(f, 4)
-            if len(name_len_bytes) < 4:
-                raise Exception("Bundle beschaedigt (Namenslaenge fehlt)")
-            (name_len,) = struct.unpack('>I', name_len_bytes)
-
-            name_bytes = read_exact(f, name_len)
-            if len(name_bytes) < name_len:
-                raise Exception("Bundle beschaedigt (Dateiname unvollstaendig)")
-            filename = name_bytes.decode('utf-8')
-
-            content_len_bytes = read_exact(f, 4)
-            if len(content_len_bytes) < 4:
-                raise Exception(f"Bundle beschaedigt (Inhaltslaenge fehlt: {filename})")
-            (content_len,) = struct.unpack('>I', content_len_bytes)
-
-            if filename not in OTA_ALLOWED_TARGETS:
-                raise Exception(f"Datei im Bundle nicht erlaubt: {filename}")
-
-            tmp_name = filename + ".bndl_tmp"
-            remaining = content_len
-            with open(tmp_name, 'wb') as out:
-                while remaining > 0:
-                    chunk = f.read(min(512, remaining))
-                    if not chunk:
-                        raise Exception(f"Bundle beschaedigt (Inhalt unvollstaendig: {filename})")
-                    out.write(chunk)
-                    remaining -= len(chunk)
-
-            backup_path = "main_backup.py" if filename == "main.py" else (filename + ".bak")
-            try:
-                with open(filename, 'r') as old_f:
-                    old_content = old_f.read()
-                with open(backup_path, 'w') as bk:
-                    bk.write(old_content)
-            except Exception as e:
-                debug_log(f"[OTA BUNDLE] Backup-Fehler ({filename}): {e}")
-
-            try:
-                os.remove(filename)
-            except Exception:
-                pass
-            os.rename(tmp_name, filename)
-
-            extracted_files.append(filename)
-            debug_log(f"[OTA BUNDLE] Datei ersetzt: {filename} ({content_len} bytes)")
-
-    needs_restart = "main.py" in extracted_files
-    return extracted_files, needs_restart
+    (firmware.nbo) - duenner Wrapper um ota_helpers.apply_firmware_bundle()."""
+    return _ota_apply_firmware_bundle(bundle_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log)
 
 
 def start_access_point():
-    ap = network.WLAN(network.AP_IF)
-    try:
-        debug_log("[AP] Aktiviere Access Point")
-        ap.active(True)
-        time.sleep_ms(200)
-
-        ssid_set = False
-        for attempt in range(3):
-            try:
-                ap.config(essid=AP_SSID)
-                ssid_set = True
-                break
-            except Exception as ssid_error:
-                debug_log(f"[AP WARN] SSID-Setzen fehlgeschlagen (Versuch {attempt + 1}/3): {ssid_error}")
-                time.sleep_ms(120)
-        if not ssid_set:
-            debug_log("[AP WARN] SSID konnte nicht gesetzt werden, AP laeuft mit Standardnamen weiter.")
-
-        if AP_PASSWORD and len(AP_PASSWORD) >= 8:
-            try:
-                ap.config(password=AP_PASSWORD)
-            except Exception as pw_error:
-                debug_log(f"[AP WARN] Passwort-Konfiguration nicht verfuegbar, starte offenes WLAN: {pw_error}")
-
-        ap.config(pm=0xa11140)
-        ap.ifconfig(('192.168.4.1', '255.255.255.0', '192.168.4.1', '192.168.4.1'))
-
-        debug_log("WLAN-Hotspot (Recovery) erfolgreich gestartet!")
-        debug_log(f"SSID: {AP_SSID}")
-        debug_log(f"Pico IP-Adresse (Im Browser eingeben): {ap.ifconfig()[0]}")
-    except Exception as e:
-        debug_log(f"[AP ERROR] Hotspot-Setup fehlgeschlagen: {e}")
+    configure_hotspot(
+        AP_SSID,
+        AP_PASSWORD,
+        debug_log=lambda m: debug_log(f"[AP] {m}"),
+        serial_debug=ENABLE_SERIAL_DEBUG,
+    )
 
 
 # ==================== EINGEBETTETE OTA-SEITE ====================
@@ -655,6 +479,13 @@ async def handle_client(reader, writer):
                 writer.write(b'Connection: close\r\n\r\n')
                 writer.write(response)
 
+                # Nach erfolgreichem Update den naechsten Main-Start wieder erlauben.
+                if boot_runtime is not None:
+                    try:
+                        boot_runtime.request_main_retry_once()
+                    except Exception:
+                        pass
+
                 ota_total_chunks = 0
                 ota_received_chunks = 0
                 ota_update_active = False
@@ -700,6 +531,14 @@ async def handle_client(reader, writer):
             writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
             writer.write(b'Connection: close\r\n\r\n')
             writer.write(response)
+
+            # Manueller Neustart aus Recovery soll ebenfalls einen Main-Test erlauben.
+            if boot_runtime is not None:
+                try:
+                    boot_runtime.request_main_retry_once()
+                except Exception:
+                    pass
+
             try:
                 await writer.drain()
             except Exception:
@@ -770,6 +609,7 @@ async def main_async():
     await asyncio.start_server(handle_client, "0.0.0.0", 80)
     debug_log("Recovery-OTA-Server laeuft. WLAN verbinden und http://192.168.4.1 aufrufen.")
     while True:
+        _boot_feed_watchdog()
         await asyncio.sleep_ms(1000)
 
 

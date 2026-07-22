@@ -41,6 +41,7 @@ input:checked+.slider:before{transform:translateX(20px)}
 </div>
 <div class="s">
 <h2>Info</h2>
+<div class="st2"><span>Firmware-Version</span><b id="v_version">-</b></div>
 <div class="st2"><span>SSID</span><b id="v_ssid">-</b></div>
 <div class="st2"><span>IP-Adresse</span><b id="v_ip">-</b></div>
 <div class="st2"><span>Freier Speicher</span><b id="v_memfree">-</b></div>
@@ -71,6 +72,7 @@ return h+'h '+m+'m '+s+'s';
 }
 function upd(){
 fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+document.getElementById('v_version').innerText=d.firmware_version?('v'+d.firmware_version):'-';
 document.getElementById('v_ssid').innerText=d.ssid||'-';
 document.getElementById('v_ip').innerText=d.ip||'-';
 document.getElementById('v_memfree').innerText=(d.mem_free>=0)?(d.mem_free/1024).toFixed(1)+' KB':'?';

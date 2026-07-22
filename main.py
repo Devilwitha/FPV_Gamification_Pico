@@ -6,6 +6,50 @@ import asyncio
 import json
 import os
 import gc
+from ota_helpers import (
+    url_decode,
+    parse_query,
+    base64_decode,
+    read_exact,
+    safe_base64_decode_to_file as _ota_safe_base64_decode_to_file,
+    safe_base64_file_to_file as _ota_safe_base64_file_to_file,
+    apply_firmware_bundle as _ota_apply_firmware_bundle,
+)
+try:
+    from hotspot_common import configure_hotspot
+except Exception:
+    # Kompakter Fallback fuer den Fall, dass hotspot_common.py fehlt.
+    def configure_hotspot(ssid, password="", debug_log=None, serial_debug=False):
+        ap = network.WLAN(network.AP_IF)
+        try:
+            ap.active(True)
+            time.sleep_ms(120)
+            ap.config(essid=ssid)
+
+            if password and len(password) >= 8:
+                try:
+                    ap.config(password=password)
+                except Exception:
+                    pass
+
+            try:
+                ap.config(pm=0xA11140)
+            except Exception:
+                pass
+
+            ap.ifconfig(("192.168.4.1", "255.255.255.0", "192.168.4.1", "192.168.4.1"))
+            if serial_debug:
+                print(f"[AP] Fallback aktiv: SSID={ssid} IP={ap.ifconfig()[0]}")
+            return ap
+        except Exception as e:
+            if serial_debug:
+                print(f"[AP] Fallback Fehler: {e}")
+            return ap
+
+try:
+    import boot_runtime
+except Exception:
+    boot_runtime = None
 
 # ==================== CONFIGURATION ====================
 ENABLE_HOTSPOT = True        
@@ -19,8 +63,11 @@ AP_PASSWORD = "drohnenspiel"
 COPTER_NAME = "Orange Bee"
 DEFAULT_PILOT_NAME = "Bollshii"
 
-# GP1 (RX) liest passiv mit 420000 Baud
-uart = machine.UART(0, baudrate=420000, tx=machine.Pin(0), rx=machine.Pin(1), rxbuf=1024)
+# UART wird lazy initialisiert, damit beim Import kein zusaetzlicher
+# zusammenhaengender RAM-Block benoetigt wird.
+UART_BAUDRATE = 420000
+UART_RX_BUF = 1024
+uart = None
 
 # CRSF Konstanten
 CRSF_ADDRESS_FLIGHT_CONTROLLER = 0xC8
@@ -77,6 +124,7 @@ status_led_last_toggle_ms = 0
 system_ready = False
 ota_update_active = False
 ota_led_cycle_start_ms = 0
+boot_health_marked = False
 # Developer-Modus (Schiebeschalter auf der System-Seite): standardmaessig AUS,
 # dann akzeptiert OTA nur komplette firmware.nbo Bundles. Erst wenn aktiviert,
 # duerfen auch einzelne .py/.html Dateien per OTA hochgeladen werden.
@@ -91,9 +139,12 @@ OTA_STAGING_PATH = "ota_staging.tmp"
 # Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
 # keine beliebigen Dateinamen vom Client).
 OTA_ALLOWED_TARGETS = (
+    "boot.py", "recovery.py", "hotspot_common.py", "boot_runtime.py",
+    "ota_helpers.py",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html",
+    "firmware_version.txt",
 )
 # Spezial-Ziel: ein Firmware-Bundle (siehe build_firmware.py), das mehrere
 # der obigen Dateien in einem Rutsch aktualisiert. Wird in /finalize-upload
@@ -101,47 +152,87 @@ OTA_ALLOWED_TARGETS = (
 OTA_BUNDLE_TARGET = "firmware.nbo"
 OTA_BUNDLE_MAGIC = b"FPVBNDL1"
 
-TRICK_TUNING_PROFILES = {
-    "beginner": {
-        "gyro_trick_threshold": 160,
-        "stable_threshold": 58,
-        "trick_start_hold_ms": 28,
-        "stable_hold_ms": 120,
-        "gyro_deadband": 10,
-        "gyro_lowpass_alpha": 0.24,
-        "min_trick_duration": 0.10,
-        "trick_min_accum_deg": 65,
-        "trick_spin_min_accum_deg": 100,
-        "trick_axis_dominance_ratio": 1.10,
-        "trick_start_type_weight": 0.88,
-    },
-    "freestyle": {
-        "gyro_trick_threshold": 205,
-        "stable_threshold": 70,
-        "trick_start_hold_ms": 45,
-        "stable_hold_ms": 150,
-        "gyro_deadband": 14,
-        "gyro_lowpass_alpha": 0.28,
-        "min_trick_duration": 0.14,
-        "trick_min_accum_deg": 95,
-        "trick_spin_min_accum_deg": 135,
-        "trick_axis_dominance_ratio": 1.32,
-        "trick_start_type_weight": 0.85,
-    },
-    "aggressive": {
-        "gyro_trick_threshold": 230,
-        "stable_threshold": 72,
-        "trick_start_hold_ms": 45,
-        "stable_hold_ms": 155,
-        "gyro_deadband": 14,
-        "gyro_lowpass_alpha": 0.36,
-        "min_trick_duration": 0.14,
-        "trick_min_accum_deg": 95,
-        "trick_spin_min_accum_deg": 145,
-        "trick_axis_dominance_ratio": 1.26,
-        "trick_start_type_weight": 0.95,
-    },
-}
+# Versionsnummer der Firmware (Format X.Y.Z), wird von build_firmware.py bei
+# jedem Bundle-Build automatisch um 1 erhoeht und in firmware_version.txt
+# abgelegt. Fallback "0.0.0", falls die Datei (noch) fehlt.
+def _load_firmware_version():
+    try:
+        with open("firmware_version.txt", "r") as f:
+            version = f.read().strip()
+        return version or "0.0.0"
+    except Exception:
+        return "0.0.0"
+
+
+FIRMWARE_VERSION = _load_firmware_version()
+
+def _build_trick_tuning_profiles():
+    # Schrittweiser Aufbau reduziert Peak-Allocation gegen MemoryError auf Pico.
+    profiles = {}
+
+    p = {}
+    p["gyro_trick_threshold"] = 160
+    p["stable_threshold"] = 58
+    p["trick_start_hold_ms"] = 28
+    p["stable_hold_ms"] = 120
+    p["gyro_deadband"] = 10
+    p["gyro_lowpass_alpha"] = 0.24
+    p["min_trick_duration"] = 0.10
+    p["trick_min_accum_deg"] = 65
+    p["trick_spin_min_accum_deg"] = 100
+    p["trick_axis_dominance_ratio"] = 1.10
+    p["trick_start_type_weight"] = 0.88
+    profiles["beginner"] = p
+
+    p = {}
+    p["gyro_trick_threshold"] = 205
+    p["stable_threshold"] = 70
+    p["trick_start_hold_ms"] = 45
+    p["stable_hold_ms"] = 150
+    p["gyro_deadband"] = 14
+    p["gyro_lowpass_alpha"] = 0.28
+    p["min_trick_duration"] = 0.14
+    p["trick_min_accum_deg"] = 95
+    p["trick_spin_min_accum_deg"] = 135
+    p["trick_axis_dominance_ratio"] = 1.32
+    p["trick_start_type_weight"] = 0.85
+    profiles["freestyle"] = p
+
+    p = {}
+    p["gyro_trick_threshold"] = 230
+    p["stable_threshold"] = 72
+    p["trick_start_hold_ms"] = 45
+    p["stable_hold_ms"] = 155
+    p["gyro_deadband"] = 14
+    p["gyro_lowpass_alpha"] = 0.36
+    p["min_trick_duration"] = 0.14
+    p["trick_min_accum_deg"] = 95
+    p["trick_spin_min_accum_deg"] = 145
+    p["trick_axis_dominance_ratio"] = 1.26
+    p["trick_start_type_weight"] = 0.95
+    profiles["aggressive"] = p
+
+    return profiles
+
+
+TRICK_TUNING_PROFILES = _build_trick_tuning_profiles()
+try:
+    del _build_trick_tuning_profiles
+except Exception:
+    pass
+gc.collect()
+
+
+def _ensure_uart_initialized():
+    global uart
+    if uart is not None:
+        return True
+    try:
+        uart = machine.UART(0, baudrate=UART_BAUDRATE, tx=machine.Pin(0), rx=machine.Pin(1), rxbuf=UART_RX_BUF)
+        return True
+    except Exception as e:
+        debug_console_only(f"[UART] Initialisierung fehlgeschlagen: {e}")
+        return False
 
 
 def apply_trick_tuning_profile():
@@ -506,6 +597,27 @@ def debug_live_gyro_trick(message):
         store_debug_entry(entry, line)
 
 
+def _boot_feed_watchdog():
+    if boot_runtime is None:
+        return
+    try:
+        boot_runtime.feed_wdt()
+    except Exception:
+        pass
+
+
+def _boot_mark_healthy_once():
+    global boot_health_marked
+    if boot_health_marked or boot_runtime is None:
+        return
+    try:
+        boot_runtime.clear_main_fail_count()
+        boot_health_marked = True
+        debug_log("[BOOT] Main-Start als gesund markiert")
+    except Exception:
+        pass
+
+
 def crc8_dvb_s2(data):
     crc = 0
     for byte in data:
@@ -524,41 +636,6 @@ def normalize_angle_deg(angle):
     while angle < -180.0:
         angle += 360.0
     return angle
-
-
-def url_decode(value):
-    value = value.replace('+', ' ')
-    out = ""
-    i = 0
-    while i < len(value):
-        ch = value[i]
-        if ch == '%' and i + 2 < len(value):
-            hex_part = value[i + 1:i + 3]
-            try:
-                out += chr(int(hex_part, 16))
-                i += 3
-                continue
-            except Exception:
-                pass
-        out += ch
-        i += 1
-    return out
-
-
-def parse_query(query_string):
-    params = {}
-    if not query_string:
-        return params
-    pairs = query_string.split('&')
-    for pair in pairs:
-        if not pair:
-            continue
-        if '=' in pair:
-            key, value = pair.split('=', 1)
-        else:
-            key, value = pair, ''
-        params[url_decode(key)] = url_decode(value)
-    return params
 
 
 def html_escape(value):
@@ -581,205 +658,28 @@ def get_datetime_string():
     return f"{day:02d}.{month:02d}.{year:04d} {hour:02d}:{minute:02d}:{second:02d}"
 
 
-def base64_decode(s):
-    import base64
-    try:
-        return base64.b2a_base64(base64.a2b_base64(s + b'==')).decode('utf-8').strip()
-    except Exception:
-        return None
-
+# url_decode, parse_query, base64_decode, read_exact sind jetzt in
+# ota_helpers.py (siehe Import oben) - Auslagerung reduziert main.py's
+# Groesse, um Heap-Fragmentierung beim Kompilieren (`import main` in
+# boot.py) zu verringern, siehe ota_helpers.py Docstring fuer Details.
+# Die folgenden zwei Funktionen sind duenne Wrapper: sie reichen
+# main.py's debug_log() als log-Callback an ota_helpers weiter, damit
+# Fehler weiterhin im Debug-Log landen, ohne main.py und ota_helpers.py
+# gegenseitig voneinander importieren zu muessen (zirkulaerer Import).
 
 def safe_base64_decode_to_file(b64_string, output_file):
-    try:
-        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-        with open(output_file, 'wb') as f:
-            chunk_size = 512
-            for chunk_start in range(0, len(b64_string), chunk_size):
-                chunk = b64_string[chunk_start:chunk_start + chunk_size]
-                chunk_result = bytearray()
-                padding = (4 - len(chunk) % 4) % 4
-                chunk_padded = chunk + "=" * padding
-                
-                for i in range(0, len(chunk_padded), 4):
-                    group = chunk_padded[i:i+4]
-                    if len(group) < 4:
-                        continue
-                    
-                    nums = []
-                    for c in group:
-                        idx = alphabet.find(c)
-                        nums.append(idx if idx >= 0 else 0)
-                    
-                    b1 = (nums[0] << 2) | (nums[1] >> 4)
-                    b2 = ((nums[1] & 0xF) << 4) | (nums[2] >> 2)
-                    b3 = ((nums[2] & 0x3) << 6) | nums[3]
-                    
-                    chunk_result.append(b1)
-                    if group[2] != '=':
-                        chunk_result.append(b2)
-                    if group[3] != '=':
-                        chunk_result.append(b3)
-                
-                f.write(chunk_result)
-        return True
-    except Exception as e:
-        debug_log(f"[BASE64-FILE] Fehler: {e}")
-        return False
+    return _ota_safe_base64_decode_to_file(b64_string, output_file, log=debug_log)
 
 
 def safe_base64_file_to_file(input_file, output_file):
-    try:
-        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-        carry = ""
-
-        with open(input_file, 'r') as fin:
-            with open(output_file, 'wb') as fout:
-                while True:
-                    chunk = fin.read(512)
-                    if not chunk:
-                        break
-
-                    data = carry + chunk
-                    usable_len = (len(data) // 4) * 4
-                    to_decode = data[:usable_len]
-                    carry = data[usable_len:]
-
-                    out_bytes = bytearray()
-                    for i in range(0, len(to_decode), 4):
-                        group = to_decode[i:i+4]
-                        if len(group) < 4:
-                            continue
-
-                        nums = []
-                        for c in group:
-                            idx = alphabet.find(c)
-                            nums.append(idx if idx >= 0 else 0)
-
-                        b1 = (nums[0] << 2) | (nums[1] >> 4)
-                        b2 = ((nums[1] & 0xF) << 4) | (nums[2] >> 2)
-                        b3 = ((nums[2] & 0x3) << 6) | nums[3]
-
-                        out_bytes.append(b1)
-                        if group[2] != '=':
-                            out_bytes.append(b2)
-                        if group[3] != '=':
-                            out_bytes.append(b3)
-
-                    if out_bytes:
-                        fout.write(out_bytes)
-
-                if carry:
-                    padding = (4 - len(carry) % 4) % 4
-                    group = carry + ("=" * padding)
-                    out_bytes = bytearray()
-                    for i in range(0, len(group), 4):
-                        g = group[i:i+4]
-                        if len(g) < 4:
-                            continue
-
-                        nums = []
-                        for c in g:
-                            idx = alphabet.find(c)
-                            nums.append(idx if idx >= 0 else 0)
-
-                        b1 = (nums[0] << 2) | (nums[1] >> 4)
-                        b2 = ((nums[1] & 0xF) << 4) | (nums[2] >> 2)
-                        b3 = ((nums[2] & 0x3) << 6) | nums[3]
-
-                        out_bytes.append(b1)
-                        if g[2] != '=':
-                            out_bytes.append(b2)
-                        if g[3] != '=':
-                            out_bytes.append(b3)
-
-                    if out_bytes:
-                        fout.write(out_bytes)
-        return True
-    except Exception as e:
-        debug_log(f"[BASE64-FILE-STREAM] Fehler: {e}")
-        return False
-
-
-def read_exact(f, n):
-    """Liest exakt n Bytes aus einer binaer geoeffneten Datei (oder weniger
-    bei EOF). Noetig, weil f.read(n) theoretisch weniger als n Bytes liefern
-    kann, auch wenn noch nicht das Dateiende erreicht ist."""
-    data = bytearray()
-    while len(data) < n:
-        chunk = f.read(n - len(data))
-        if not chunk:
-            break
-        data.extend(chunk)
-    return bytes(data)
+    return _ota_safe_base64_file_to_file(input_file, output_file, log=debug_log)
 
 
 def apply_firmware_bundle(bundle_path):
     """Entpackt ein per build_firmware.py erzeugtes Firmware-Bundle
-    (firmware.nbo) und ersetzt jede enthaltene Datei einzeln auf dem
-    Pico-Dateisystem (mit Backup, wie beim Einzeldatei-OTA-Update).
-    Jeder Dateiname im Bundle wird gegen OTA_ALLOWED_TARGETS geprueft,
-    bevor irgendetwas geschrieben wird (kein beliebiges Ueberschreiben
-    von Dateien moeglich)."""
-    extracted_files = []
-    with open(bundle_path, 'rb') as f:
-        magic = read_exact(f, len(OTA_BUNDLE_MAGIC))
-        if magic != OTA_BUNDLE_MAGIC:
-            raise Exception("Ungueltiges Firmware-Bundle (Magic-Header falsch)")
-
-        count_bytes = read_exact(f, 4)
-        if len(count_bytes) < 4:
-            raise Exception("Bundle beschaedigt (Dateianzahl fehlt)")
-        (file_count,) = struct.unpack('>I', count_bytes)
-
-        for _ in range(file_count):
-            name_len_bytes = read_exact(f, 4)
-            if len(name_len_bytes) < 4:
-                raise Exception("Bundle beschaedigt (Namenslaenge fehlt)")
-            (name_len,) = struct.unpack('>I', name_len_bytes)
-
-            name_bytes = read_exact(f, name_len)
-            if len(name_bytes) < name_len:
-                raise Exception("Bundle beschaedigt (Dateiname unvollstaendig)")
-            filename = name_bytes.decode('utf-8')
-
-            content_len_bytes = read_exact(f, 4)
-            if len(content_len_bytes) < 4:
-                raise Exception(f"Bundle beschaedigt (Inhaltslaenge fehlt: {filename})")
-            (content_len,) = struct.unpack('>I', content_len_bytes)
-
-            if filename not in OTA_ALLOWED_TARGETS:
-                raise Exception(f"Datei im Bundle nicht erlaubt: {filename}")
-
-            tmp_name = filename + ".bndl_tmp"
-            remaining = content_len
-            with open(tmp_name, 'wb') as out:
-                while remaining > 0:
-                    chunk = f.read(min(512, remaining))
-                    if not chunk:
-                        raise Exception(f"Bundle beschaedigt (Inhalt unvollstaendig: {filename})")
-                    out.write(chunk)
-                    remaining -= len(chunk)
-
-            backup_path = "main_backup.py" if filename == "main.py" else (filename + ".bak")
-            try:
-                with open(filename, 'r') as old_f:
-                    old_content = old_f.read()
-                with open(backup_path, 'w') as bk:
-                    bk.write(old_content)
-            except Exception as e:
-                debug_log(f"[OTA BUNDLE] Backup-Fehler ({filename}): {e}")
-
-            try:
-                os.remove(filename)
-            except Exception:
-                pass
-            os.rename(tmp_name, filename)
-
-            extracted_files.append(filename)
-            debug_log(f"[OTA BUNDLE] Datei ersetzt: {filename} ({content_len} bytes)")
-
-    needs_restart = "main.py" in extracted_files
-    return extracted_files, needs_restart
+    (firmware.nbo) - duenner Wrapper um ota_helpers.apply_firmware_bundle()
+    mit main.py's eigener OTA_ALLOWED_TARGETS/OTA_BUNDLE_MAGIC/debug_log."""
+    return _ota_apply_firmware_bundle(bundle_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log)
 
 
 def build_session_txt_content():
@@ -908,50 +808,12 @@ load_system_settings()
 
 
 def start_access_point():
-    ap = network.WLAN(network.AP_IF)
-    try:
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Aktiviere Access Point")
-        ap.active(True)
-        time.sleep_ms(200)
-
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze SSID")
-        ssid_set = False
-        for attempt in range(3):
-            try:
-                ap.config(essid=AP_SSID)
-                ssid_set = True
-                break
-            except Exception as ssid_error:
-                debug_log(f"[AP WARN] SSID-Setzen fehlgeschlagen (Versuch {attempt + 1}/3): {ssid_error}")
-                time.sleep_ms(120)
-        if not ssid_set:
-            debug_log("[AP WARN] SSID konnte nicht gesetzt werden, AP laeuft mit Standardnamen weiter.")
-
-        if AP_PASSWORD and len(AP_PASSWORD) >= 8:
-            try:
-                if ENABLE_SERIAL_DEBUG:
-                    print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze Passwort")
-                ap.config(password=AP_PASSWORD)
-            except Exception as pw_error:
-                debug_log(f"[AP WARN] Passwort-Konfiguration nicht verfuegbar, starte offenes WLAN: {pw_error}")
-        elif ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Kein Passwort gesetzt, offenes WLAN")
-
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze Power-Management")
-        ap.config(pm=0xa11140)
-
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [AP] Setze statische IP")
-        ap.ifconfig(('192.168.4.1', '255.255.255.0', '192.168.4.1', '192.168.4.1'))
-
-        debug_log("WLAN-Hotspot erfolgreich gestartet!")
-        debug_log(f"SSID: {AP_SSID}")
-        debug_log(f"Pico IP-Adresse (Im Browser eingeben): {ap.ifconfig()[0]}")
-    except Exception as e:
-        debug_log(f"[AP ERROR] Hotspot-Setup fehlgeschlagen: {e}")
+    configure_hotspot(
+        AP_SSID,
+        AP_PASSWORD,
+        debug_log=lambda m: debug_log(f"[AP] {m}"),
+        serial_debug=ENABLE_SERIAL_DEBUG,
+    )
 
 
 # ==================== WEBSERVER TEMPLATE ====================
@@ -1260,7 +1122,11 @@ async def telemetry_loop():
 
     while True:
         try:
+            _boot_feed_watchdog()
             update_status_led()
+            if not _ensure_uart_initialized():
+                await asyncio.sleep_ms(250)
+                continue
             avail = uart.any()
             if avail > 0:
                 chunk = uart.read(min(avail, 64))
@@ -1404,6 +1270,755 @@ async def send_html_file(writer, file_path):
     gc.collect()
 
 
+def _build_redirect_html(title, heading, message, refresh_seconds=1):
+    return (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        f"<meta http-equiv='refresh' content='{int(refresh_seconds)}; url=/'>"
+        f"<title>{title}</title></head>"
+        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
+        f"<h2>{heading}</h2>"
+        f"<p>{message}</p>"
+        "<p>Du wirst zur Hauptseite zurueckgeleitet...</p>"
+        "</body></html>"
+    ).encode('utf-8')
+
+
+async def _send_highscore_name_response(writer, query_params, body_params):
+    global highscore_data, pending_highscore
+
+    name = query_params.get('name', '').strip()
+    if not name:
+        name = body_params.get('name', '').strip()
+    is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
+    success = False
+    error = ""
+    score_to_save = None
+    timestamp_to_save = None
+
+    if not name:
+        error = "Name darf nicht leer sein."
+    else:
+        if pending_highscore["active"]:
+            score_to_save = pending_highscore["score"]
+            timestamp_to_save = pending_highscore["timestamp"]
+        elif detector.score > highscore_data["score"]:
+            score_to_save = detector.score
+            timestamp_to_save = get_datetime_string()
+            debug_console_only("[HIGHSCORE] Fallback: Score hoeher als Highscore.")
+        elif highscore_data["score"] > 0:
+            score_to_save = highscore_data["score"]
+            timestamp_to_save = highscore_data.get("timestamp", "Unbekannt")
+            debug_console_only("[HIGHSCORE] Name fuer bestehenden Highscore wird aktualisiert.")
+        else:
+            error = "Kein neuer Highscore zum Speichern vorhanden."
+
+    if error == "" and score_to_save is not None:
+        highscore_data["score"] = int(score_to_save)
+        highscore_data["timestamp"] = timestamp_to_save or get_datetime_string()
+        highscore_data["player"] = name
+        saved_ok, save_error = save_highscore()
+        if saved_ok:
+            pending_highscore["active"] = False
+            pending_highscore["score"] = 0
+            pending_highscore["timestamp"] = "Unbekannt"
+            success = True
+            debug_console_only(
+                f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
+            )
+        else:
+            error = "Speichern fehlgeschlagen: " + str(save_error)
+            debug_console_only("[HIGHSCORE ERROR] " + error)
+
+    if is_web_submit:
+        if success:
+            response_html = _build_redirect_html(
+                "Highscore gespeichert",
+                "Highscore gespeichert",
+                f"{html_escape(highscore_data.get('player', DEFAULT_PILOT_NAME))} steht jetzt mit {highscore_data['score']} Punkten im Highscore.",
+                refresh_seconds=1,
+            )
+        else:
+            response_html = _build_redirect_html(
+                "Speichern fehlgeschlagen",
+                "Speichern fehlgeschlagen",
+                html_escape(error or 'Unbekannter Fehler'),
+                refresh_seconds=2,
+            )
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: text/html\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_html)).encode('utf-8') + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_html)
+    else:
+        payload = json.dumps({
+            "ok": success,
+            "error": error,
+            "highscore": highscore_data["score"],
+            "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
+            "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
+        }).encode('utf-8')
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(payload)).encode('utf-8') + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(payload)
+
+
+async def _send_confirm_highscore_response(writer):
+    global highscore_data, pending_highscore
+
+    success = False
+    error = ""
+
+    if pending_highscore["active"]:
+        highscore_data["score"] = int(pending_highscore["score"])
+        highscore_data["timestamp"] = pending_highscore["timestamp"] or get_datetime_string()
+        highscore_data["player"] = DEFAULT_PILOT_NAME
+        saved_ok, save_error = save_highscore()
+        if saved_ok:
+            pending_highscore["active"] = False
+            pending_highscore["score"] = 0
+            pending_highscore["timestamp"] = "Unbekannt"
+            success = True
+            debug_console_only(
+                f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
+            )
+        else:
+            error = "Speichern fehlgeschlagen: " + str(save_error)
+            debug_console_only("[HIGHSCORE ERROR] " + error)
+    elif detector.score > highscore_data["score"]:
+        highscore_data["score"] = int(detector.score)
+        highscore_data["timestamp"] = get_datetime_string()
+        highscore_data["player"] = DEFAULT_PILOT_NAME
+        saved_ok, save_error = save_highscore()
+        if saved_ok:
+            success = True
+            debug_console_only(
+                f"[HIGHSCORE] Rekord gespeichert (Fallback): {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
+            )
+        else:
+            error = "Speichern fehlgeschlagen: " + str(save_error)
+            debug_console_only("[HIGHSCORE ERROR] " + error)
+    else:
+        success = True
+
+    payload = json.dumps({
+        "ok": success,
+        "error": error,
+        "highscore": highscore_data["score"],
+        "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
+        "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
+    }).encode('utf-8')
+
+    writer.write(b'HTTP/1.1 200 OK\r\n')
+    writer.write(b'Content-Type: application/json\r\n')
+    writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+    writer.write(b'Pragma: no-cache\r\n')
+    writer.write(b'Content-Length: ' + str(len(payload)).encode('utf-8') + b'\r\n')
+    writer.write(b'Connection: close\r\n\r\n')
+    writer.write(payload)
+
+
+async def _send_reset_highscore_response(writer, query_params, body_params):
+    global highscore_data, pending_highscore
+
+    is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
+    debug_console_only(f"[HIGHSCORE] Reset-Route aufgerufen (web={is_web_submit}).")
+
+    highscore_data["score"] = 0
+    highscore_data["timestamp"] = "Unbekannt"
+    highscore_data["player"] = DEFAULT_PILOT_NAME
+    pending_highscore["active"] = False
+    pending_highscore["score"] = 0
+    pending_highscore["timestamp"] = "Unbekannt"
+    detector.score = 0
+    detector.trick_history = []
+    detector.last_trick_name = "Keiner"
+
+    saved_ok, save_error = save_highscore()
+    if saved_ok:
+        debug_console_only("[HIGHSCORE] Highscore wurde manuell zurueckgesetzt.")
+    else:
+        debug_console_only("[HIGHSCORE ERROR] Reset-Speichern fehlgeschlagen: " + str(save_error))
+
+    if is_web_submit:
+        if saved_ok:
+            response_html = _build_redirect_html(
+                "Reset erfolgreich",
+                "Highscore wurde zurueckgesetzt",
+                "Highscore und Session-Score stehen jetzt auf 0.",
+                refresh_seconds=1,
+            )
+        else:
+            response_html = _build_redirect_html(
+                "Reset fehlgeschlagen",
+                "Reset fehlgeschlagen",
+                html_escape(str(save_error)),
+                refresh_seconds=2,
+            )
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: text/html\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_html)).encode('utf-8') + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_html)
+    else:
+        payload = json.dumps({
+            "ok": saved_ok,
+            "error": "" if saved_ok else ("Reset fehlgeschlagen: " + str(save_error)),
+            "highscore": highscore_data["score"],
+            "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
+            "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
+        }).encode('utf-8')
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(payload)).encode('utf-8') + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(payload)
+
+
+async def _handle_upload_chunk(writer, body_text, body_params):
+    global ota_total_chunks, ota_received_chunks, ota_update_active, ota_target_file
+
+    chunk_index_str = '-1'
+    total_str = '0'
+    target_str = 'main.py'
+    if body_text:
+        idx_pos = body_text.find('index=')
+        if idx_pos >= 0:
+            idx_start = idx_pos + 6
+            idx_end = body_text.find('&', idx_start)
+            if idx_end < 0:
+                idx_end = len(body_text)
+            chunk_index_str = url_decode(body_text[idx_start:idx_end])
+
+        total_pos = body_text.find('total=')
+        if total_pos >= 0:
+            total_start = total_pos + 6
+            total_end = body_text.find('&', total_start)
+            if total_end < 0:
+                total_end = len(body_text)
+            total_str = url_decode(body_text[total_start:total_end])
+
+        target_pos = body_text.find('target=')
+        if target_pos >= 0:
+            target_start = target_pos + 7
+            target_end = body_text.find('&', target_start)
+            if target_end < 0:
+                target_end = len(body_text)
+            target_str = url_decode(body_text[target_start:target_end])
+
+    chunk_data = ''
+    if body_text:
+        marker = '&data='
+        pos = body_text.find(marker)
+        if pos >= 0:
+            chunk_data = url_decode(body_text[pos + len(marker):])
+        elif body_text.startswith('data='):
+            chunk_data = url_decode(body_text[5:])
+        else:
+            chunk_data = body_params.get('data', '')
+    else:
+        chunk_data = body_params.get('data', '')
+
+    try:
+        chunk_index = int(chunk_index_str)
+        total = int(total_str)
+        target_valid = True
+        target_error = ""
+
+        if chunk_index == 0:
+            if target_str == OTA_BUNDLE_TARGET:
+                target_valid = True
+            elif target_str in OTA_ALLOWED_TARGETS:
+                target_valid = DEVELOPER_MODE_ENABLED
+                if not target_valid:
+                    target_error = "Einzeldatei-Uploads sind deaktiviert. Aktiviere den Developer-Modus (System-Seite) oder lade ein firmware.nbo Bundle hoch."
+            else:
+                target_valid = False
+
+            if target_valid:
+                ota_total_chunks = total
+                ota_received_chunks = 0
+                ota_update_active = True
+                ota_target_file = target_str
+                try:
+                    os.remove('update.pbp')
+                except Exception:
+                    pass
+                debug_log(f"[OTA] Chunk-Transfer gestartet: {total} Chunks erwartet, Ziel={target_str}")
+
+        if not target_valid:
+            response = json.dumps({"ok": False, "error": target_error or f"Ungueltiges Ziel: {target_str}"}).encode('utf-8')
+            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response)
+        else:
+            if chunk_data:
+                with open('update.pbp', 'a') as f:
+                    f.write(chunk_data)
+                ota_received_chunks += 1
+                debug_log(f"[OTA] Chunk {chunk_index+1}/{total} empfangen ({len(chunk_data)} bytes)")
+
+            response = json.dumps({"ok": True, "message": f"Chunk {chunk_index+1}/{total} gespeichert"}).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response)
+
+            if chunk_index + 1 == total and ota_received_chunks == ota_total_chunks:
+                debug_log("[OTA] Alle Chunks empfangen, bitte /finalize-upload aufrufen")
+
+    except Exception as e:
+        debug_log(f"[OTA CHUNK] Fehler: {e}")
+        ota_update_active = False
+        response = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+        writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response)
+
+
+async def _handle_finalize_upload(writer):
+    global ota_total_chunks, ota_received_chunks, ota_update_active
+
+    try:
+        debug_log(f"[OTA] Finalisierung: {ota_received_chunks}/{ota_total_chunks} Chunks vorhanden")
+        if ota_received_chunks != ota_total_chunks:
+            raise Exception(f"Incomplete upload: {ota_received_chunks}/{ota_total_chunks}")
+
+        is_bundle = (ota_target_file == OTA_BUNDLE_TARGET)
+        target = ota_target_file if (is_bundle or ota_target_file in OTA_ALLOWED_TARGETS) else "main.py"
+
+        decode_ok = safe_base64_file_to_file('update.pbp', OTA_STAGING_PATH)
+        if not decode_ok:
+            raise Exception("Base64 Dekodierung fehlgeschlagen")
+
+        try:
+            staged_size = os.stat(OTA_STAGING_PATH)[6]
+            debug_log(f"[OTA] Staging-Datei: {staged_size} bytes (Ziel: {target})")
+        except Exception:
+            staged_size = 0
+
+        if is_bundle:
+            extracted_files, needs_restart = apply_firmware_bundle(OTA_STAGING_PATH)
+            try:
+                os.remove(OTA_STAGING_PATH)
+            except Exception:
+                pass
+            message = f"Firmware-Bundle angewendet: {len(extracted_files)} Datei(en) ersetzt ({', '.join(extracted_files)})"
+            if needs_restart:
+                message += " Starte Neustart..."
+        else:
+            backup_path = "main_backup.py" if target == "main.py" else (target + ".bak")
+            try:
+                with open(target, 'r') as f:
+                    old_content = f.read()
+                with open(backup_path, 'w') as f:
+                    f.write(old_content)
+                debug_log(f"[OTA] Backup erstellt: {backup_path} ({len(old_content)} bytes)")
+            except Exception as e:
+                debug_log(f"[OTA] Backup-Fehler ({target}): {e}")
+
+            try:
+                os.remove(target)
+            except Exception:
+                pass
+
+            os.rename(OTA_STAGING_PATH, target)
+            debug_log(f"[OTA] Finale Datei gespeichert: {target} ({staged_size} bytes)")
+
+            needs_restart = (target == "main.py")
+            message = f"Update erfolgreich gespeichert: {target} ({staged_size} bytes)!"
+            if needs_restart:
+                message += " Starte Neustart..."
+
+        response = json.dumps({"ok": True, "message": message, "restart": needs_restart}).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response)
+
+        ota_total_chunks = 0
+        ota_received_chunks = 0
+        ota_update_active = False
+        try:
+            os.remove('update.pbp')
+        except Exception:
+            pass
+
+        try:
+            await writer.drain()
+        except Exception:
+            pass
+
+        if needs_restart:
+            await asyncio.sleep_ms(2000)
+            debug_log("[OTA] Starte machine.reset()...")
+            machine.reset()
+
+    except Exception as e:
+        debug_log(f"[OTA FINALIZE] Fehler: {str(e)[:100]}")
+        response = json.dumps({"ok": False, "error": str(e)[:100]}).encode('utf-8')
+        writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response)
+        ota_total_chunks = 0
+        ota_received_chunks = 0
+        ota_update_active = False
+        try:
+            os.remove('update.pbp')
+        except Exception:
+            pass
+        try:
+            os.remove(OTA_STAGING_PATH)
+        except Exception:
+            pass
+
+
+async def _handle_restart_pico(writer):
+    response = json.dumps({"ok": True, "message": "Pico startet neu..."}).encode('utf-8')
+    writer.write(b'HTTP/1.1 200 OK\r\n')
+    writer.write(b'Content-Type: application/json\r\n')
+    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+    writer.write(b'Connection: close\r\n\r\n')
+    writer.write(response)
+    try:
+        await writer.drain()
+    except Exception:
+        pass
+    await asyncio.sleep_ms(1000)
+    debug_log("[RESTART] machine.reset() wird aufgerufen...")
+    machine.reset()
+
+
+async def _handle_misc_routes(writer, request_path, request_method, query_params, body_params):
+    global TRICK_TUNING_PROFILE, DEVELOPER_MODE_ENABLED
+
+    if request_path == '/admin-profiles':
+        await send_html_file(writer, ADMIN_PROFILES_HTML_PATH)
+        return True
+
+    if request_path == '/admin-system':
+        await send_html_file(writer, ADMIN_SYSTEM_HTML_PATH)
+        return True
+
+    if request_path == '/system-info':
+        try:
+            mem_free = gc.mem_free()
+        except Exception:
+            mem_free = -1
+        try:
+            mem_alloc = gc.mem_alloc()
+        except Exception:
+            mem_alloc = -1
+
+        ip_addr = ""
+        if ENABLE_HOTSPOT:
+            try:
+                ip_addr = network.WLAN(network.AP_IF).ifconfig()[0]
+            except Exception:
+                ip_addr = ""
+
+        info_data = {
+            "mem_free": mem_free,
+            "mem_alloc": mem_alloc,
+            "uptime_s": time.ticks_ms() // 1000,
+            "ssid": AP_SSID,
+            "ip": ip_addr,
+            "hotspot_enabled": ENABLE_HOTSPOT,
+            "trick_tuning_profile": TRICK_TUNING_PROFILE,
+            "score": detector.score,
+            "highscore": highscore_data["score"],
+            "ota_active": ota_update_active,
+            "ota_received_chunks": ota_received_chunks,
+            "ota_total_chunks": ota_total_chunks,
+            "developer_mode": DEVELOPER_MODE_ENABLED,
+            "firmware_version": FIRMWARE_VERSION,
+        }
+        response_data = json.dumps(info_data).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True
+
+    if request_path == '/profiles-list':
+        profiles_list = list_profile_files()
+        profiles_data = []
+        for prof in profiles_list:
+            profiles_data.append({
+                "name": prof,
+                "active": prof == TRICK_TUNING_PROFILE
+            })
+
+        response_data = json.dumps({"ok": True, "profiles": profiles_data}).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True
+
+    if request_path == '/create-profile' and request_method == 'POST':
+        profile_name = body_params.get('name', '').strip()
+        profile_data_str = body_params.get('data', '').strip()
+
+        if not profile_name or not profile_data_str:
+            response = json.dumps({"ok": False, "error": "Name oder Daten fehlen"}).encode('utf-8')
+            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response)
+        else:
+            try:
+                profile_data = json.loads(profile_data_str)
+                success, error = save_custom_profile(profile_name, profile_data)
+                if success:
+                    response = json.dumps({"ok": True, "message": f"Profil {profile_name} erstellt"}).encode('utf-8')
+                    writer.write(b'HTTP/1.1 200 OK\r\n')
+                else:
+                    response = json.dumps({"ok": False, "error": error}).encode('utf-8')
+                    writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+            except Exception as e:
+                response = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
+                writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+        return True
+
+    if request_path == '/download-profile':
+        profile_name = query_params.get('name', '').strip()
+        if not profile_name:
+            response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
+            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response)
+        else:
+            profile_data = get_profile_data(profile_name)
+            if profile_data is None:
+                response = json.dumps({"ok": False, "error": f"Profil nicht gefunden: {profile_name}"}).encode('utf-8')
+                writer.write(b'HTTP/1.1 404 Not Found\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+            else:
+                response_data = json.dumps(profile_data).encode('utf-8')
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Disposition: attachment; filename="' + profile_name.encode('utf-8') + b'.pro"\r\n')
+                writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response_data)
+        return True
+
+    if request_path == '/delete-profile':
+        profile_name = query_params.get('name', '').strip()
+        if not profile_name:
+            response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
+        else:
+            success, error = delete_custom_profile(profile_name)
+            if success:
+                response = json.dumps({"ok": True, "message": f"Profil {profile_name} geloescht"}).encode('utf-8')
+            else:
+                response = json.dumps({"ok": False, "error": error}).encode('utf-8')
+
+        response = response.encode('utf-8') if isinstance(response, str) else response
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response)
+        return True
+
+    if request_path == '/apply-profile':
+        profile_name = query_params.get('name', '').strip()
+
+        if not profile_name:
+            response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
+        else:
+            profile_name = normalize_trick_tuning_profile(profile_name)
+            TRICK_TUNING_PROFILE = profile_name
+            apply_trick_tuning_profile()
+            saved_ok, save_error = save_trick_tuning_profile()
+
+            if saved_ok:
+                response = json.dumps({"ok": True, "profile": profile_name}).encode('utf-8')
+                debug_log(f"[PROFILE] Angewendet: {profile_name}")
+            else:
+                response = json.dumps({"ok": False, "error": save_error}).encode('utf-8')
+
+        response = response.encode('utf-8') if isinstance(response, str) else response
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response)
+        return True
+
+    if request_path == '/data':
+        data = {
+            "score": detector.score,
+            "history": detector.trick_history,
+            "highscore": highscore_data["score"],
+            "highscore_timestamp": highscore_data["timestamp"],
+            "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
+            "trick_tuning_profile": TRICK_TUNING_PROFILE,
+            "pending_highscore": pending_highscore["active"],
+            "pending_highscore_score": pending_highscore["score"],
+            "firmware_version": FIRMWARE_VERSION,
+        }
+        response_data = json.dumps(data).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True
+
+    if request_path == '/set-highscore-name':
+        await _send_highscore_name_response(writer, query_params, body_params)
+        return True
+
+    if request_path == '/set-trick-profile':
+        profile_name = normalize_trick_tuning_profile(query_params.get('profile', 'aggressive'))
+        TRICK_TUNING_PROFILE = profile_name
+        apply_trick_tuning_profile()
+        saved_ok, save_error = save_trick_tuning_profile()
+
+        if saved_ok:
+            debug_console_only(f"[TRICK PROFILE] Profil gespeichert: {TRICK_TUNING_PROFILE}")
+
+        payload = json.dumps({
+            "ok": saved_ok,
+            "error": "" if saved_ok else ("Speichern fehlgeschlagen: " + str(save_error)),
+            "trick_tuning_profile": TRICK_TUNING_PROFILE
+        }).encode('utf-8')
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(payload)
+        return True
+
+    if request_path == '/set-developer-mode':
+        DEVELOPER_MODE_ENABLED = query_params.get('enabled', '0') == '1'
+        saved_ok, save_error = save_system_settings()
+
+        if saved_ok:
+            debug_console_only(f"[SYSTEM] Developer-Modus: {'AN' if DEVELOPER_MODE_ENABLED else 'AUS'}")
+
+        payload = json.dumps({
+            "ok": saved_ok,
+            "error": "" if saved_ok else ("Speichern fehlgeschlagen: " + str(save_error)),
+            "developer_mode": DEVELOPER_MODE_ENABLED
+        }).encode('utf-8')
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(payload)
+        return True
+
+    if request_path == '/confirm-highscore':
+        await _send_confirm_highscore_response(writer)
+        return True
+
+    if request_path == '/reset-highscore':
+        await _send_reset_highscore_response(writer, query_params, body_params)
+        return True
+
+    if request_path in ('/download', '/download-session'):
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-SESSION] Exportdatei wird erstellt")
+        write_text_file(SESSION_EXPORT_FILE_PATH, build_session_txt_content())
+        await send_file_as_download(writer, SESSION_EXPORT_FILE_PATH, "fpv_arcade_session.txt")
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-SESSION] Datei versendet")
+        return True
+
+    if request_path in ('/download-debug', '/download-debug-raw'):
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Exportdatei wird erstellt")
+        build_debug_export_file()
+        await send_file_as_download(writer, DEBUG_EXPORT_FILE_PATH, "fpv_debug_log.txt")
+        if ENABLE_SERIAL_DEBUG:
+            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Datei versendet")
+        return True
+
+    if request_path == '/simulate-trick':
+        trick_kind = query_params.get('type', 'roll').strip().lower()
+        if trick_kind not in ('roll', 'flip', 'spin'):
+            trick_kind = 'roll'
+
+        score_before = detector.score
+        debug_console_only(f"[SIMULATE] Starte Trick-Simulation: {trick_kind}")
+        await simulate_trick(trick_kind)
+        points_gained = detector.score - score_before
+
+        payload = json.dumps({
+            "ok": True,
+            "type": trick_kind,
+            "trick": detector.last_trick_name if points_gained > 0 else None,
+            "points": points_gained,
+            "score": detector.score
+        }).encode('utf-8')
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(payload)
+        return True
+
+    return False
+
+
 async def handle_client(reader, writer):
     global TRICK_TUNING_PROFILE, DEVELOPER_MODE_ENABLED
     try:
@@ -1486,713 +2101,17 @@ async def handle_client(reader, writer):
             await send_html_file(writer, ADMIN_SIMULATE_HTML_PATH)
                 
         elif request_path == '/upload-chunk' and request_method == 'POST':
-            global ota_total_chunks, ota_received_chunks, ota_update_active, ota_target_file
-
-            chunk_index_str = '-1'
-            total_str = '0'
-            target_str = 'main.py'
-            if body_text:
-                idx_pos = body_text.find('index=')
-                if idx_pos >= 0:
-                    idx_start = idx_pos + 6
-                    idx_end = body_text.find('&', idx_start)
-                    if idx_end < 0:
-                        idx_end = len(body_text)
-                    chunk_index_str = url_decode(body_text[idx_start:idx_end])
-
-                total_pos = body_text.find('total=')
-                if total_pos >= 0:
-                    total_start = total_pos + 6
-                    total_end = body_text.find('&', total_start)
-                    if total_end < 0:
-                        total_end = len(body_text)
-                    total_str = url_decode(body_text[total_start:total_end])
-
-                target_pos = body_text.find('target=')
-                if target_pos >= 0:
-                    target_start = target_pos + 7
-                    target_end = body_text.find('&', target_start)
-                    if target_end < 0:
-                        target_end = len(body_text)
-                    target_str = url_decode(body_text[target_start:target_end])
-
-            chunk_data = ''
-            if body_text:
-                marker = '&data='
-                pos = body_text.find(marker)
-                if pos >= 0:
-                    chunk_data = url_decode(body_text[pos + len(marker):])
-                elif body_text.startswith('data='):
-                    chunk_data = url_decode(body_text[5:])
-                else:
-                    chunk_data = body_params.get('data', '')
-            else:
-                chunk_data = body_params.get('data', '')
-            
-            try:
-                chunk_index = int(chunk_index_str)
-                total = int(total_str)
-                target_valid = True
-                target_error = ""
-
-                if chunk_index == 0:
-                    if target_str == OTA_BUNDLE_TARGET:
-                        target_valid = True
-                    elif target_str in OTA_ALLOWED_TARGETS:
-                        # Einzeldatei-Uploads (main.py/*.html) nur erlaubt, wenn
-                        # der Developer-Modus auf der System-Seite aktiviert ist.
-                        # Standardmaessig (Developer-Modus AUS) wird nur ein
-                        # komplettes firmware.nbo Bundle akzeptiert.
-                        target_valid = DEVELOPER_MODE_ENABLED
-                        if not target_valid:
-                            target_error = "Einzeldatei-Uploads sind deaktiviert. Aktiviere den Developer-Modus (System-Seite) oder lade ein firmware.nbo Bundle hoch."
-                    else:
-                        target_valid = False
-
-                    if target_valid:
-                        ota_total_chunks = total
-                        ota_received_chunks = 0
-                        ota_update_active = True
-                        ota_target_file = target_str
-                        try:
-                            os.remove('update.pbp')
-                        except Exception:
-                            pass
-                        debug_log(f"[OTA] Chunk-Transfer gestartet: {total} Chunks erwartet, Ziel={target_str}")
-
-                if not target_valid:
-                    response = json.dumps({"ok": False, "error": target_error or f"Ungueltiges Ziel: {target_str}"}).encode('utf-8')
-                    writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-                    writer.write(b'Content-Type: application/json\r\n')
-                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                    writer.write(b'Connection: close\r\n\r\n')
-                    writer.write(response)
-                else:
-                    if chunk_data:
-                        with open('update.pbp', 'a') as f:
-                            f.write(chunk_data)
-                        ota_received_chunks += 1
-                        debug_log(f"[OTA] Chunk {chunk_index+1}/{total} empfangen ({len(chunk_data)} bytes)")
-
-                    response = json.dumps({"ok": True, "message": f"Chunk {chunk_index+1}/{total} gespeichert"}).encode('utf-8')
-                    writer.write(b'HTTP/1.1 200 OK\r\n')
-                    writer.write(b'Content-Type: application/json\r\n')
-                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                    writer.write(b'Connection: close\r\n\r\n')
-                    writer.write(response)
-
-                    if chunk_index + 1 == total and ota_received_chunks == ota_total_chunks:
-                        debug_log("[OTA] Alle Chunks empfangen, bitte /finalize-upload aufrufen")
-                
-            except Exception as e:
-                debug_log(f"[OTA CHUNK] Fehler: {e}")
-                ota_update_active = False
-                response = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
-                writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response)
+            await _handle_upload_chunk(writer, body_text, body_params)
                 
         elif request_path == '/finalize-upload':
-            try:
-                debug_log(f"[OTA] Finalisierung: {ota_received_chunks}/{ota_total_chunks} Chunks vorhanden")
-                if ota_received_chunks != ota_total_chunks:
-                    raise Exception(f"Incomplete upload: {ota_received_chunks}/{ota_total_chunks}")
-
-                is_bundle = (ota_target_file == OTA_BUNDLE_TARGET)
-                target = ota_target_file if (is_bundle or ota_target_file in OTA_ALLOWED_TARGETS) else "main.py"
-
-                decode_ok = safe_base64_file_to_file('update.pbp', OTA_STAGING_PATH)
-                if not decode_ok:
-                    raise Exception("Base64 Dekodierung fehlgeschlagen")
-                
-                try:
-                    staged_size = os.stat(OTA_STAGING_PATH)[6]
-                    debug_log(f"[OTA] Staging-Datei: {staged_size} bytes (Ziel: {target})")
-                except Exception:
-                    staged_size = 0
-
-                if is_bundle:
-                    extracted_files, needs_restart = apply_firmware_bundle(OTA_STAGING_PATH)
-                    try:
-                        os.remove(OTA_STAGING_PATH)
-                    except Exception:
-                        pass
-                    message = f"Firmware-Bundle angewendet: {len(extracted_files)} Datei(en) ersetzt ({', '.join(extracted_files)})"
-                    if needs_restart:
-                        message += " Starte Neustart..."
-                else:
-                    backup_path = "main_backup.py" if target == "main.py" else (target + ".bak")
-                    try:
-                        with open(target, 'r') as f:
-                            old_content = f.read()
-                        with open(backup_path, 'w') as f:
-                            f.write(old_content)
-                        debug_log(f"[OTA] Backup erstellt: {backup_path} ({len(old_content)} bytes)")
-                    except Exception as e:
-                        debug_log(f"[OTA] Backup-Fehler ({target}): {e}")
-
-                    try:
-                        os.remove(target)
-                    except Exception:
-                        pass
-
-                    os.rename(OTA_STAGING_PATH, target)
-                    debug_log(f"[OTA] Finale Datei gespeichert: {target} ({staged_size} bytes)")
-
-                    needs_restart = (target == "main.py")
-                    message = f"Update erfolgreich gespeichert: {target} ({staged_size} bytes)!"
-                    if needs_restart:
-                        message += " Starte Neustart..."
-
-                response = json.dumps({"ok": True, "message": message, "restart": needs_restart}).encode('utf-8')
-                writer.write(b'HTTP/1.1 200 OK\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response)
-                
-                ota_total_chunks = 0
-                ota_received_chunks = 0
-                ota_update_active = False
-                try:
-                    os.remove('update.pbp')
-                except Exception:
-                    pass
-                
-                try:
-                    await writer.drain()
-                except Exception:
-                    pass
-                
-                if needs_restart:
-                    await asyncio.sleep_ms(2000)
-                    debug_log("[OTA] Starte machine.reset()...")
-                    machine.reset()
-                
-            except Exception as e:
-                debug_log(f"[OTA FINALIZE] Fehler: {str(e)[:100]}")
-                response = json.dumps({"ok": False, "error": str(e)[:100]}).encode('utf-8')
-                writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response)
-                ota_total_chunks = 0
-                ota_received_chunks = 0
-                ota_update_active = False
-                try:
-                    os.remove('update.pbp')
-                except Exception:
-                    pass
-                try:
-                    os.remove(OTA_STAGING_PATH)
-                except Exception:
-                    pass
+            await _handle_finalize_upload(writer)
                 
         elif request_path == '/restart-pico':
-            response = json.dumps({"ok": True, "message": "Pico startet neu..."}).encode('utf-8')
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response)
-            try:
-                await writer.drain()
-            except Exception:
-                pass
-            await asyncio.sleep_ms(1000)
-            debug_log("[RESTART] machine.reset() wird aufgerufen...")
-            machine.reset()
+            await _handle_restart_pico(writer)
         
-        elif request_path == '/admin-profiles':
-            await send_html_file(writer, ADMIN_PROFILES_HTML_PATH)
+        elif await _handle_misc_routes(writer, request_path, request_method, query_params, body_params):
+            pass
 
-        elif request_path == '/admin-system':
-            await send_html_file(writer, ADMIN_SYSTEM_HTML_PATH)
-
-        elif request_path == '/system-info':
-            try:
-                mem_free = gc.mem_free()
-            except Exception:
-                mem_free = -1
-            try:
-                mem_alloc = gc.mem_alloc()
-            except Exception:
-                mem_alloc = -1
-
-            ip_addr = ""
-            if ENABLE_HOTSPOT:
-                try:
-                    ip_addr = network.WLAN(network.AP_IF).ifconfig()[0]
-                except Exception:
-                    ip_addr = ""
-
-            info_data = {
-                "mem_free": mem_free,
-                "mem_alloc": mem_alloc,
-                "uptime_s": time.ticks_ms() // 1000,
-                "ssid": AP_SSID,
-                "ip": ip_addr,
-                "hotspot_enabled": ENABLE_HOTSPOT,
-                "trick_tuning_profile": TRICK_TUNING_PROFILE,
-                "score": detector.score,
-                "highscore": highscore_data["score"],
-                "ota_active": ota_update_active,
-                "ota_received_chunks": ota_received_chunks,
-                "ota_total_chunks": ota_total_chunks,
-                "developer_mode": DEVELOPER_MODE_ENABLED,
-            }
-            response_data = json.dumps(info_data).encode('utf-8')
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-            writer.write(b'Pragma: no-cache\r\n')
-            writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response_data)
-        
-        elif request_path == '/profiles-list':
-            profiles_list = list_profile_files()
-            profiles_data = []
-            for prof in profiles_list:
-                profiles_data.append({
-                    "name": prof,
-                    "active": prof == TRICK_TUNING_PROFILE
-                })
-            
-            response_data = json.dumps({"ok": True, "profiles": profiles_data}).encode('utf-8')
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-            writer.write(b'Pragma: no-cache\r\n')
-            writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response_data)
-        
-        elif request_path == '/create-profile' and request_method == 'POST':
-            profile_name = body_params.get('name', '').strip()
-            profile_data_str = body_params.get('data', '').strip()
-            
-            if not profile_name or not profile_data_str:
-                response = json.dumps({"ok": False, "error": "Name oder Daten fehlen"}).encode('utf-8')
-                writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response)
-            else:
-                try:
-                    profile_data = json.loads(profile_data_str)
-                    success, error = save_custom_profile(profile_name, profile_data)
-                    if success:
-                        response = json.dumps({"ok": True, "message": f"Profil {profile_name} erstellt"}).encode('utf-8')
-                        writer.write(b'HTTP/1.1 200 OK\r\n')
-                    else:
-                        response = json.dumps({"ok": False, "error": error}).encode('utf-8')
-                        writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-                    writer.write(b'Content-Type: application/json\r\n')
-                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                    writer.write(b'Connection: close\r\n\r\n')
-                    writer.write(response)
-                except Exception as e:
-                    response = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
-                    writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
-                    writer.write(b'Content-Type: application/json\r\n')
-                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                    writer.write(b'Connection: close\r\n\r\n')
-                    writer.write(response)
-        
-        elif request_path == '/download-profile':
-            profile_name = query_params.get('name', '').strip()
-            if not profile_name:
-                response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
-                writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response)
-            else:
-                profile_data = get_profile_data(profile_name)
-                if profile_data is None:
-                    response = json.dumps({"ok": False, "error": f"Profil nicht gefunden: {profile_name}"}).encode('utf-8')
-                    writer.write(b'HTTP/1.1 404 Not Found\r\n')
-                    writer.write(b'Content-Type: application/json\r\n')
-                    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                    writer.write(b'Connection: close\r\n\r\n')
-                    writer.write(response)
-                else:
-                    response_data = json.dumps(profile_data).encode('utf-8')
-                    writer.write(b'HTTP/1.1 200 OK\r\n')
-                    writer.write(b'Content-Type: application/json\r\n')
-                    writer.write(b'Content-Disposition: attachment; filename="' + profile_name.encode('utf-8') + b'.pro"\r\n')
-                    writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
-                    writer.write(b'Connection: close\r\n\r\n')
-                    writer.write(response_data)
-        
-        elif request_path == '/delete-profile':
-            profile_name = query_params.get('name', '').strip()
-            if not profile_name:
-                response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
-            else:
-                success, error = delete_custom_profile(profile_name)
-                if success:
-                    response = json.dumps({"ok": True, "message": f"Profil {profile_name} geloescht"}).encode('utf-8')
-                else:
-                    response = json.dumps({"ok": False, "error": error}).encode('utf-8')
-            
-            response = response.encode('utf-8') if isinstance(response, str) else response
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response)
-        
-        elif request_path == '/apply-profile':
-            profile_name = query_params.get('name', '').strip()
-            
-            if not profile_name:
-                response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
-            else:
-                profile_name = normalize_trick_tuning_profile(profile_name)
-                TRICK_TUNING_PROFILE = profile_name
-                apply_trick_tuning_profile()
-                saved_ok, save_error = save_trick_tuning_profile()
-                
-                if saved_ok:
-                    response = json.dumps({"ok": True, "profile": profile_name}).encode('utf-8')
-                    debug_log(f"[PROFILE] Angewendet: {profile_name}")
-                else:
-                    response = json.dumps({"ok": False, "error": save_error}).encode('utf-8')
-            
-            response = response.encode('utf-8') if isinstance(response, str) else response
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-            writer.write(b'Pragma: no-cache\r\n')
-            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response)
-                
-        elif request_path == '/data':
-            data = {
-                "score": detector.score,
-                "history": detector.trick_history,
-                "highscore": highscore_data["score"],
-                "highscore_timestamp": highscore_data["timestamp"],
-                "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
-                "trick_tuning_profile": TRICK_TUNING_PROFILE,
-                "pending_highscore": pending_highscore["active"],
-                "pending_highscore_score": pending_highscore["score"]
-            }
-            response_data = json.dumps(data).encode('utf-8')
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-            writer.write(b'Pragma: no-cache\r\n')
-            writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response_data)
-
-        elif request_path == '/set-highscore-name':
-            name = query_params.get('name', '').strip()
-            if not name:
-                name = body_params.get('name', '').strip()
-            is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
-            success = False
-            error = ""
-            score_to_save = None
-            timestamp_to_save = None
-
-            if not name:
-                error = "Name darf nicht leer sein."
-            else:
-                if pending_highscore["active"]:
-                    score_to_save = pending_highscore["score"]
-                    timestamp_to_save = pending_highscore["timestamp"]
-                elif detector.score > highscore_data["score"]:
-                    score_to_save = detector.score
-                    timestamp_to_save = get_datetime_string()
-                    debug_console_only("[HIGHSCORE] Fallback: Score hoeher als Highscore.")
-                elif highscore_data["score"] > 0:
-                    score_to_save = highscore_data["score"]
-                    timestamp_to_save = highscore_data.get("timestamp", "Unbekannt")
-                    debug_console_only("[HIGHSCORE] Name fuer bestehenden Highscore wird aktualisiert.")
-                else:
-                    error = "Kein neuer Highscore zum Speichern vorhanden."
-
-            if error == "" and score_to_save is not None:
-                highscore_data["score"] = int(score_to_save)
-                highscore_data["timestamp"] = timestamp_to_save or get_datetime_string()
-                highscore_data["player"] = name
-                saved_ok, save_error = save_highscore()
-                if saved_ok:
-                    pending_highscore["active"] = False
-                    pending_highscore["score"] = 0
-                    pending_highscore["timestamp"] = "Unbekannt"
-                    success = True
-                    debug_console_only(
-                        f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
-                    )
-                else:
-                    error = "Speichern fehlgeschlagen: " + str(save_error)
-                    debug_console_only("[HIGHSCORE ERROR] " + error)
-
-            if is_web_submit:
-                if success:
-                    response_html = (
-                        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-                        "<meta http-equiv='refresh' content='1; url=/'>"
-                        "<title>Highscore gespeichert</title></head>"
-                        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
-                        "<h2>Highscore gespeichert</h2>"
-                        f"<p>{html_escape(highscore_data.get('player', DEFAULT_PILOT_NAME))} steht jetzt mit {highscore_data['score']} Punkten im Highscore.</p>"
-                        "<p>Du wirst zur Hauptseite zurueckgeleitet...</p>"
-                        "</body></html>"
-                    ).encode('utf-8')
-                else:
-                    response_html = (
-                        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-                        "<meta http-equiv='refresh' content='2; url=/'>"
-                        "<title>Speichern fehlgeschlagen</title></head>"
-                        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
-                        "<h2>Speichern fehlgeschlagen</h2>"
-                        f"<p>{html_escape(error or 'Unbekannter Fehler')}</p>"
-                        "<p>Du wirst zur Hauptseite zurueckgeleitet...</p>"
-                        "</body></html>"
-                    ).encode('utf-8')
-                    
-                writer.write(b'HTTP/1.1 200 OK\r\n')
-                writer.write(b'Content-Type: text/html\r\n')
-                writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-                writer.write(b'Pragma: no-cache\r\n')
-                writer.write(b'Content-Length: ' + str(len(response_html)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response_html)
-            else:
-                payload = json.dumps({
-                    "ok": success,
-                    "error": error,
-                    "highscore": highscore_data["score"],
-                    "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
-                    "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
-                }).encode('utf-8')
-
-                writer.write(b'HTTP/1.1 200 OK\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-                writer.write(b'Pragma: no-cache\r\n')
-                writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(payload)
-
-        elif request_path == '/set-trick-profile':
-            profile_name = normalize_trick_tuning_profile(query_params.get('profile', 'aggressive'))
-            TRICK_TUNING_PROFILE = profile_name
-            apply_trick_tuning_profile()
-            saved_ok, save_error = save_trick_tuning_profile()
-
-            if saved_ok:
-                debug_console_only(f"[TRICK PROFILE] Profil gespeichert: {TRICK_TUNING_PROFILE}")
-
-            payload = json.dumps({
-                "ok": saved_ok,
-                "error": "" if saved_ok else ("Speichern fehlgeschlagen: " + str(save_error)),
-                "trick_tuning_profile": TRICK_TUNING_PROFILE
-            }).encode('utf-8')
-
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-            writer.write(b'Pragma: no-cache\r\n')
-            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(payload)
-
-        elif request_path == '/set-developer-mode':
-            DEVELOPER_MODE_ENABLED = query_params.get('enabled', '0') == '1'
-            saved_ok, save_error = save_system_settings()
-
-            if saved_ok:
-                debug_console_only(f"[SYSTEM] Developer-Modus: {'AN' if DEVELOPER_MODE_ENABLED else 'AUS'}")
-
-            payload = json.dumps({
-                "ok": saved_ok,
-                "error": "" if saved_ok else ("Speichern fehlgeschlagen: " + str(save_error)),
-                "developer_mode": DEVELOPER_MODE_ENABLED
-            }).encode('utf-8')
-
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-            writer.write(b'Pragma: no-cache\r\n')
-            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(payload)
-
-        elif request_path == '/confirm-highscore':
-            success = False
-            error = ""
-
-            if pending_highscore["active"]:
-                highscore_data["score"] = int(pending_highscore["score"])
-                highscore_data["timestamp"] = pending_highscore["timestamp"] or get_datetime_string()
-                highscore_data["player"] = DEFAULT_PILOT_NAME
-                saved_ok, save_error = save_highscore()
-                if saved_ok:
-                    pending_highscore["active"] = False
-                    pending_highscore["score"] = 0
-                    pending_highscore["timestamp"] = "Unbekannt"
-                    success = True
-                    debug_console_only(
-                        f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
-                    )
-                else:
-                    error = "Speichern fehlgeschlagen: " + str(save_error)
-                    debug_console_only("[HIGHSCORE ERROR] " + error)
-            elif detector.score > highscore_data["score"]:
-                highscore_data["score"] = int(detector.score)
-                highscore_data["timestamp"] = get_datetime_string()
-                highscore_data["player"] = DEFAULT_PILOT_NAME
-                saved_ok, save_error = save_highscore()
-                if saved_ok:
-                    success = True
-                    debug_console_only(
-                        f"[HIGHSCORE] Rekord gespeichert (Fallback): {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
-                    )
-                else:
-                    error = "Speichern fehlgeschlagen: " + str(save_error)
-                    debug_console_only("[HIGHSCORE ERROR] " + error)
-            else:
-                success = True
-
-            payload = json.dumps({
-                "ok": success,
-                "error": error,
-                "highscore": highscore_data["score"],
-                "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
-                "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
-            }).encode('utf-8')
-
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-            writer.write(b'Pragma: no-cache\r\n')
-            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(payload)
-
-        elif request_path == '/reset-highscore':
-            is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
-            debug_console_only(f"[HIGHSCORE] Reset-Route aufgerufen (web={is_web_submit}).")
-
-            highscore_data["score"] = 0
-            highscore_data["timestamp"] = "Unbekannt"
-            highscore_data["player"] = DEFAULT_PILOT_NAME
-            pending_highscore["active"] = False
-            pending_highscore["score"] = 0
-            pending_highscore["timestamp"] = "Unbekannt"
-            detector.score = 0
-            detector.trick_history = []
-            detector.last_trick_name = "Keiner"
-
-            saved_ok, save_error = save_highscore()
-            if saved_ok:
-                debug_console_only("[HIGHSCORE] Highscore wurde manuell zurueckgesetzt.")
-            else:
-                debug_console_only("[HIGHSCORE ERROR] Reset-Speichern fehlgeschlagen: " + str(save_error))
-
-            if is_web_submit:
-                if saved_ok:
-                    response_html = (
-                        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-                        "<meta http-equiv='refresh' content='1; url=/'>"
-                        "<title>Reset erfolgreich</title></head>"
-                        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
-                        "<h2>Highscore wurde zurueckgesetzt</h2>"
-                        "<p>Highscore und Session-Score stehen jetzt auf 0.</p>"
-                        "<p>Du wirst zur Hauptseite zurueckgeleitet...</p>"
-                        "</body></html>"
-                    ).encode('utf-8')
-                else:
-                    response_html = (
-                        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-                        "<meta http-equiv='refresh' content='2; url=/'>"
-                        "<title>Reset fehlgeschlagen</title></head>"
-                        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
-                        "<h2>Reset fehlgeschlagen</h2>"
-                        f"<p>{html_escape(str(save_error))}</p>"
-                        "<p>Du wirst zur Hauptseite zurueckgeleitet...</p>"
-                        "</body></html>"
-                    ).encode('utf-8')
-
-                writer.write(b'HTTP/1.1 200 OK\r\n')
-                writer.write(b'Content-Type: text/html\r\n')
-                writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-                writer.write(b'Pragma: no-cache\r\n')
-                writer.write(b'Content-Length: ' + str(len(response_html)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response_html)
-            else:
-                payload = json.dumps({
-                    "ok": saved_ok,
-                    "error": "" if saved_ok else ("Reset fehlgeschlagen: " + str(save_error)),
-                    "highscore": highscore_data["score"],
-                    "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
-                    "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
-                }).encode('utf-8')
-
-                writer.write(b'HTTP/1.1 200 OK\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-                writer.write(b'Pragma: no-cache\r\n')
-                writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(payload)
-            
-        elif request_path in ('/download', '/download-session'):
-            if ENABLE_SERIAL_DEBUG:
-                print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-SESSION] Exportdatei wird erstellt")
-            write_text_file(SESSION_EXPORT_FILE_PATH, build_session_txt_content())
-            await send_file_as_download(writer, SESSION_EXPORT_FILE_PATH, "fpv_arcade_session.txt")
-            if ENABLE_SERIAL_DEBUG:
-                print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-SESSION] Datei versendet")
-
-        elif request_path in ('/download-debug', '/download-debug-raw'):
-            if ENABLE_SERIAL_DEBUG:
-                print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Exportdatei wird erstellt")
-            build_debug_export_file()
-            await send_file_as_download(writer, DEBUG_EXPORT_FILE_PATH, "fpv_debug_log.txt")
-            if ENABLE_SERIAL_DEBUG:
-                print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Datei versendet")
-
-        elif request_path == '/simulate-trick':
-            trick_kind = query_params.get('type', 'roll').strip().lower()
-            if trick_kind not in ('roll', 'flip', 'spin'):
-                trick_kind = 'roll'
-
-            score_before = detector.score
-            debug_console_only(f"[SIMULATE] Starte Trick-Simulation: {trick_kind}")
-            await simulate_trick(trick_kind)
-            points_gained = detector.score - score_before
-
-            payload = json.dumps({
-                "ok": True,
-                "type": trick_kind,
-                "trick": detector.last_trick_name if points_gained > 0 else None,
-                "points": points_gained,
-                "score": detector.score
-            }).encode('utf-8')
-
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-            writer.write(b'Pragma: no-cache\r\n')
-            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(payload)
-            
         else:
             await send_html_file(writer, INDEX_HTML_PATH)
             
@@ -2222,8 +2141,21 @@ async def handle_client(reader, writer):
 async def main_async():
     global system_ready, status_led_last_toggle_ms
     if ENABLE_HOTSPOT:
-        start_access_point()
+        boot_present = False
+        try:
+            os.stat("boot.py")
+            boot_present = True
+        except Exception:
+            boot_present = False
+
+        if boot_present:
+            debug_log("[BOOT] boot.py gefunden, Hotspot-Start in main uebersprungen.")
+        else:
+            debug_log("[BOOT] boot.py fehlt, starte Hotspot aus main.")
+            start_access_point()
+
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
+    _boot_mark_healthy_once()
     system_ready = True
     status_led_last_toggle_ms = time.ticks_ms()
     update_status_led()

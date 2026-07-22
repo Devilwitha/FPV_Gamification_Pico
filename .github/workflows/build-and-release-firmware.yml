@@ -35,10 +35,24 @@ jobs:
 
       - name: Firmware-Bundle bauen (firmware.nbo)
         run: python build_firmware.py firmware.nbo
+        # Erhoeht dabei automatisch die Firmware-Versionsnummer (version.json /
+        # firmware_version.txt, Format X.Y.Z -> X.Y.Z+1, siehe build_firmware.py).
 
       - name: Versionsnummer bestimmen
         id: version
-        run: echo "tag=v$(date +%Y.%m.%d)-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+        run: |
+          FW_VERSION=$(python -c "import json; print(json.load(open('version.json'))['version'])")
+          echo "tag=v${FW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Neue Versionsnummer ins Repo zurueckschreiben
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.json firmware_version.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Firmware-Version auf ${{ steps.version.outputs.tag }} erhoeht [skip ci]"
+            git push
+          fi
 
       - name: firmware.nbo als Download-Artefakt hochladen
         uses: actions/upload-artifact@v4

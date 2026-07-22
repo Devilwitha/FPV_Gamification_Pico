@@ -10,9 +10,16 @@ on:
     branches:
       - main
     paths:
-      - "main.py"
-      - "index.html"
-      - "admin_*.html"
+      - "source/main.py"
+      - "source/index.html"
+      - "source/admin_*.html"
+      - "source/boot.py"
+      - "source/boot_runtime.py"
+      - "source/recovery.py"
+      - "source/hotspot_common.py"
+      - "source/ota_helpers.py"
+      - "source/firmware_version.txt"
+      - "source/version.json"
       - "build_firmware.py"
   workflow_dispatch: {}
     # Manuelles Ausloesen ueber den "Run workflow"-Button im Actions-Tab.
@@ -34,21 +41,21 @@ jobs:
           python-version: "3.11"
 
       - name: Firmware-Bundle bauen (firmware.nbo)
-        run: python build_firmware.py firmware.nbo
+        run: python build_firmware.py build/firmware.nbo
         # Erhoeht dabei automatisch die Firmware-Versionsnummer (version.json /
         # firmware_version.txt, Format X.Y.Z -> X.Y.Z+1, siehe build_firmware.py).
 
       - name: Versionsnummer bestimmen
         id: version
         run: |
-          FW_VERSION=$(python -c "import json; print(json.load(open('version.json'))['version'])")
+          FW_VERSION=$(python -c "import json; print(json.load(open('source/version.json'))['version'])")
           echo "tag=v${FW_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Neue Versionsnummer ins Repo zurueckschreiben
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add version.json firmware_version.txt
+          git add source/version.json source/firmware_version.txt
           if ! git diff --cached --quiet; then
             git commit -m "Firmware-Version auf ${{ steps.version.outputs.tag }} erhoeht [skip ci]"
             git push
@@ -58,7 +65,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: firmware.nbo
-          path: firmware.nbo
+          path: build/firmware.nbo
           retention-days: 90
 
       - name: GitHub Release erstellen
@@ -66,5 +73,5 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Firmware ${{ steps.version.outputs.tag }}
-          files: firmware.nbo
+          files: build/firmware.nbo
           generate_release_notes: true

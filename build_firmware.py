@@ -48,12 +48,16 @@ try:
 except Exception:
     list_ports = None
 
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
+BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
+
 BUNDLE_MAGIC = b"FPVBNDL1"
 DEFAULT_PICO_URL = "http://192.168.4.1"
 # Ziel im MicroPython-Dateisystem (gleiche Ebene wie main.py), kein UF2-Flash.
 DEVICE_BUNDLE_PATH = ":firmware.nbo"
 DEBUG_ENABLED = True
-DEBUG_LOG_FILE = "build_firmware_debug.log"
+DEBUG_LOG_FILE = os.path.join(PROJECT_ROOT, "build_firmware_debug.log")
 
 # Versionsnummer (Format X.Y.Z): version.json ist die persistente Quelle der
 # Wahrheit im Repo, firmware_version.txt ist die simple Textdatei, die mit ins
@@ -190,6 +194,10 @@ def build_bundle(source_dir, output_path, progress_callback=None, include_boot_s
     files_present = [f for f in files_to_bundle if f not in missing]
     files_present.extend(optional_present)
     total = len(files_present)
+
+    output_dir = os.path.dirname(os.path.abspath(output_path))
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
     with open(output_path, "wb") as out:
         out.write(BUNDLE_MAGIC)
@@ -695,8 +703,8 @@ print("SERIAL_NEEDS_RESTART:" + ("1" if needs_restart else "0"))
 
 
 def run_cli(output_path=None):
-    source_dir = os.path.dirname(os.path.abspath(__file__))
-    output_path = output_path or os.path.join(source_dir, "firmware.nbo")
+    source_dir = SOURCE_DIR
+    output_path = output_path or os.path.join(BUILD_DIR, "firmware.nbo")
 
     def report(done, total, filename):
         print(f"[{done}/{total}] {filename}")
@@ -736,7 +744,8 @@ def launch_gui():
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
 
-    source_dir = os.path.dirname(os.path.abspath(__file__))
+    source_dir = SOURCE_DIR
+    default_output_path = os.path.join(BUILD_DIR, "firmware.nbo")
 
     root = tk.Tk()
     root.title("FPV Gamification Pico - Firmware Bundle Builder")
@@ -786,12 +795,12 @@ def launch_gui():
     path_frame = ttk.Frame(frame)
     path_frame.pack(fill="x", pady=(0, 10))
     ttk.Label(path_frame, text="Ausgabe:").pack(side="left")
-    output_var = tk.StringVar(value=os.path.join(source_dir, "firmware.nbo"))
+    output_var = tk.StringVar(value=default_output_path)
     ttk.Entry(path_frame, textvariable=output_var).pack(side="left", fill="x", expand=True, padx=6)
 
     def browse_output():
         path = filedialog.asksaveasfilename(
-            initialdir=source_dir,
+            initialdir=BUILD_DIR,
             initialfile="firmware.nbo",
             defaultextension=".nbo",
             filetypes=[("Firmware Bundle", "*.nbo"), ("Alle Dateien", "*.*")],

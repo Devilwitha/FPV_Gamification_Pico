@@ -315,6 +315,10 @@ Erzeugt `firmware.nbo` im Projektverzeichnis. Optional kannst du einen anderen A
 angeben: `python build_firmware.py pfad/zu/firmware.nbo`. Das Skript listet fehlende Dateien
 als Warnung auf und packt nur vorhandene Dateien ein.
 
+Im GUI von `build_firmware.py` gibt es zusätzlich den Button **Bundle hochladen + entpacken**.
+Damit kannst du ein bereits erstelltes `firmware.nbo` direkt an den Pico senden (Standard-URL
+`http://192.168.4.1`) und sofort serverseitig per `/finalize-upload` entpacken lassen.
+
 ### Bundle hochladen:
 
 1. Gehe im Admin-Bereich auf **Update** (`/admin-update`).
@@ -380,4 +384,3 @@ funktioniert, wenn auf dem Pico ausser einer alten `main.py` gar keine anderen D
 Firmware, ist aber komplett unabhaengig von den `admin_*.html`-Dateien (und vom Developer-Modus-
 Schalter - im Recovery-Modus sind Einzeldatei-Uploads immer erlaubt, damit ein kaputtes System
 auf jeden Fall reparierbar bleibt).
-

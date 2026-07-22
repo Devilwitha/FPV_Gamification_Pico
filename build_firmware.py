@@ -34,6 +34,9 @@ import os
 import struct
 import sys
 import threading
+import base64
+import json
+from urllib import parse, request
 
 BUNDLE_MAGIC = b"FPVBNDL1"
 
@@ -91,6 +94,59 @@ def build_bundle(source_dir, output_path, progress_callback=None):
                 progress_callback(i, total, filename)
 
     return included, missing
+
+
+def normalize_base_url(base_url):
+    url = (base_url or "").strip()
+    if not url:
+        url = "http://192.168.4.1"
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "http://" + url
+    return url.rstrip("/")
+
+
+def _post_form_json(url, form_data, timeout=8):
+    encoded = parse.urlencode(form_data).encode("utf-8")
+    req = request.Request(url, data=encoded, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _get_json(url, timeout=12):
+    with request.urlopen(url, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def upload_bundle_to_pico(bundle_path, base_url, progress_callback=None):
+    """Laedt ein bestehendes firmware.nbo Bundle per OTA hoch und finalisiert es."""
+    base_url = normalize_base_url(base_url)
+    with open(bundle_path, "rb") as f:
+        raw = f.read()
+    b64 = base64.b64encode(raw).decode("ascii")
+    total_chunks = max(1, (len(b64) + 1023) // 1024)
+
+    for idx in range(total_chunks):
+        start = idx * 1024
+        end = min(start + 1024, len(b64))
+        chunk = b64[start:end]
+        response = _post_form_json(
+            base_url + "/upload-chunk",
+            {
+                "index": idx,
+                "total": total_chunks,
+                "target": "firmware.nbo",
+                "data": chunk,
+            },
+        )
+        if not response.get("ok"):
+            raise Exception(response.get("error", "Unbekannter Upload-Fehler"))
+        if progress_callback:
+            progress_callback(idx + 1, total_chunks)
+
+    finalize = _get_json(base_url + "/finalize-upload")
+    if not finalize.get("ok"):
+        raise Exception(finalize.get("error", "Finalisierung fehlgeschlagen"))
+    return finalize
 
 
 def run_cli(output_path=None):
@@ -181,6 +237,12 @@ def launch_gui():
 
     ttk.Button(path_frame, text="Durchsuchen...", command=browse_output).pack(side="left")
 
+    target_frame = ttk.Frame(frame)
+    target_frame.pack(fill="x", pady=(0, 10))
+    ttk.Label(target_frame, text="Pico URL:").pack(side="left")
+    pico_url_var = tk.StringVar(value="http://192.168.4.1")
+    ttk.Entry(target_frame, textvariable=pico_url_var).pack(side="left", fill="x", expand=True, padx=6)
+
     progress_var = tk.DoubleVar(value=0)
     ttk.Progressbar(frame, variable=progress_var, maximum=100).pack(fill="x", pady=(0, 6))
 
@@ -191,6 +253,8 @@ def launch_gui():
     btn_frame.pack(fill="x")
     build_button = ttk.Button(btn_frame, text="Bundle erstellen")
     build_button.pack(side="left")
+    upload_button = ttk.Button(btn_frame, text="Bundle hochladen + entpacken")
+    upload_button.pack(side="left", padx=6)
     ttk.Button(btn_frame, text="Aktualisieren", command=scan_files).pack(side="left", padx=6)
 
     def build_worker(output_path):
@@ -237,7 +301,48 @@ def launch_gui():
         status_var.set("Starte...")
         threading.Thread(target=build_worker, args=(output_path,), daemon=True).start()
 
+    def upload_worker(bundle_path, base_url):
+        def report(done, total):
+            root.after(0, lambda: (
+                progress_var.set(done / total * 100 if total else 100),
+                status_var.set(f"Lade Bundle hoch ({done}/{total})..."),
+            ))
+
+        try:
+            finalize = upload_bundle_to_pico(bundle_path, base_url, progress_callback=report)
+
+            def finish():
+                progress_var.set(100)
+                msg = finalize.get("message", "Upload abgeschlossen.")
+                status_var.set(msg)
+                upload_button.config(state="normal")
+                messagebox.showinfo("OTA erfolgreich", msg)
+
+            root.after(0, finish)
+        except Exception as e:
+            def fail():
+                status_var.set(f"Fehler beim OTA-Upload: {e}")
+                upload_button.config(state="normal")
+                messagebox.showerror("OTA-Fehler", str(e))
+
+            root.after(0, fail)
+
+    def start_upload():
+        bundle_path = output_var.get().strip()
+        if not bundle_path:
+            messagebox.showerror("Fehler", "Bitte einen Bundle-Pfad angeben.")
+            return
+        if not os.path.isfile(bundle_path):
+            messagebox.showerror("Fehler", f"Bundle nicht gefunden:\n{bundle_path}")
+            return
+        base_url = normalize_base_url(pico_url_var.get())
+        upload_button.config(state="disabled")
+        progress_var.set(0)
+        status_var.set(f"Starte OTA-Upload nach {base_url}...")
+        threading.Thread(target=upload_worker, args=(bundle_path, base_url), daemon=True).start()
+
     build_button.config(command=start_build)
+    upload_button.config(command=start_upload)
 
     root.mainloop()
 

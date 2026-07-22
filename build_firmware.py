@@ -36,7 +36,7 @@ import sys
 import threading
 import base64
 import json
-from urllib import parse, request
+from urllib import error, parse, request
 
 BUNDLE_MAGIC = b"FPVBNDL1"
 
@@ -106,19 +106,35 @@ def normalize_base_url(base_url):
 
 
 def _post_form_json(url, form_data, timeout=8):
-    encoded = parse.urlencode(form_data).encode("utf-8")
-    req = request.Request(url, data=encoded, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        encoded = parse.urlencode(form_data).encode("utf-8")
+        req = request.Request(url, data=encoded, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with request.urlopen(req, timeout=timeout) as resp:
+            text = resp.read().decode("utf-8")
+        return json.loads(text)
+    except error.HTTPError as e:
+        raise Exception(f"HTTP {e.code} bei {url}: {e.reason}") from e
+    except error.URLError as e:
+        raise Exception(f"Netzwerkfehler bei {url}: {e.reason}") from e
+    except json.JSONDecodeError as e:
+        raise Exception(f"Ungueltige JSON-Antwort von {url}: {e}") from e
 
 
 def _get_json(url, timeout=12):
-    with request.urlopen(url, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with request.urlopen(url, timeout=timeout) as resp:
+            text = resp.read().decode("utf-8")
+        return json.loads(text)
+    except error.HTTPError as e:
+        raise Exception(f"HTTP {e.code} bei {url}: {e.reason}") from e
+    except error.URLError as e:
+        raise Exception(f"Netzwerkfehler bei {url}: {e.reason}") from e
+    except json.JSONDecodeError as e:
+        raise Exception(f"Ungueltige JSON-Antwort von {url}: {e}") from e
 
 
 def upload_bundle_to_pico(bundle_path, base_url, progress_callback=None):
-    """Laedt ein bestehendes firmware.nbo Bundle per OTA hoch und finalisiert es."""
+    """Lädt ein bestehendes firmware.nbo Bundle per OTA hoch und finalisiert es."""
     base_url = normalize_base_url(base_url)
     with open(bundle_path, "rb") as f:
         raw = f.read()
@@ -139,13 +155,15 @@ def upload_bundle_to_pico(bundle_path, base_url, progress_callback=None):
             },
         )
         if not response.get("ok"):
-            raise Exception(response.get("error", "Unbekannter Upload-Fehler"))
+            err = response.get("error", "Unbekannter Upload-Fehler")
+            raise Exception(f"{err} (Chunk {idx+1}/{total_chunks}, URL: {base_url}/upload-chunk)")
         if progress_callback:
             progress_callback(idx + 1, total_chunks)
 
     finalize = _get_json(base_url + "/finalize-upload")
     if not finalize.get("ok"):
-        raise Exception(finalize.get("error", "Finalisierung fehlgeschlagen"))
+        err = finalize.get("error", "Finalisierung fehlgeschlagen")
+        raise Exception(f"{err} (URL: {base_url}/finalize-upload)")
     return finalize
 
 
@@ -258,11 +276,12 @@ def launch_gui():
     ttk.Button(btn_frame, text="Aktualisieren", command=scan_files).pack(side="left", padx=6)
 
     def build_worker(output_path):
+        def set_build_progress(done, total, filename):
+            progress_var.set(done / total * 100 if total else 100)
+            status_var.set(f"Verpacke {filename} ({done}/{total})...")
+
         def report(done, total, filename):
-            root.after(0, lambda: (
-                progress_var.set(done / total * 100 if total else 100),
-                status_var.set(f"Verpacke {filename} ({done}/{total})..."),
-            ))
+            root.after(0, set_build_progress, done, total, filename)
 
         try:
             included, missing = build_bundle(source_dir, output_path, progress_callback=report)
@@ -276,6 +295,7 @@ def launch_gui():
                     msg += f"\nFehlend (uebersprungen): {', '.join(missing)}"
                 status_var.set(msg)
                 build_button.config(state="normal")
+                upload_button.config(state="normal")
                 messagebox.showinfo("Bundle erstellt", msg)
 
             root.after(0, finish)
@@ -283,6 +303,7 @@ def launch_gui():
             def fail():
                 status_var.set(f"Fehler: {e}")
                 build_button.config(state="normal")
+                upload_button.config(state="normal")
                 messagebox.showerror("Fehler", str(e))
 
             root.after(0, fail)
@@ -297,16 +318,18 @@ def launch_gui():
             messagebox.showerror("Fehler", "Keine der erwarteten Firmware-Dateien gefunden.")
             return
         build_button.config(state="disabled")
+        upload_button.config(state="disabled")
         progress_var.set(0)
         status_var.set("Starte...")
         threading.Thread(target=build_worker, args=(output_path,), daemon=True).start()
 
     def upload_worker(bundle_path, base_url):
+        def set_upload_progress(done, total):
+            progress_var.set(done / total * 100 if total else 100)
+            status_var.set(f"Lade Bundle hoch ({done}/{total})...")
+
         def report(done, total):
-            root.after(0, lambda: (
-                progress_var.set(done / total * 100 if total else 100),
-                status_var.set(f"Lade Bundle hoch ({done}/{total})..."),
-            ))
+            root.after(0, set_upload_progress, done, total)
 
         try:
             finalize = upload_bundle_to_pico(bundle_path, base_url, progress_callback=report)
@@ -316,6 +339,7 @@ def launch_gui():
                 msg = finalize.get("message", "Upload abgeschlossen.")
                 status_var.set(msg)
                 upload_button.config(state="normal")
+                build_button.config(state="normal")
                 messagebox.showinfo("OTA erfolgreich", msg)
 
             root.after(0, finish)
@@ -323,6 +347,7 @@ def launch_gui():
             def fail():
                 status_var.set(f"Fehler beim OTA-Upload: {e}")
                 upload_button.config(state="normal")
+                build_button.config(state="normal")
                 messagebox.showerror("OTA-Fehler", str(e))
 
             root.after(0, fail)
@@ -337,6 +362,7 @@ def launch_gui():
             return
         base_url = normalize_base_url(pico_url_var.get())
         upload_button.config(state="disabled")
+        build_button.config(state="disabled")
         progress_var.set(0)
         status_var.set(f"Starte OTA-Upload nach {base_url}...")
         threading.Thread(target=upload_worker, args=(bundle_path, base_url), daemon=True).start()

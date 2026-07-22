@@ -31,14 +31,19 @@ main.py es mit reinem MicroPython + struct wieder einlesen kann):
               M Bytes   Dateiinhalt (roh, binaer)
 """
 import os
+import re
+import shutil
 import struct
+import subprocess
 import sys
 import threading
 import base64
 import json
+import tempfile
 from urllib import error, parse, request
 
 BUNDLE_MAGIC = b"FPVBNDL1"
+DEFAULT_PICO_URL = "http://192.168.4.1"
 
 # Dateien, die im Bundle enthalten sein sollen. Muss mit OTA_ALLOWED_TARGETS
 # in main.py uebereinstimmen (dort steht die serverseitige Whitelist).
@@ -99,7 +104,7 @@ def build_bundle(source_dir, output_path, progress_callback=None):
 def normalize_base_url(base_url):
     url = (base_url or "").strip()
     if not url:
-        url = "http://192.168.4.1"
+        url = DEFAULT_PICO_URL
     if not url.startswith("http://") and not url.startswith("https://"):
         url = "http://" + url
     return url.rstrip("/")
@@ -167,6 +172,171 @@ def upload_bundle_to_pico(bundle_path, base_url, progress_callback=None):
     return finalize
 
 
+def _run_mpremote(mpremote_path, args, timeout=120):
+    try:
+        return subprocess.run(
+            [mpremote_path] + args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        err = (e.stderr or e.stdout or "").strip()
+        raise Exception(err or f"mpremote Aufruf fehlgeschlagen: {' '.join(args)}") from e
+    except subprocess.TimeoutExpired as e:
+        raise Exception(f"mpremote Timeout: {' '.join(args)}") from e
+
+
+def _extract_serial_port_from_line(line):
+    patterns = [r"(/dev/tty[^\s,;:]+)", r"(COM\d+)"]
+    for pattern in patterns:
+        m = re.search(pattern, line, re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return None
+
+
+def auto_detect_pico_port(mpremote_path):
+    listing = _run_mpremote(mpremote_path, ["connect", "list"], timeout=15)
+    lines = [line.strip() for line in (listing.stdout or "").splitlines() if line.strip()]
+    if not lines:
+        return None
+
+    preferred = []
+    fallback = []
+    for line in lines:
+        port = _extract_serial_port_from_line(line)
+        if not port:
+            continue
+        fallback.append(port)
+        lowered = line.lower()
+        if ("2e8a" in lowered) or ("raspberry" in lowered) or ("pico" in lowered):
+            preferred.append(port)
+
+    if preferred:
+        return preferred[0]
+    return fallback[0] if fallback else None
+
+
+def upload_bundle_via_serial(bundle_path, progress_callback=None):
+    """Laedt firmware.nbo per USB-Seriell auf den Pico und entpackt direkt."""
+    mpremote_path = shutil.which("mpremote")
+    if not mpremote_path:
+        raise Exception("mpremote nicht gefunden. Bitte 'pip install mpremote' ausfuehren.")
+
+    port = auto_detect_pico_port(mpremote_path)
+    if not port:
+        raise Exception("Kein Pico gefunden. Bitte per USB verbinden und erneut versuchen.")
+    if progress_callback:
+        progress_callback(1, 4, f"Pico gefunden: {port}")
+
+    _run_mpremote(mpremote_path, ["connect", port, "cp", bundle_path, ":firmware.nbo"], timeout=180)
+    if progress_callback:
+        progress_callback(2, 4, "Bundle seriell uebertragen")
+
+    allowed_tuple_literal = repr(tuple(FILES_TO_BUNDLE))
+    unpack_script = f"""import os
+import struct
+import machine
+
+MAGIC = b"FPVBNDL1"
+ALLOWED = {allowed_tuple_literal}
+
+
+def read_exact(f, n):
+    data = bytearray()
+    while len(data) < n:
+        chunk = f.read(n - len(data))
+        if not chunk:
+            break
+        data.extend(chunk)
+    return bytes(data)
+
+
+extracted = []
+with open("firmware.nbo", "rb") as f:
+    if read_exact(f, len(MAGIC)) != MAGIC:
+        raise Exception("Ungueltiges Bundle (Magic)")
+
+    count_bytes = read_exact(f, 4)
+    if len(count_bytes) < 4:
+        raise Exception("Bundle beschaedigt (count)")
+    (count,) = struct.unpack(">I", count_bytes)
+
+    for _ in range(count):
+        name_len_bytes = read_exact(f, 4)
+        if len(name_len_bytes) < 4:
+            raise Exception("Bundle beschaedigt (name len)")
+        (name_len,) = struct.unpack(">I", name_len_bytes)
+
+        name_bytes = read_exact(f, name_len)
+        if len(name_bytes) < name_len:
+            raise Exception("Bundle beschaedigt (name)")
+        name = name_bytes.decode("utf-8")
+
+        content_len_bytes = read_exact(f, 4)
+        if len(content_len_bytes) < 4:
+            raise Exception("Bundle beschaedigt (content len)")
+        (content_len,) = struct.unpack(">I", content_len_bytes)
+
+        if name not in ALLOWED:
+            raise Exception("Datei im Bundle nicht erlaubt: " + name)
+
+        temp_name = name + ".bndl_tmp"
+        remaining = content_len
+        with open(temp_name, "wb") as out:
+            while remaining > 0:
+                chunk = f.read(min(512, remaining))
+                if not chunk:
+                    raise Exception("Bundle beschaedigt (content)")
+                out.write(chunk)
+                remaining -= len(chunk)
+
+        backup_name = "main_backup.py" if name == "main.py" else (name + ".bak")
+        try:
+            with open(name, "r") as old_file:
+                old_content = old_file.read()
+            with open(backup_name, "w") as backup_file:
+                backup_file.write(old_content)
+        except Exception:
+            pass
+
+        try:
+            os.remove(name)
+        except Exception:
+            pass
+        os.rename(temp_name, name)
+        extracted.append(name)
+
+try:
+    os.remove("firmware.nbo")
+except Exception:
+    pass
+
+needs_restart = ("main.py" in extracted)
+print("SERIAL_APPLY_OK:" + ",".join(extracted))
+if needs_restart:
+    machine.reset()
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as tf:
+        tf.write(unpack_script)
+        temp_script_path = tf.name
+    try:
+        if progress_callback:
+            progress_callback(3, 4, "Bundle auf Pico entpacken")
+        _run_mpremote(mpremote_path, ["connect", port, "run", temp_script_path], timeout=180)
+    finally:
+        try:
+            os.remove(temp_script_path)
+        except Exception:
+            pass
+
+    if progress_callback:
+        progress_callback(4, 4, "Bundle auf Pico entpackt")
+    return {"ok": True, "message": f"Serieller Upload abgeschlossen (Pico: {port})."}
+
+
 def run_cli(output_path=None):
     source_dir = os.path.dirname(os.path.abspath(__file__))
     output_path = output_path or os.path.join(source_dir, "firmware.nbo")
@@ -206,7 +376,7 @@ def launch_gui():
 
     root = tk.Tk()
     root.title("FPV Gamification Pico - Firmware Bundle Builder")
-    root.geometry("580x440")
+    root.geometry("680x460")
     root.resizable(False, False)
 
     frame = ttk.Frame(root, padding=12)
@@ -258,14 +428,14 @@ def launch_gui():
     target_frame = ttk.Frame(frame)
     target_frame.pack(fill="x", pady=(0, 10))
     ttk.Label(target_frame, text="Pico URL:").pack(side="left")
-    pico_url_var = tk.StringVar(value="http://192.168.4.1")
+    pico_url_var = tk.StringVar(value=DEFAULT_PICO_URL)
     ttk.Entry(target_frame, textvariable=pico_url_var).pack(side="left", fill="x", expand=True, padx=6)
 
     progress_var = tk.DoubleVar(value=0)
     ttk.Progressbar(frame, variable=progress_var, maximum=100).pack(fill="x", pady=(0, 6))
 
     status_var = tk.StringVar(value="Bereit.")
-    ttk.Label(frame, textvariable=status_var, wraplength=540, justify="left").pack(anchor="w", pady=(0, 10))
+    ttk.Label(frame, textvariable=status_var, wraplength=640, justify="left").pack(anchor="w", pady=(0, 10))
 
     btn_frame = ttk.Frame(frame)
     btn_frame.pack(fill="x")
@@ -273,15 +443,16 @@ def launch_gui():
     build_button.pack(side="left")
     upload_button = ttk.Button(btn_frame, text="Bundle hochladen + entpacken")
     upload_button.pack(side="left", padx=6)
+    serial_upload_button = ttk.Button(btn_frame, text="Seriell hochladen + entpacken (Auto)")
+    serial_upload_button.pack(side="left", padx=6)
     ttk.Button(btn_frame, text="Aktualisieren", command=scan_files).pack(side="left", padx=6)
 
     def build_worker(output_path):
-        def set_build_progress(done, total, filename):
-            progress_var.set(done / total * 100 if total else 100)
-            status_var.set(f"Verpacke {filename} ({done}/{total})...")
-
         def report(done, total, filename):
-            root.after(0, set_build_progress, done, total, filename)
+            def update():
+                progress_var.set(done / total * 100 if total else 100)
+                status_var.set(f"Verpacke {filename} ({done}/{total})...")
+            root.after(0, update)
 
         try:
             included, missing = build_bundle(source_dir, output_path, progress_callback=report)
@@ -296,6 +467,7 @@ def launch_gui():
                 status_var.set(msg)
                 build_button.config(state="normal")
                 upload_button.config(state="normal")
+                serial_upload_button.config(state="normal")
                 messagebox.showinfo("Bundle erstellt", msg)
 
             root.after(0, finish)
@@ -304,6 +476,7 @@ def launch_gui():
                 status_var.set(f"Fehler: {e}")
                 build_button.config(state="normal")
                 upload_button.config(state="normal")
+                serial_upload_button.config(state="normal")
                 messagebox.showerror("Fehler", str(e))
 
             root.after(0, fail)
@@ -319,6 +492,7 @@ def launch_gui():
             return
         build_button.config(state="disabled")
         upload_button.config(state="disabled")
+        serial_upload_button.config(state="disabled")
         progress_var.set(0)
         status_var.set("Starte...")
         threading.Thread(target=build_worker, args=(output_path,), daemon=True).start()
@@ -340,6 +514,7 @@ def launch_gui():
                 status_var.set(msg)
                 upload_button.config(state="normal")
                 build_button.config(state="normal")
+                serial_upload_button.config(state="normal")
                 messagebox.showinfo("OTA erfolgreich", msg)
 
             root.after(0, finish)
@@ -348,6 +523,7 @@ def launch_gui():
                 status_var.set(f"Fehler beim OTA-Upload: {e}")
                 upload_button.config(state="normal")
                 build_button.config(state="normal")
+                serial_upload_button.config(state="normal")
                 messagebox.showerror("OTA-Fehler", str(e))
 
             root.after(0, fail)
@@ -363,12 +539,61 @@ def launch_gui():
         base_url = normalize_base_url(pico_url_var.get())
         upload_button.config(state="disabled")
         build_button.config(state="disabled")
+        serial_upload_button.config(state="disabled")
         progress_var.set(0)
         status_var.set(f"Starte OTA-Upload nach {base_url}...")
         threading.Thread(target=upload_worker, args=(bundle_path, base_url), daemon=True).start()
 
+    def serial_upload_worker(bundle_path):
+        def set_serial_progress(done, total, message):
+            progress_var.set(done / total * 100 if total else 100)
+            status_var.set(message)
+
+        def report(done, total, message):
+            root.after(0, set_serial_progress, done, total, message)
+
+        try:
+            result = upload_bundle_via_serial(bundle_path, progress_callback=report)
+
+            def finish():
+                progress_var.set(100)
+                msg = result.get("message", "Serieller Upload abgeschlossen.")
+                status_var.set(msg)
+                serial_upload_button.config(state="normal")
+                upload_button.config(state="normal")
+                build_button.config(state="normal")
+                messagebox.showinfo("Serieller Upload erfolgreich", msg)
+
+            root.after(0, finish)
+        except Exception as e:
+            def fail():
+                status_var.set(f"Fehler beim seriellen Upload: {e}")
+                serial_upload_button.config(state="normal")
+                upload_button.config(state="normal")
+                build_button.config(state="normal")
+                messagebox.showerror("Serieller Upload-Fehler", str(e))
+
+            root.after(0, fail)
+
+    def start_serial_upload():
+        bundle_path = output_var.get().strip()
+        if not bundle_path:
+            messagebox.showerror("Fehler", "Bitte einen Bundle-Pfad angeben.")
+            return
+        if not os.path.isfile(bundle_path):
+            messagebox.showerror("Fehler", f"Bundle nicht gefunden:\n{bundle_path}")
+            return
+
+        serial_upload_button.config(state="disabled")
+        upload_button.config(state="disabled")
+        build_button.config(state="disabled")
+        progress_var.set(0)
+        status_var.set("Suche Pico ueber USB-Seriell...")
+        threading.Thread(target=serial_upload_worker, args=(bundle_path,), daemon=True).start()
+
     build_button.config(command=start_build)
     upload_button.config(command=start_upload)
+    serial_upload_button.config(command=start_serial_upload)
 
     root.mainloop()
 

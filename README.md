@@ -319,6 +319,11 @@ Im GUI von `build_firmware.py` gibt es zusätzlich den Button **Bundle hochladen
 Damit kannst du ein bereits erstelltes `firmware.nbo` direkt an den Pico senden (Standard-URL
 `http://192.168.4.1`) und sofort serverseitig per `/finalize-upload` entpacken lassen.
 
+Zusätzlich gibt es den Button **Seriell hochladen + entpacken (Auto)**. Damit wird ein per USB
+verbundener Pico automatisch gesucht und ausgewählt, `firmware.nbo` per serieller Verbindung
+übertragen und direkt auf dem Pico entpackt. Voraussetzung: `mpremote` ist auf dem PC installiert
+(`pip install mpremote`).
+
 ### Bundle hochladen:
 
 1. Gehe im Admin-Bereich auf **Update** (`/admin-update`).

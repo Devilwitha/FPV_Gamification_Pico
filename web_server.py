@@ -1,12 +1,14 @@
 import argparse
 import json
 import os
+import shutil
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
 ROUTE_TO_FILE = {
     "/": "index.html",
@@ -20,7 +22,7 @@ ROUTE_TO_FILE = {
 
 class FpvDevHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=SOURCE_DIR, **kwargs)
+        super().__init__(*args, directory=DATA_DIR, **kwargs)
 
     def end_headers(self):
         # Disable browser caching so HTML/CSS/JS changes are visible immediately.
@@ -141,17 +143,34 @@ class FpvDevHandler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
 
+def clone_source_to_data(refresh=False):
+    if refresh and os.path.isdir(DATA_DIR):
+        shutil.rmtree(DATA_DIR)
+
+    if not os.path.isdir(DATA_DIR):
+        shutil.copytree(SOURCE_DIR, DATA_DIR)
+        print("[WEB] Created data clone from source.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Local dev web server for FPV_Gamification_Pico HTML testing.")
     parser.add_argument("--host", default="127.0.0.1", help="Host/IP to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
+    parser.add_argument(
+        "--refresh-data",
+        action="store_true",
+        help="Delete data folder and clone a fresh copy from source before starting.",
+    )
     args = parser.parse_args()
 
     if not os.path.isdir(SOURCE_DIR):
         raise SystemExit(f"Source folder not found: {SOURCE_DIR}")
 
+    clone_source_to_data(refresh=args.refresh_data)
+
     server = ThreadingHTTPServer((args.host, args.port), FpvDevHandler)
-    print(f"Serving source from: {SOURCE_DIR}")
+    print(f"Serving test data from: {DATA_DIR}")
+    print(f"Cloned from source: {SOURCE_DIR}")
     print(f"Open: http://{args.host}:{args.port}/")
     print("Press Ctrl+C to stop.")
 

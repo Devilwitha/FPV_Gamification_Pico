@@ -31,7 +31,7 @@ UMBENENNEN (oder gleich als "main.py" hochladen):
      neu und bootet danach wieder ganz normal (jetzt mit der neuen
      Firmware, nicht mehr mit diesem Recovery-Skript).
 
-Der OTA-Ablauf (Chunk-Upload, Backup, Firmware-Bundle-Entpacken) ist
+Der OTA-Ablauf (Chunk-Upload, Firmware-Bundle-Entpacken) ist
 identisch zum OTA-System der normalen Firmware in main.py.
 """
 import machine
@@ -145,6 +145,7 @@ h1{color:#e74c3c;font-size:1.3em;margin:0 0 6px}
 input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;width:100%;box-sizing:border-box}
 .b{background:#e74c3c;color:#fff;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px 0 0;font-weight:bold;font-family:monospace}
 .b.grey{background:#555}
+.b.dis{background:#555;cursor:not-allowed;opacity:.7}
 .b:hover{filter:brightness(1.1)}
 .st2{margin:0;padding:10px;border-radius:4px;display:none;font-size:.85em}
 .ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}
@@ -152,35 +153,52 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 .pbwrap{display:none;margin:10px 0;height:20px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
 .pbbar{height:100%;width:0%;background:#e74c3c;transition:width .15s ease}
 .pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.72em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
+.toggle{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#335174;transition:.2s;border-radius:24px}
+.slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#e8f0f8;transition:.2s;border-radius:50%}
+input:checked+.slider{background:#e74c3c}
+input:checked+.slider:before{transform:translateX(20px)}
 </style>
 </head>
 <body>
 <div class="c">
 <h1>&#128295; RECOVERY OTA</h1>
-<div class="warn">Notfall-Modus: Es laeuft main2.py statt der normalen Firmware. Keine Telemetrie, kein Score-Tracking - nur OTA-Update.</div>
+<div class="warn">Emergency mode: main2.py is running instead of normal firmware. No telemetry, no score tracking, OTA update only.</div>
 
 <div class="s">
 <h2>Status</h2>
 <div class="st"><span>SSID</span><b>__SSID__</b></div>
-<div class="st"><span>IP-Adresse</span><b>__IP__</b></div>
-<div class="st"><span>Freier Speicher</span><b>__MEMFREE__ KB</b></div>
+<div class="st"><span>IP Address</span><b>__IP__</b></div>
+<div class="st"><span>Free Memory</span><b>__MEMFREE__ KB</b></div>
 </div>
 
 <div class="s">
-<h2>Update hochladen</h2>
-<div style="color:#9fb4cb;font-size:.78em;margin-bottom:6px">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html - oder ein komplettes <b>firmware.nbo</b> Bundle (empfohlen, siehe build_firmware.py)</div>
+<h2>Upload Update</h2>
+<div style="color:#9fb4cb;font-size:.78em;margin-bottom:6px">Allowed: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html - or a full <b>firmware.nbo</b> bundle (recommended, see build_firmware.py)</div>
 <input type="file" id="f" accept=".py,.html,.nbo">
-<div id="fi" style="color:#9fb4cb;font-size:0.85em">Datei waehlen...</div>
+<div id="fi" style="color:#9fb4cb;font-size:0.85em">Choose file...</div>
 <div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
 <div id="s" class="st2"></div>
 <button class="b" onclick="u()">Upload</button>
 <button class="b grey" onclick="r()">Restart</button>
+<button id="ebtnMain" class="b dis" onclick="ewMain()" disabled>Emergency: delete main.py</button>
+<div class="st" style="border-bottom:0;padding-top:8px">
+<span>Arm emergency for main</span>
+<label class="toggle"><input type="checkbox" id="earmMain" onchange="toggleEmergencyMainArm()"><span class="slider"></span></label>
+</div>
+<button id="ebtnBoot" class="b dis" onclick="ewBoot()" disabled>Emergency: delete boot.py</button>
+<div class="st" style="border-bottom:0;padding-top:8px">
+<span>Arm emergency for boot</span>
+<label class="toggle"><input type="checkbox" id="earmBoot" onchange="toggleEmergencyBootArm()"><span class="slider"></span></label>
+</div>
+<div style="color:#9fb4cb;font-size:.78em">Use only for bootloop. Deletes exactly one file and reboots immediately.</div>
 </div>
 </div>
 <script>
 document.getElementById('f').addEventListener('change',function(e){
 const f=e.target.files[0];
-document.getElementById('fi').innerText=f?'Datei: '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)':'Datei waehlen...';
+document.getElementById('fi').innerText=f?'File: '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)':'Choose file...';
 document.getElementById('pbwrap').style.display='none';
 document.getElementById('pbbar').style.width='0%';
 document.getElementById('pbtxt').innerText='';
@@ -193,9 +211,9 @@ return (n&&a.indexOf(n)>=0)?n:'main.py';
 }
 function u(){
 const f=document.getElementById('f').files[0],s=document.getElementById('s');
-if(!f){s.className='st2 err';s.innerText='Keine Datei!';s.style.display='block';return;}
+if(!f){s.className='st2 err';s.innerText='No file selected!';s.style.display='block';return;}
 const nl=f.name.toLowerCase();
-if(!nl.endsWith('.py')&&!nl.endsWith('.html')&&!nl.endsWith('.nbo')){s.className='st2 err';s.innerText='Nur .py, .html oder .nbo Dateien erlaubt!';s.style.display='block';return;}
+if(!nl.endsWith('.py')&&!nl.endsWith('.html')&&!nl.endsWith('.nbo')){s.className='st2 err';s.innerText='Only .py, .html, or .nbo files are allowed!';s.style.display='block';return;}
 const tgt=tgtFromName(f.name);
 const isBinary=nl.endsWith('.nbo');
 const rd=new FileReader();
@@ -215,31 +233,55 @@ let idx=0;
 const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
 function setProgress(p){pbbar.style.width=p+'%';pbtxt.innerText=p+'%';}
 pbwrap.style.display='block';setProgress(0);
-s.innerText='Ziel: '+tgt+' | Upload laeuft...';s.className='st2';s.style.display='block';
+s.innerText='Target: '+tgt+' | Upload in progress...';s.className='st2';s.style.display='block';
 function nc(){
 if(idx>=tc){
 setProgress(100);
 fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{
-if(d.ok){s.className='st2 ok';s.innerText='Fertig: '+d.message+(d.restart?' Neustart laeuft...':' Bitte manuell neu starten (Restart-Button), um in die normale Firmware zu booten.');}
-else{s.className='st2 err';s.innerText='Fehler: '+d.error;}
-}).catch(er=>{s.className='st2 err';s.innerText='Fehler: '+er;});
+if(d.ok){s.className='st2 ok';s.innerText='Done: '+d.message+(d.restart?' Restart in progress...':' Please restart manually (Restart button) to boot normal firmware.');}
+else{s.className='st2 err';s.innerText='Error: '+d.error;}
+}).catch(er=>{s.className='st2 err';s.innerText='Error: '+er;});
 return;
 }
 const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);
 fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&target='+encodeURIComponent(tgt)+'&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{
 if(d.ok){idx++;setProgress(Math.round((idx/tc)*100));nc();}
-else{s.className='st2 err';s.innerText='Fehler: '+d.error;}
-}).catch(er=>{s.className='st2 err';s.innerText='Fehler: '+er;});
+else{s.className='st2 err';s.innerText='Error: '+d.error;}
+}).catch(er=>{s.className='st2 err';s.innerText='Error: '+er;});
 }
 nc();
-}catch(er){s.className='st2 err';s.innerText='Fehler: '+er;s.style.display='block';}
+}catch(er){s.className='st2 err';s.innerText='Error: '+er;s.style.display='block';}
 };
 if(isBinary){rd.readAsArrayBuffer(f);}else{rd.readAsText(f);}
 }
 function r(){
-if(confirm('Pico jetzt neu starten?')){
+if(confirm('Restart Pico now?')){
 fetch('/restart-pico',{cache:'no-store'}).catch(()=>{});
 }
+}
+function toggleEmergencyMainArm(){
+const armed=document.getElementById('earmMain').checked;
+const b=document.getElementById('ebtnMain');
+b.disabled=!armed;
+if(armed){b.classList.remove('dis');}
+else{b.classList.add('dis');}
+}
+function toggleEmergencyBootArm(){
+const armed=document.getElementById('earmBoot').checked;
+const b=document.getElementById('ebtnBoot');
+b.disabled=!armed;
+if(armed){b.classList.remove('dis');}
+else{b.classList.add('dis');}
+}
+function ewMain(){
+if(document.getElementById('ebtnMain').disabled)return;
+if(!confirm('Execute emergency? main.py will be deleted and Pico reboots.'))return;
+fetch('/emergency-delete-main?confirm=1',{cache:'no-store'}).catch(()=>{});
+}
+function ewBoot(){
+if(document.getElementById('ebtnBoot').disabled)return;
+if(!confirm('Execute emergency? boot.py will be deleted and Pico reboots.'))return;
+fetch('/emergency-delete-boot?confirm=1',{cache:'no-store'}).catch(()=>{});
 }
 </script>
 </body>
@@ -454,16 +496,6 @@ async def handle_client(reader, writer):
                     if needs_restart:
                         message += " Starte Neustart..."
                 else:
-                    backup_path = "main_backup.py" if target == "main.py" else (target + ".bak")
-                    try:
-                        with open(target, 'r') as f:
-                            old_content = f.read()
-                        with open(backup_path, 'w') as f:
-                            f.write(old_content)
-                        debug_log(f"[OTA] Backup erstellt: {backup_path} ({len(old_content)} bytes)")
-                    except Exception as e:
-                        debug_log(f"[OTA] Backup-Fehler ({target}): {e}")
-
                     try:
                         os.remove(target)
                     except Exception:
@@ -530,7 +562,7 @@ async def handle_client(reader, writer):
                     pass
 
         elif request_path == '/restart-pico':
-            response = json.dumps({"ok": True, "message": "Pico startet neu..."}).encode('utf-8')
+            response = json.dumps({"ok": True, "message": "Pico is restarting..."}).encode('utf-8')
             writer.write(b'HTTP/1.1 200 OK\r\n')
             writer.write(b'Content-Type: application/json\r\n')
             writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
@@ -551,6 +583,84 @@ async def handle_client(reader, writer):
             await asyncio.sleep_ms(1000)
             debug_log("[RESTART] machine.reset() wird aufgerufen...")
             machine.reset()
+
+        elif request_path == '/emergency-delete-main':
+            confirm = parse_query(query_string).get('confirm', '')
+            if confirm != '1' and body_text:
+                confirm = parse_query(body_text).get('confirm', '')
+            if confirm != '1':
+                response = json.dumps({"ok": False, "error": "Confirmation missing"}).encode('utf-8')
+                writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+            else:
+                deleted = []
+                for path in ("main.py",):
+                    try:
+                        os.remove(path)
+                        deleted.append(path)
+                        debug_log("[EMERGENCY] Geloescht: " + path)
+                    except Exception as e:
+                        debug_log("[EMERGENCY] Konnte nicht loeschen: %s (%s)" % (path, e))
+
+                response = json.dumps({
+                    "ok": True,
+                    "message": "Emergency executed (main.py). Restart in progress.",
+                    "deleted": deleted,
+                }).encode('utf-8')
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+
+                try:
+                    await writer.drain()
+                except Exception:
+                    pass
+                await asyncio.sleep_ms(500)
+                machine.reset()
+
+        elif request_path == '/emergency-delete-boot':
+            confirm = parse_query(query_string).get('confirm', '')
+            if confirm != '1' and body_text:
+                confirm = parse_query(body_text).get('confirm', '')
+            if confirm != '1':
+                response = json.dumps({"ok": False, "error": "Confirmation missing"}).encode('utf-8')
+                writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+            else:
+                deleted = []
+                for path in ("boot.py",):
+                    try:
+                        os.remove(path)
+                        deleted.append(path)
+                        debug_log("[EMERGENCY] Geloescht: " + path)
+                    except Exception as e:
+                        debug_log("[EMERGENCY] Konnte nicht loeschen: %s (%s)" % (path, e))
+
+                response = json.dumps({
+                    "ok": True,
+                    "message": "Emergency executed (boot.py). Restart in progress.",
+                    "deleted": deleted,
+                }).encode('utf-8')
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(response)
+
+                try:
+                    await writer.drain()
+                except Exception:
+                    pass
+                await asyncio.sleep_ms(500)
+                machine.reset()
 
         elif request_path == '/system-info':
             try:

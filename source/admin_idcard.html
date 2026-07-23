@@ -31,31 +31,31 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 </head>
 <body>
 <div class="c">
-<h1>&#128247; FPV AUSWEIS</h1>
+<h1 data-i18n="idcard.title">&#128247; FPV AUSWEIS</h1>
 <div class="nv">
-<a href="/admin">Dashboard</a>
-<a href="/admin-update">Update</a>
-<a href="/admin-simulate">Simulation</a>
-<a href="/admin-profiles">Profile</a>
-<a href="/admin-system">System</a>
-<a href="/admin-idcard" class="on">Ausweis</a>
-<a href="/">Home</a>
+<a href="/admin" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" data-i18n="nav.profiles">Profile</a>
+<a href="/admin-system" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" class="on" data-i18n="nav.idcard">Ausweis</a>
+<a href="/" data-i18n="nav.home">Home</a>
 </div>
 
 <div class="s">
-<h2>Ausweisdatei (Notfall-Kopie auf dem Pico)</h2>
-<div class="note">Dateiname auf dem Pico: <b>FPV_Ausweiss.jpg</b>, <b>FPV_Ausweiss.png</b> oder <b>FPV_Ausweiss.pdf</b>. Es ist immer nur eine Datei gespeichert.</div>
-<div id="fi" class="note">Datei waehlen...</div>
+<h2 data-i18n="idcard.section">Ausweisdatei (Notfall-Kopie auf dem Pico)</h2>
+<div class="note" data-i18n="idcard.note">Dateiname auf dem Pico: <b>FPV_Ausweiss.jpg</b>, <b>FPV_Ausweiss.png</b> oder <b>FPV_Ausweiss.pdf</b>. Es ist immer nur eine Datei gespeichert.</div>
+<div id="fi" class="note" data-i18n="idcard.chooseFile">Datei waehlen...</div>
 <div id="uploadWrap">
 <input type="file" id="f" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf">
 <div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
-<button class="b" onclick="uploadImage()">Datei hochladen</button>
+<button class="b" onclick="uploadImage()" data-i18n="idcard.uploadButton">Datei hochladen</button>
 </div>
 <div id="imgWrap">
 <img id="img" alt="FPV Ausweis">
 <iframe id="pdf" title="FPV Ausweis PDF" style="display:none"></iframe>
 <div>
-<button class="b del" onclick="deleteImage()">Datei loeschen</button>
+<button class="b del" onclick="deleteImage()" data-i18n="idcard.deleteButton">Datei loeschen</button>
 </div>
 </div>
 <div id="s" class="st"></div>
@@ -64,6 +64,27 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 
 <script>
 let selectedFile=null;
+let I18N={strings:{}};
+
+function t(k,f){
+  const v=I18N.strings[k];
+  return typeof v==='string'?v:f;
+}
+
+function applyI18n(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const txt=t(el.getAttribute('data-i18n'),'');
+    if(txt)el.innerHTML=txt;
+  });
+  document.title=t('idcard.pageTitle','Admin - FPV Ausweis');
+}
+
+function loadI18n(){
+  return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+    I18N.strings=d.strings||{};
+    applyI18n();
+  }).catch(()=>{});
+}
 
 function showStatus(ok,msg){
   const s=document.getElementById('s');
@@ -111,14 +132,14 @@ function refreshStatus(){
           img.style.display='block';
           img.src=src;
         }
-        fi.innerText='Gespeichert: '+(d.filename||'FPV_Ausweiss')+' ('+((d.size||0)/1024).toFixed(1)+' KB)';
+        fi.innerText=t('idcard.savedPrefix','Gespeichert: ')+(d.filename||'FPV_Ausweiss')+' ('+((d.size||0)/1024).toFixed(1)+' KB)';
       }else{
         uploadWrap.style.display='block';
         imgWrap.style.display='none';
-        fi.innerText=selectedFile?('Datei: '+selectedFile.name+' ('+(selectedFile.size/1024).toFixed(1)+' KB)'):'Datei waehlen...';
+        fi.innerText=selectedFile?(t('idcard.filePrefix','Datei: ')+selectedFile.name+' ('+(selectedFile.size/1024).toFixed(1)+' KB)'):t('idcard.chooseFile','Datei waehlen...');
       }
     })
-    .catch(e=>showStatus(false,'Status-Fehler: '+e));
+    .catch(e=>showStatus(false,t('idcard.statusError','Status-Fehler: ')+e));
 }
 
 document.getElementById('f').addEventListener('change',function(e){
@@ -129,14 +150,14 @@ document.getElementById('f').addEventListener('change',function(e){
   document.getElementById('pbwrap').style.display='none';
   document.getElementById('pbbar').style.width='0%';
   document.getElementById('pbtxt').innerText='';
-  fi.innerText=selectedFile?('Datei: '+selectedFile.name+' ('+(selectedFile.size/1024).toFixed(1)+' KB)'):'Datei waehlen...';
+  fi.innerText=selectedFile?(t('idcard.filePrefix','Datei: ')+selectedFile.name+' ('+(selectedFile.size/1024).toFixed(1)+' KB)'):t('idcard.chooseFile','Datei waehlen...');
 });
 
 function uploadImage(){
   const f=selectedFile;
-  if(!f){showStatus(false,'Keine Datei ausgewaehlt.');return;}
+  if(!f){showStatus(false,t('idcard.errNoFile','Keine Datei ausgewaehlt.'));return;}
   const ext=inferExt(f.name);
-  if(!ext){showStatus(false,'Nur JPG/JPEG, PNG oder PDF erlaubt.');return;}
+  if(!ext){showStatus(false,t('idcard.errType','Nur JPG/JPEG, PNG oder PDF erlaubt.'));return;}
 
   const rd=new FileReader();
   rd.onload=function(e){
@@ -151,7 +172,7 @@ function uploadImage(){
       const totalChunks=Math.max(1,Math.ceil(b64.length/1024));
       let idx=0;
       setProgress(0);
-      showStatus(true,'Upload laeuft...');
+      showStatus(true,t('idcard.uploadRunning','Upload laeuft...'));
 
       function nextChunk(){
         if(idx>=totalChunks){
@@ -160,15 +181,15 @@ function uploadImage(){
             .then(r=>r.json())
             .then(d=>{
               if(d.ok){
-                showStatus(true,d.message||'FPV-Ausweis gespeichert.');
+                showStatus(true,d.message||t('idcard.savedOk','FPV-Ausweis gespeichert.'));
                 selectedFile=null;
                 document.getElementById('f').value='';
                 refreshStatus();
               }else{
-                showStatus(false,'Finalize-Fehler: '+(d.error||'Unbekannt'));
+                showStatus(false,t('idcard.finalizeError','Finalize-Fehler: ')+(d.error||t('common.unknown','Unbekannt')));
               }
             })
-            .catch(er=>showStatus(false,'Finalize-Fehler: '+er));
+            .catch(er=>showStatus(false,t('idcard.finalizeError','Finalize-Fehler: ')+er));
           return;
         }
 
@@ -186,35 +207,38 @@ function uploadImage(){
             setProgress(Math.round((idx/totalChunks)*100));
             nextChunk();
           }else{
-            showStatus(false,'Upload-Fehler: '+(d.error||'Unbekannt'));
+            showStatus(false,t('idcard.uploadError','Upload-Fehler: ')+(d.error||t('common.unknown','Unbekannt')));
           }
-        }).catch(er=>showStatus(false,'Upload-Fehler: '+er));
+        }).catch(er=>showStatus(false,t('idcard.uploadError','Upload-Fehler: ')+er));
       }
       nextChunk();
     }catch(er){
-      showStatus(false,'Fehler beim Verarbeiten: '+er);
+      showStatus(false,t('idcard.processingError','Fehler beim Verarbeiten: ')+er);
     }
   };
   rd.readAsArrayBuffer(f);
 }
 
 function deleteImage(){
-  if(!confirm('Gespeicherte Datei loeschen und neues Upload erlauben?'))return;
+  if(!confirm(t('idcard.deleteConfirm','Gespeicherte Datei loeschen und neues Upload erlauben?')))return;
   fetch('/idcard-delete',{cache:'no-store'})
     .then(r=>r.json())
     .then(d=>{
       if(d.ok){
-        showStatus(true,'Datei geloescht. Neues Upload ist wieder sichtbar.');
+        showStatus(true,t('idcard.deletedOk','Datei geloescht. Neues Upload ist wieder sichtbar.'));
         refreshStatus();
       }else{
-        showStatus(false,'Loesch-Fehler: '+(d.error||'Unbekannt'));
+        showStatus(false,t('idcard.deleteError','Loesch-Fehler: ')+(d.error||t('common.unknown','Unbekannt')));
       }
     })
-    .catch(e=>showStatus(false,'Loesch-Fehler: '+e));
+    .catch(e=>showStatus(false,t('idcard.deleteError','Loesch-Fehler: ')+e));
 }
 
-refreshStatus();
-setInterval(refreshStatus,5000);
+loadI18n().then(()=>{
+  refreshStatus();
+  setInterval(refreshStatus,5000);
+  setInterval(loadI18n,5000);
+});
 </script>
 </body>
 </html>

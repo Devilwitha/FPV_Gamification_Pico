@@ -46,6 +46,7 @@ jobs:
           python build_firmware.py build/firmware-complete.nbo --mode complete --no-version-bump
           python build_firmware.py build/firmware-light.nbo --mode light --no-version-bump
           python build_firmware.py build/firmware-recovery.nbo --mode recovery --no-version-bump
+          python build_firmware.py build/emergency.nbo --mode bootmain --no-version-bump
         # Erhoeht dabei automatisch die Firmware-Versionsnummer (version.json /
         # firmware_version.txt, Format X.Y.Z -> X.Y.Z+1, siehe build_firmware.py).
 
@@ -74,6 +75,7 @@ jobs:
             build/firmware-complete.nbo
             build/firmware-light.nbo
             build/firmware-recovery.nbo
+            build/emergency.nbo
           retention-days: 90
 
       - name: GitHub Release erstellen
@@ -86,4 +88,5 @@ jobs:
             build/firmware-complete.nbo
             build/firmware-light.nbo
             build/firmware-recovery.nbo
+            build/emergency.nbo
           generate_release_notes: true

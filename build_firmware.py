@@ -69,6 +69,9 @@ DEBUG_LOG_FILE = os.path.join(PROJECT_ROOT, "build_firmware_debug.log")
 VERSION_STATE_FILE = "version.json"
 FIRMWARE_VERSION_FILE = "firmware_version.txt"
 DEFAULT_VERSION = "1.0.0"
+LANGUAGE_BUNDLE_FILENAME = "lang.pak"
+EMERGENCY_BUNDLE_FILENAME = "emergency.nbo"
+LANGUAGE_FALLBACK_PACK = "en.pak"
 
 # Bundle-Modi:
 # - Mit Boot-Stack: boot/recovery + app/web
@@ -82,6 +85,8 @@ BOOT_STACK_FILES_TO_BUNDLE = [
 
 APP_FILES_TO_BUNDLE = [
     "firmware_version.txt",
+    "en.pak",
+    "de.pak",
     "ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
@@ -108,6 +113,8 @@ DEFAULT_INCLUDE_BOOT_STACK = False
 DEFAULT_BUILD_COMPLETE_FIRMWARE = False
 DEFAULT_BUILD_LIGHT_FIRMWARE = False
 DEFAULT_BUILD_RECOVERY_FIRMWARE = False
+DEFAULT_BUILD_LANGUAGE_PACK = False
+DEFAULT_BUILD_BOOT_MAIN_ONLY = False
 MANIFEST_FILE = os.path.join(BUILD_DIR, ".last_bundle_manifest.json")
 
 
@@ -118,6 +125,7 @@ def get_files_to_bundle(include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK):
     return files
 
 OPTIONAL_FILES_TO_BUNDLE = []
+RECOVERY_MODE_FILES_SET = set(RECOVERY_FILES_TO_BUNDLE)
 
 
 def _read_bundle_file_bytes(source_dir, filename):
@@ -126,6 +134,23 @@ def _read_bundle_file_bytes(source_dir, filename):
         with open(file_path, "rb") as f:
             return f.read()
     return None
+
+
+def _classify_bundle_mode(bundle_entries):
+    names = tuple(bundle_entries or ())
+    if not names:
+        return "light"
+    if all(name.endswith(".pak") for name in names):
+        return "language"
+
+    name_set = set(names)
+    if "main.py" in name_set and "boot.py" in name_set:
+        return "complete"
+
+    if name_set and name_set.issubset(RECOVERY_MODE_FILES_SET):
+        return "recovery"
+
+    return "light"
 
 
 def _build_file_signature_map(source_dir):
@@ -159,11 +184,64 @@ def _save_manifest(source_dir):
         f.write("\n")
 
 
-def _resolve_files_to_bundle(source_dir, include_boot_stack, light_mode, recovery_mode=False):
+def _resolve_language_pack_files(source_dir):
+    packs = []
+    try:
+        for filename in os.listdir(source_dir):
+            if not filename.endswith(".pak"):
+                continue
+            if filename == LANGUAGE_FALLBACK_PACK:
+                continue
+            full_path = os.path.join(source_dir, filename)
+            if os.path.isfile(full_path):
+                packs.append(filename)
+    except Exception:
+        pass
+    packs.sort()
+    return packs
+
+
+def _order_bundle_files_for_apply(file_list):
+    """Sichert Apply-Reihenfolge: main.py/boot.py immer zuletzt.
+
+    Wenn beide enthalten sind, wird main.py direkt vor boot.py einsortiert,
+    damit der neue main-Code vor dem neuen Boot-Code auf dem Ziel liegt.
+    """
+    ordered = [name for name in file_list if name not in ("main.py", "boot.py")]
+    if "main.py" in file_list:
+        ordered.append("main.py")
+    if "boot.py" in file_list:
+        ordered.append("boot.py")
+    return ordered
+
+
+def _resolve_files_to_bundle(
+    source_dir,
+    include_boot_stack,
+    light_mode,
+    recovery_mode=False,
+    language_pack_mode=False,
+    boot_main_only_mode=False,
+):
+    if language_pack_mode:
+        return _resolve_language_pack_files(source_dir)
+
+    if boot_main_only_mode:
+        return _order_bundle_files_for_apply(["main.py", "boot.py"])
+
     if recovery_mode:
         base = list(RECOVERY_FILES_TO_BUNDLE)
     else:
         base = get_files_to_bundle(include_boot_stack)
+
+    # Standard-Workflow: en.pak + de.pak im Haupt-Firmware-Bundle.
+    # Weitere Sprachen werden ausschliesslich ueber den lang.pak-Workflow gebaut.
+    filtered_base = []
+    for filename in base:
+        if filename.endswith(".pak") and filename not in ("en.pak", "de.pak"):
+            continue
+        filtered_base.append(filename)
+    base = filtered_base
 
     optional_present = []
     for filename in OPTIONAL_FILES_TO_BUNDLE:
@@ -186,7 +264,7 @@ def _resolve_files_to_bundle(source_dir, include_boot_stack, light_mode, recover
         selected = changed
 
     selected.extend(optional_present)
-    return selected
+    return _order_bundle_files_for_apply(selected)
 
 
 def _debug(message):
@@ -256,6 +334,8 @@ def build_bundle(
     include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK,
     light_mode=DEFAULT_BUILD_LIGHT_FIRMWARE,
     recovery_mode=DEFAULT_BUILD_RECOVERY_FIRMWARE,
+    language_pack_mode=DEFAULT_BUILD_LANGUAGE_PACK,
+    boot_main_only_mode=DEFAULT_BUILD_BOOT_MAIN_ONLY,
     bump_version=True,
 ):
     """Baut das Bundle. progress_callback(done, total, filename) wird nach
@@ -267,10 +347,19 @@ def build_bundle(
     else:
         new_version = _read_version_state(source_dir)
         _debug(f"build_bundle version kept at {new_version}")
-    files_to_bundle = _resolve_files_to_bundle(source_dir, include_boot_stack, light_mode, recovery_mode)
+    files_to_bundle = _resolve_files_to_bundle(
+        source_dir,
+        include_boot_stack,
+        light_mode,
+        recovery_mode,
+        language_pack_mode,
+        boot_main_only_mode,
+    )
     _debug(
         "build_bundle mode: "
-        f"include_boot_stack={include_boot_stack} light_mode={light_mode} recovery_mode={recovery_mode} files={files_to_bundle}"
+        f"include_boot_stack={include_boot_stack} light_mode={light_mode} recovery_mode={recovery_mode} "
+        f"language_pack_mode={language_pack_mode} boot_main_only_mode={boot_main_only_mode} "
+        f"files={files_to_bundle}"
     )
     included = []
     missing = []
@@ -381,6 +470,8 @@ def upload_bundle_to_pico(bundle_path, base_url, progress_callback=None):
     """Lädt ein bestehendes firmware.nbo Bundle per OTA hoch und finalisiert es."""
     base_url = normalize_base_url(base_url)
     _debug(f"upload_bundle_to_pico start: bundle_path={bundle_path} base_url={base_url}")
+    bundle_name = os.path.basename(bundle_path).lower()
+    ota_target = LANGUAGE_BUNDLE_FILENAME if bundle_name == LANGUAGE_BUNDLE_FILENAME else "firmware.nbo"
     with open(bundle_path, "rb") as f:
         raw = f.read()
     b64 = base64.b64encode(raw).decode("ascii")
@@ -395,7 +486,7 @@ def upload_bundle_to_pico(bundle_path, base_url, progress_callback=None):
             {
                 "index": idx,
                 "total": total_chunks,
-                "target": "firmware.nbo",
+                "target": ota_target,
                 "data": chunk,
             },
         )
@@ -425,13 +516,29 @@ def upload_bundle_to_pico(bundle_path, base_url, progress_callback=None):
 
 def _resolve_mpremote_command():
     candidates = []
+    seen = set()
+
+    def add_candidate(cmd):
+        key = tuple(cmd)
+        if key not in seen:
+            seen.add(key)
+            candidates.append(cmd)
+
+    _debug(f"active python executable: {sys.executable}")
+
+    # Prioritaet 1: Projekt-.venv (falls vorhanden), damit Tooling konsistent
+    # im Workspace-Interpreter laeuft statt ueber globale Python-Installationen.
+    venv_python = os.path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe")
+    if os.path.isfile(venv_python):
+        add_candidate([venv_python, "-m", "mpremote"])
+
+    # Prioritaet 2: der aktuell laufende Interpreter.
+    add_candidate([sys.executable, "-m", "mpremote"])
+
+    # Prioritaet 3: standalone mpremote von PATH.
     mpremote_path = shutil.which("mpremote")
     if mpremote_path:
-        candidates.append([mpremote_path])
-
-    # Fallback for setups where mpremote is installed as a Python module
-    # but no standalone mpremote executable is on PATH.
-    candidates.append([sys.executable, "-m", "mpremote"])
+        add_candidate([mpremote_path])
 
     for base_cmd in candidates:
         _debug(f"mpremote candidate test: {' '.join(base_cmd)}")
@@ -453,6 +560,52 @@ def _resolve_mpremote_command():
         "mpremote nicht gefunden. Bitte im aktiven Python installieren: "
         f"'{sys.executable} -m pip install mpremote'"
     )
+
+
+def _cleanup_remote_bundle_artifacts(mpremote_cmd, port, managed_targets=None, remove_targets=None):
+    managed = tuple(managed_targets or ())
+    remove_now = tuple(remove_targets or ())
+    cleanup_script = (
+        "import os\n"
+        f"MANAGED={repr(managed)}\n"
+        f"REMOVE_NOW={repr(remove_now)}\n"
+        "for n in ('firmware.nbo','lang.pak','ota_staging.tmp','update.pbp'):\n"
+        "  try:\n"
+        "    os.remove(n)\n"
+        "  except Exception:\n"
+        "    pass\n"
+        "for name in os.listdir():\n"
+        "  remove=False\n"
+        "  if name in REMOVE_NOW:\n"
+        "    remove=True\n"
+        "  elif name.endswith('.txt') and name!='firmware_version.txt':\n"
+        "    remove=True\n"
+        "  elif name.endswith('.pak'):\n"
+        "    remove=True\n"
+        "  if name=='main_backup.py' and 'main.py' in MANAGED:\n"
+        "    remove=True\n"
+        "  elif name.endswith('.bak'):\n"
+        "    base=name[:-4]\n"
+        "    if base in MANAGED:\n"
+        "      remove=True\n"
+        "  elif name.endswith('.bndl_tmp'):\n"
+        "    base=name[:-9]\n"
+        "    if base in MANAGED:\n"
+        "      remove=True\n"
+        "  if remove:\n"
+        "    try:\n"
+        "      os.remove(name)\n"
+        "    except Exception:\n"
+        "      pass\n"
+        "print('CLEANUP_OK')"
+    )
+    try:
+        _run_mpremote(mpremote_cmd, ["connect", port, "exec", cleanup_script], timeout=20)
+        _debug(f"remote cleanup done on {port}")
+    except Exception as e:
+        # Cleanup ist best effort; ein Fehlschlag hier soll den Upload nicht
+        # sofort abbrechen, kann aber im Debug helfen.
+        _debug(f"remote cleanup skipped on {port}: {_shorten(e)}")
 
 
 def _run_mpremote(mpremote_cmd, args, timeout=120):
@@ -479,6 +632,13 @@ def _run_mpremote(mpremote_cmd, args, timeout=120):
             raise Exception(
                 "Serieller COM-Port ist blockiert oder kein gueltiger Pico-Port. "
                 "Bitte Thonny/Serial-Monitor schliessen, USB kurz neu verbinden und erneut versuchen."
+            ) from e
+
+        if "No space left on device" in err:
+            raise Exception(
+                "Pico-Dateisystem voll: fuer firmware.nbo ist nicht genug Platz frei. "
+                "Tipps: 1) altes Bundle/Temp-Dateien loeschen, 2) Light-Firmware bauen, "
+                "3) unnoetige Dateien auf dem Pico entfernen."
             ) from e
 
         if err:
@@ -555,6 +715,169 @@ def auto_detect_pico_ports(mpremote_cmd):
     return ordered
 
 
+def _read_bundle_entry_names(bundle_path):
+    names = []
+    with open(bundle_path, "rb") as f:
+        magic = f.read(len(BUNDLE_MAGIC))
+        if magic != BUNDLE_MAGIC:
+            raise Exception("Ungueltiges Bundle (Magic)")
+
+        count_bytes = f.read(4)
+        if len(count_bytes) < 4:
+            raise Exception("Bundle beschaedigt (count)")
+        (count,) = struct.unpack(">I", count_bytes)
+
+        for _ in range(count):
+            name_len_bytes = f.read(4)
+            if len(name_len_bytes) < 4:
+                raise Exception("Bundle beschaedigt (name len)")
+            (name_len,) = struct.unpack(">I", name_len_bytes)
+
+            name_bytes = f.read(name_len)
+            if len(name_bytes) < name_len:
+                raise Exception("Bundle beschaedigt (name)")
+            name = name_bytes.decode("utf-8")
+            names.append(name)
+
+            content_len_bytes = f.read(4)
+            if len(content_len_bytes) < 4:
+                raise Exception("Bundle beschaedigt (content len)")
+            (content_len,) = struct.unpack(">I", content_len_bytes)
+            if content_len > 0:
+                f.seek(content_len, os.SEEK_CUR)
+
+    return names
+
+
+def _iter_bundle_entries(bundle_path):
+    with open(bundle_path, "rb") as f:
+        magic = f.read(len(BUNDLE_MAGIC))
+        if magic != BUNDLE_MAGIC:
+            raise Exception("Ungueltiges Bundle (Magic)")
+
+        count_bytes = f.read(4)
+        if len(count_bytes) < 4:
+            raise Exception("Bundle beschaedigt (count)")
+        (count,) = struct.unpack(">I", count_bytes)
+
+        for _ in range(count):
+            name_len_bytes = f.read(4)
+            if len(name_len_bytes) < 4:
+                raise Exception("Bundle beschaedigt (name len)")
+            (name_len,) = struct.unpack(">I", name_len_bytes)
+
+            name_bytes = f.read(name_len)
+            if len(name_bytes) < name_len:
+                raise Exception("Bundle beschaedigt (name)")
+            name = name_bytes.decode("utf-8")
+
+            content_len_bytes = f.read(4)
+            if len(content_len_bytes) < 4:
+                raise Exception("Bundle beschaedigt (content len)")
+            (content_len,) = struct.unpack(">I", content_len_bytes)
+
+            content = f.read(content_len)
+            if len(content) < content_len:
+                raise Exception("Bundle beschaedigt (content)")
+            yield name, content
+
+
+def _apply_bundle_entries_via_serial(mpremote_cmd, port, bundle_path, allowed_names, progress_callback=None):
+    def _is_repl_transport_error(exc):
+        msg = str(exc or "")
+        low = msg.lower()
+        return (
+            "could not enter raw repl" in low
+            or "transporterror" in low
+            or "serial.serialutil.serialexception" in low
+            or "clearcommerror failed" in low
+            or "permissionerror(13" in low
+        )
+
+    allowed_set = set(allowed_names)
+    entries = list(_iter_bundle_entries(bundle_path))
+    if not entries:
+        raise Exception("Bundle enthaelt keine Dateien")
+
+    names = [name for name, _ in entries]
+    disallowed = [name for name in names if name not in allowed_set]
+    if disallowed:
+        raise Exception("Datei im Bundle nicht erlaubt: " + disallowed[0])
+
+    _debug(f"serial direct-apply start on {port}: entries={names}")
+
+    # Vor Direkt-Apply das eventuell bereits kopierte Bundle auf dem Pico loeschen.
+    _cleanup_remote_bundle_artifacts(mpremote_cmd, port, managed_targets=tuple(allowed_names))
+
+    # Alle Ziel-Dateien in EINEM Raw-REPL-Call entfernen, um maximal Platz
+    # zu schaffen und instabile, wiederholte exec-Wechsel pro Datei zu
+    # vermeiden ("could not enter raw repl").
+    delete_script = (
+        "import os\n"
+        f"NAMES={repr(names)}\n"
+        "for n in NAMES:\n"
+        "  try:\n"
+        "    os.remove(n)\n"
+        "  except Exception:\n"
+        "    pass\n"
+        "print('PREDELETE_OK')"
+    )
+    _run_mpremote(
+        mpremote_cmd,
+        ["connect", port, "exec", delete_script],
+        timeout=30,
+    )
+
+    total = len(entries)
+    for idx, (name, content) in enumerate(entries, start=1):
+        if progress_callback:
+            progress_callback(3, 4, f"Direkt-Upload {name} ({idx}/{total})...")
+
+        with tempfile.NamedTemporaryFile("wb", delete=False) as tf:
+            tf.write(content)
+            host_temp_path = tf.name
+        try:
+            last_cp_error = None
+            cp_ok = False
+            for attempt in range(1, 4):
+                try:
+                    _run_mpremote(
+                        mpremote_cmd,
+                        ["connect", port, "cp", host_temp_path, ":" + name],
+                        timeout=240,
+                    )
+                    cp_ok = True
+                    if attempt > 1:
+                        _debug(f"serial direct-apply cp recovered for {name} on attempt {attempt}")
+                    break
+                except Exception as e:
+                    last_cp_error = e
+                    if (attempt >= 3) or (not _is_repl_transport_error(e)):
+                        break
+                    _debug(
+                        "serial direct-apply cp transport error; retrying "
+                        f"{name} attempt {attempt}/3 on {port}: {_shorten(e)}"
+                    )
+                    # Session neu synchronisieren, dann erneut cp versuchen.
+                    try:
+                        _run_mpremote(mpremote_cmd, ["connect", port, "soft-reset"], timeout=20)
+                    except Exception as sr_err:
+                        _debug(f"serial direct-apply soft-reset retry failed on {port}: {_shorten(sr_err)}")
+
+            if not cp_ok:
+                raise Exception(last_cp_error or "Unbekannter cp-Fehler")
+        except Exception as e:
+            raise Exception(f"Direkt-Upload fehlgeschlagen ({name}): {e}")
+        finally:
+            try:
+                os.remove(host_temp_path)
+            except Exception:
+                pass
+
+    _debug(f"serial direct-apply done on {port}: entries={names}")
+    return names
+
+
 def _probe_micropython_port(mpremote_cmd, port):
     _debug(f"probe port start: {port}")
     try:
@@ -577,6 +900,29 @@ def upload_bundle_via_serial(bundle_path, progress_callback=None):
     _debug(f"upload_bundle_via_serial start: bundle_path={bundle_path}")
     mpremote_cmd = _resolve_mpremote_command()
 
+    bundle_name = os.path.basename(bundle_path).lower()
+    bundle_entries = _read_bundle_entry_names(bundle_path)
+    bundle_mode = _classify_bundle_mode(bundle_entries)
+    entries_are_only_language_paks = bool(bundle_entries) and all(name.endswith(".pak") for name in bundle_entries)
+
+    # Modus aus Inhalt ableiten, nicht nur aus Dateiname.
+    language_pack_mode = entries_are_only_language_paks
+
+    # Expliziter Schutz: falsch gebautes Bundle mit lang.pak-Namen frueh stoppen.
+    if bundle_name == LANGUAGE_BUNDLE_FILENAME and not entries_are_only_language_paks:
+        raise Exception(
+            "lang.pak enthaelt keine reinen Sprachpaket-Dateien. "
+            "Bitte mit 'Builde Sprachpaket' neu erstellen und erneut hochladen."
+        )
+
+    remote_bundle_filename = LANGUAGE_BUNDLE_FILENAME if language_pack_mode else "firmware.nbo"
+    remote_device_bundle_path = ":" + remote_bundle_filename
+    _debug(
+        "serial bundle inspection: "
+        f"entries={len(bundle_entries)} bundle_mode={bundle_mode} language_pack_mode={language_pack_mode} "
+        f"remote_name={remote_bundle_filename}"
+    )
+
     ports = auto_detect_pico_ports(mpremote_cmd)
     if not ports:
         raise Exception(
@@ -587,6 +933,23 @@ def upload_bundle_via_serial(bundle_path, progress_callback=None):
     selected_port = None
     bundle_already_copied = False
     last_error = ""
+    if language_pack_mode:
+        managed_targets = tuple(_resolve_language_pack_files(SOURCE_DIR))
+    else:
+        managed_targets = tuple(get_files_to_bundle(True) + OPTIONAL_FILES_TO_BUNDLE)
+
+    if bundle_mode == "complete":
+        predelete_targets = tuple(name for name in managed_targets if name != "copil")
+    elif bundle_mode in ("light", "recovery"):
+        predelete_targets = tuple(name for name in bundle_entries if name in managed_targets and name != "copil")
+    else:
+        predelete_targets = tuple(name for name in bundle_entries if name in managed_targets and name != "copil")
+
+    _debug(
+        "serial managed targets: "
+        f"language_pack_mode={language_pack_mode} bundle_mode={bundle_mode} "
+        f"targets={managed_targets} predelete={predelete_targets}"
+    )
 
     # Schneller Port-Test: auf jedem Port nur kurzer exec-Probe statt kompletter
     # Datei-Transfer. Das ist deutlich schneller als cp auf jedem COM-Port.
@@ -604,7 +967,13 @@ def upload_bundle_via_serial(bundle_path, progress_callback=None):
             if progress_callback:
                 progress_callback(1, 4, f"Fallback-Transfer auf {port} ({idx}/{len(ports)})...")
             try:
-                _run_mpremote(mpremote_cmd, ["connect", port, "cp", bundle_path, DEVICE_BUNDLE_PATH], timeout=240)
+                _cleanup_remote_bundle_artifacts(
+                    mpremote_cmd,
+                    port,
+                    managed_targets=managed_targets,
+                    remove_targets=predelete_targets,
+                )
+                _run_mpremote(mpremote_cmd, ["connect", port, "cp", bundle_path, remote_device_bundle_path], timeout=240)
                 selected_port = port
                 bundle_already_copied = True
                 _debug(f"fallback selected port via cp: {port}")
@@ -615,7 +984,7 @@ def upload_bundle_via_serial(bundle_path, progress_callback=None):
 
     if not selected_port:
         raise Exception(
-            "Konnte firmware.nbo auf keinem gefundenen COM-Port uebertragen. "
+            f"Konnte {remote_bundle_filename} auf keinem gefundenen COM-Port uebertragen. "
             f"Getestete Ports: {', '.join(ports)}. Letzter Fehler: {last_error}"
         )
 
@@ -623,26 +992,62 @@ def upload_bundle_via_serial(bundle_path, progress_callback=None):
     if progress_callback:
         progress_callback(1, 4, f"Pico gefunden: {port}")
 
+    direct_apply_done = False
+    direct_apply_names = []
+
     # Nach erfolgreicher Probe jetzt genau einmal kopieren, falls noch nicht
     # bereits im Fallback-Transfer geschehen.
     if not bundle_already_copied:
         try:
-            _run_mpremote(mpremote_cmd, ["connect", port, "cp", bundle_path, DEVICE_BUNDLE_PATH], timeout=240)
-            _debug(f"bundle copied to {port} at {DEVICE_BUNDLE_PATH}")
+            _cleanup_remote_bundle_artifacts(
+                mpremote_cmd,
+                port,
+                managed_targets=managed_targets,
+                remove_targets=predelete_targets,
+            )
+            _run_mpremote(mpremote_cmd, ["connect", port, "cp", bundle_path, remote_device_bundle_path], timeout=240)
+            _debug(f"bundle copied to {port} at {remote_device_bundle_path}")
         except Exception as e:
-            raise Exception(f"Transfer auf {port} fehlgeschlagen: {e}")
+            msg = str(e)
+            low = msg.lower()
+            no_space = ("pico-dateisystem voll" in low) or ("no space left on device" in low)
+            if no_space:
+                _debug(
+                    "bundle copy hit no-space; switching to direct serial apply "
+                    f"on {port}: {_shorten(msg)}"
+                )
+                direct_apply_names = _apply_bundle_entries_via_serial(
+                    mpremote_cmd,
+                    port,
+                    bundle_path,
+                    managed_targets,
+                    progress_callback=progress_callback,
+                )
+                direct_apply_done = True
+            else:
+                raise Exception(f"Transfer auf {port} fehlgeschlagen: {e}")
 
     if progress_callback:
-        progress_callback(2, 4, "Bundle seriell uebertragen")
+        if direct_apply_done:
+            progress_callback(2, 4, "Direkt-Upload ohne Bundle-Datei aktiv")
+        else:
+            progress_callback(2, 4, "Bundle seriell uebertragen")
 
-    allowed_names = tuple(get_files_to_bundle(True) + OPTIONAL_FILES_TO_BUNDLE)
+    allowed_names = managed_targets
     allowed_tuple_literal = repr(allowed_names)
-    unpack_script = f"""import os
+    bundle_file_literal = repr(remote_bundle_filename)
+    needs_restart = False
+
+    if direct_apply_done:
+        needs_restart = "main.py" in direct_apply_names
+    else:
+        unpack_script = f"""import os
 import struct
 import machine
 
 MAGIC = b"FPVBNDL1"
 ALLOWED = {allowed_tuple_literal}
+BUNDLE_FILE = {bundle_file_literal}
 
 
 def read_exact(f, n):
@@ -656,7 +1061,7 @@ def read_exact(f, n):
 
 
 extracted = []
-with open("firmware.nbo", "rb") as f:
+with open(BUNDLE_FILE, "rb") as f:
     if read_exact(f, len(MAGIC)) != MAGIC:
         raise Exception("Ungueltiges Bundle (Magic)")
 
@@ -684,105 +1089,145 @@ with open("firmware.nbo", "rb") as f:
         if name not in ALLOWED:
             raise Exception("Datei im Bundle nicht erlaubt: " + name)
 
-        temp_name = name + ".bndl_tmp"
-        remaining = content_len
-        with open(temp_name, "wb") as out:
-            while remaining > 0:
-                chunk = f.read(min(512, remaining))
-                if not chunk:
-                    raise Exception("Bundle beschaedigt (content)")
-                out.write(chunk)
-                remaining -= len(chunk)
-
-        backup_name = "main_backup.py" if name == "main.py" else (name + ".bak")
+        # Low-space-Modus: direkt in die Zieldatei schreiben.
         try:
-            with open(name, "r") as old_file:
-                old_content = old_file.read()
-            with open(backup_name, "w") as backup_file:
-                backup_file.write(old_content)
+            os.remove(name + ".bndl_tmp")
         except Exception:
             pass
-
+        # Wichtig bei wenig Flash: alte Zieldatei vor dem Schreiben entfernen,
+        # damit nicht parallel alter+neuer Inhalt Platz belegen.
         try:
             os.remove(name)
         except Exception:
             pass
-        os.rename(temp_name, name)
+
+        remaining = content_len
+        try:
+            with open(name, "wb") as out:
+                while remaining > 0:
+                    chunk = f.read(min(512, remaining))
+                    if not chunk:
+                        raise Exception("Bundle beschaedigt (content)")
+                    out.write(chunk)
+                    remaining -= len(chunk)
+        except OSError as e:
+            raise Exception("Zu wenig Speicher beim Schreiben von " + name + ": " + str(e))
         extracted.append(name)
 
 try:
-    os.remove("firmware.nbo")
+    os.remove(BUNDLE_FILE)
 except Exception:
     pass
+
+# Nur Update-Artefakte entfernen, keine Benutzerdaten.
+for fixed_name in ("update.pbp", "ota_staging.tmp"):
+    try:
+        os.remove(fixed_name)
+    except Exception:
+        pass
+
+for name in os.listdir():
+    remove = False
+    if name == "main_backup.py" and "main.py" in ALLOWED:
+        remove = True
+    elif name.endswith(".bak"):
+        base = name[:-4]
+        if base in ALLOWED:
+            remove = True
+    elif name.endswith(".bndl_tmp"):
+        base = name[:-9]
+        if base in ALLOWED:
+            remove = True
+    if remove:
+        try:
+            os.remove(name)
+        except Exception:
+            pass
 
 needs_restart = ("main.py" in extracted)
 print("SERIAL_APPLY_OK:" + ",".join(extracted))
 print("SERIAL_NEEDS_RESTART:" + ("1" if needs_restart else "0"))
 """
-    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as tf:
-        tf.write(unpack_script)
-        temp_script_path = tf.name
-    try:
-        if progress_callback:
-            progress_callback(3, 4, "Bundle auf Pico entpacken")
-
-        # Port kann sich zwischen Copy und Run aendern (z.B. Reconnect/Lock).
-        # Daher Entpacken robust ueber mehrere erkannte Ports versuchen.
-        unpack_ports = [port]
-        for candidate in auto_detect_pico_ports(mpremote_cmd):
-            if candidate not in unpack_ports:
-                unpack_ports.append(candidate)
-
-        unpack_ok = False
-        needs_restart = False
-        unpack_error = ""
-        for idx, unpack_port in enumerate(unpack_ports, start=1):
-            try:
-                if progress_callback:
-                    progress_callback(3, 4, f"Entpacke auf {unpack_port} ({idx}/{len(unpack_ports)})...")
-
-                # Vor dem Run in einen sauberen REPL-Zustand wechseln.
-                try:
-                    _run_mpremote(mpremote_cmd, ["connect", unpack_port, "soft-reset"], timeout=20)
-                except Exception as sr_err:
-                    _debug(f"soft-reset vor unpack auf {unpack_port} fehlgeschlagen: {_shorten(sr_err)}")
-
-                run_result = _run_mpremote(
-                    mpremote_cmd,
-                    ["connect", unpack_port, "run", temp_script_path],
-                    timeout=240,
-                )
-                run_output = (run_result.stdout or "") + "\n" + (run_result.stderr or "")
-                if "SERIAL_APPLY_OK:" not in run_output:
-                    raise Exception("Entpack-Skript beendet ohne Erfolgsmarker SERIAL_APPLY_OK")
-                needs_restart = "SERIAL_NEEDS_RESTART:1" in run_output
-
-                port = unpack_port
-                unpack_ok = True
-                _debug(f"unpack succeeded on {unpack_port}")
-                break
-            except Exception as e:
-                unpack_error = str(e)
-                _debug(f"unpack failed on {unpack_port}: {_shorten(unpack_error)}")
-
-        if not unpack_ok:
-            raise Exception(
-                "Entpacken auf dem Pico fehlgeschlagen. "
-                f"Getestete Ports: {', '.join(unpack_ports)}. Letzter Fehler: {unpack_error}"
-            )
-    finally:
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as tf:
+            tf.write(unpack_script)
+            temp_script_path = tf.name
         try:
-            os.remove(temp_script_path)
-        except Exception:
-            pass
+            if progress_callback:
+                progress_callback(3, 4, "Bundle auf Pico entpacken")
+
+            # Primär immer auf dem bereits erfolgreich verwendeten Port entpacken.
+            # Das vermeidet lange Fehlversuche auf fremden COM-Ports.
+            unpack_ports = [port]
+
+            unpack_ok = False
+            unpack_error = ""
+            for idx, unpack_port in enumerate(unpack_ports, start=1):
+                try:
+                    if progress_callback:
+                        progress_callback(3, 4, f"Entpacke auf {unpack_port} ({idx}/{len(unpack_ports)})...")
+
+                    # Vor dem Run in einen sauberen REPL-Zustand wechseln.
+                    try:
+                        _run_mpremote(mpremote_cmd, ["connect", unpack_port, "soft-reset"], timeout=20)
+                    except Exception as sr_err:
+                        _debug(f"soft-reset vor unpack auf {unpack_port} fehlgeschlagen: {_shorten(sr_err)}")
+
+                    run_result = _run_mpremote(
+                        mpremote_cmd,
+                        ["connect", unpack_port, "run", temp_script_path],
+                        timeout=240,
+                    )
+                    run_output = (run_result.stdout or "") + "\n" + (run_result.stderr or "")
+                    if "SERIAL_APPLY_OK:" not in run_output:
+                        raise Exception("Entpack-Skript beendet ohne Erfolgsmarker SERIAL_APPLY_OK")
+                    needs_restart = "SERIAL_NEEDS_RESTART:1" in run_output
+
+                    port = unpack_port
+                    unpack_ok = True
+                    _debug(f"unpack succeeded on {unpack_port}")
+                    break
+                except Exception as e:
+                    unpack_error = str(e)
+                    _debug(f"unpack failed on {unpack_port}: {_shorten(unpack_error)}")
+
+            if not unpack_ok:
+                low_space_error = "Zu wenig Speicher beim Schreiben von" in unpack_error
+                if low_space_error and not language_pack_mode:
+                    _debug(
+                        "unpack low-space detected; trying serial direct-apply fallback "
+                        f"on {port}: {_shorten(unpack_error)}"
+                    )
+                    fallback_names = _apply_bundle_entries_via_serial(
+                        mpremote_cmd,
+                        port,
+                        bundle_path,
+                        allowed_names,
+                        progress_callback=progress_callback,
+                    )
+                    needs_restart = "main.py" in fallback_names
+                    unpack_ok = True
+                else:
+                    raise Exception(
+                        "Entpacken auf dem Pico fehlgeschlagen. "
+                        f"Getestete Ports: {', '.join(unpack_ports)}. Letzter Fehler: {unpack_error}"
+                    )
+        finally:
+            try:
+                os.remove(temp_script_path)
+            except Exception:
+                pass
 
     if needs_restart:
         _debug(f"triggering post-unpack reset on {port}")
         try:
             _run_mpremote(mpremote_cmd, ["connect", port, "exec", "import machine; machine.reset()"], timeout=20)
         except Exception as reset_err:
-            # Reset kann die Verbindung sofort trennen; das ist erwartbar.
-            _debug(f"post-unpack reset connection ended on {port}: {_shorten(reset_err)}")
+            # Reset trennt die serielle Session oft sofort (expected).
+            # Kein Fehler fuer den Update-Status, nur als Info protokollieren.
+            _debug(
+                f"post-unpack reset disconnect on {port} is expected; "
+                f"ignoring transport error: {_shorten(reset_err)}"
+            )
 
     if progress_callback:
         progress_callback(4, 4, "Bundle auf Pico entpackt")
@@ -790,13 +1235,21 @@ print("SERIAL_NEEDS_RESTART:" + ("1" if needs_restart else "0"))
     return {
         "ok": True,
         "message": (
-            f"Serieller Dateisystem-Upload abgeschlossen (Pico: {port}, Ziel: {DEVICE_BUNDLE_PATH}) "
+            f"Serieller Dateisystem-Upload abgeschlossen (Pico: {port}, Ziel: {remote_device_bundle_path}) "
             "und auf dem Pico entpackt."
         ),
     }
 
 
-def run_cli(output_path=None, include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK, light_mode=False, recovery_mode=False, bump_version=True):
+def run_cli(
+    output_path=None,
+    include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK,
+    light_mode=False,
+    recovery_mode=False,
+    language_pack_mode=False,
+    boot_main_only_mode=False,
+    bump_version=True,
+):
     source_dir = SOURCE_DIR
     output_path = output_path or os.path.join(BUILD_DIR, "firmware.nbo")
 
@@ -810,6 +1263,8 @@ def run_cli(output_path=None, include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK, lig
         include_boot_stack=include_boot_stack,
         light_mode=light_mode,
         recovery_mode=recovery_mode,
+        language_pack_mode=language_pack_mode,
+        boot_main_only_mode=boot_main_only_mode,
         bump_version=bump_version,
     )
 
@@ -846,7 +1301,7 @@ def launch_gui():
 
     root = tk.Tk()
     root.title("FPV Gamification Pico - Firmware Bundle Builder")
-    root.geometry("680x510")
+    root.geometry("980x560")
     root.resizable(False, False)
 
     frame = ttk.Frame(root, padding=12)
@@ -868,6 +1323,28 @@ def launch_gui():
     include_boot_stack_var = tk.BooleanVar(value=DEFAULT_BUILD_COMPLETE_FIRMWARE)
     build_light_var = tk.BooleanVar(value=DEFAULT_BUILD_LIGHT_FIRMWARE)
     build_recovery_var = tk.BooleanVar(value=DEFAULT_BUILD_RECOVERY_FIRMWARE)
+    build_language_pack_var = tk.BooleanVar(value=DEFAULT_BUILD_LANGUAGE_PACK)
+    build_boot_main_only_var = tk.BooleanVar(value=DEFAULT_BUILD_BOOT_MAIN_ONLY)
+
+    def on_mode_change():
+        if build_language_pack_var.get():
+            include_boot_stack_var.set(False)
+            build_light_var.set(False)
+            build_recovery_var.set(False)
+            build_boot_main_only_var.set(False)
+            output_var.set(os.path.join(BUILD_DIR, LANGUAGE_BUNDLE_FILENAME))
+        elif build_boot_main_only_var.get():
+            include_boot_stack_var.set(False)
+            build_light_var.set(False)
+            build_recovery_var.set(False)
+            build_language_pack_var.set(False)
+            output_var.set(os.path.join(BUILD_DIR, EMERGENCY_BUNDLE_FILENAME))
+        elif build_recovery_var.get():
+            build_language_pack_var.set(False)
+            build_boot_main_only_var.set(False)
+        elif include_boot_stack_var.get() or build_light_var.get():
+            build_boot_main_only_var.set(False)
+        scan_files()
 
     def scan_files():
         _debug("GUI scan_files triggered")
@@ -877,6 +1354,8 @@ def launch_gui():
             include_boot_stack=include_boot_stack_var.get(),
             light_mode=build_light_var.get(),
             recovery_mode=build_recovery_var.get(),
+            language_pack_mode=build_language_pack_var.get(),
+            boot_main_only_mode=build_boot_main_only_var.get(),
         )
         for filename in selected:
             file_path = os.path.join(source_dir, filename)
@@ -897,19 +1376,31 @@ def launch_gui():
         mode_frame,
         text="Builde Komplette Firmware",
         variable=include_boot_stack_var,
-        command=scan_files,
+        command=on_mode_change,
     ).pack(anchor="w")
     ttk.Checkbutton(
         mode_frame,
         text="Builde Ligth Firmware",
         variable=build_light_var,
-        command=scan_files,
+        command=on_mode_change,
     ).pack(anchor="w")
     ttk.Checkbutton(
         mode_frame,
         text="Builde Recovery",
         variable=build_recovery_var,
-        command=scan_files,
+        command=on_mode_change,
+    ).pack(anchor="w")
+    ttk.Checkbutton(
+        mode_frame,
+        text="Builde Sprachpaket (lang.pak ohne en.pak)",
+        variable=build_language_pack_var,
+        command=on_mode_change,
+    ).pack(anchor="w")
+    ttk.Checkbutton(
+        mode_frame,
+        text="Builde Emergency (emergency.nbo: nur main.py + boot.py)",
+        variable=build_boot_main_only_var,
+        command=on_mode_change,
     ).pack(anchor="w")
 
     path_frame = ttk.Frame(frame)
@@ -948,20 +1439,48 @@ def launch_gui():
     build_button.pack(side="left")
     upload_button = ttk.Button(btn_frame, text="Bundle hochladen + entpacken")
     upload_button.pack(side="left", padx=6)
+    lang_upload_button = ttk.Button(btn_frame, text="lang.pak hochladen")
+    lang_upload_button.pack(side="left", padx=6)
+    lang_serial_upload_button = ttk.Button(btn_frame, text="lang.pak seriell uebertragen")
+    lang_serial_upload_button.pack(side="left", padx=6)
     serial_upload_button = ttk.Button(btn_frame, text="Seriell ins Dateisystem + entpacken (Auto)")
     serial_upload_button.pack(side="left", padx=6)
     ttk.Button(btn_frame, text="Aktualisieren", command=scan_files).pack(side="left", padx=6)
 
     def build_worker(output_path):
+        output_name = os.path.basename(output_path).lower()
+        output_is_lang_bundle = output_name == LANGUAGE_BUNDLE_FILENAME
         include_boot_stack = include_boot_stack_var.get()
         light_mode = build_light_var.get()
         recovery_mode = build_recovery_var.get()
+        language_pack_mode = build_language_pack_var.get()
+        boot_main_only_mode = build_boot_main_only_var.get()
+
+        # Schutz gegen Fehlbedienung: wenn der Ausgabename lang.pak ist,
+        # muss auch wirklich Sprachpaket-Modus aktiv sein.
+        if output_is_lang_bundle and not language_pack_mode:
+            language_pack_mode = True
+
+        if boot_main_only_mode:
+            include_boot_stack = False
+            light_mode = False
+            recovery_mode = False
+            language_pack_mode = False
         if recovery_mode:
             include_boot_stack = False
             light_mode = False
+            language_pack_mode = False
+            boot_main_only_mode = False
+        if language_pack_mode:
+            include_boot_stack = False
+            light_mode = False
+            recovery_mode = False
+            boot_main_only_mode = False
         _debug(
             "GUI build_worker start: "
-            f"output_path={output_path} include_boot_stack={include_boot_stack} light_mode={light_mode} recovery_mode={recovery_mode}"
+            f"output_path={output_path} include_boot_stack={include_boot_stack} light_mode={light_mode} "
+            f"recovery_mode={recovery_mode} language_pack_mode={language_pack_mode} "
+            f"boot_main_only_mode={boot_main_only_mode}"
         )
         def report(done, total, filename):
             def update():
@@ -977,19 +1496,30 @@ def launch_gui():
                 include_boot_stack=include_boot_stack,
                 light_mode=light_mode,
                 recovery_mode=recovery_mode,
+                language_pack_mode=language_pack_mode,
+                boot_main_only_mode=boot_main_only_mode,
             )
             total_size = sum(size for _, size in included)
             bundle_size = os.path.getsize(output_path)
             current_version = _read_version_state(source_dir)
+            total_size_kb = total_size / 1024.0
+            bundle_size_kb = bundle_size / 1024.0
 
             def finish():
                 progress_var.set(100)
-                msg = f"Fertig: {output_path}\nFirmware-Version: {current_version}\n{len(included)} Datei(en), {total_size} B Inhalt, {bundle_size} B Bundle."
+                msg = (
+                    f"Fertig: {output_path}\n"
+                    f"Firmware-Version: {current_version}\n"
+                    f"{len(included)} Datei(en), {total_size} B ({total_size_kb:.1f} KB) Inhalt, "
+                    f"{bundle_size} B ({bundle_size_kb:.1f} KB) Bundle."
+                )
                 if missing:
                     msg += f"\nFehlend (uebersprungen): {', '.join(missing)}"
                 status_var.set(msg)
                 build_button.config(state="normal")
                 upload_button.config(state="normal")
+                lang_upload_button.config(state="normal")
+                lang_serial_upload_button.config(state="normal")
                 serial_upload_button.config(state="normal")
                 messagebox.showinfo("Bundle erstellt", msg)
 
@@ -1002,6 +1532,8 @@ def launch_gui():
                 status_var.set(f"Fehler: {err_text}")
                 build_button.config(state="normal")
                 upload_button.config(state="normal")
+                lang_upload_button.config(state="normal")
+                lang_serial_upload_button.config(state="normal")
                 serial_upload_button.config(state="normal")
                 messagebox.showerror("Fehler", err_text)
 
@@ -1013,11 +1545,21 @@ def launch_gui():
         if not output_path:
             messagebox.showerror("Fehler", "Bitte einen Ausgabepfad angeben.")
             return
+
+        output_name = os.path.basename(output_path).lower()
+        effective_language_pack_mode = build_language_pack_var.get() or (output_name == LANGUAGE_BUNDLE_FILENAME)
+        effective_boot_main_only_mode = False if effective_language_pack_mode else build_boot_main_only_var.get()
+        effective_recovery_mode = False if (effective_language_pack_mode or effective_boot_main_only_mode) else build_recovery_var.get()
+        effective_include_boot_stack = False if (effective_recovery_mode or effective_language_pack_mode or effective_boot_main_only_mode) else include_boot_stack_var.get()
+        effective_light_mode = False if (effective_recovery_mode or effective_language_pack_mode or effective_boot_main_only_mode) else build_light_var.get()
+
         active_files = _resolve_files_to_bundle(
             source_dir,
-            include_boot_stack=(False if build_recovery_var.get() else include_boot_stack_var.get()),
-            light_mode=(False if build_recovery_var.get() else build_light_var.get()),
-            recovery_mode=build_recovery_var.get(),
+            include_boot_stack=effective_include_boot_stack,
+            light_mode=effective_light_mode,
+            recovery_mode=effective_recovery_mode,
+            language_pack_mode=effective_language_pack_mode,
+            boot_main_only_mode=effective_boot_main_only_mode,
         )
         present = [f for f in active_files if os.path.isfile(os.path.join(source_dir, f))]
         if not present:
@@ -1025,6 +1567,8 @@ def launch_gui():
             return
         build_button.config(state="disabled")
         upload_button.config(state="disabled")
+        lang_upload_button.config(state="disabled")
+        lang_serial_upload_button.config(state="disabled")
         serial_upload_button.config(state="disabled")
         progress_var.set(0)
         status_var.set("Starte...")
@@ -1047,6 +1591,8 @@ def launch_gui():
                 msg = finalize.get("message", "Upload abgeschlossen.")
                 status_var.set(msg)
                 upload_button.config(state="normal")
+                lang_upload_button.config(state="normal")
+                lang_serial_upload_button.config(state="normal")
                 build_button.config(state="normal")
                 serial_upload_button.config(state="normal")
                 messagebox.showinfo("OTA erfolgreich", msg)
@@ -1059,6 +1605,8 @@ def launch_gui():
             def fail():
                 status_var.set(f"Fehler beim OTA-Upload: {err_text}")
                 upload_button.config(state="normal")
+                lang_upload_button.config(state="normal")
+                lang_serial_upload_button.config(state="normal")
                 build_button.config(state="normal")
                 serial_upload_button.config(state="normal")
                 messagebox.showerror("OTA-Fehler", err_text)
@@ -1076,10 +1624,36 @@ def launch_gui():
             return
         base_url = normalize_base_url(pico_url_var.get())
         upload_button.config(state="disabled")
+        lang_upload_button.config(state="disabled")
+        lang_serial_upload_button.config(state="disabled")
         build_button.config(state="disabled")
         serial_upload_button.config(state="disabled")
         progress_var.set(0)
         status_var.set(f"Starte OTA-Upload nach {base_url}...")
+        threading.Thread(target=upload_worker, args=(bundle_path, base_url), daemon=True).start()
+
+    def start_upload_language_pack():
+        bundle_path = output_var.get().strip()
+        if os.path.basename(bundle_path).lower() != LANGUAGE_BUNDLE_FILENAME:
+            bundle_path = os.path.join(BUILD_DIR, LANGUAGE_BUNDLE_FILENAME)
+
+        _debug(f"GUI start_upload_language_pack called: bundle_path={bundle_path}")
+        if not os.path.isfile(bundle_path):
+            messagebox.showerror(
+                "Fehler",
+                f"Sprachpaket nicht gefunden:\n{bundle_path}\n\n"
+                "Erstelle zuerst ein Sprachpaket (Mode: Builde Sprachpaket).",
+            )
+            return
+
+        base_url = normalize_base_url(pico_url_var.get())
+        lang_upload_button.config(state="disabled")
+        lang_serial_upload_button.config(state="disabled")
+        upload_button.config(state="disabled")
+        build_button.config(state="disabled")
+        serial_upload_button.config(state="disabled")
+        progress_var.set(0)
+        status_var.set(f"Starte OTA-Upload von lang.pak nach {base_url}...")
         threading.Thread(target=upload_worker, args=(bundle_path, base_url), daemon=True).start()
 
     def serial_upload_worker(bundle_path):
@@ -1100,6 +1674,8 @@ def launch_gui():
                 status_var.set(msg)
                 serial_upload_button.config(state="normal")
                 upload_button.config(state="normal")
+                lang_upload_button.config(state="normal")
+                lang_serial_upload_button.config(state="normal")
                 build_button.config(state="normal")
                 messagebox.showinfo("Serieller Upload erfolgreich", msg)
 
@@ -1112,6 +1688,8 @@ def launch_gui():
                 status_var.set(f"Fehler beim seriellen Upload: {err_text}")
                 serial_upload_button.config(state="normal")
                 upload_button.config(state="normal")
+                lang_upload_button.config(state="normal")
+                lang_serial_upload_button.config(state="normal")
                 build_button.config(state="normal")
                 messagebox.showerror("Serieller Upload-Fehler", err_text)
 
@@ -1129,13 +1707,40 @@ def launch_gui():
 
         serial_upload_button.config(state="disabled")
         upload_button.config(state="disabled")
+        lang_upload_button.config(state="disabled")
+        lang_serial_upload_button.config(state="disabled")
         build_button.config(state="disabled")
         progress_var.set(0)
         status_var.set("Suche Pico ueber USB-Seriell...")
         threading.Thread(target=serial_upload_worker, args=(bundle_path,), daemon=True).start()
 
+    def start_serial_upload_language_pack():
+        bundle_path = output_var.get().strip()
+        if os.path.basename(bundle_path).lower() != LANGUAGE_BUNDLE_FILENAME:
+            bundle_path = os.path.join(BUILD_DIR, LANGUAGE_BUNDLE_FILENAME)
+
+        _debug(f"GUI start_serial_upload_language_pack called: bundle_path={bundle_path}")
+        if not os.path.isfile(bundle_path):
+            messagebox.showerror(
+                "Fehler",
+                f"Sprachpaket nicht gefunden:\n{bundle_path}\n\n"
+                "Erstelle zuerst ein Sprachpaket (Mode: Builde Sprachpaket).",
+            )
+            return
+
+        lang_serial_upload_button.config(state="disabled")
+        serial_upload_button.config(state="disabled")
+        upload_button.config(state="disabled")
+        lang_upload_button.config(state="disabled")
+        build_button.config(state="disabled")
+        progress_var.set(0)
+        status_var.set("Suche Pico ueber USB-Seriell fuer lang.pak...")
+        threading.Thread(target=serial_upload_worker, args=(bundle_path,), daemon=True).start()
+
     build_button.config(command=start_build)
     upload_button.config(command=start_upload)
+    lang_upload_button.config(command=start_upload_language_pack)
+    lang_serial_upload_button.config(command=start_serial_upload_language_pack)
     serial_upload_button.config(command=start_serial_upload)
 
     root.mainloop()
@@ -1152,25 +1757,35 @@ def main():
 
     parser = argparse.ArgumentParser(description="FPV Firmware Bundle Builder")
     parser.add_argument("output_path", nargs="?", default=os.path.join(BUILD_DIR, "firmware.nbo"))
-    parser.add_argument("--mode", choices=["normal", "complete", "light", "recovery"], default="normal")
+    parser.add_argument("--mode", choices=["normal", "complete", "light", "recovery", "lang", "bootmain"], default="normal")
     parser.add_argument("--no-version-bump", action="store_true", help="Version nicht automatisch erhoehen")
     args = parser.parse_args()
 
     include_boot_stack = False
     light_mode = False
     recovery_mode = False
+    language_pack_mode = False
+    boot_main_only_mode = False
     if args.mode == "complete":
         include_boot_stack = True
     elif args.mode == "light":
         light_mode = True
     elif args.mode == "recovery":
         recovery_mode = True
+    elif args.mode == "lang":
+        language_pack_mode = True
+        if args.output_path == os.path.join(BUILD_DIR, "firmware.nbo"):
+            args.output_path = os.path.join(BUILD_DIR, LANGUAGE_BUNDLE_FILENAME)
+    elif args.mode == "bootmain":
+        boot_main_only_mode = True
 
     run_cli(
         args.output_path,
         include_boot_stack=include_boot_stack,
         light_mode=light_mode,
         recovery_mode=recovery_mode,
+        language_pack_mode=language_pack_mode,
+        boot_main_only_mode=boot_main_only_mode,
         bump_version=(not args.no_version_bump),
     )
 

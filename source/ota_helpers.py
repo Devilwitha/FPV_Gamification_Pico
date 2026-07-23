@@ -217,7 +217,7 @@ def read_exact(f, n):
 def apply_firmware_bundle(bundle_path, allowed_targets, bundle_magic, log=_noop_log, feed_wdt=_noop_feed_wdt):
     """Entpackt ein per build_firmware.py erzeugtes Firmware-Bundle
     (firmware.nbo) und ersetzt jede enthaltene Datei einzeln auf dem
-    Pico-Dateisystem (mit Backup, wie beim Einzeldatei-OTA-Update).
+    Pico-Dateisystem ohne Backup-Dateien, um Flash-Spitzen zu vermeiden.
     Jeder Dateiname im Bundle wird gegen `allowed_targets` geprueft, bevor
     irgendetwas geschrieben wird (kein beliebiges Ueberschreiben von
     Dateien moeglich).
@@ -268,16 +268,6 @@ def apply_firmware_bundle(bundle_path, allowed_targets, bundle_magic, log=_noop_
                         raise Exception(f"Bundle beschaedigt (Inhalt unvollstaendig: {filename})")
                     out.write(chunk)
                     remaining -= len(chunk)
-
-            feed_wdt()
-            backup_path = "main_backup.py" if filename == "main.py" else (filename + ".bak")
-            try:
-                with open(filename, 'r') as old_f:
-                    old_content = old_f.read()
-                with open(backup_path, 'w') as bk:
-                    bk.write(old_content)
-            except Exception as e:
-                log(f"[OTA BUNDLE] Backup-Fehler ({filename}): {e}")
 
             try:
                 os.remove(filename)

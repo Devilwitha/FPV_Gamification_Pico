@@ -22,32 +22,38 @@ h1{color:#2980b9;font-size:1.3em;margin:0 0 10px}
 </head>
 <body>
 <div class="c">
-<h1>&#127917; TRICK-SIMULATION</h1>
+<h1 data-i18n="simulate.title">&#127917; TRICK-SIMULATION</h1>
 <div class="nv">
-<a href="/admin">Dashboard</a>
-<a href="/admin-update">Update</a>
-<a href="/admin-simulate" class="on">Simulation</a>
-<a href="/admin-profiles">Profile</a>
-<a href="/admin-system">System</a>
-<a href="/admin-idcard">Ausweis</a>
-<a href="/">Home</a>
+<a href="/admin" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" class="on" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" data-i18n="nav.profiles">Profile</a>
+<a href="/admin-system" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
+<a href="/" data-i18n="nav.home">Home</a>
 </div>
 <div class="s">
-<h2>Ohne Drohne testen</h2>
-<div id="simst">Bereit...</div>
-<button class="b" onclick="sim('roll')">Roll</button>
-<button class="b flip" onclick="sim('flip')">Flip</button>
-<button class="b spin" onclick="sim('spin')">Spin</button>
+<h2 data-i18n="simulate.section">Ohne Drohne testen</h2>
+<div id="simst" data-i18n="simulate.ready">Bereit...</div>
+<button class="b" onclick="sim('roll')" data-i18n="simulate.roll">Roll</button>
+<button class="b flip" onclick="sim('flip')" data-i18n="simulate.flip">Flip</button>
+<button class="b spin" onclick="sim('spin')" data-i18n="simulate.spin">Spin</button>
 </div>
 </div>
 <script>
-function sim(t){
+let I18N={strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const s=t(el.getAttribute('data-i18n'),'');if(s)el.innerHTML=s;});document.title=t('simulate.pageTitle','Admin - Simulation');}
+function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n();}).catch(()=>{});}
+function sim(kind){
 const s=document.getElementById('simst');
-s.innerText='Simuliere '+t+'...';
-fetch('/simulate-trick?type='+t,{cache:'no-store'}).then(r=>r.json()).then(d=>{
-s.innerText=d.ok?(d.trick?('OK: '+d.trick+' (+'+d.points+' Pkt)'):'Kein Trick erkannt (Schwellenwerte pruefen)'):'Fehler: '+d.error;
+s.innerText=t('simulate.running','Simuliere ') + kind + '...';
+fetch('/simulate-trick?type='+kind,{cache:'no-store'}).then(r=>r.json()).then(d=>{
+s.innerText=d.ok?(d.trick?('OK: '+d.trick+' (+'+d.points+' '+t('simulate.points','Pkt')+')'):t('simulate.noTrick','Kein Trick erkannt (Schwellenwerte pruefen)')):(t('common.errorPrefix','Fehler: ')+d.error);
 }).catch(er=>{s.innerText='Fehler: '+er;});
 }
+loadI18n();
+setInterval(loadI18n,5000);
 </script>
 </body>
 </html>

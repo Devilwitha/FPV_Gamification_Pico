@@ -1,1 +1,294 @@
-<!DOCTYPE html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Profile</title><style>body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}h1{color:#27ae60;font-size:1.3em;margin:0 0 10px}.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #27ae60;border-radius:8px}.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:#1a2637;color:#9fb4cb;border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}.nv a.on{background:#27ae60;color:#fff;border-color:#27ae60;font-weight:bold}.s{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:10px 0}.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}.p{background:#161e2e;padding:8px;margin:5px 0;border-left:3px solid #2980b9;display:flex;justify-content:space-between;align-items:center}.p.a{border-left-color:#27ae60;background:#1a3a2a}.b{padding:8px 12px;border:0;border-radius:4px;cursor:pointer;margin:2px;font-weight:bold;font-family:monospace;font-size:.9em}.bp{background:#27ae60;color:#fff}.bp:hover{filter:brightness(1.1)}.bs{background:#2980b9;color:#fff}.bs:hover{filter:brightness(1.1)}.bd{background:#c0392b;color:#fff}.bd:hover{filter:brightness(1.1)}textarea{width:100%;height:200px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;padding:8px;box-sizing:border-box;font:11px monospace}input[type=text],input[type=file]{width:100%;padding:8px;margin:8px 0;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;box-sizing:border-box}.st{margin:10px 0;padding:10px;border-radius:4px;display:none}.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}.r{display:flex;gap:8px}.r>*{flex:1}</style></head><body><div class=c><h1>PROFILE</h1><div class=nv><a href=/admin>Dashboard</a><a href=/admin-update>Update</a><a href=/admin-simulate>Simulation</a><a href=/admin-profiles class=on>Profile</a><a href=/admin-system>System</a><a href=/admin-idcard>Ausweis</a><a href=/>Home</a></div><div class=s><h2>Copter/Pilot (copil)</h2><div class=r><input type=text id=CN placeholder="Copter Name"><input type=text id=PN placeholder="Pilot Name"></div><div id=CPS class=st></div><button class="b bp" onclick=sc()>Save Copil</button></div><div class=s><h2>Available Profiles</h2><div id=L style="max-height:200px;overflow-y:auto;background:#0b1320;padding:10px;border-radius:4px">Loading...</div></div><div class=s><h2>New Profile</h2><input type=text id=N placeholder="Name"><textarea id=D placeholder='{"gyro_trick_threshold":190,"stable_threshold":65,"trick_start_hold_ms":35,"stable_hold_ms":140,"gyro_deadband":12,"gyro_lowpass_alpha":0.3,"min_trick_duration":0.12,"trick_min_accum_deg":80,"trick_spin_min_accum_deg":120,"trick_axis_dominance_ratio":1.18,"trick_start_type_weight":0.92}'></textarea><div id=CS class=st></div><button class="b bp" onclick=c()>Create</button></div><div class=s><h2>Upload Profile</h2><input type=file id=F accept=.pro><div id=FI style="color:#9fb4cb;font-size:.9em">No file</div><div id=US class=st></div><button class="b bp" onclick=f()>Upload</button></div></div><script>let sf=null;function lc(){fetch('/copil-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok&&d.copil){document.getElementById('CN').value=d.copil.copter_name||'Test';document.getElementById('PN').value=d.copil.pilot_name||'Test';}}).catch(()=>{});}function sc(){const cn=document.getElementById('CN').value.trim(),pn=document.getElementById('PN').value.trim(),s=document.getElementById('CPS');const fd=new URLSearchParams();fd.append('copter_name',cn);fd.append('pilot_name',pn);fetch('/set-copil',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){s.className='st ok';s.innerText='Copil gespeichert';lc();}else{s.className='st err';s.innerText='Error: '+(d.error||'save failed');}s.style.display='block';}).catch(e=>{s.className='st err';s.innerText='Error: '+e;s.style.display='block';});}function l(){fetch('/profiles-list',{cache:'no-store'}).then(r=>r.json()).then(d=>{const pl=document.getElementById('L');if(!d.profiles||d.profiles.length===0){pl.innerHTML='No profiles';return;}let h='';for(let p of d.profiles){const bi=['beginner','freestyle','aggressive'].includes(p.name);const ac=p.active?' a':'';h+='<div class="p'+ac+'"><span>'+p.name+(p.active?' ACTIVE':'')+'</span><div>';h+='<button class="b bs" onclick="dl(\''+p.name+'\')" title=Download>DL</button>';if(!bi)h+='<button class="b bd" onclick="delp(\''+p.name+'\')" title=Delete>DEL</button>';h+='<button class="b bp" onclick="ap(\''+p.name+'\')" title=Apply>Apply</button>';h+='</div></div>';}pl.innerHTML=h;}).catch(e=>{document.getElementById('L').innerHTML='Error: '+e;});}function c(){const n=document.getElementById('N').value.trim(),d=document.getElementById('D').value.trim(),s=document.getElementById('CS');if(!n){s.className='st err';s.innerText='Name required';s.style.display='block';return;}if(['beginner','freestyle','aggressive'].includes(n.toLowerCase())){s.className='st err';s.innerText='Cannot overwrite built-in profile';s.style.display='block';return;}let pd;try{pd=JSON.parse(d);}catch(e){s.className='st err';s.innerText='Invalid JSON: '+e;s.style.display='block';return;}const fd=new URLSearchParams();fd.append('name',n);fd.append('data',JSON.stringify(pd));fetch('/create-profile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){s.className='st ok';s.innerText='Created: '+n;document.getElementById('N').value='';document.getElementById('D').value='';l();}else{s.className='st err';s.innerText='Error: '+d.error;}s.style.display='block';}).catch(e=>{s.className='st err';s.innerText='Error: '+e;s.style.display='block';});}document.getElementById('F').addEventListener('change',function(e){const f=e.target.files[0];if(f){sf=f;document.getElementById('FI').innerText='File: '+f.name;}});function f(){if(!sf){document.getElementById('US').className='st err';document.getElementById('US').innerText='No file';document.getElementById('US').style.display='block';return;}const rd=new FileReader();rd.onload=function(e){try{const ct=e.target.result;let pd=JSON.parse(ct);const pn=sf.name.endsWith('.pro')?sf.name.slice(0,-4):sf.name;const fd=new URLSearchParams();fd.append('name',pn);fd.append('data',JSON.stringify(pd));document.getElementById('US').innerText='Uploading...';document.getElementById('US').className='st';document.getElementById('US').style.display='block';fetch('/create-profile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){document.getElementById('US').className='st ok';document.getElementById('US').innerText='Uploaded: '+pn;l();sf=null;document.getElementById('F').value='';document.getElementById('FI').innerText='No file';}else{document.getElementById('US').className='st err';document.getElementById('US').innerText='Error: '+d.error;}}).catch(e=>{document.getElementById('US').className='st err';document.getElementById('US').innerText='Error: '+e;});}catch(e){document.getElementById('US').className='st err';document.getElementById('US').innerText='Error: '+e;document.getElementById('US').style.display='block';}};rd.readAsText(sf);}function dl(n){fetch('/download-profile?name='+encodeURIComponent(n),{cache:'no-store'}).then(r=>r.blob()).then(b=>{const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=n+'.pro';a.click();URL.revokeObjectURL(u);}).catch(e=>alert('Error: '+e));}function delp(n){if(!confirm('Delete '+n+'?'))return;fetch('/delete-profile?name='+encodeURIComponent(n),{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){l();}else{alert('Error: '+d.error);}}).catch(e=>alert('Error: '+e));}function ap(n){fetch('/apply-profile?name='+encodeURIComponent(n),{cache:'no-store'}).then(r=>r.json()).then(d=>{if(d.ok){l();}else{alert('Error: '+d.error);}}).catch(e=>alert('Error: '+e));}lc();l();setInterval(l,3000);</script></body></html>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Profiles</title>
+<style>
+body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}
+h1{color:#27ae60;font-size:1.3em;margin:0 0 10px}
+.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #27ae60;border-radius:8px}
+.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:#1a2637;color:#9fb4cb;border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}
+.nv a.on{background:#27ae60;color:#fff;border-color:#27ae60;font-weight:bold}
+.s{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:10px 0}
+.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}
+.p{background:#161e2e;padding:8px;margin:5px 0;border-left:3px solid #2980b9;display:flex;justify-content:space-between;align-items:center}
+.p.a{border-left-color:#27ae60;background:#1a3a2a}
+.b{padding:8px 12px;border:0;border-radius:4px;cursor:pointer;margin:2px;font-weight:bold;font-family:monospace;font-size:.9em}
+.bp{background:#27ae60;color:#fff}
+.bp:hover{filter:brightness(1.1)}
+.bs{background:#2980b9;color:#fff}
+.bs:hover{filter:brightness(1.1)}
+.bd{background:#c0392b;color:#fff}
+.bd:hover{filter:brightness(1.1)}
+textarea{width:100%;height:200px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;padding:8px;box-sizing:border-box;font:11px monospace}
+input[type=text],input[type=file]{width:100%;padding:8px;margin:8px 0;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;box-sizing:border-box}
+.st{margin:10px 0;padding:10px;border-radius:4px;display:none}
+.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}
+.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}
+.r{display:flex;gap:8px}
+.r>*{flex:1}
+</style>
+</head>
+<body>
+<div class="c">
+<h1 data-i18n="profiles.title">PROFILES</h1>
+<div class="nv">
+<a href="/admin" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" class="on" data-i18n="nav.profiles">Profiles</a>
+<a href="/admin-system" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" data-i18n="nav.idcard">ID Card</a>
+<a href="/" data-i18n="nav.home">Home</a>
+</div>
+
+<div class="s">
+<h2 data-i18n="profiles.copilSection">Copter/Pilot (copil)</h2>
+<div class="r">
+<input type="text" id="CN" placeholder="Copter Name" data-i18n-ph="profiles.copterPlaceholder">
+<input type="text" id="PN" placeholder="Pilot Name" data-i18n-ph="profiles.pilotPlaceholder">
+</div>
+<div id="CPS" class="st"></div>
+<button class="b bp" onclick="saveCopil()" data-i18n="profiles.saveCopil">Save Copil</button>
+</div>
+
+<div class="s">
+<h2 data-i18n="profiles.availableSection">Available Profiles</h2>
+<div id="L" style="max-height:200px;overflow-y:auto;background:#0b1320;padding:10px;border-radius:4px" data-i18n="profiles.loading">Loading...</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="profiles.newSection">New Profile</h2>
+<input type="text" id="N" placeholder="Name" data-i18n-ph="profiles.namePlaceholder">
+<textarea id="D" placeholder='{"gyro_trick_threshold":190,"stable_threshold":65,"trick_start_hold_ms":35,"stable_hold_ms":140,"gyro_deadband":12,"gyro_lowpass_alpha":0.3,"min_trick_duration":0.12,"trick_min_accum_deg":80,"trick_spin_min_accum_deg":120,"trick_axis_dominance_ratio":1.18,"trick_start_type_weight":0.92}' data-i18n-ph="profiles.dataPlaceholder"></textarea>
+<div id="CS" class="st"></div>
+<button class="b bp" onclick="createProfile()" data-i18n="profiles.create">Create</button>
+</div>
+
+<div class="s">
+<h2 data-i18n="profiles.uploadSection">Upload Profile</h2>
+<input type="file" id="F" accept=".pro">
+<div id="FI" style="color:#9fb4cb;font-size:.9em" data-i18n="profiles.noFile">No file</div>
+<div id="US" class="st"></div>
+<button class="b bp" onclick="uploadProfile()" data-i18n="profiles.upload">Upload</button>
+</div>
+</div>
+
+<script>
+let I18N={lang:'de',strings:{}};
+let selectedFile=null;
+
+function t(k,f){
+	const v=I18N.strings[k];
+	return typeof v==='string'?v:f;
+}
+
+function applyI18n(){
+	document.querySelectorAll('[data-i18n]').forEach(el=>{
+		const txt=t(el.getAttribute('data-i18n'),'');
+		if(txt)el.innerHTML=txt;
+	});
+	document.querySelectorAll('[data-i18n-ph]').forEach(el=>{
+		const txt=t(el.getAttribute('data-i18n-ph'),'');
+		if(txt)el.placeholder=txt;
+	});
+	document.title=t('profiles.pageTitle','Admin - Profiles');
+}
+
+function loadI18n(){
+	return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+		I18N.lang=d.lang||'de';
+		I18N.strings=d.strings||{};
+		applyI18n();
+	}).catch(()=>{});
+}
+
+function showStatus(el, ok, text){
+	el.className='st '+(ok?'ok':'err');
+	el.innerText=text;
+	el.style.display='block';
+}
+
+function loadCopil(){
+	fetch('/copil-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+		if(d.ok&&d.copil){
+			document.getElementById('CN').value=d.copil.copter_name||'Test';
+			document.getElementById('PN').value=d.copil.pilot_name||'Test';
+		}
+	}).catch(()=>{});
+}
+
+function saveCopil(){
+	const cn=document.getElementById('CN').value.trim();
+	const pn=document.getElementById('PN').value.trim();
+	const status=document.getElementById('CPS');
+	const fd=new URLSearchParams();
+	fd.append('copter_name',cn);
+	fd.append('pilot_name',pn);
+	fetch('/set-copil',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{
+		if(d.ok){
+			showStatus(status,true,t('profiles.copilSaved','Copil saved'));
+			loadCopil();
+		}else{
+			showStatus(status,false,t('common.errorPrefix','Error: ')+(d.error||t('profiles.copilSaveFailed','save failed')));
+		}
+	}).catch(e=>showStatus(status,false,t('common.errorPrefix','Error: ')+e));
+}
+
+function renderProfiles(list){
+	const box=document.getElementById('L');
+	if(!list||list.length===0){
+		box.innerHTML=t('profiles.noProfiles','No profiles');
+		return;
+	}
+	let html='';
+	for(let i=0;i<list.length;i++){
+		const p=list[i];
+		const builtIn=['beginner','freestyle','aggressive'].includes(p.name);
+		const activeClass=p.active?' a':'';
+		const activeLabel=p.active?(' '+t('profiles.activeTag','ACTIVE')):'';
+		html+='<div class="p'+activeClass+'"><span>'+p.name+activeLabel+'</span><div>';
+		html+='<button class="b bs" onclick="downloadProfile(\''+p.name+'\')" title="'+t('profiles.download','Download')+'">'+t('profiles.download','Download')+'</button>';
+		if(!builtIn){
+			html+='<button class="b bd" onclick="deleteProfile(\''+p.name+'\')" title="'+t('profiles.delete','Delete')+'">'+t('profiles.delete','Delete')+'</button>';
+		}
+		html+='<button class="b bp" onclick="applyProfile(\''+p.name+'\')" title="'+t('profiles.apply','Apply')+'">'+t('profiles.apply','Apply')+'</button>';
+		html+='</div></div>';
+	}
+	box.innerHTML=html;
+}
+
+function loadProfiles(){
+	fetch('/profiles-list',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+		renderProfiles(d.profiles||[]);
+	}).catch(e=>{
+		document.getElementById('L').innerHTML=t('common.errorPrefix','Error: ')+e;
+	});
+}
+
+function createProfile(){
+	const name=document.getElementById('N').value.trim();
+	const raw=document.getElementById('D').value.trim();
+	const status=document.getElementById('CS');
+
+	if(!name){
+		showStatus(status,false,t('profiles.nameRequired','Name required'));
+		return;
+	}
+	if(['beginner','freestyle','aggressive'].includes(name.toLowerCase())){
+		showStatus(status,false,t('profiles.builtinLocked','Cannot overwrite built-in profile'));
+		return;
+	}
+
+	let parsed;
+	try{
+		parsed=JSON.parse(raw);
+	}catch(e){
+		showStatus(status,false,t('profiles.invalidJson','Invalid JSON: ')+e);
+		return;
+	}
+
+	const fd=new URLSearchParams();
+	fd.append('name',name);
+	fd.append('data',JSON.stringify(parsed));
+	fetch('/create-profile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{
+		if(d.ok){
+			showStatus(status,true,t('profiles.createdPrefix','Created: ')+name);
+			document.getElementById('N').value='';
+			document.getElementById('D').value='';
+			loadProfiles();
+		}else{
+			showStatus(status,false,t('common.errorPrefix','Error: ')+d.error);
+		}
+	}).catch(e=>showStatus(status,false,t('common.errorPrefix','Error: ')+e));
+}
+
+document.getElementById('F').addEventListener('change',function(e){
+	const file=e.target.files[0];
+	if(file){
+		selectedFile=file;
+		document.getElementById('FI').innerText=t('profiles.filePrefix','File: ')+file.name;
+	}
+});
+
+function uploadProfile(){
+	const status=document.getElementById('US');
+	if(!selectedFile){
+		showStatus(status,false,t('profiles.noFile','No file'));
+		return;
+	}
+
+	const reader=new FileReader();
+	reader.onload=function(e){
+		try{
+			const parsed=JSON.parse(e.target.result);
+			const profileName=selectedFile.name.endsWith('.pro')?selectedFile.name.slice(0,-4):selectedFile.name;
+			const fd=new URLSearchParams();
+			fd.append('name',profileName);
+			fd.append('data',JSON.stringify(parsed));
+
+			status.className='st';
+			status.innerText=t('profiles.uploading','Uploading...');
+			status.style.display='block';
+
+			fetch('/create-profile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{
+				if(d.ok){
+					showStatus(status,true,t('profiles.uploadedPrefix','Uploaded: ')+profileName);
+					loadProfiles();
+					selectedFile=null;
+					document.getElementById('F').value='';
+					document.getElementById('FI').innerText=t('profiles.noFile','No file');
+				}else{
+					showStatus(status,false,t('common.errorPrefix','Error: ')+(d.error||t('profiles.uploadFailed','upload failed')));
+				}
+			}).catch(err=>showStatus(status,false,t('common.errorPrefix','Error: ')+err));
+		}catch(err){
+			showStatus(status,false,t('common.errorPrefix','Error: ')+err);
+		}
+	};
+	reader.readAsText(selectedFile);
+}
+
+function downloadProfile(name){
+	fetch('/download-profile?name='+encodeURIComponent(name),{cache:'no-store'}).then(r=>r.blob()).then(b=>{
+		const u=URL.createObjectURL(b);
+		const a=document.createElement('a');
+		a.href=u;
+		a.download=name+'.pro';
+		a.click();
+		URL.revokeObjectURL(u);
+	}).catch(e=>alert(t('common.errorPrefix','Error: ')+e+' ('+t('profiles.downloadFailed','download failed')+')'));
+}
+
+function deleteProfile(name){
+	if(!confirm(t('profiles.deleteConfirm','Delete ')+name+'?')) return;
+	fetch('/delete-profile?name='+encodeURIComponent(name),{cache:'no-store'}).then(r=>r.json()).then(d=>{
+		if(d.ok){
+			loadProfiles();
+		}else{
+			alert(t('common.errorPrefix','Error: ')+(d.error||t('profiles.deleteFailed','delete failed')));
+		}
+	}).catch(e=>alert(t('common.errorPrefix','Error: ')+e));
+}
+
+function applyProfile(name){
+	fetch('/apply-profile?name='+encodeURIComponent(name),{cache:'no-store'}).then(r=>r.json()).then(d=>{
+		if(d.ok){
+			loadProfiles();
+		}else{
+			alert(t('common.errorPrefix','Error: ')+(d.error||t('profiles.applyFailed','apply failed')));
+		}
+	}).catch(e=>alert(t('common.errorPrefix','Error: ')+e));
+}
+
+loadI18n().then(()=>{
+	loadCopil();
+	loadProfiles();
+	setInterval(loadProfiles,3000);
+	setInterval(loadI18n,5000);
+});
+</script>
+</body>
+</html>

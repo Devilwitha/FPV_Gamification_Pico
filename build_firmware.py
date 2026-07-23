@@ -83,6 +83,8 @@ BOOT_STACK_FILES_TO_BUNDLE = [
 APP_FILES_TO_BUNDLE = [
     "firmware_version.txt",
     "ota_helpers.py",
+    "idcard_helpers.py",
+    "misc_routes_helpers.py",
     "main.py",
     "index.html",
     "admin_dashboard.html",
@@ -90,6 +92,7 @@ APP_FILES_TO_BUNDLE = [
     "admin_simulate.html",
     "admin_profiles.html",
     "admin_system.html",
+    "admin_idcard.html",
 ]
 
 RECOVERY_FILES_TO_BUNDLE = [
@@ -843,7 +846,7 @@ def launch_gui():
 
     root = tk.Tk()
     root.title("FPV Gamification Pico - Firmware Bundle Builder")
-    root.geometry("680x460")
+    root.geometry("680x510")
     root.resizable(False, False)
 
     frame = ttk.Frame(root, padding=12)

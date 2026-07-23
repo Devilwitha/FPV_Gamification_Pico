@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - FPV Ausweis</title>
+<style>
+body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}
+h1{color:#f1c40f;font-size:1.3em;margin:0 0 10px}
+.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #f1c40f;border-radius:8px}
+.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:#1a2637;color:#9fb4cb;border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}
+.nv a.on{background:#f1c40f;color:#2b2302;border-color:#f1c40f;font-weight:bold}
+.s{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:10px 0}
+.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}
+.st{margin:10px 0;padding:10px;border-radius:4px;display:none}
+.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}
+.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}
+input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;width:100%;box-sizing:border-box}
+.b{background:#f1c40f;color:#2b2302;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px;font-weight:bold;font-family:monospace}
+.b:hover{filter:brightness(1.08)}
+.b.del{background:#c0392b;color:#fff;font-size:.78em;padding:5px 9px;margin-top:6px}
+.pbwrap{display:none;margin:10px 0;height:20px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
+.pbbar{height:100%;width:0%;background:#f1c40f;transition:width .15s ease}
+.pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.72em;font-weight:bold;color:#1b1601}
+#imgWrap{display:none}
+#img{max-width:100%;max-height:320px;border:1px solid #335174;border-radius:6px;background:#0b1320}
+#pdf{width:100%;height:360px;border:1px solid #335174;border-radius:6px;background:#0b1320}
+.note{color:#9fb4cb;font-size:.82em}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>&#128247; FPV AUSWEIS</h1>
+<div class="nv">
+<a href="/admin">Dashboard</a>
+<a href="/admin-update">Update</a>
+<a href="/admin-simulate">Simulation</a>
+<a href="/admin-profiles">Profile</a>
+<a href="/admin-system">System</a>
+<a href="/admin-idcard" class="on">Ausweis</a>
+<a href="/">Home</a>
+</div>
+
+<div class="s">
+<h2>Ausweisdatei (Notfall-Kopie auf dem Pico)</h2>
+<div class="note">Dateiname auf dem Pico: <b>FPV_Ausweiss.jpg</b>, <b>FPV_Ausweiss.png</b> oder <b>FPV_Ausweiss.pdf</b>. Es ist immer nur eine Datei gespeichert.</div>
+<div id="fi" class="note">Datei waehlen...</div>
+<div id="uploadWrap">
+<input type="file" id="f" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf">
+<div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
+<button class="b" onclick="uploadImage()">Datei hochladen</button>
+</div>
+<div id="imgWrap">
+<img id="img" alt="FPV Ausweis">
+<iframe id="pdf" title="FPV Ausweis PDF" style="display:none"></iframe>
+<div>
+<button class="b del" onclick="deleteImage()">Datei loeschen</button>
+</div>
+</div>
+<div id="s" class="st"></div>
+</div>
+</div>
+
+<script>
+let selectedFile=null;
+
+function showStatus(ok,msg){
+  const s=document.getElementById('s');
+  s.className='st '+(ok?'ok':'err');
+  s.innerText=msg;
+  s.style.display='block';
+}
+
+function setProgress(p){
+  const wrap=document.getElementById('pbwrap');
+  const bar=document.getElementById('pbbar');
+  const txt=document.getElementById('pbtxt');
+  wrap.style.display='block';
+  bar.style.width=p+'%';
+  txt.innerText=p+'%';
+}
+
+function inferExt(name){
+  const n=(name||'').toLowerCase();
+  if(n.endsWith('.pdf'))return 'pdf';
+  if(n.endsWith('.png'))return 'png';
+  if(n.endsWith('.jpg')||n.endsWith('.jpeg'))return 'jpg';
+  return '';
+}
+
+function refreshStatus(){
+  fetch('/idcard-status',{cache:'no-store'})
+    .then(r=>r.json())
+    .then(d=>{
+      const uploadWrap=document.getElementById('uploadWrap');
+      const imgWrap=document.getElementById('imgWrap');
+      const img=document.getElementById('img');
+      const pdf=document.getElementById('pdf');
+      const fi=document.getElementById('fi');
+      if(d.exists){
+        const src='/idcard-image?t='+Date.now();
+        uploadWrap.style.display='none';
+        imgWrap.style.display='block';
+        if((d.mime||'').toLowerCase()==='application/pdf'){
+          img.style.display='none';
+          pdf.style.display='block';
+          pdf.src=src;
+        }else{
+          pdf.style.display='none';
+          img.style.display='block';
+          img.src=src;
+        }
+        fi.innerText='Gespeichert: '+(d.filename||'FPV_Ausweiss')+' ('+((d.size||0)/1024).toFixed(1)+' KB)';
+      }else{
+        uploadWrap.style.display='block';
+        imgWrap.style.display='none';
+        fi.innerText=selectedFile?('Datei: '+selectedFile.name+' ('+(selectedFile.size/1024).toFixed(1)+' KB)'):'Datei waehlen...';
+      }
+    })
+    .catch(e=>showStatus(false,'Status-Fehler: '+e));
+}
+
+document.getElementById('f').addEventListener('change',function(e){
+  selectedFile=e.target.files[0]||null;
+  const fi=document.getElementById('fi');
+  const st=document.getElementById('s');
+  st.style.display='none';
+  document.getElementById('pbwrap').style.display='none';
+  document.getElementById('pbbar').style.width='0%';
+  document.getElementById('pbtxt').innerText='';
+  fi.innerText=selectedFile?('Datei: '+selectedFile.name+' ('+(selectedFile.size/1024).toFixed(1)+' KB)'):'Datei waehlen...';
+});
+
+function uploadImage(){
+  const f=selectedFile;
+  if(!f){showStatus(false,'Keine Datei ausgewaehlt.');return;}
+  const ext=inferExt(f.name);
+  if(!ext){showStatus(false,'Nur JPG/JPEG, PNG oder PDF erlaubt.');return;}
+
+  const rd=new FileReader();
+  rd.onload=function(e){
+    try{
+      const b=new Uint8Array(e.target.result);
+      let bn='';
+      for(let i=0;i<b.length;i+=10240){
+        const ch=b.slice(i,i+10240);
+        for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);
+      }
+      const b64=btoa(bn);
+      const totalChunks=Math.max(1,Math.ceil(b64.length/1024));
+      let idx=0;
+      setProgress(0);
+      showStatus(true,'Upload laeuft...');
+
+      function nextChunk(){
+        if(idx>=totalChunks){
+          setProgress(100);
+          fetch('/idcard-finalize',{cache:'no-store'})
+            .then(r=>r.json())
+            .then(d=>{
+              if(d.ok){
+                showStatus(true,d.message||'FPV-Ausweis gespeichert.');
+                selectedFile=null;
+                document.getElementById('f').value='';
+                refreshStatus();
+              }else{
+                showStatus(false,'Finalize-Fehler: '+(d.error||'Unbekannt'));
+              }
+            })
+            .catch(er=>showStatus(false,'Finalize-Fehler: '+er));
+          return;
+        }
+
+        const start=idx*1024;
+        const end=Math.min(start+1024,b64.length);
+        const chunk=b64.substring(start,end);
+        fetch('/idcard-upload-chunk',{
+          method:'POST',
+          headers:{'Content-Type':'application/x-www-form-urlencoded'},
+          body:'index='+idx+'&total='+totalChunks+'&ext='+encodeURIComponent(ext)+'&data='+encodeURIComponent(chunk),
+          cache:'no-store'
+        }).then(r=>r.json()).then(d=>{
+          if(d.ok){
+            idx++;
+            setProgress(Math.round((idx/totalChunks)*100));
+            nextChunk();
+          }else{
+            showStatus(false,'Upload-Fehler: '+(d.error||'Unbekannt'));
+          }
+        }).catch(er=>showStatus(false,'Upload-Fehler: '+er));
+      }
+      nextChunk();
+    }catch(er){
+      showStatus(false,'Fehler beim Verarbeiten: '+er);
+    }
+  };
+  rd.readAsArrayBuffer(f);
+}
+
+function deleteImage(){
+  if(!confirm('Gespeicherte Datei loeschen und neues Upload erlauben?'))return;
+  fetch('/idcard-delete',{cache:'no-store'})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.ok){
+        showStatus(true,'Datei geloescht. Neues Upload ist wieder sichtbar.');
+        refreshStatus();
+      }else{
+        showStatus(false,'Loesch-Fehler: '+(d.error||'Unbekannt'));
+      }
+    })
+    .catch(e=>showStatus(false,'Loesch-Fehler: '+e));
+}
+
+refreshStatus();
+setInterval(refreshStatus,5000);
+</script>
+</body>
+</html>

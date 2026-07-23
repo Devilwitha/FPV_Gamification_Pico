@@ -194,6 +194,8 @@ system_ready = False
 ota_update_active = False
 ota_led_cycle_start_ms = 0
 boot_health_marked = False
+_idcard_route_handler = None
+_misc_route_handler = None
 # Developer-Modus (Schiebeschalter auf der System-Seite): standardmaessig AUS,
 # dann akzeptiert OTA nur komplette firmware.nbo Bundles. Erst wenn aktiviert,
 # duerfen auch einzelne .py/.html Dateien per OTA hochgeladen werden.
@@ -210,10 +212,12 @@ OTA_STAGING_PATH = "ota_staging.tmp"
 OTA_ALLOWED_TARGETS = (
     "boot.py", "recovery.py", "hotspot_common.py", "boot_runtime.py",
     "ota_helpers.py",
+    "idcard_helpers.py",
+    "misc_routes_helpers.py",
     "copil",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
-    "admin_profiles.html", "admin_system.html",
+    "admin_profiles.html", "admin_system.html", "admin_idcard.html",
     "firmware_version.txt",
 )
 # Spezial-Ziel: ein Firmware-Bundle (siehe build_firmware.py), das mehrere
@@ -1306,12 +1310,14 @@ async def telemetry_loop():
 #   /admin-simulate  -> Trick-Simulation (Testen ohne Drohne)
 #   /admin-profiles  -> Trick-Tuning-Profile verwalten
 #   /admin-system    -> System-Info + manueller Restart
+#   /admin-idcard    -> FPV-Ausweisbild verwalten
 INDEX_HTML_PATH = "index.html"
 ADMIN_DASHBOARD_HTML_PATH = "admin_dashboard.html"
 ADMIN_UPDATE_HTML_PATH = "admin_update.html"
 ADMIN_SIMULATE_HTML_PATH = "admin_simulate.html"
 ADMIN_PROFILES_HTML_PATH = "admin_profiles.html"
 ADMIN_SYSTEM_HTML_PATH = "admin_system.html"
+ADMIN_IDCARD_HTML_PATH = "admin_idcard.html"
 
 
 async def send_html_file(writer, file_path):
@@ -1786,340 +1792,96 @@ async def _handle_restart_pico(writer):
     machine.reset()
 
 
-async def _handle_misc_routes(writer, request_path, request_method, query_params, body_params):
+async def _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
     global TRICK_TUNING_PROFILE, DEVELOPER_MODE_ENABLED
+    global _idcard_route_handler, _misc_route_handler
 
-    if request_path == '/admin-profiles':
-        await send_html_file(writer, ADMIN_PROFILES_HTML_PATH)
+    if request_path == '/admin-idcard':
+        await send_html_file(writer, ADMIN_IDCARD_HTML_PATH)
         return True
 
-    if request_path == '/admin-system':
-        await send_html_file(writer, ADMIN_SYSTEM_HTML_PATH)
-        return True
+    if request_path.startswith('/idcard-'):
+        if _idcard_route_handler is None:
+            from idcard_helpers import handle_idcard_route as _lazy_idcard_route_handler
+            _idcard_route_handler = _lazy_idcard_route_handler
+        if await _idcard_route_handler(
+            writer,
+            request_path,
+            request_method,
+            body_text,
+            body_params,
+            url_decode,
+            safe_base64_file_to_file,
+        ):
+            return True
 
-    if request_path == '/system-info':
-        try:
-            mem_free = gc.mem_free()
-        except Exception:
-            mem_free = -1
-        try:
-            mem_alloc = gc.mem_alloc()
-        except Exception:
-            mem_alloc = -1
+    if _misc_route_handler is None:
+        from misc_routes_helpers import handle_misc_routes as _lazy_misc_route_handler
+        _misc_route_handler = _lazy_misc_route_handler
 
-        ip_addr = ""
-        if ENABLE_HOTSPOT:
-            try:
-                ip_addr = network.WLAN(network.AP_IF).ifconfig()[0]
-            except Exception:
-                ip_addr = ""
+    def _save_system_settings_with_value(enabled):
+        global DEVELOPER_MODE_ENABLED
+        DEVELOPER_MODE_ENABLED = bool(enabled)
+        return save_system_settings()
 
-        info_data = {
-            "mem_free": mem_free,
-            "mem_alloc": mem_alloc,
-            "uptime_s": time.ticks_ms() // 1000,
-            "ssid": AP_SSID,
-            "ip": ip_addr,
-            "hotspot_enabled": ENABLE_HOTSPOT,
-            "trick_tuning_profile": TRICK_TUNING_PROFILE,
-            "score": detector.score,
-            "highscore": highscore_data["score"],
-            "ota_active": ota_update_active,
-            "ota_received_chunks": ota_received_chunks,
-            "ota_total_chunks": ota_total_chunks,
-            "developer_mode": DEVELOPER_MODE_ENABLED,
-            "firmware_version": FIRMWARE_VERSION,
-        }
-        response_data = json.dumps(info_data).encode('utf-8')
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response_data)
-        return True
-
-    if request_path == '/profiles-list':
-        profiles_list = list_profile_files()
-        profiles_data = []
-        for prof in profiles_list:
-            profiles_data.append({
-                "name": prof,
-                "active": prof == TRICK_TUNING_PROFILE
-            })
-
-        response_data = json.dumps({"ok": True, "profiles": profiles_data}).encode('utf-8')
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response_data)
-        return True
-
-    if request_path == '/copil-info':
-        response_data = json.dumps({"ok": True, "copil": _get_copil_payload()}).encode('utf-8')
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response_data)
-        return True
-
-    if request_path == '/set-copil' and request_method == 'POST':
-        copter_name = body_params.get('copter_name', '').strip()
-        pilot_name = body_params.get('pilot_name', '').strip()
-        ok, err = _save_copil_names(copter_name, pilot_name)
-        if ok:
-            response = json.dumps({"ok": True, "copil": _get_copil_payload()}).encode('utf-8')
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-        else:
-            response = json.dumps({"ok": False, "error": err}).encode('utf-8')
-            writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response)
-        return True
-
-    if request_path == '/create-profile' and request_method == 'POST':
-        profile_name = body_params.get('name', '').strip()
-        profile_data_str = body_params.get('data', '').strip()
-
-        if not profile_name or not profile_data_str:
-            response = json.dumps({"ok": False, "error": "Name oder Daten fehlen"}).encode('utf-8')
-            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response)
-        else:
-            try:
-                profile_data = json.loads(profile_data_str)
-                success, error = save_custom_profile(profile_name, profile_data)
-                if success:
-                    response = json.dumps({"ok": True, "message": f"Profil {profile_name} erstellt"}).encode('utf-8')
-                    writer.write(b'HTTP/1.1 200 OK\r\n')
-                else:
-                    response = json.dumps({"ok": False, "error": error}).encode('utf-8')
-                    writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response)
-            except Exception as e:
-                response = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
-                writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response)
-        return True
-
-    if request_path == '/download-profile':
-        profile_name = query_params.get('name', '').strip()
-        if not profile_name:
-            response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
-            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response)
-        else:
-            profile_data = get_profile_data(profile_name)
-            if profile_data is None:
-                response = json.dumps({"ok": False, "error": f"Profil nicht gefunden: {profile_name}"}).encode('utf-8')
-                writer.write(b'HTTP/1.1 404 Not Found\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response)
-            else:
-                response_data = json.dumps(profile_data).encode('utf-8')
-                writer.write(b'HTTP/1.1 200 OK\r\n')
-                writer.write(b'Content-Type: application/json\r\n')
-                writer.write(b'Content-Disposition: attachment; filename="' + profile_name.encode('utf-8') + b'.pro"\r\n')
-                writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
-                writer.write(b'Connection: close\r\n\r\n')
-                writer.write(response_data)
-        return True
-
-    if request_path == '/delete-profile':
-        profile_name = query_params.get('name', '').strip()
-        if not profile_name:
-            response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
-        else:
-            success, error = delete_custom_profile(profile_name)
-            if success:
-                response = json.dumps({"ok": True, "message": f"Profil {profile_name} geloescht"}).encode('utf-8')
-            else:
-                response = json.dumps({"ok": False, "error": error}).encode('utf-8')
-
-        response = response.encode('utf-8') if isinstance(response, str) else response
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response)
-        return True
-
-    if request_path == '/apply-profile':
-        profile_name = query_params.get('name', '').strip()
-
-        if not profile_name:
-            response = json.dumps({"ok": False, "error": "Profil-Name fehlt"}).encode('utf-8')
-        else:
-            profile_name = normalize_trick_tuning_profile(profile_name)
-            TRICK_TUNING_PROFILE = profile_name
-            apply_trick_tuning_profile()
-            saved_ok, save_error = save_trick_tuning_profile()
-
-            if saved_ok:
-                response = json.dumps({"ok": True, "profile": profile_name}).encode('utf-8')
-                debug_log(f"[PROFILE] Angewendet: {profile_name}")
-            else:
-                response = json.dumps({"ok": False, "error": save_error}).encode('utf-8')
-
-        response = response.encode('utf-8') if isinstance(response, str) else response
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response)
-        return True
-
-    if request_path == '/data':
-        data = {
-            "score": detector.score,
-            "history": detector.trick_history,
-            "highscore": highscore_data["score"],
-            "highscore_timestamp": highscore_data["timestamp"],
-            "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
-            "trick_tuning_profile": TRICK_TUNING_PROFILE,
-            "pending_highscore": pending_highscore["active"],
-            "pending_highscore_score": pending_highscore["score"],
-            "firmware_version": FIRMWARE_VERSION,
-        }
-        response_data = json.dumps(data).encode('utf-8')
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response_data)
-        return True
-
-    if request_path == '/set-highscore-name':
-        await _send_highscore_name_response(writer, query_params, body_params)
-        return True
-
-    if request_path == '/set-trick-profile':
-        profile_name = normalize_trick_tuning_profile(query_params.get('profile', 'aggressive'))
-        TRICK_TUNING_PROFILE = profile_name
+    def _activate_trick_profile(profile_name):
+        global TRICK_TUNING_PROFILE
+        normalized = normalize_trick_tuning_profile(profile_name)
+        TRICK_TUNING_PROFILE = normalized
         apply_trick_tuning_profile()
         saved_ok, save_error = save_trick_tuning_profile()
+        return saved_ok, save_error, TRICK_TUNING_PROFILE
 
-        if saved_ok:
-            debug_console_only(f"[TRICK PROFILE] Profil gespeichert: {TRICK_TUNING_PROFILE}")
+    handled, updated_profile, updated_developer_mode = await _misc_route_handler(
+        writer,
+        request_path,
+        request_method,
+        query_params,
+        body_text,
+        body_params,
+        TRICK_TUNING_PROFILE,
+        DEVELOPER_MODE_ENABLED,
+        {
+            "send_html_file": send_html_file,
+            "admin_profiles_html_path": ADMIN_PROFILES_HTML_PATH,
+            "admin_system_html_path": ADMIN_SYSTEM_HTML_PATH,
+            "ap_ssid": AP_SSID,
+            "enable_hotspot": ENABLE_HOTSPOT,
+            "detector": detector,
+            "highscore_data": highscore_data,
+            "pending_highscore": pending_highscore,
+            "default_pilot_name": DEFAULT_PILOT_NAME,
+            "firmware_version": FIRMWARE_VERSION,
+            "ota_update_active": ota_update_active,
+            "ota_received_chunks": ota_received_chunks,
+            "ota_total_chunks": ota_total_chunks,
+            "list_profile_files": list_profile_files,
+            "get_copil_payload": _get_copil_payload,
+            "save_copil_names": _save_copil_names,
+            "save_custom_profile": save_custom_profile,
+            "get_profile_data": get_profile_data,
+            "delete_custom_profile": delete_custom_profile,
+            "activate_trick_profile": _activate_trick_profile,
+            "debug_log": debug_log,
+            "debug_console_only": debug_console_only,
+            "save_system_settings": _save_system_settings_with_value,
+            "send_highscore_name_response": _send_highscore_name_response,
+            "send_confirm_highscore_response": _send_confirm_highscore_response,
+            "send_reset_highscore_response": _send_reset_highscore_response,
+            "enable_serial_debug": ENABLE_SERIAL_DEBUG,
+            "write_text_file": write_text_file,
+            "session_export_file_path": SESSION_EXPORT_FILE_PATH,
+            "build_session_txt_content": build_session_txt_content,
+            "send_file_as_download": send_file_as_download,
+            "build_debug_export_file": build_debug_export_file,
+            "debug_export_file_path": DEBUG_EXPORT_FILE_PATH,
+            "simulate_trick": simulate_trick,
+        },
+    )
 
-        payload = json.dumps({
-            "ok": saved_ok,
-            "error": "" if saved_ok else ("Speichern fehlgeschlagen: " + str(save_error)),
-            "trick_tuning_profile": TRICK_TUNING_PROFILE
-        }).encode('utf-8')
-
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(payload)
-        return True
-
-    if request_path == '/set-developer-mode':
-        DEVELOPER_MODE_ENABLED = query_params.get('enabled', '0') == '1'
-        saved_ok, save_error = save_system_settings()
-
-        if saved_ok:
-            debug_console_only(f"[SYSTEM] Developer-Modus: {'AN' if DEVELOPER_MODE_ENABLED else 'AUS'}")
-
-        payload = json.dumps({
-            "ok": saved_ok,
-            "error": "" if saved_ok else ("Speichern fehlgeschlagen: " + str(save_error)),
-            "developer_mode": DEVELOPER_MODE_ENABLED
-        }).encode('utf-8')
-
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(payload)
-        return True
-
-    if request_path == '/confirm-highscore':
-        await _send_confirm_highscore_response(writer)
-        return True
-
-    if request_path == '/reset-highscore':
-        await _send_reset_highscore_response(writer, query_params, body_params)
-        return True
-
-    if request_path in ('/download', '/download-session'):
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-SESSION] Exportdatei wird erstellt")
-        write_text_file(SESSION_EXPORT_FILE_PATH, build_session_txt_content())
-        await send_file_as_download(writer, SESSION_EXPORT_FILE_PATH, "fpv_arcade_session.txt")
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-SESSION] Datei versendet")
-        return True
-
-    if request_path in ('/download-debug', '/download-debug-raw'):
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Exportdatei wird erstellt")
-        build_debug_export_file()
-        await send_file_as_download(writer, DEBUG_EXPORT_FILE_PATH, "fpv_debug_log.txt")
-        if ENABLE_SERIAL_DEBUG:
-            print(f"[DEBUG] [{time.ticks_ms() // 1000}s] [DOWNLOAD-DEBUG] Datei versendet")
-        return True
-
-    if request_path == '/simulate-trick':
-        trick_kind = query_params.get('type', 'roll').strip().lower()
-        if trick_kind not in ('roll', 'flip', 'spin'):
-            trick_kind = 'roll'
-
-        score_before = detector.score
-        debug_console_only(f"[SIMULATE] Starte Trick-Simulation: {trick_kind}")
-        await simulate_trick(trick_kind)
-        points_gained = detector.score - score_before
-
-        payload = json.dumps({
-            "ok": True,
-            "type": trick_kind,
-            "trick": detector.last_trick_name if points_gained > 0 else None,
-            "points": points_gained,
-            "score": detector.score
-        }).encode('utf-8')
-
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(payload)
-        return True
-
-    return False
+    TRICK_TUNING_PROFILE = updated_profile
+    DEVELOPER_MODE_ENABLED = updated_developer_mode
+    return handled
 
 
 async def handle_client(reader, writer):
@@ -2212,7 +1974,7 @@ async def handle_client(reader, writer):
         elif request_path == '/restart-pico':
             await _handle_restart_pico(writer)
         
-        elif await _handle_misc_routes(writer, request_path, request_method, query_params, body_params):
+        elif await _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
             pass
 
         else:

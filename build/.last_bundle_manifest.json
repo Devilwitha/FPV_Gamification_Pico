@@ -1,0 +1,18 @@
+{
+  "boot.py": "993c06eee315052f66ee9c53c4f0a37b5425d22f223949897b97eeb739905c01",
+  "recovery.py": "996e731cf9b276d19f3a478ef460f812696d51d58ffc577d66db0f3a54bf8061",
+  "hotspot_common.py": "948ac61554c8dad11ec57809faadaa261b5ce604be07f95069ce6001778d5f40",
+  "boot_runtime.py": "da406d5c559b4e5da0df659eca3dbe9b7a65a6ad133016fe8641c5d50e11f094",
+  "firmware_version.txt": "034d4a51a95210cd8176c652120baff4b3fe8ce23416dcd6a14cd12c75aba0dd",
+  "ota_helpers.py": "1e43fd85ebc5cb32e253dc899f18760780b6df60555485b6da55b83f66f9407f",
+  "idcard_helpers.py": "4db6e140802a6515b9de5b83faa1ee26cccb2d77ebf7ce6faac7746f0eeac959",
+  "misc_routes_helpers.py": "6e7b5ab5b117628dfd57733a6669cc725011b6de7cff84b4401d3d7d325d3df9",
+  "main.py": "894e21672fb3d47b95f5ba1575cc9aa74704d536f28748982cb4cc1671c0d002",
+  "index.html": "95b97ff4237c8982a0c542ae9b19a14117720c35c7b91ba0e5a0a3a1ab73fcfb",
+  "admin_dashboard.html": "61a415d05ecd9b86b0f2e783b25096898f266817a7ac76c0eaf54b7d59b90b55",
+  "admin_update.html": "d46046d8fbab207312f4d89e672eb67757fe1898ca5f5e6b801a0001f3fdb79b",
+  "admin_simulate.html": "2ba9c80c33270df66694f1d28bcd86ca93ec3b64037677d87079d05a6870216c",
+  "admin_profiles.html": "26c6be2ac5f61896c3ea2fc3693f2945dbf41b8a17f04d179bfff2604c2626c0",
+  "admin_system.html": "8803d244d8eb624b7ccada32d8e28204a0727af213cc64f7d06b7950ad73e904",
+  "admin_idcard.html": "13c233ef0bbc0dcc6cbd65c83221e15a81c6b0f7eba3cdea4ca9e14b35271d98"
+}

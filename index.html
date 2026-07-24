@@ -1,0 +1,61 @@
+<!DOCTYPE html><html>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orange Bee Arcade</title>
+<style>
+:root{--bg:#070b12;--panel:#111824;--panel2:#0d141f;--line:#26354a;--text:#eef4fb;--muted:#9fb4cb;--accent:#f39c12;--good:#2ecc71;--blue:#2d86d9;--red:#c0392b}
+*{box-sizing:border-box}body{margin:0;padding:18px;font-family:sans-serif;background:radial-gradient(circle at top,#10203a 0,#070b12 45%,#04070c 100%);color:var(--text)}
+.c{max-width:620px;margin:0 auto;background:linear-gradient(180deg,rgba(20,27,37,.96),rgba(12,18,28,.98));padding:22px;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 45px rgba(0,0,0,.45)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+h1{margin:0;color:var(--accent);font-size:1.5em;letter-spacing:1px;text-transform:uppercase}
+.badge{color:var(--muted);font-size:.82em;padding:.35rem .6rem;border:1px solid #30465f;border-radius:999px;background:#0e1622}
+#s{font-size:3.2em;font-weight:800;line-height:1;color:var(--good);margin:14px 0 10px;text-shadow:0 0 16px rgba(46,204,113,.22)}
+.meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:.92em;margin-bottom:12px}
+.card{background:linear-gradient(180deg,rgba(13,20,31,.98),rgba(9,14,22,.98));border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:14px}
+.card h2{margin:0 0 10px;font-size:1em;color:#d8e5f4;letter-spacing:.4px}
+select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;border-radius:10px;padding:10px 12px;font-size:1em;outline:none}
+.n{min-height:18px;margin-top:8px;color:var(--muted);font-size:.82em}
+.t{max-height:220px;overflow:auto;background:var(--panel2);border:1px solid #1f2a3a;border-radius:12px;padding:10px 12px;font-family:monospace;font-size:.88em;line-height:1.45}
+.td{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.td:last-child{border-bottom:0}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.b{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1 1 150px;background:var(--blue);color:#fff;border:none;border-radius:11px;padding:11px 14px;cursor:pointer;font-weight:700;text-decoration:none}
+.b:hover{filter:brightness(1.08)}
+.br{background:var(--red)}
+.footer-row{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+.ver{color:#89a7c4;font-size:.78em}
+.admin{color:#89a7c4;font-size:.78em;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="c">
+<div class="top"><h1>&#128029; ORANGE BEE ARCADE</h1><div class="badge">WLAN / FPV / Tricks</div></div>
+<div id="s">0</div>
+<div class="meta"><div>Highscore: <b id="hs">0</b></div><div>Pilot: <b id="p">-</b></div></div>
+<div class="card"><h2>Trick-Tuning Profil</h2><select id="prof" onchange="setP()"><option value="freestyle">Freestyle</option></select><div id="pn" class="n">Profil...</div></div>
+<div class="card"><h2>Detektierte Manoever</h2><div class="t" id="tr">Warte...</div></div>
+<div class="btnrow"><button class="b" onclick="dl()">&#128229; Download</button><button class="b" onclick="dld()">&#129514; Debug-Log</button><button class="b br" onclick="rhs()">&#128465;&#65039; Reset HS</button></div>
+<div class="footer-row"><span class="ver" id="ver">v-.-.-</span><a class="admin" href="/admin">&#9881;&#65039; Admin</a></div>
+</div>
+<script>
+let hsPromptOpen=false;
+function loadProfiles(activeProfile){fetch("/profiles-list",{cache:"no-store"}).then(r=>r.json()).then(d=>{const sel=document.getElementById("prof");const cur=activeProfile||sel.value;sel.innerHTML="";for(let p of(d.profiles||[])){const o=document.createElement("option");o.value=p.name;o.innerText=p.name.charAt(0).toUpperCase()+p.name.slice(1);if(p.name===cur)o.selected=true;sel.appendChild(o);}}).catch(e=>0)}
+function handleHighscorePopup(d){
+  if(hsPromptOpen)return;
+  if(!d.pending_highscore)return;
+  hsPromptOpen=true;
+  const name=prompt("Neuer Highscore: "+d.pending_highscore_score+" Punkte!\nPilot-Name eingeben (Abbrechen = Standard-Name):",d.highscore_player||"");
+  if(name&&name.trim()){
+    fetch("/set-highscore-name?name="+encodeURIComponent(name.trim()),{cache:"no-store"}).then(r=>r.json()).then(()=>{hsPromptOpen=false;upd();}).catch(e=>{hsPromptOpen=false;});
+  }else{
+    fetch("/confirm-highscore",{cache:"no-store"}).then(r=>r.json()).then(()=>{hsPromptOpen=false;upd();}).catch(e=>{hsPromptOpen=false;});
+  }
+}
+function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):"Keine Tricks";if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}document.getElementById("ver").innerText="v"+(d.firmware_version||"?");handleHighscorePopup(d);}).catch(e=>0)}
+function setP(){let p=document.getElementById("prof").value;document.getElementById("pn").innerText="Speichert...";fetch("/set-trick-profile?profile="+p).then(r=>r.json()).then(d=>{document.getElementById("pn").innerText="OK"}).catch(e=>{document.getElementById("pn").innerText="Fehler"})}
+function dl(){window.open("/download?manual=1","_blank")}
+function dld(){window.open("/download-debug?manual=1","_blank")}
+function rhs(){if(confirm("Highscore loeschen?")){fetch("/reset-highscore?web=1").then(()=>upd()).catch(e=>0)}}
+setInterval(upd,1000);loadProfiles();upd();
+</script>
+</body></html>

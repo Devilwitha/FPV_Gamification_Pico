@@ -17,6 +17,8 @@ ROUTE_TO_FILE = {
     "/admin-simulate": "admin_simulate.html",
     "/admin-profiles": "admin_profiles.html",
     "/admin-system": "admin_system.html",
+    "/admin-challenges": "admin_challenges.html",
+    "/challenges-view": "challenges_view.html",
 }
 
 

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - System</title>
+<style>
+body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}
+h1{color:#8e44ad;font-size:1.3em;margin:0 0 10px}
+.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #8e44ad;border-radius:8px}
+.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:#1a2637;color:#9fb4cb;border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}
+.nv a.on{background:#8e44ad;color:#fff;border-color:#8e44ad;font-weight:bold}
+.s{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:10px 0}
+.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}
+.st2{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.9em}
+.st2:last-child{border-bottom:0}
+.b{background:#c0392b;color:#fff;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px;font-weight:bold;font-family:monospace}
+.b:hover{filter:brightness(1.1)}
+.pbwrap{display:none;margin:8px 0 0;height:18px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
+.pbbar{height:100%;width:0%;background:#8e44ad;transition:width .3s ease}
+.pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.7em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
+.toggle{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#335174;transition:.2s;border-radius:24px}
+.slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#e8f0f8;transition:.2s;border-radius:50%}
+input:checked+.slider{background:#8e44ad}
+input:checked+.slider:before{transform:translateX(20px)}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>&#128295; SYSTEM</h1>
+<div class="nv">
+<a href="/admin">Dashboard</a>
+<a href="/admin-update">Update</a>
+<a href="/admin-simulate">Simulation</a>
+<a href="/admin-profiles">Profile</a>
+<a href="/admin-system" class="on">System</a>
+<a href="/">Home</a>
+</div>
+<div class="s">
+<h2>Info</h2>
+<div class="st2"><span>Firmware-Version</span><b id="v_version">-</b></div>
+<div class="st2"><span>SSID</span><b id="v_ssid">-</b></div>
+<div class="st2"><span>IP-Adresse</span><b id="v_ip">-</b></div>
+<div class="st2"><span>Freier Speicher</span><b id="v_memfree">-</b></div>
+<div class="st2"><span>Belegter Speicher</span><b id="v_memalloc">-</b></div>
+<div class="st2"><span>Laufzeit</span><b id="v_uptime">-</b></div>
+<div class="st2"><span>Aktives Trick-Profil</span><b id="v_prof">-</b></div>
+<div class="st2"><span>OTA aktiv</span><b id="v_ota">-</b></div>
+<div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
+</div>
+<div class="s">
+<h2>Developer-Modus</h2>
+<div class="st2">
+<span>Einzeldatei-Uploads (.py/.html) per OTA erlauben</span>
+<label class="toggle"><input type="checkbox" id="devmode" onchange="toggleDev()"><span class="slider"></span></label>
+</div>
+<div style="color:#9fb4cb;font-size:.78em;margin-top:6px">Standardmaessig (aus) akzeptiert OTA nur komplette <b>firmware.nbo</b> Bundles. Aktiviert erlaubt zusaetzlich einzelne main.py/*.html Dateien (schneller, aber riskanter).</div>
+</div>
+<div class="s">
+<h2>Restart</h2>
+<div id="rs" style="color:#9fb4cb;font-size:.9em;margin-bottom:8px">Startet den Pico neu, ohne eine Datei zu aendern.</div>
+<button class="b" onclick="r()">&#128260; Restart</button>
+</div>
+</div>
+<script>
+function fmtUptime(sec){
+const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;
+return h+'h '+m+'m '+s+'s';
+}
+function upd(){
+fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+document.getElementById('v_version').innerText=d.firmware_version?('v'+d.firmware_version):'-';
+document.getElementById('v_ssid').innerText=d.ssid||'-';
+document.getElementById('v_ip').innerText=d.ip||'-';
+document.getElementById('v_memfree').innerText=(d.mem_free>=0)?(d.mem_free/1024).toFixed(1)+' KB':'?';
+document.getElementById('v_memalloc').innerText=(d.mem_alloc>=0)?(d.mem_alloc/1024).toFixed(1)+' KB':'?';
+document.getElementById('v_uptime').innerText=fmtUptime(d.uptime_s||0);
+document.getElementById('v_prof').innerText=d.trick_tuning_profile||'-';
+document.getElementById('v_ota').innerText=d.ota_active?'Ja':'Nein';
+if(!devTouched){document.getElementById('devmode').checked=!!d.developer_mode;}
+const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
+if(d.ota_active&&d.ota_total_chunks>0){
+const pct=Math.round((d.ota_received_chunks/d.ota_total_chunks)*100);
+pbwrap.style.display='block';pbbar.style.width=pct+'%';pbtxt.innerText=pct+'%';
+}else{
+pbwrap.style.display='none';pbbar.style.width='0%';pbtxt.innerText='';
+}
+}).catch(e=>0);
+}
+function r(){
+if(confirm('Pico jetzt neu starten?')){
+document.getElementById('rs').innerText='Neustart laeuft...';
+fetch('/restart-pico',{cache:'no-store'}).catch(()=>{});
+setTimeout(()=>location.href='/',2500);
+}
+}
+let devTouched=false;
+function toggleDev(){
+const cb=document.getElementById('devmode'),en=cb.checked;
+devTouched=true;
+fetch('/set-developer-mode?enabled='+(en?'1':'0'),{cache:'no-store'}).then(r=>r.json()).then(d=>{
+devTouched=false;
+if(!d.ok){cb.checked=!en;}
+}).catch(()=>{devTouched=false;cb.checked=!en;});
+}
+upd();setInterval(upd,3000);
+</script>
+</body>
+</html>

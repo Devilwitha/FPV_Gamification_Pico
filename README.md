@@ -124,6 +124,7 @@ Auf der Startseite siehst du:
 - Aktuellen Score
 - Highscore + Pilot + Zeit
 - Detektierte Manoever (Historie)
+- Auffaellige "Challenges"-Kachel mit Live-Punkt (leuchtet, sobald eine Challenge aktiv laeuft) -> fuehrt zur oeffentlichen Challenges-Visualisierung `/challenges-view`
 - Buttons fuer Session- und Debug-TXT Download
 - Highscore Reset
 - Link zum Admin-Bereich (Dashboard mit Unterseiten fuer Update, Simulation, Profile, System)
@@ -139,6 +140,7 @@ Der Admin-Bereich ist wie ein Einstellungen-Menue mit Unterseiten aufgebaut, err
 | Simulation | `/admin-simulate` | Tricks (Roll/Flip/Spin) ohne Drohne simulieren |
 | Profile | `/admin-profiles` | Trick-Tuning-Profile verwalten (anlegen, hoch-/runterladen, loeschen, anwenden) |
 | System | `/admin-system` | System-Info (Speicher, Uptime, SSID/IP) + manueller Restart |
+| Challenges | `/admin-challenges` | Real-Time Challenges / Mini-Games starten (Touch & Go, Altitude-Hold/Limbo, Eco-Challenge) |
 
 Alle Unterseiten teilen sich eine gemeinsame Navigationsleiste, ueber die man zwischen ihnen und zurueck zur Startseite wechseln kann.
 
@@ -160,6 +162,27 @@ Die Blinkgeschwindigkeit stellst du mit `LED_BLINK_INTERVAL_MS` (Highscore) bzw.
 ## Trick-Simulation (ohne Drohne testen)
 
 Auf der Admin-Unterseite `/admin-simulate` gibt es drei Buttons (Roll/Flip/Spin), die synthetische Gyro-Daten durch denselben Erkennungscode (`detector.update()`) schicken wie echte Telemetrie. Damit kannst du das Punktesystem testen, ohne eine Drohne anzuschliessen.
+
+## Real-Time Challenges / Mini-Games
+
+Zusaetzlich zur klassischen Trick-Erkennung gibt es auf `/admin-challenges` drei Mini-Games, die alle **passiv** aus demselben ohnehin mitgeschnittenen CRSF-Datenstrom gespeist werden (kein zusaetzliches Kabel/Sensor noetig - vorausgesetzt, dein Flight Controller sendet die entsprechenden Telemetrie-Frames):
+
+| Challenge | Sensor-Basis | Punktelogik |
+|---|---|---|
+| **Touch & Go / Praezisions-Landung** | CRSF Vario-Frame `0x07` (Sinkrate) + Gyro | Punkte nur bei weichem Aufsetzen: die Sinkrate muss vorher deutlich negativ gewesen sein (echter Sinkflug) und beim Erreichen von Sinkrate ~0 darf kein starker Gyro-Ausschlag (harter Aufprall) gemessen werden. Harte Landung = 0 Punkte. |
+| **Altitude-Hold- / Limbo-Challenge** | CRSF Vario-Frame `0x07` (integriert zu einer **relativen** Hoehe) | Modus *Hold*: Hoehe fuer X Sekunden innerhalb einer Toleranz um die Starthoehe halten. Modus *Limbo*: X Sekunden unterhalb einer frei waehlbaren Decke fliegen. Punkte skalieren mit der gehaltenen Dauer. |
+| **Energy Management / Eco-Challenge** | CRSF Battery-Sensor-Frame `0x08` (verbrauchte Kapazitaet in mAh) | Start-/Stop-Button; Punkte sinken mit der waehrend der Challenge verbrauchten Kapazitaet (mAh). |
+
+Es gibt zwei Seiten dafuer:
+
+- `/admin-challenges` (Admin-Bereich): Technische Steuerung - Versuche starten/stoppen, Modus/Toleranz/Decke/Dauer konfigurieren.
+- `/challenges-view` (oeffentlich, ohne Admin-Zugang, verlinkt direkt von der Startseite): huebsch gestaltete Live-Visualisierung aller drei Challenges (Fortschrittsbalken, pulsierende Live-Punkte, grosse Zahlen) fuer Zuschauer/Piloten waehrend des Fluges.
+
+**Wichtige Einschraenkungen (bitte vor dem ersten Testflug lesen):**
+
+- Nicht jeder FC/ELRS-Aufbau sendet CRSF Vario- oder Battery-Sensor-Telemetrie. Sendet dein FC diese Frames nicht, bleiben die entsprechenden Live-Werte auf der Challenges-Seite leer/0 und die betroffene(n) Challenge(s) koennen nicht ausgewertet werden - die Grundfunktionen der Drohne (Fliegen, Trick-Erkennung) sind davon **nicht** betroffen.
+- Die angezeigte Hoehe ist eine **relative Schaetzung**, die durch Integration der Sinkrate ab Start des jeweiligen Versuchs berechnet wird - **keine** absolute Barometer-Hoehe. Bei langen Versuchen kann sie leicht driften.
+- Die genaue Byte-Kodierung der CRSF Vario-/Battery-Sensor-Frames wurde anhand der oeffentlichen CRSF-Spezifikation umgesetzt, aber **noch nicht mit echter Hardware verifiziert**. Falls die Live-Werte auf `/admin-challenges` unplausibel wirken, bitte melden.
 
 ## Downloads
 
@@ -233,10 +256,17 @@ Je nach Copter, Rate und Filter koennen diese Werte angepasst werden (entweder g
 | `/admin-simulate` | Admin-Seite: Trick-Simulation |
 | `/admin-profiles` | Admin-Seite: Profile verwalten |
 | `/admin-system` | Admin-Seite: System-Info + Restart |
+| `/admin-challenges` | Admin-Seite: Real-Time Challenges / Mini-Games |
+| `/challenges-view` | Oeffentliche, huebsche Live-Visualisierung der Challenges (von der Startseite verlinkt) |
 | `/system-info` | Live JSON Daten (freier/belegter Speicher, Uptime, SSID, IP, aktives Profil, OTA-Status) |
 | `/upload-chunk`, `/finalize-upload` | OTA-Update Datenuebertragung (Ziel: `main.py`, eine der Admin-/HTML-Seiten, oder `firmware.nbo` fuer ein komplettes Bundle) |
 | `/restart-pico` | Pico manuell neu starten |
 | `/simulate-trick?type=roll\|flip\|spin` | Trick-Simulation ohne Drohne |
+| `/challenges-data` | Live JSON Status aller drei Challenges + relative Hoehe/Batteriewerte |
+| `/challenge-touchgo-start`, `/challenge-touchgo-stop` | Touch & Go Versuch starten/abbrechen |
+| `/challenge-altitude-start?mode=hold\|limbo&tolerance=...&ceiling=...&duration=...` | Altitude-Hold/Limbo Versuch starten |
+| `/challenge-altitude-stop` | Altitude-Hold/Limbo Versuch abbrechen |
+| `/challenge-eco-start`, `/challenge-eco-stop` | Eco-Challenge starten/beenden (inkl. Auswertung) |
 
 ## Troubleshooting
 
@@ -254,7 +284,7 @@ Je nach Copter, Rate und Filter koennen diese Werte angepasst werden (entweder g
 
 ### `/` oder eine Admin-Unterseite liefert einen Fehler
 
-- Pruefen, ob `index.html`, `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html` und `admin_system.html` tatsaechlich auf dem Pico liegen (Thonny Dateien-Ansicht).
+- Pruefen, ob `index.html`, `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html` und `challenges_view.html` tatsaechlich auf dem Pico liegen (Thonny Dateien-Ansicht).
 - Diese Dateien werden **nicht** automatisch mitgeliefert - beim ersten Setup manuell per Thonny hochladen. Danach koennen sie auch per OTA aktualisiert werden.
 
 ### `MemoryError` beim Booten

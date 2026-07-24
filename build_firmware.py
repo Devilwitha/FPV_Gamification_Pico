@@ -90,6 +90,7 @@ APP_FILES_TO_BUNDLE = [
     "ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
+    "challenge_helpers.py",
     "main.py",
     "index.html",
     "admin_dashboard.html",
@@ -98,6 +99,8 @@ APP_FILES_TO_BUNDLE = [
     "admin_profiles.html",
     "admin_system.html",
     "admin_idcard.html",
+    "admin_challenges.html",
+    "challenges_view.html",
 ]
 
 RECOVERY_FILES_TO_BUNDLE = [

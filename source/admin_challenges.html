@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - Challenges</title>
+<style>
+body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}
+h1{color:#8e44ad;font-size:1.3em;margin:0 0 10px}
+.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #8e44ad;border-radius:8px}
+.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:#1a2637;color:#9fb4cb;border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}
+.nv a.on{background:#8e44ad;color:#fff;border-color:#8e44ad;font-weight:bold}
+.s{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:10px 0}
+.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}
+.st2{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.9em}
+.st2:last-child{border-bottom:0}
+.b{background:#8e44ad;color:#fff;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 4px 5px 0;font-weight:bold;font-family:monospace;font-size:.85em}
+.b:hover{filter:brightness(1.1)}
+.b.stop{background:#c0392b}
+.b.dis{background:#555;cursor:not-allowed;opacity:.7}
+.hint{color:#9fb4cb;font-size:.78em;margin-top:6px}
+.cfg{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.cfg label{display:flex;flex-direction:column;font-size:.75em;color:#9fb4cb;gap:3px}
+.cfg input,.cfg select{background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;padding:5px 6px;width:90px;font-family:monospace}
+.result{margin-top:8px;font-size:.85em;color:#d8e5f4;min-height:1.2em}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75em;font-weight:bold}
+.badge.on{background:#27ae60;color:#fff}
+.badge.off{background:#555;color:#ccc}
+</style>
+</head>
+<body>
+<div class="c">
+<h1 data-i18n="challenges.title">&#127942; CHALLENGES</h1>
+<div class="nv">
+<a href="/admin" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" data-i18n="nav.profiles">Profile</a>
+<a href="/admin-system" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
+<a href="/admin-challenges" class="on" data-i18n="nav.challenges">Challenges</a>
+<a href="/" data-i18n="nav.home">Home</a>
+</div>
+
+<div class="s">
+<h2 data-i18n="challenges.liveData">Live-Telemetrie</h2>
+<div class="st2"><span data-i18n="challenges.relAltitude">Rel. Hoehe (geschaetzt)</span><b id="v_alt">-</b></div>
+<div class="st2"><span data-i18n="challenges.battVoltage">Akkuspannung</span><b id="v_volt">-</b></div>
+<div class="st2"><span data-i18n="challenges.battCurrent">Stromaufnahme</span><b id="v_curr">-</b></div>
+<div class="st2"><span data-i18n="challenges.battRemaining">Restladung</span><b id="v_batt">-</b></div>
+<div class="hint" data-i18n="challenges.liveDataHint">Erfordert CRSF Vario- (0x07) und Battery-Sensor-Telemetrie (0x08) vom Flight Controller. Sendet dein FC diese Frames nicht, bleiben die Werte leer/0 - die Grundfunktionen der Drohne sind davon nicht betroffen.</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="challenges.touchgoTitle">Touch &amp; Go / Praezisions-Landung</h2>
+<div class="st2"><span data-i18n="challenges.status">Status</span><b><span id="tg_badge" class="badge off">-</span></b></div>
+<div class="st2"><span data-i18n="challenges.descentDetected">Sinkflug erkannt</span><b id="tg_descend">-</b></div>
+<button class="b" id="tg_start" onclick="touchgoStart()" data-i18n="challenges.startAttempt">&#9654; Versuch starten</button>
+<button class="b stop" id="tg_stop" onclick="touchgoStop()" data-i18n="challenges.cancel">&#10006; Abbrechen</button>
+<div class="result" id="tg_result"></div>
+<div class="hint" data-i18n="challenges.touchgoHint">Punkte gibt es nur fuer eine weiche Landung ohne harten Gyro-Ausschlag beim Aufsetzen.</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="challenges.altitudeTitle">Altitude-Hold / Limbo</h2>
+<div class="cfg">
+<label data-i18n="challenges.mode">Modus
+<select id="alt_mode">
+<option value="hold" data-i18n="challenges.modeHold">Hoehe halten</option>
+<option value="limbo" data-i18n="challenges.modeLimbo">Limbo (tief fliegen)</option>
+</select>
+</label>
+<label data-i18n="challenges.tolerance">Toleranz (m)<input type="number" id="alt_tolerance" value="0.5" step="0.1" min="0.1"></label>
+<label data-i18n="challenges.ceiling">Limbo-Decke (m)<input type="number" id="alt_ceiling" value="1.0" step="0.1" min="0.1"></label>
+<label data-i18n="challenges.duration">Dauer (s)<input type="number" id="alt_duration" value="20" step="1" min="1"></label>
+</div>
+<div class="st2"><span data-i18n="challenges.status">Status</span><b><span id="alt_badge" class="badge off">-</span></b></div>
+<div class="st2"><span data-i18n="challenges.currentAltitude">Aktuelle rel. Hoehe</span><b id="alt_current">-</b></div>
+<div class="st2"><span data-i18n="challenges.elapsedInBand">Zeit im Zielbereich</span><b id="alt_elapsed">-</b></div>
+<button class="b" id="alt_start" onclick="altitudeStart()" data-i18n="challenges.startAttempt">&#9654; Versuch starten</button>
+<button class="b stop" id="alt_stop" onclick="altitudeStop()" data-i18n="challenges.cancel">&#10006; Abbrechen</button>
+<div class="result" id="alt_result"></div>
+<div class="hint" data-i18n="challenges.altitudeHint">Die Hoehe ist eine RELATIVE Schaetzung ab Start des Versuchs (aus der Sinkrate integriert), keine absolute Barometer-Hoehe.</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="challenges.ecoTitle">Energy Management / Eco-Challenge</h2>
+<div class="st2"><span data-i18n="challenges.status">Status</span><b><span id="eco_badge" class="badge off">-</span></b></div>
+<div class="st2"><span data-i18n="challenges.consumed">Verbraucht</span><b id="eco_consumed">-</b></div>
+<button class="b" id="eco_start" onclick="ecoStart()" data-i18n="challenges.startAttempt">&#9654; Versuch starten</button>
+<button class="b stop" id="eco_stop" onclick="ecoStop()" data-i18n="challenges.stopAttempt">&#9632; Beenden &amp; werten</button>
+<div class="result" id="eco_result"></div>
+<div class="hint" data-i18n="challenges.ecoHint">Fliege deine Route und beende die Challenge danach - je weniger mAh verbraucht wurden, desto mehr Punkte.</div>
+</div>
+
+</div>
+<script>
+let I18N={lang:'de',strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){
+document.querySelectorAll('[data-i18n]').forEach(el=>{
+const key=el.getAttribute('data-i18n');
+const txt=t(key,'');
+if(txt)el.innerHTML=txt;
+});
+document.title=t('challenges.pageTitle','Admin - Challenges');
+}
+function loadI18n(){
+return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+I18N.lang=d.lang||'de';
+I18N.strings=d.strings||{};
+applyI18n();
+}).catch(()=>{});
+}
+function setBadge(el,active){
+el.className='badge '+(active?'on':'off');
+el.innerText=active?t('challenges.active','Aktiv'):t('challenges.inactive','Inaktiv');
+}
+function fmtM(n){
+if(n===undefined||n===null)return '-';
+return n.toFixed(2)+' m';
+}
+function upd(){
+fetch('/challenges-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok)return;
+const c=d.challenges||{};
+document.getElementById('v_alt').innerText=fmtM(c.altitude_m);
+document.getElementById('v_volt').innerText=(c.battery_voltage!=null)?c.battery_voltage.toFixed(1)+' V':'-';
+document.getElementById('v_curr').innerText=(c.battery_current!=null)?c.battery_current.toFixed(1)+' A':'-';
+document.getElementById('v_batt').innerText=(c.battery_remaining_pct!=null)?c.battery_remaining_pct+' %':'-';
+
+const tg=c.touch_and_go||{};
+setBadge(document.getElementById('tg_badge'),!!tg.active);
+document.getElementById('tg_descend').innerText=tg.was_descending?t('common.yes','Ja'):t('common.no','Nein');
+document.getElementById('tg_result').innerText=tg.last_result||'';
+document.getElementById('tg_start').disabled=!!tg.active;
+document.getElementById('tg_stop').disabled=!tg.active;
+
+const alt=c.altitude_challenge||{};
+setBadge(document.getElementById('alt_badge'),!!alt.active);
+document.getElementById('alt_current').innerText=fmtM(alt.current_altitude_m);
+document.getElementById('alt_elapsed').innerText=(alt.elapsed_in_band_s||0)+'s / '+(alt.duration_s||0)+'s';
+document.getElementById('alt_result').innerText=alt.last_result||'';
+document.getElementById('alt_start').disabled=!!alt.active;
+document.getElementById('alt_stop').disabled=!alt.active;
+
+const eco=c.eco||{};
+setBadge(document.getElementById('eco_badge'),!!eco.active);
+document.getElementById('eco_consumed').innerText=(eco.consumed_mah!=null)?eco.consumed_mah+' mAh':'-';
+document.getElementById('eco_result').innerText=eco.last_result||'';
+document.getElementById('eco_start').disabled=!!eco.active;
+document.getElementById('eco_stop').disabled=!eco.active;
+}).catch(()=>{});
+}
+function touchgoStart(){fetch('/challenge-touchgo-start',{cache:'no-store'}).then(upd).catch(()=>{});}
+function touchgoStop(){fetch('/challenge-touchgo-stop',{cache:'no-store'}).then(upd).catch(()=>{});}
+function altitudeStart(){
+const mode=document.getElementById('alt_mode').value;
+const tolerance=document.getElementById('alt_tolerance').value;
+const ceiling=document.getElementById('alt_ceiling').value;
+const duration=document.getElementById('alt_duration').value;
+const qs='?mode='+encodeURIComponent(mode)+'&tolerance='+encodeURIComponent(tolerance)+'&ceiling='+encodeURIComponent(ceiling)+'&duration='+encodeURIComponent(duration);
+fetch('/challenge-altitude-start'+qs,{cache:'no-store'}).then(upd).catch(()=>{});
+}
+function altitudeStop(){fetch('/challenge-altitude-stop',{cache:'no-store'}).then(upd).catch(()=>{});}
+function ecoStart(){fetch('/challenge-eco-start',{cache:'no-store'}).then(upd).catch(()=>{});}
+function ecoStop(){fetch('/challenge-eco-stop',{cache:'no-store'}).then(upd).catch(()=>{});}
+
+loadI18n().then(()=>{upd();});
+setInterval(upd,1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html><html>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Challenges</title>
+<style>
+:root{--bg:#070b12;--panel:#111824;--panel2:#0d141f;--line:#26354a;--text:#eef4fb;--muted:#9fb4cb;--accent:#f39c12;--good:#2ecc71;--blue:#2d86d9;--red:#c0392b;--purple:#8e44ad}
+*{box-sizing:border-box}
+body{margin:0;padding:18px;font-family:sans-serif;background:radial-gradient(circle at top,#10203a 0,#070b12 45%,#04070c 100%);color:var(--text)}
+.c{max-width:680px;margin:0 auto;background:linear-gradient(180deg,rgba(20,27,37,.96),rgba(12,18,28,.98));padding:22px;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 45px rgba(0,0,0,.45)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+h1{margin:0;color:var(--accent);font-size:1.5em;letter-spacing:1px;text-transform:uppercase}
+.badge{color:var(--muted);font-size:.82em;padding:.35rem .6rem;border:1px solid #30465f;border-radius:999px;background:#0e1622}
+.telemetry{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.tchip{flex:1 1 130px;background:#0e1622;border:1px solid #26354a;border-radius:12px;padding:10px 12px;text-align:center}
+.tchip .lbl{color:var(--muted);font-size:.72em;text-transform:uppercase;letter-spacing:.5px}
+.tchip .val{font-size:1.25em;font-weight:800;margin-top:2px}
+.hint{color:var(--muted);font-size:.78em;margin:6px 0 4px}
+
+.game{position:relative;background:linear-gradient(180deg,rgba(13,20,31,.98),rgba(9,14,22,.98));border:1px solid var(--line);border-left:4px solid var(--gc,var(--blue));border-radius:14px;padding:16px;margin-top:14px;overflow:hidden}
+.game h2{margin:0 0 4px;font-size:1.05em;color:#d8e5f4;display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:#555;flex-shrink:0}
+.dot.on{background:var(--good);box-shadow:0 0 8px var(--good);animation:pulse 1.4s infinite}
+@keyframes pulse{0%{opacity:1}50%{opacity:.35}100%{opacity:1}}
+.result{margin-top:10px;font-size:.92em;color:#eef4fb;min-height:1.3em;font-weight:600}
+.subrow{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;color:var(--muted);font-size:.82em;margin-top:6px}
+.pbar{margin-top:12px;height:12px;background:#0b1320;border:1px solid #26354a;border-radius:8px;overflow:hidden}
+.pbar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--gc,var(--blue)),var(--good));transition:width .4s ease}
+.big{font-size:1.9em;font-weight:800;margin-top:6px}
+.unit{font-size:.5em;color:var(--muted);font-weight:600;margin-left:4px}
+
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.b{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1 1 150px;background:var(--blue);color:#fff;border:none;border-radius:11px;padding:11px 14px;cursor:pointer;font-weight:700;text-decoration:none}
+.b:hover{filter:brightness(1.08)}
+.b.purple{background:var(--purple)}
+.footer-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.ver{color:#89a7c4;font-size:.78em}
+</style>
+</head>
+<body>
+<div class="c">
+<div class="top"><h1 data-i18n="challengesView.title">&#127942; CHALLENGES</h1><div class="badge" data-i18n="challengesView.liveBadge">LIVE</div></div>
+
+<div class="telemetry">
+<div class="tchip"><div class="lbl" data-i18n="challengesView.altitude">Rel. Hoehe</div><div class="val" id="v_alt">-</div></div>
+<div class="tchip"><div class="lbl" data-i18n="challengesView.voltage">Spannung</div><div class="val" id="v_volt">-</div></div>
+<div class="tchip"><div class="lbl" data-i18n="challengesView.current">Strom</div><div class="val" id="v_curr">-</div></div>
+<div class="tchip"><div class="lbl" data-i18n="challengesView.remaining">Restladung</div><div class="val" id="v_batt">-</div></div>
+</div>
+
+<div class="game" style="--gc:#2d86d9">
+<h2><span class="dot" id="tg_dot"></span> <span data-i18n="challengesView.touchgoTitle">&#127968; Touch &amp; Go</span></h2>
+<div class="subrow"><span data-i18n="challengesView.descentDetected">Sinkflug erkannt</span><b id="tg_descend">-</b></div>
+<div class="result" id="tg_result">&#8212;</div>
+</div>
+
+<div class="game" style="--gc:#2ecc71">
+<h2><span class="dot" id="alt_dot"></span> <span data-i18n="challengesView.altitudeTitle">&#128506;&#65039; Altitude-Hold / Limbo</span></h2>
+<div class="subrow"><span id="alt_mode_label">-</span><span id="alt_time">0s / 0s</span></div>
+<div class="pbar"><div class="pbar-fill" id="alt_bar"></div></div>
+<div class="result" id="alt_result">&#8212;</div>
+</div>
+
+<div class="game" style="--gc:#f39c12">
+<h2><span class="dot" id="eco_dot"></span> <span data-i18n="challengesView.ecoTitle">&#9889; Eco-Challenge</span></h2>
+<div class="big" id="eco_consumed">- <span class="unit">mAh</span></div>
+<div class="result" id="eco_result">&#8212;</div>
+</div>
+
+<div class="hint" data-i18n="challengesView.hint">Werte aktualisieren sich automatisch. Starten/Stoppen der Versuche erfolgt im Challenges-Steuerbereich.</div>
+
+<div class="btnrow">
+<a class="b purple" href="/admin-challenges" data-i18n="challengesView.controlButton">&#9881;&#65039; Challenges steuern</a>
+<a class="b" href="/" data-i18n="challengesView.homeButton">&#128029; Zur Startseite</a>
+</div>
+<div class="footer-row"><span class="ver" id="ver"></span></div>
+</div>
+<script>
+let I18N={strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const s=t(el.getAttribute('data-i18n'),'');if(s)el.innerHTML=s;});}
+function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n();}).catch(()=>{});}
+
+function fmtM(n){return (n===undefined||n===null)?'-':n.toFixed(1)+' m';}
+function setDot(el,on){el.classList.toggle('on',!!on);}
+
+function upd(){
+fetch('/challenges-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok)return;
+const c=d.challenges||{};
+
+document.getElementById('v_alt').innerText=fmtM(c.altitude_m);
+document.getElementById('v_volt').innerText=(c.battery_voltage!=null)?c.battery_voltage.toFixed(1)+' V':'-';
+document.getElementById('v_curr').innerText=(c.battery_current!=null)?c.battery_current.toFixed(1)+' A':'-';
+document.getElementById('v_batt').innerText=(c.battery_remaining_pct!=null)?c.battery_remaining_pct+' %':'-';
+
+const tg=c.touch_and_go||{};
+setDot(document.getElementById('tg_dot'),tg.active);
+document.getElementById('tg_descend').innerText=tg.was_descending?t('common.yes','Ja'):t('common.no','Nein');
+document.getElementById('tg_result').innerText=tg.last_result||t('challengesView.waiting','Warte auf Versuch...');
+
+const alt=c.altitude_challenge||{};
+setDot(document.getElementById('alt_dot'),alt.active);
+const modeLabel=alt.mode==='limbo'?t('challenges.modeLimbo','Limbo (tief fliegen)'):t('challenges.modeHold','Hoehe halten');
+document.getElementById('alt_mode_label').innerText=modeLabel+' - '+fmtM(alt.current_altitude_m);
+document.getElementById('alt_time').innerText=(alt.elapsed_in_band_s||0)+'s / '+(alt.duration_s||0)+'s';
+const pct=alt.duration_s?Math.min(100,Math.round(((alt.elapsed_in_band_s||0)/alt.duration_s)*100)):0;
+document.getElementById('alt_bar').style.width=pct+'%';
+document.getElementById('alt_result').innerText=alt.last_result||t('challengesView.waiting','Warte auf Versuch...');
+
+const eco=c.eco||{};
+setDot(document.getElementById('eco_dot'),eco.active);
+document.getElementById('eco_consumed').innerHTML=((eco.consumed_mah!=null)?eco.consumed_mah:'-')+' <span class="unit">mAh</span>';
+document.getElementById('eco_result').innerText=eco.last_result||t('challengesView.waiting','Warte auf Versuch...');
+}).catch(()=>{});
+}
+
+function loadVersion(){
+fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+document.getElementById('ver').innerText=d.firmware_version?('v'+d.firmware_version):'';
+}).catch(()=>{});
+}
+
+loadI18n().then(()=>{upd();loadVersion();});
+setInterval(upd,1000);
+setInterval(loadI18n,5000);
+</script>
+</body></html>

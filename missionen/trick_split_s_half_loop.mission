@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Split-S / Half-Loop",
+  "challenge_type": "trick",
+  "description": "Fliege einen Split-S / Half-Loop (80-190 Grad Pitchdrehung mit zusaetzlicher Rolle) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Split-S / Half-Loop",
+    "time_limit_s": 30,
+    "bonus_points": 44
+  }
+}

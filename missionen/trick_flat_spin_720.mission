@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Flat Spin 720",
+  "challenge_type": "trick",
+  "description": "Fliege einen Flat Spin 720 (>= 220 Grad Yawdrehung) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Flat Spin 720",
+    "time_limit_s": 30,
+    "bonus_points": 70
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Matty Flip Combo",
+  "challenge_type": "trick",
+  "description": "Fliege einen Matty Flip Combo (> 170 Grad Pitch- und > 90 Grad Yawdrehung kombiniert) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Matty Flip Combo",
+    "time_limit_s": 30,
+    "bonus_points": 70
+  }
+}

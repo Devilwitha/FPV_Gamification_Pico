@@ -53,6 +53,11 @@ except Exception:
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
 BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
+# Missionen liegen NICHT in SOURCE_DIR, sondern in ihrem eigenen Ordner (siehe
+# mission_builder.py's MISSIONS_DIR) - werden aber trotzdem mit ins normale
+# Firmware-Bundle gepackt, damit sie automatisch mit auf den Pico gelangen.
+MISSIONS_DIR = os.path.join(PROJECT_ROOT, "missionen")
+MISSION_FILE_EXTENSION = ".mission"
 
 BUNDLE_MAGIC = b"FPVBNDL1"
 DEFAULT_PICO_URL = "http://192.168.4.1"
@@ -90,6 +95,7 @@ APP_FILES_TO_BUNDLE = [
     "ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
+    "upload_helpers.py",
     "challenge_helpers.py",
     "main.py",
     "index.html",
@@ -131,8 +137,39 @@ OPTIONAL_FILES_TO_BUNDLE = []
 RECOVERY_MODE_FILES_SET = set(RECOVERY_FILES_TO_BUNDLE)
 
 
+def _bundle_source_path(source_dir, filename):
+    """Loest den tatsaechlichen Quellpfad einer Bundle-Datei auf. Mission-
+    Dateien (*.mission) liegen im separaten MISSIONS_DIR statt in source_dir -
+    ueberall dort, wo der Bundle-Prozess auf eine Datei zugreifen will
+    (Lesen, Groessen-/Vorhanden-Pruefung in der GUI), muss diese Funktion
+    statt eines direkten os.path.join(source_dir, filename) verwendet werden."""
+    if filename.endswith(MISSION_FILE_EXTENSION):
+        return os.path.join(MISSIONS_DIR, filename)
+    return os.path.join(source_dir, filename)
+
+
+def _resolve_mission_files():
+    """Findet alle lokal vorhandenen .mission Dateien (missionen/-Ordner) und
+    gibt ihre blossen Dateinamen zurueck - analog zu
+    _resolve_language_pack_files() fuer .pak Dateien. Missionen sind
+    nutzererstellter Inhalt mit beliebigen Namen, daher dynamische Suche statt
+    einer festen Liste wie bei APP_FILES_TO_BUNDLE."""
+    missions = []
+    try:
+        for filename in os.listdir(MISSIONS_DIR):
+            if not filename.endswith(MISSION_FILE_EXTENSION):
+                continue
+            full_path = os.path.join(MISSIONS_DIR, filename)
+            if os.path.isfile(full_path):
+                missions.append(filename)
+    except Exception:
+        pass
+    missions.sort()
+    return missions
+
+
 def _read_bundle_file_bytes(source_dir, filename):
-    file_path = os.path.join(source_dir, filename)
+    file_path = _bundle_source_path(source_dir, filename)
     if os.path.isfile(file_path):
         with open(file_path, "rb") as f:
             return f.read()
@@ -158,7 +195,7 @@ def _classify_bundle_mode(bundle_entries):
 
 def _build_file_signature_map(source_dir):
     signatures = {}
-    tracked = get_files_to_bundle(True) + OPTIONAL_FILES_TO_BUNDLE
+    tracked = get_files_to_bundle(True) + OPTIONAL_FILES_TO_BUNDLE + _resolve_mission_files()
     for filename in tracked:
         content = _read_bundle_file_bytes(source_dir, filename)
         if content is None:
@@ -235,7 +272,12 @@ def _resolve_files_to_bundle(
     if recovery_mode:
         base = list(RECOVERY_FILES_TO_BUNDLE)
     else:
-        base = get_files_to_bundle(include_boot_stack)
+        # Missionen sind normaler App-Inhalt und werden bei jedem regulaeren
+        # Bundle-Build (komplett oder light) automatisch mit eingesammelt -
+        # im Light-Modus greift dieselbe Signatur-Diff-Logik wie fuer alle
+        # anderen Dateien (siehe _build_file_signature_map), damit nur
+        # tatsaechlich neue/geaenderte Missionen erneut hochgeladen werden.
+        base = get_files_to_bundle(include_boot_stack) + _resolve_mission_files()
 
     # Standard-Workflow: en.pak + de.pak im Haupt-Firmware-Bundle.
     # Weitere Sprachen werden ausschliesslich ueber den lang.pak-Workflow gebaut.
@@ -785,6 +827,21 @@ def _iter_bundle_entries(bundle_path):
             yield name, content
 
 
+def _is_safe_bundle_entry_filename(filename):
+    """Strukturelle Sicherheitspruefung fuer Bundle-Dateinamen (kein Pfad-
+    Traversal, keine versteckten Dateien) - Bundles sind bereits vertrauens-
+    wuerdige, von diesem Skript zusammengestellte Update-Einheiten, daher
+    keine Einzeldatei-Whitelist-Pruefung mehr gegen eine feste Namensliste
+    (das wuerde neue Dateien wie Missionen mit beliebigen Namen ausbremsen)."""
+    if not filename:
+        return False
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return False
+    if filename.startswith("."):
+        return False
+    return True
+
+
 def _apply_bundle_entries_via_serial(mpremote_cmd, port, bundle_path, allowed_names, progress_callback=None):
     def _is_repl_transport_error(exc):
         msg = str(exc or "")
@@ -797,13 +854,12 @@ def _apply_bundle_entries_via_serial(mpremote_cmd, port, bundle_path, allowed_na
             or "permissionerror(13" in low
         )
 
-    allowed_set = set(allowed_names)
     entries = list(_iter_bundle_entries(bundle_path))
     if not entries:
         raise Exception("Bundle enthaelt keine Dateien")
 
     names = [name for name, _ in entries]
-    disallowed = [name for name in names if name not in allowed_set]
+    disallowed = [name for name in names if not _is_safe_bundle_entry_filename(name)]
     if disallowed:
         raise Exception("Datei im Bundle nicht erlaubt: " + disallowed[0])
 
@@ -1089,7 +1145,7 @@ with open(BUNDLE_FILE, "rb") as f:
             raise Exception("Bundle beschaedigt (content len)")
         (content_len,) = struct.unpack(">I", content_len_bytes)
 
-        if name not in ALLOWED:
+        if not name or "/" in name or "\\\\" in name or ".." in name or name.startswith("."):
             raise Exception("Datei im Bundle nicht erlaubt: " + name)
 
         # Low-space-Modus: direkt in die Zieldatei schreiben.
@@ -1361,7 +1417,7 @@ def launch_gui():
             boot_main_only_mode=build_boot_main_only_var.get(),
         )
         for filename in selected:
-            file_path = os.path.join(source_dir, filename)
+            file_path = _bundle_source_path(source_dir, filename)
             if os.path.isfile(file_path):
                 size = os.path.getsize(file_path)
                 tree.insert("", "end", text=filename, values=("Gefunden", f"{size} B"), tags=("ok",))
@@ -1564,7 +1620,7 @@ def launch_gui():
             language_pack_mode=effective_language_pack_mode,
             boot_main_only_mode=effective_boot_main_only_mode,
         )
-        present = [f for f in active_files if os.path.isfile(os.path.join(source_dir, f))]
+        present = [f for f in active_files if os.path.isfile(_bundle_source_path(source_dir, f))]
         if not present:
             messagebox.showerror("Fehler", "Keine der erwarteten Firmware-Dateien gefunden.")
             return

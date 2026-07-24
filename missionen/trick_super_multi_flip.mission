@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Super Multi-Flip",
+  "challenge_type": "trick",
+  "description": "Fliege einen Super Multi-Flip (>= 320 Grad Pitchdrehung) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Super Multi-Flip",
+    "time_limit_s": 30,
+    "bonus_points": 100
+  }
+}

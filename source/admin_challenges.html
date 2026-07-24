@@ -27,6 +27,15 @@ h1{color:#8e44ad;font-size:1.3em;margin:0 0 10px}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75em;font-weight:bold}
 .badge.on{background:#27ae60;color:#fff}
 .badge.off{background:#555;color:#ccc}
+.mlist{max-height:420px;overflow-y:auto;margin:10px 0;border:1px solid #2a3b52;border-radius:6px}
+.mrow{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.07)}
+.mrow:last-child{border-bottom:0}
+.mrow:nth-child(odd){background:rgba(255,255,255,.03)}
+.mname{font-weight:bold;color:#d8e5f4;font-size:.92em}
+.mtype{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:8px;background:#335174;color:#9fb4cb;font-size:.7em;text-transform:uppercase;vertical-align:middle}
+.mdesc{color:#9fb4cb;font-size:.8em;margin:4px 0 8px;line-height:1.35}
+.mbtns{display:flex;gap:6px;flex-wrap:wrap}
+.mbtns .b{padding:6px 10px;margin:0;font-size:.78em}
 </style>
 </head>
 <body>
@@ -65,15 +74,15 @@ h1{color:#8e44ad;font-size:1.3em;margin:0 0 10px}
 <div class="s">
 <h2 data-i18n="challenges.altitudeTitle">Altitude-Hold / Limbo</h2>
 <div class="cfg">
-<label data-i18n="challenges.mode">Modus
+<label><span data-i18n="challenges.mode">Modus</span>
 <select id="alt_mode">
 <option value="hold" data-i18n="challenges.modeHold">Hoehe halten</option>
 <option value="limbo" data-i18n="challenges.modeLimbo">Limbo (tief fliegen)</option>
 </select>
 </label>
-<label data-i18n="challenges.tolerance">Toleranz (m)<input type="number" id="alt_tolerance" value="0.5" step="0.1" min="0.1"></label>
-<label data-i18n="challenges.ceiling">Limbo-Decke (m)<input type="number" id="alt_ceiling" value="1.0" step="0.1" min="0.1"></label>
-<label data-i18n="challenges.duration">Dauer (s)<input type="number" id="alt_duration" value="20" step="1" min="1"></label>
+<label><span data-i18n="challenges.tolerance">Toleranz (m)</span><input type="number" id="alt_tolerance" value="0.5" step="0.1" min="0.1"></label>
+<label><span data-i18n="challenges.ceiling">Limbo-Decke (m)</span><input type="number" id="alt_ceiling" value="1.0" step="0.1" min="0.1"></label>
+<label><span data-i18n="challenges.duration">Dauer (s)</span><input type="number" id="alt_duration" value="20" step="1" min="1"></label>
 </div>
 <div class="st2"><span data-i18n="challenges.status">Status</span><b><span id="alt_badge" class="badge off">-</span></b></div>
 <div class="st2"><span data-i18n="challenges.currentAltitude">Aktuelle rel. Hoehe</span><b id="alt_current">-</b></div>
@@ -92,6 +101,101 @@ h1{color:#8e44ad;font-size:1.3em;margin:0 0 10px}
 <button class="b stop" id="eco_stop" onclick="ecoStop()" data-i18n="challenges.stopAttempt">&#9632; Beenden &amp; werten</button>
 <div class="result" id="eco_result"></div>
 <div class="hint" data-i18n="challenges.ecoHint">Fliege deine Route und beende die Challenge danach - je weniger mAh verbraucht wurden, desto mehr Punkte.</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="challenges.headingTitle">Heading-Hold / Kurs halten</h2>
+<div class="cfg">
+<label><span data-i18n="challenges.tolerance">Toleranz (deg)</span><input type="number" id="hdg_tolerance" value="10" step="1" min="1"></label>
+<label><span data-i18n="challenges.duration">Dauer (s)</span><input type="number" id="hdg_duration" value="15" step="1" min="1"></label>
+</div>
+<div class="st2"><span data-i18n="challenges.status">Status</span><b><span id="hdg_badge" class="badge off">-</span></b></div>
+<div class="st2"><span data-i18n="challenges.currentHeading">Aktueller Kurs</span><b id="hdg_current">-</b></div>
+<div class="st2"><span data-i18n="challenges.elapsedInBand">Zeit im Zielbereich</span><b id="hdg_elapsed">-</b></div>
+<button class="b" id="hdg_start" onclick="headingStart()" data-i18n="challenges.startAttempt">&#9654; Versuch starten</button>
+<button class="b stop" id="hdg_stop" onclick="headingStop()" data-i18n="challenges.cancel">&#10006; Abbrechen</button>
+<div class="result" id="hdg_result"></div>
+<div class="hint" data-i18n="challenges.headingHint">Der Start-Kurs beim ersten Attitude-Frame nach dem Start gilt als Ziel-Kurs.</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="challenges.linkTitle">Signal-Helden (Link-Qualitaet)</h2>
+<div class="cfg">
+<label><span data-i18n="challenges.minLq">Mindest-LQ (%)</span><input type="number" id="link_min_lq" value="70" step="1" min="1" max="100"></label>
+<label><span data-i18n="challenges.maxLq">Maximal-LQ (%, 0=kein Limit)</span><input type="number" id="link_max_lq" value="0" step="1" min="0" max="100"></label>
+<label><span data-i18n="challenges.duration">Dauer (s)</span><input type="number" id="link_duration" value="30" step="1" min="1"></label>
+</div>
+<div class="st2"><span data-i18n="challenges.status">Status</span><b><span id="link_badge" class="badge off">-</span></b></div>
+<div class="st2"><span data-i18n="challenges.currentLq">Aktuelle Linkqualitaet</span><b id="link_current">-</b></div>
+<div class="st2"><span data-i18n="challenges.elapsedInBand">Zeit im Zielbereich</span><b id="link_elapsed">-</b></div>
+<button class="b" id="link_start" onclick="linkStart()" data-i18n="challenges.startAttempt">&#9654; Versuch starten</button>
+<button class="b stop" id="link_stop" onclick="linkStop()" data-i18n="challenges.cancel">&#10006; Abbrechen</button>
+<div class="result" id="link_result"></div>
+<div class="hint" data-i18n="challenges.linkHint">Erfordert CRSF Link-Statistics-Telemetrie (0x14) vom Empfaenger.</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="challenges.speedTitle">Speed-Run / Tempo-Rennen</h2>
+<div class="cfg">
+<label><span data-i18n="challenges.sprintDuration">Sprint-Dauer (s)</span><input type="number" id="speed_duration" value="10" step="1" min="1"></label>
+</div>
+<div class="st2"><span data-i18n="challenges.status">Status</span><b><span id="speed_badge" class="badge off">-</span></b></div>
+<div class="st2"><span data-i18n="challenges.topSpeed">Spitzengeschwindigkeit</span><b id="speed_max">-</b></div>
+<button class="b" id="speed_start" onclick="speedStart()" data-i18n="challenges.startAttempt">&#9654; Versuch starten</button>
+<button class="b stop" id="speed_stop" onclick="speedStop()" data-i18n="challenges.cancel">&#10006; Abbrechen</button>
+<div class="result" id="speed_result"></div>
+<div class="hint" data-i18n="challenges.speedHint">Erfordert CRSF GPS-Telemetrie (0x02) - benoetigt ein GPS-Modul am Flight Controller.</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="challenges.trickTitle">Trick-Challenge</h2>
+<div class="cfg">
+<label><span data-i18n="challenges.targetTrick">Ziel-Trick</span>
+<select id="trick_target">
+<option value="Any">Any (beliebiger Trick)</option>
+<option value="Barrel Roll">Barrel Roll</option>
+<option value="Double Roll">Double Roll</option>
+<option value="Super Multi-Roll">Super Multi-Roll</option>
+<option value="Juicy Roll Flick">Juicy Roll Flick</option>
+<option value="Power Flip">Power Flip</option>
+<option value="Split-S / Half-Loop">Split-S / Half-Loop</option>
+<option value="Double Flip">Double Flip</option>
+<option value="Super Multi-Flip">Super Multi-Flip</option>
+<option value="Juicy Pitch Flick">Juicy Pitch Flick</option>
+<option value="Matty Flip Combo">Matty Flip Combo</option>
+<option value="Flat Spin 360">Flat Spin 360</option>
+<option value="Flat Spin 720">Flat Spin 720</option>
+</select>
+</label>
+<label><span data-i18n="challenges.timeLimit">Zeitfenster (s)</span><input type="number" id="trick_time_limit" value="30" step="1" min="3"></label>
+<label><span data-i18n="challenges.bonusPoints">Bonus-Punkte</span><input type="number" id="trick_bonus" value="50" step="1" min="1"></label>
+</div>
+<div class="st2"><span data-i18n="challenges.status">Status</span><b><span id="trick_badge" class="badge off">-</span></b></div>
+<div class="st2"><span data-i18n="challenges.lastDetected">Zuletzt erkannt</span><b id="trick_current">-</b></div>
+<button class="b" id="trick_start" onclick="trickStart()" data-i18n="challenges.startAttempt">&#9654; Versuch starten</button>
+<button class="b stop" id="trick_stop" onclick="trickStop()" data-i18n="challenges.cancel">&#10006; Abbrechen</button>
+<div class="result" id="trick_result"></div>
+<div class="hint" data-i18n="challenges.trickHint">Nutzt die bereits vorhandene Trick-Erkennung (Roll/Flip/Spin) - keine zusaetzliche Hardware noetig.</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="missions.title">Missionen</h2>
+<div class="hint" data-i18n="missions.hint">Hier koennen fertige Missions-Dateien (.mission) angewendet, hoch-/heruntergeladen und geloescht werden. Fuer die volle Bearbeitung aller Parameter das Desktop-Tool mission_builder.py verwenden - hier geht nur die einfache Verwaltung.</div>
+<div id="mission_list" class="hint" data-i18n="missions.loading">Lade Missionen...</div>
+<div class="cfg">
+<label><span data-i18n="missions.uploadLabel">.mission-Datei hochladen</span>
+<input type="file" id="mission_file" accept=".mission,application/json">
+</label>
+<button class="b" onclick="uploadMission()" data-i18n="missions.uploadButton">&#8593; Hochladen</button>
+</div>
+<div class="result" id="mission_result"></div>
+</div>
+
+<div class="s">
+<h2 data-i18n="challenges.historyTitle">Verlauf bestandener Challenges</h2>
+<div class="hint" data-i18n="challenges.historyHint">Wird dauerhaft in fpv_challenge_log.json auf dem Pico gespeichert und ueberlebt einen Neustart.</div>
+<div id="challenge_log_list" class="hint" data-i18n="challenges.historyLoading">Lade Verlauf...</div>
+<button class="b stop" onclick="clearChallengeLog()" data-i18n="challenges.historyClear">&#10006; Verlauf loeschen</button>
 </div>
 
 </div>
@@ -151,6 +255,38 @@ document.getElementById('eco_consumed').innerText=(eco.consumed_mah!=null)?eco.c
 document.getElementById('eco_result').innerText=eco.last_result||'';
 document.getElementById('eco_start').disabled=!!eco.active;
 document.getElementById('eco_stop').disabled=!eco.active;
+
+const hdg=c.heading||{};
+setBadge(document.getElementById('hdg_badge'),!!hdg.active);
+document.getElementById('hdg_current').innerText=(hdg.current_heading_deg!=null)?hdg.current_heading_deg+' deg':'-';
+document.getElementById('hdg_elapsed').innerText=(hdg.elapsed_in_band_s||0)+'s / '+(hdg.duration_s||0)+'s';
+document.getElementById('hdg_result').innerText=hdg.last_result||'';
+document.getElementById('hdg_start').disabled=!!hdg.active;
+document.getElementById('hdg_stop').disabled=!hdg.active;
+
+const link=c.link_quality||{};
+setBadge(document.getElementById('link_badge'),!!link.active);
+document.getElementById('link_current').innerText=(link.current_lq!=null)?link.current_lq+' %':'-';
+document.getElementById('link_elapsed').innerText=(link.elapsed_in_band_s||0)+'s / '+(link.duration_s||0)+'s';
+document.getElementById('link_result').innerText=link.last_result||'';
+document.getElementById('link_start').disabled=!!link.active;
+document.getElementById('link_stop').disabled=!link.active;
+
+const speed=c.speed_run||{};
+setBadge(document.getElementById('speed_badge'),!!speed.active);
+document.getElementById('speed_max').innerText=(speed.max_speed_kmh!=null)?speed.max_speed_kmh+' km/h':'-';
+document.getElementById('speed_result').innerText=speed.last_result||'';
+document.getElementById('speed_start').disabled=!!speed.active;
+document.getElementById('speed_stop').disabled=!speed.active;
+
+const trick=c.trick||{};
+setBadge(document.getElementById('trick_badge'),!!trick.active);
+document.getElementById('trick_current').innerText=trick.last_detected_name||'-';
+document.getElementById('trick_result').innerText=trick.last_result||'';
+document.getElementById('trick_start').disabled=!!trick.active;
+document.getElementById('trick_stop').disabled=!trick.active;
+
+renderChallengeLog(c.log||[]);
 }).catch(()=>{});
 }
 function touchgoStart(){fetch('/challenge-touchgo-start',{cache:'no-store'}).then(upd).catch(()=>{});}
@@ -166,9 +302,137 @@ fetch('/challenge-altitude-start'+qs,{cache:'no-store'}).then(upd).catch(()=>{})
 function altitudeStop(){fetch('/challenge-altitude-stop',{cache:'no-store'}).then(upd).catch(()=>{});}
 function ecoStart(){fetch('/challenge-eco-start',{cache:'no-store'}).then(upd).catch(()=>{});}
 function ecoStop(){fetch('/challenge-eco-stop',{cache:'no-store'}).then(upd).catch(()=>{});}
+function headingStart(){
+const tolerance=document.getElementById('hdg_tolerance').value;
+const duration=document.getElementById('hdg_duration').value;
+const qs='?tolerance='+encodeURIComponent(tolerance)+'&duration='+encodeURIComponent(duration);
+fetch('/challenge-heading-start'+qs,{cache:'no-store'}).then(upd).catch(()=>{});
+}
+function headingStop(){fetch('/challenge-heading-stop',{cache:'no-store'}).then(upd).catch(()=>{});}
+function linkStart(){
+const minLq=document.getElementById('link_min_lq').value;
+const maxLq=document.getElementById('link_max_lq').value;
+const duration=document.getElementById('link_duration').value;
+const qs='?min_lq='+encodeURIComponent(minLq)+'&max_lq='+encodeURIComponent(maxLq)+'&duration='+encodeURIComponent(duration);
+fetch('/challenge-link-start'+qs,{cache:'no-store'}).then(upd).catch(()=>{});
+}
+function linkStop(){fetch('/challenge-link-stop',{cache:'no-store'}).then(upd).catch(()=>{});}
+function speedStart(){
+const duration=document.getElementById('speed_duration').value;
+const qs='?duration='+encodeURIComponent(duration);
+fetch('/challenge-speed-start'+qs,{cache:'no-store'}).then(upd).catch(()=>{});
+}
+function speedStop(){fetch('/challenge-speed-stop',{cache:'no-store'}).then(upd).catch(()=>{});}
+function trickStart(){
+const target=document.getElementById('trick_target').value;
+const timeLimit=document.getElementById('trick_time_limit').value;
+const bonus=document.getElementById('trick_bonus').value;
+const qs='?target='+encodeURIComponent(target)+'&time_limit='+encodeURIComponent(timeLimit)+'&bonus='+encodeURIComponent(bonus);
+fetch('/challenge-trick-start'+qs,{cache:'no-store'}).then(upd).catch(()=>{});
+}
+function trickStop(){fetch('/challenge-trick-stop',{cache:'no-store'}).then(upd).catch(()=>{});}
+function renderChallengeLog(entries){
+const box=document.getElementById('challenge_log_list');
+if(!entries||!entries.length){
+box.innerText=t('challenges.historyNone','Noch keine Challenge bestanden.');
+return;
+}
+let html='';
+for(let i=entries.length-1;i>=0;i--){
+const e=entries[i];
+html+='<div class="st2"><span>'+(e.timestamp||'')+' - '+(e.description||'')+'</span><b>+'+(e.points||0)+'</b></div>';
+}
+box.innerHTML=html;
+}
+function clearChallengeLog(){
+if(!confirm(t('challenges.historyClearConfirm','Verlauf wirklich loeschen?')))return;
+fetch('/challenge-log-clear',{cache:'no-store'}).then(upd).catch(()=>{});
+}
 
-loadI18n().then(()=>{upd();});
+function renderMissions(missions){
+const box=document.getElementById('mission_list');
+if(!missions||!missions.length){
+box.className='hint';
+box.innerText=t('missions.none','Keine Missionen auf dem Pico gefunden.');
+return;
+}
+box.className='mlist';
+let html='';
+missions.forEach(m=>{
+const name=m.name;
+html+='<div class="mrow"><div class="mname">'+name+'<span class="mtype">'+(m.challenge_type||'?')+'</span></div>'+
+'<div class="mdesc">'+(m.description||'')+'</div>'+
+'<div class="mbtns">'+
+'<button class="b" onclick="applyMission(\''+name+'\')">'+t('missions.apply','Anwenden')+'</button>'+
+'<button class="b" onclick="downloadMission(\''+name+'\')">'+t('missions.download','Download')+'</button>'+
+'<button class="b stop" onclick="deleteMission(\''+name+'\')">'+t('missions.delete','Loeschen')+'</button>'+
+'</div></div>';
+});
+box.innerHTML=html;
+}
+function loadMissions(){
+fetch('/missions-list',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+renderMissions(d.missions||[]);
+}).catch(()=>{});
+}
+function applyMission(name){
+fetch('/mission-apply?name='+encodeURIComponent(name),{cache:'no-store'}).then(r=>r.json()).then(d=>{
+const status=document.getElementById('mission_result');
+status.innerText=d.ok?(t('missions.appliedPrefix','Angewendet: ')+name):(t('common.errorPrefix','Fehler: ')+d.error);
+}).catch(()=>{});
+}
+function downloadMission(name){
+fetch('/mission-download?name='+encodeURIComponent(name),{cache:'no-store'}).then(r=>r.blob()).then(b=>{
+const u=URL.createObjectURL(b);
+const a=document.createElement('a');
+a.href=u;
+a.download=name+'.mission';
+a.click();
+URL.revokeObjectURL(u);
+}).catch(()=>{});
+}
+function deleteMission(name){
+if(!confirm(t('missions.deleteConfirm','Mission loeschen? ')+name+'?'))return;
+fetch('/mission-delete?name='+encodeURIComponent(name),{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok)loadMissions();
+else alert(t('common.errorPrefix','Fehler: ')+d.error);
+}).catch(()=>{});
+}
+function uploadMission(){
+const fileInput=document.getElementById('mission_file');
+const status=document.getElementById('mission_result');
+const file=fileInput.files[0];
+if(!file){
+status.innerText=t('missions.noFile','Keine Datei ausgewaehlt');
+return;
+}
+const reader=new FileReader();
+reader.onload=function(e){
+try{
+const parsed=JSON.parse(e.target.result);
+const name=parsed.name||(file.name.endsWith('.mission')?file.name.slice(0,-8):file.name);
+const fd=new URLSearchParams();
+fd.append('name',name);
+fd.append('data',JSON.stringify(parsed));
+fetch('/mission-upload',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:fd,cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){
+status.innerText=t('missions.uploadedPrefix','Hochgeladen: ')+name;
+fileInput.value='';
+loadMissions();
+}else{
+status.innerText=t('common.errorPrefix','Fehler: ')+d.error;
+}
+}).catch(err=>{status.innerText=t('common.errorPrefix','Fehler: ')+err;});
+}catch(err){
+status.innerText=t('common.errorPrefix','Fehler: ')+err;
+}
+};
+reader.readAsText(file);
+}
+
+loadI18n().then(()=>{upd();loadMissions();});
 setInterval(upd,1000);
+setInterval(loadMissions,5000);
 </script>
 </body>
 </html>

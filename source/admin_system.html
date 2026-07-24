@@ -17,6 +17,7 @@ h1{color:#8e44ad;font-size:1.3em;margin:0 0 10px}
 .st2:last-child{border-bottom:0}
 .b{background:#c0392b;color:#fff;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px;font-weight:bold;font-family:monospace}
 .b:hover{filter:brightness(1.1)}
+.b.dis{background:#555;cursor:not-allowed;opacity:.7}
 .pbwrap{display:none;margin:8px 0 0;height:18px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
 .pbbar{height:100%;width:0%;background:#8e44ad;transition:width .3s ease}
 .pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.7em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
@@ -30,45 +31,89 @@ input:checked+.slider:before{transform:translateX(20px)}
 </head>
 <body>
 <div class="c">
-<h1>&#128295; SYSTEM</h1>
+<h1 data-i18n="system.title">&#128295; SYSTEM</h1>
 <div class="nv">
-<a href="/admin">Dashboard</a>
-<a href="/admin-update">Update</a>
-<a href="/admin-simulate">Simulation</a>
-<a href="/admin-profiles">Profile</a>
-<a href="/admin-system" class="on">System</a>
-<a href="/">Home</a>
+<a href="/admin" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" data-i18n="nav.profiles">Profile</a>
+<a href="/admin-system" class="on" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
+<a href="/" data-i18n="nav.home">Home</a>
 </div>
 <div class="s">
-<h2>Info</h2>
-<div class="st2"><span>Firmware-Version</span><b id="v_version">-</b></div>
-<div class="st2"><span>SSID</span><b id="v_ssid">-</b></div>
-<div class="st2"><span>IP-Adresse</span><b id="v_ip">-</b></div>
-<div class="st2"><span>Freier Speicher</span><b id="v_memfree">-</b></div>
-<div class="st2"><span>Belegter Speicher</span><b id="v_memalloc">-</b></div>
-<div class="st2"><span>Laufzeit</span><b id="v_uptime">-</b></div>
-<div class="st2"><span>Aktives Trick-Profil</span><b id="v_prof">-</b></div>
-<div class="st2"><span>OTA aktiv</span><b id="v_ota">-</b></div>
+<h2 data-i18n="system.info">Info</h2>
+<div class="st2"><span data-i18n="system.firmwareVersion">Firmware-Version</span><b id="v_version">-</b></div>
+<div class="st2"><span data-i18n="system.ssid">SSID</span><b id="v_ssid">-</b></div>
+<div class="st2"><span data-i18n="system.ip">IP-Adresse</span><b id="v_ip">-</b></div>
+<div class="st2"><span data-i18n="system.memFree">Freier Speicher</span><b id="v_memfree">-</b></div>
+<div class="st2"><span data-i18n="system.memAlloc">Belegter Speicher</span><b id="v_memalloc">-</b></div>
+<div class="st2"><span data-i18n="system.storageFree">Daten-Speicher frei</span><b id="v_fsfree">-</b></div>
+<div class="st2"><span data-i18n="system.storageUsed">Daten-Speicher belegt</span><b id="v_fsused">-</b></div>
+<div class="st2"><span data-i18n="system.uptime">Laufzeit</span><b id="v_uptime">-</b></div>
+<div class="st2"><span data-i18n="system.activeProfile">Aktives Trick-Profil</span><b id="v_prof">-</b></div>
+<div class="st2"><span data-i18n="system.otaActive">OTA aktiv</span><b id="v_ota">-</b></div>
 <div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
 </div>
 <div class="s">
-<h2>Developer-Modus</h2>
+<h2 data-i18n="system.language">Sprache</h2>
 <div class="st2">
-<span>Einzeldatei-Uploads (.py/.html) per OTA erlauben</span>
-<label class="toggle"><input type="checkbox" id="devmode" onchange="toggleDev()"><span class="slider"></span></label>
+<span data-i18n="system.languageLabel">UI-Sprache</span>
+<select id="langSel" onchange="setLang()" style="background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;padding:4px 6px"></select>
 </div>
-<div style="color:#9fb4cb;font-size:.78em;margin-top:6px">Standardmaessig (aus) akzeptiert OTA nur komplette <b>firmware.nbo</b> Bundles. Aktiviert erlaubt zusaetzlich einzelne main.py/*.html Dateien (schneller, aber riskanter).</div>
+<div id="langMsg" style="color:#9fb4cb;font-size:.78em;margin-top:6px"></div>
 </div>
 <div class="s">
-<h2>Restart</h2>
-<div id="rs" style="color:#9fb4cb;font-size:.9em;margin-bottom:8px">Startet den Pico neu, ohne eine Datei zu aendern.</div>
-<button class="b" onclick="r()">&#128260; Restart</button>
+<h2 data-i18n="system.developerMode">Developer-Modus</h2>
+<div class="st2">
+<span data-i18n="system.developerModeLabel">Einzeldatei-Uploads (.py/.html) per OTA erlauben</span>
+<label class="toggle"><input type="checkbox" id="devmode" onchange="toggleDev()"><span class="slider"></span></label>
+</div>
+<div style="color:#9fb4cb;font-size:.78em;margin-top:6px" data-i18n="system.developerModeHint">Standardmaessig (aus) akzeptiert OTA nur komplette <b>firmware.nbo</b> Bundles. Aktiviert erlaubt zusaetzlich einzelne main.py/*.html Dateien (schneller, aber riskanter).</div>
+</div>
+<div class="s">
+<h2 data-i18n="system.restart">Restart</h2>
+<div id="rs" style="color:#9fb4cb;font-size:.9em;margin-bottom:8px" data-i18n="system.restartHint">Startet den Pico neu, ohne eine Datei zu aendern.</div>
+<button class="b" onclick="r()" data-i18n="system.restartButton">&#128260; Restart</button>
+<div style="color:#9fb4cb;font-size:.78em;margin-top:8px" data-i18n="system.emergencyHint">Nur bei Bootloop nutzen. Loescht gezielt eine Datei und startet sofort neu.</div>
+<div class="st2" style="border-bottom:0;padding-top:10px">
+<span data-i18n="system.emergencyMainArm">Notaus Main freigeben</span>
+<label class="toggle"><input type="checkbox" id="earmMain" onchange="toggleEmergencyMainArm()"><span class="slider"></span></label>
+</div>
+<button id="ebtnMain" class="b dis" onclick="ewMain()" disabled data-i18n="system.emergencyMainButton">&#9888; Notaus: main.py loeschen</button>
+<div class="st2" style="border-bottom:0;padding-top:10px">
+<span data-i18n="system.emergencyBootArm">Notaus Boot freigeben</span>
+<label class="toggle"><input type="checkbox" id="earmBoot" onchange="toggleEmergencyBootArm()"><span class="slider"></span></label>
+</div>
+<button id="ebtnBoot" class="b dis" onclick="ewBoot()" disabled data-i18n="system.emergencyBootButton">&#9888; Notaus: boot.py loeschen</button>
 </div>
 </div>
 <script>
+let I18N={lang:'de',strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){
+document.querySelectorAll('[data-i18n]').forEach(el=>{
+const key=el.getAttribute('data-i18n');
+const txt=t(key,'');
+if(txt)el.innerHTML=txt;
+});
+document.title=t('system.pageTitle','Admin - System');
+}
+function loadI18n(){
+return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+I18N.lang=d.lang||'de';
+I18N.strings=d.strings||{};
+applyI18n();
+}).catch(()=>{});
+}
 function fmtUptime(sec){
 const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;
 return h+'h '+m+'m '+s+'s';
+}
+function fmtBytes(n){
+if(n<0||n===undefined||n===null)return '?';
+if(n>=1024*1024)return (n/(1024*1024)).toFixed(2)+' MB';
+return (n/1024).toFixed(1)+' KB';
 }
 function upd(){
 fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
@@ -77,9 +122,11 @@ document.getElementById('v_ssid').innerText=d.ssid||'-';
 document.getElementById('v_ip').innerText=d.ip||'-';
 document.getElementById('v_memfree').innerText=(d.mem_free>=0)?(d.mem_free/1024).toFixed(1)+' KB':'?';
 document.getElementById('v_memalloc').innerText=(d.mem_alloc>=0)?(d.mem_alloc/1024).toFixed(1)+' KB':'?';
+document.getElementById('v_fsfree').innerText=fmtBytes(d.fs_free);
+document.getElementById('v_fsused').innerText=fmtBytes(d.fs_used);
 document.getElementById('v_uptime').innerText=fmtUptime(d.uptime_s||0);
 document.getElementById('v_prof').innerText=d.trick_tuning_profile||'-';
-document.getElementById('v_ota').innerText=d.ota_active?'Ja':'Nein';
+document.getElementById('v_ota').innerText=d.ota_active?t('common.yes','Ja'):t('common.no','Nein');
 if(!devTouched){document.getElementById('devmode').checked=!!d.developer_mode;}
 const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
 if(d.ota_active&&d.ota_total_chunks>0){
@@ -91,11 +138,37 @@ pbwrap.style.display='none';pbbar.style.width='0%';pbtxt.innerText='';
 }).catch(e=>0);
 }
 function r(){
-if(confirm('Pico jetzt neu starten?')){
-document.getElementById('rs').innerText='Neustart laeuft...';
+if(confirm(t('system.restartConfirm','Pico jetzt neu starten?'))){
+document.getElementById('rs').innerText=t('system.restarting','Neustart laeuft...');
 fetch('/restart-pico',{cache:'no-store'}).catch(()=>{});
 setTimeout(()=>location.href='/',2500);
 }
+}
+function toggleEmergencyMainArm(){
+const armed=document.getElementById('earmMain').checked;
+const b=document.getElementById('ebtnMain');
+b.disabled=!armed;
+if(armed){b.classList.remove('dis');}
+else{b.classList.add('dis');}
+}
+function toggleEmergencyBootArm(){
+const armed=document.getElementById('earmBoot').checked;
+const b=document.getElementById('ebtnBoot');
+b.disabled=!armed;
+if(armed){b.classList.remove('dis');}
+else{b.classList.add('dis');}
+}
+function ewMain(){
+if(document.getElementById('ebtnMain').disabled)return;
+if(!confirm(t('system.emergencyMainConfirm','NOTAUS ausfuehren? main.py wird geloescht und der Pico startet neu.')))return;
+document.getElementById('rs').innerText=t('system.emergencyMainRunning','Notaus Main laeuft...');
+fetch('/emergency-delete-main?confirm=1',{cache:'no-store'}).catch(()=>{});
+}
+function ewBoot(){
+if(document.getElementById('ebtnBoot').disabled)return;
+if(!confirm(t('system.emergencyBootConfirm','NOTAUS ausfuehren? boot.py wird geloescht und der Pico startet neu.')))return;
+document.getElementById('rs').innerText=t('system.emergencyBootRunning','Notaus Boot laeuft...');
+fetch('/emergency-delete-boot?confirm=1',{cache:'no-store'}).catch(()=>{});
 }
 let devTouched=false;
 function toggleDev(){
@@ -106,7 +179,35 @@ devTouched=false;
 if(!d.ok){cb.checked=!en;}
 }).catch(()=>{devTouched=false;cb.checked=!en;});
 }
-upd();setInterval(upd,3000);
+function loadLanguages(){
+fetch('/language-packs',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+const sel=document.getElementById('langSel');
+sel.innerHTML='';
+const arr=d.languages||[];
+for(let i=0;i<arr.length;i++){
+const code=arr[i];
+const opt=document.createElement('option');
+opt.value=code;
+opt.textContent=code.toUpperCase();
+if(code===(d.current||I18N.lang))opt.selected=true;
+sel.appendChild(opt);
+}
+}).catch(()=>{});
+}
+function setLang(){
+const sel=document.getElementById('langSel');
+const lang=sel.value;
+fetch('/set-language?lang='+encodeURIComponent(lang),{cache:'no-store'}).then(r=>r.json()).then(d=>{
+const msg=document.getElementById('langMsg');
+if(d.ok){
+msg.innerText=t('system.languageSaved','Sprache gespeichert.');
+loadI18n();
+}else{
+msg.innerText=t('system.languageSaveError','Speichern fehlgeschlagen.');
+}
+}).catch(()=>{});
+}
+loadI18n().then(()=>{upd();loadLanguages();setInterval(upd,3000);setInterval(loadI18n,5000);});
 </script>
 </body>
 </html>

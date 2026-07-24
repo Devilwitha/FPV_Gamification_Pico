@@ -6,6 +6,8 @@ from tkinter import filedialog, messagebox, ttk
 
 APP_TITLE = "Profile Manager"
 PROFILE_EXTENSION = ".pro"
+COPIL_FILE_NAME = "copil"
+COPIL_DEFAULT_NAME = "Test"
 
 REQUIRED_KEYS = [
     "gyro_trick_threshold",
@@ -56,6 +58,46 @@ def _normalize_flat(data: dict) -> dict:
     return normalized
 
 
+def _resolve_copil_path() -> Path:
+    source_dir = Path.cwd() / "source"
+    if source_dir.is_dir():
+        return source_dir / COPIL_FILE_NAME
+    return Path.cwd() / COPIL_FILE_NAME
+
+
+def _read_or_create_copil(path: Path) -> dict:
+    default_payload = {
+        "copter_name": COPIL_DEFAULT_NAME,
+        "pilot_name": COPIL_DEFAULT_NAME,
+    }
+    try:
+        raw = path.read_text(encoding="utf-8")
+        parsed = json.loads(raw)
+        copter_name = str(parsed.get("copter_name", COPIL_DEFAULT_NAME)).strip() or COPIL_DEFAULT_NAME
+        pilot_name = str(parsed.get("pilot_name", COPIL_DEFAULT_NAME)).strip() or COPIL_DEFAULT_NAME
+        payload = {"copter_name": copter_name, "pilot_name": pilot_name}
+    except Exception:
+        payload = dict(default_payload)
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+    return payload
+
+
+def _write_copil(path: Path, copter_name: str, pilot_name: str):
+    payload = {
+        "copter_name": (copter_name or "").strip() or COPIL_DEFAULT_NAME,
+        "pilot_name": (pilot_name or "").strip() or COPIL_DEFAULT_NAME,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return payload
+
+
 class ProfileManagerApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -65,7 +107,10 @@ class ProfileManagerApp(tk.Tk):
 
         self.current_path: Optional[Path] = None
         self.current_data: dict = default_profile_flat()
+        self.copil_path = _resolve_copil_path()
         self.dirty = False
+
+        _read_or_create_copil(self.copil_path)
 
         self._build_ui()
         self._refresh_file_list()
@@ -103,6 +148,7 @@ class ProfileManagerApp(tk.Tk):
         ttk.Button(sidebar_buttons, text="Speichern", command=self.save_profile).grid(row=2, column=0, sticky="ew", pady=2)
         ttk.Button(sidebar_buttons, text="Speichern unter", command=self.save_profile_as).grid(row=3, column=0, sticky="ew", pady=2)
         ttk.Button(sidebar_buttons, text="Aktualisieren", command=self._refresh_file_list).grid(row=4, column=0, sticky="ew", pady=2)
+        ttk.Button(sidebar_buttons, text="Copil bearbeiten", command=self.edit_copil).grid(row=5, column=0, sticky="ew", pady=2)
 
         editor = ttk.Frame(self, padding=10)
         editor.grid(row=0, column=1, sticky="nsew")
@@ -291,6 +337,49 @@ class ProfileManagerApp(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Speichern fehlgeschlagen", str(exc))
             self._set_status(f"Fehler beim Speichern unter: {exc}")
+
+    def edit_copil(self):
+        payload = _read_or_create_copil(self.copil_path)
+
+        dialog = tk.Toplevel(self)
+        dialog.title("Copil bearbeiten")
+        dialog.geometry("420x190")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        frame = ttk.Frame(dialog, padding=12)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text=f"Datei: {self.copil_path}", wraplength=380).pack(anchor="w", pady=(0, 8))
+
+        ttk.Label(frame, text="Copter-Name").pack(anchor="w")
+        copter_var = tk.StringVar(value=payload.get("copter_name", COPIL_DEFAULT_NAME))
+        ttk.Entry(frame, textvariable=copter_var).pack(fill="x", pady=(0, 8))
+
+        ttk.Label(frame, text="Pilot-Name (Highscore)").pack(anchor="w")
+        pilot_var = tk.StringVar(value=payload.get("pilot_name", COPIL_DEFAULT_NAME))
+        ttk.Entry(frame, textvariable=pilot_var).pack(fill="x", pady=(0, 12))
+
+        btn_row = ttk.Frame(frame)
+        btn_row.pack(fill="x")
+
+        def save_and_close():
+            try:
+                saved = _write_copil(self.copil_path, copter_var.get(), pilot_var.get())
+                self._set_status(
+                    f"Copil gespeichert: Copter={saved['copter_name']} | Pilot={saved['pilot_name']}"
+                )
+                dialog.destroy()
+            except Exception as exc:
+                messagebox.showerror("Copil speichern fehlgeschlagen", str(exc), parent=dialog)
+
+        def set_test_values():
+            copter_var.set(COPIL_DEFAULT_NAME)
+            pilot_var.set(COPIL_DEFAULT_NAME)
+
+        ttk.Button(btn_row, text="Test-Werte", command=set_test_values).pack(side="left")
+        ttk.Button(btn_row, text="Speichern", command=save_and_close).pack(side="right")
 
 
 def main():

@@ -16,6 +16,9 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .st2{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.9em}
 .st2:last-child{border-bottom:0}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.b{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:#c0392b;color:#fff;border:none;border-radius:8px;padding:9px 12px;cursor:pointer;font-weight:bold;font-family:monospace}
+.b:hover{filter:brightness(1.08)}
 .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 .card{background:#161e2e;border-left:3px solid #2980b9;border-radius:6px;padding:12px;text-decoration:none;color:#e8f0f8;display:block}
 .card:hover{filter:brightness(1.1)}
@@ -25,39 +28,49 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 .card.sim{border-left-color:#2980b9}
 .card.prof{border-left-color:#27ae60}
 .card.sys{border-left-color:#8e44ad}
+.card.idc{border-left-color:#f1c40f}
 @media(max-width:480px){.grid,.cards{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="c">
-<h1>&#9881;&#65039; ADMIN</h1>
+<h1 data-i18n="dashboard.title">&#9881;&#65039; ADMIN</h1>
 <div class="nv">
-<a href="/admin" class="on">Dashboard</a>
-<a href="/admin-update">Update</a>
-<a href="/admin-simulate">Simulation</a>
-<a href="/admin-profiles">Profile</a>
-<a href="/admin-system">System</a>
-<a href="/">Home</a>
+<a href="/admin" class="on" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" data-i18n="nav.profiles">Profile</a>
+<a href="/admin-system" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
+<a href="/" data-i18n="nav.home">Home</a>
 </div>
 
 <div class="s">
-<h2>Status</h2>
+<h2 data-i18n="dashboard.status">Status</h2>
 <div class="grid">
-<div class="st2"><span>Score</span><b id="v_score">-</b></div>
-<div class="st2"><span>Highscore</span><b id="v_hs">-</b></div>
-<div class="st2"><span>Aktives Profil</span><b id="v_prof">-</b></div>
-<div class="st2"><span>Freier Speicher</span><b id="v_mem">-</b></div>
+<div class="st2"><span data-i18n="dashboard.score">Score</span><b id="v_score">-</b></div>
+<div class="st2"><span data-i18n="dashboard.highscore">Highscore</span><b id="v_hs">-</b></div>
+<div class="st2"><span data-i18n="dashboard.activeProfile">Aktives Profil</span><b id="v_prof">-</b></div>
+<div class="st2"><span data-i18n="dashboard.memFree">Freier Speicher</span><b id="v_mem">-</b></div>
+</div>
+<div class="btnrow">
+<button class="b" onclick="rhs()" data-i18n="index.resetHs">&#128465;&#65039; Reset HS</button>
 </div>
 </div>
 
 <div class="cards">
-<a class="card upd" href="/admin-update"><h3>&#128228; Update</h3><p>main.py oder HTML-Dateien per Browser aktualisieren (OTA)</p></a>
-<a class="card sim" href="/admin-simulate"><h3>&#127917; Simulation</h3><p>Tricks ohne Drohne testen (Roll/Flip/Spin)</p></a>
-<a class="card prof" href="/admin-profiles"><h3>&#127919; Profile</h3><p>Trick-Tuning-Profile verwalten und anwenden</p></a>
-<a class="card sys" href="/admin-system"><h3>&#128295; System</h3><p>Speicher/Netzwerk-Info, manueller Restart</p></a>
+<a class="card idc" href="/admin-idcard"><h3 data-i18n="dashboard.card.idcardTitle">&#128247; FPV-Ausweis</h3><p data-i18n="dashboard.card.idcardText">JPG/PNG/PDF hochladen, streamen und bei Bedarf wieder loeschen</p></a>
+<a class="card upd" href="/admin-update"><h3 data-i18n="dashboard.card.updateTitle">&#128228; Update</h3><p data-i18n="dashboard.card.updateText">main.py oder HTML-Dateien per Browser aktualisieren (OTA)</p></a>
+<a class="card sim" href="/admin-simulate"><h3 data-i18n="dashboard.card.simTitle">&#127917; Simulation</h3><p data-i18n="dashboard.card.simText">Tricks ohne Drohne testen (Roll/Flip/Spin)</p></a>
+<a class="card prof" href="/admin-profiles"><h3 data-i18n="dashboard.card.profileTitle">&#127919; Profile</h3><p data-i18n="dashboard.card.profileText">Trick-Tuning-Profile verwalten und anwenden</p></a>
+<a class="card sys" href="/admin-system"><h3 data-i18n="dashboard.card.systemTitle">&#128295; System</h3><p data-i18n="dashboard.card.systemText">Speicher/Netzwerk-Info, manueller Restart</p></a>
 </div>
 </div>
 <script>
+let I18N={strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const s=t(el.getAttribute('data-i18n'),'');if(s)el.innerHTML=s;});document.title=t('dashboard.pageTitle','Admin');}
+function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n();}).catch(()=>{});}
 function upd(){
 fetch('/data',{cache:'no-store'}).then(r=>r.json()).then(d=>{
 document.getElementById('v_score').innerText=d.score;
@@ -68,7 +81,8 @@ fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
 document.getElementById('v_mem').innerText=(d.mem_free>=0)?(d.mem_free/1024).toFixed(1)+' KB':'?';
 }).catch(e=>0);
 }
-upd();setInterval(upd,3000);
+function rhs(){if(confirm(t('index.resetConfirm','Highscore loeschen?'))){fetch('/reset-highscore?web=1').then(()=>upd()).catch(e=>0)}}
+loadI18n().then(()=>{upd();setInterval(upd,3000);setInterval(loadI18n,5000);});
 </script>
 </body>
 </html>

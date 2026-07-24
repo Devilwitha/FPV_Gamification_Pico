@@ -40,8 +40,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Firmware-Bundle bauen (firmware.nbo)
-        run: python build_firmware.py build/firmware.nbo
+      - name: Firmware-Bundles bauen (alle Modi)
+        run: |
+          python build_firmware.py build/firmware.nbo --mode normal
+          python build_firmware.py build/firmware-complete.nbo --mode complete --no-version-bump
+          python build_firmware.py build/firmware-light.nbo --mode light --no-version-bump
+          python build_firmware.py build/firmware-recovery.nbo --mode recovery --no-version-bump
+          python build_firmware.py build/emergency.nbo --mode bootmain --no-version-bump
         # Erhoeht dabei automatisch die Firmware-Versionsnummer (version.json /
         # firmware_version.txt, Format X.Y.Z -> X.Y.Z+1, siehe build_firmware.py).
 
@@ -61,11 +66,16 @@ jobs:
             git push
           fi
 
-      - name: firmware.nbo als Download-Artefakt hochladen
+      - name: Firmware-Bundles als Download-Artefakt hochladen
         uses: actions/upload-artifact@v4
         with:
-          name: firmware.nbo
-          path: build/firmware.nbo
+          name: firmware-bundles
+          path: |
+            build/firmware.nbo
+            build/firmware-complete.nbo
+            build/firmware-light.nbo
+            build/firmware-recovery.nbo
+            build/emergency.nbo
           retention-days: 90
 
       - name: GitHub Release erstellen
@@ -73,5 +83,10 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Firmware ${{ steps.version.outputs.tag }}
-          files: build/firmware.nbo
+          files: |
+            build/firmware.nbo
+            build/firmware-complete.nbo
+            build/firmware-light.nbo
+            build/firmware-recovery.nbo
+            build/emergency.nbo
           generate_release_notes: true

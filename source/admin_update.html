@@ -24,27 +24,32 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 </head>
 <body>
 <div class="c">
-<h1>&#128228; OTA UPDATE</h1>
+<h1 data-i18n="update.title">&#128228; OTA UPDATE</h1>
 <div class="nv">
-<a href="/admin">Dashboard</a>
-<a href="/admin-update" class="on">Update</a>
-<a href="/admin-simulate">Simulation</a>
-<a href="/admin-profiles">Profile</a>
-<a href="/admin-system">System</a>
-<a href="/">Home</a>
+<a href="/admin" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" class="on" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" data-i18n="nav.profiles">Profile</a>
+<a href="/admin-system" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
+<a href="/" data-i18n="nav.home">Home</a>
 </div>
-<div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html - oder ein komplettes <b>firmware.nbo</b> Bundle (alle Dateien auf einmal, siehe build_firmware.py)</div>
+<div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px" data-i18n="update.allowedHint">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html, admin_idcard.html - oder ein komplettes <b>firmware.nbo</b> Bundle (alle Dateien auf einmal, siehe build_firmware.py)</div>
 <div id="devhint" style="color:#9fb4cb;font-size:.78em;margin-bottom:6px"></div>
-<input type="file" id="f" accept=".py,.html,.nbo">
-<div id="fi" style="color:#9fb4cb;font-size:0.9em">Datei waehlen...</div>
+<input type="file" id="f" accept=".py,.html,.nbo,.pak">
+<div id="fi" style="color:#9fb4cb;font-size:0.9em" data-i18n="update.chooseFile">Datei waehlen...</div>
 <div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
 <div id="s" class="s"></div>
-<button class="b" onclick="u()">Upload</button>
+<button class="b" onclick="u()" data-i18n="update.uploadButton">Upload</button>
 </div>
 <script>
+let I18N={strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const s=t(el.getAttribute('data-i18n'),'');if(s)el.innerHTML=s;});document.title=t('update.pageTitle','Admin - Update');}
+function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n();}).catch(()=>{});}
 document.getElementById('f').addEventListener('change',function(e){
 const f=e.target.files[0];
-document.getElementById('fi').innerText=f?'Datei: '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)':'Datei waehlen...';
+document.getElementById('fi').innerText=f?(t('update.filePrefix','Datei: ')+f.name+' ('+(f.size/1024).toFixed(1)+' KB)'):t('update.chooseFile','Datei waehlen...');
 document.getElementById('pbwrap').style.display='none';
 document.getElementById('pbbar').style.width='0%';
 document.getElementById('pbtxt').innerText='';
@@ -52,8 +57,46 @@ document.getElementById('s').style.display='none';
 });
 function tgtFromName(n){
 const a=['index.html','admin_dashboard.html','admin_update.html','admin_simulate.html','admin_profiles.html','admin_system.html'];
+if(n&&n.toLowerCase()==='lang.pak')return 'lang.pak';
 if(n&&n.toLowerCase().endsWith('.nbo'))return 'firmware.nbo';
 return (n&&a.indexOf(n)>=0)?n:'main.py';
+}
+function parseBundleEntryNames(bytes){
+	const out=[];
+	if(!bytes||bytes.length<12)return out;
+	const magic='FPVBNDL1';
+	let m='';
+	for(let i=0;i<8;i++)m+=String.fromCharCode(bytes[i]);
+	if(m!==magic)return out;
+	const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+	let off=8;
+	const count=dv.getUint32(off,false); off+=4;
+	const dec=new TextDecoder();
+	for(let i=0;i<count;i++){
+		if(off+4>bytes.length)break;
+		const nameLen=dv.getUint32(off,false); off+=4;
+		if(off+nameLen>bytes.length)break;
+		const name=dec.decode(bytes.slice(off,off+nameLen)); off+=nameLen;
+		out.push(name);
+		if(off+4>bytes.length)break;
+		const contentLen=dv.getUint32(off,false); off+=4;
+		if(off+contentLen>bytes.length)break;
+		off+=contentLen;
+	}
+	return out;
+}
+function classifyBundleMode(entries,isLangBundle){
+	if(isLangBundle)return 'language';
+	if(!entries||entries.length===0)return 'light';
+	const allPak=entries.every(n=>n.endsWith('.pak'));
+	if(allPak)return 'language';
+	const hasMain=entries.indexOf('main.py')>=0;
+	const hasBoot=entries.indexOf('boot.py')>=0;
+	if(hasMain&&hasBoot)return 'complete';
+	const recSet=['boot.py','recovery.py','hotspot_common.py','boot_runtime.py','ota_helpers.py','firmware_version.txt'];
+	const isRecovery=entries.every(n=>recSet.indexOf(n)>=0);
+	if(isRecovery)return 'recovery';
+	return 'light';
 }
 let devMode=false;
 function refreshDevMode(){
@@ -61,23 +104,23 @@ fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
 devMode=!!d.developer_mode;
 const fEl=document.getElementById('f'),hint=document.getElementById('devhint');
 if(devMode){
-fEl.setAttribute('accept','.py,.html,.nbo');
-hint.innerText='Developer-Modus AN: Einzeldateien (.py/.html) und .nbo Bundles erlaubt.';
+fEl.setAttribute('accept','.py,.html,.nbo,.pak');
+hint.innerText=t('update.devOnHint','Developer-Modus AN: Einzeldateien (.py/.html) und .nbo Bundles erlaubt.');
 }else{
-fEl.setAttribute('accept','.nbo');
-hint.innerText='Developer-Modus AUS: Nur komplette firmware.nbo Bundles erlaubt (siehe System-Seite).';
+fEl.setAttribute('accept','.nbo,.pak');
+hint.innerText=t('update.devOffHint','Developer-Modus AUS: Nur komplette firmware.nbo Bundles erlaubt (siehe System-Seite).')+' '+t('update.langBundleHint','lang.pak ist ebenfalls erlaubt.');
 }
 }).catch(()=>{});
 }
-refreshDevMode();
 function u(){
 const f=document.getElementById('f').files[0],s=document.getElementById('s');
-if(!f){s.className='s err';s.innerText='Keine Datei!';s.style.display='block';return;}
+if(!f){s.className='s err';s.innerText=t('update.errNoFile','Keine Datei!');s.style.display='block';return;}
 const nl=f.name.toLowerCase();
-if(!nl.endsWith('.py')&&!nl.endsWith('.html')&&!nl.endsWith('.nbo')){s.className='s err';s.innerText='Nur .py, .html oder .nbo Dateien erlaubt!';s.style.display='block';return;}
-if(!devMode&&!nl.endsWith('.nbo')){s.className='s err';s.innerText='Developer-Modus ist aus: Nur firmware.nbo Bundles erlaubt (siehe System-Seite).';s.style.display='block';return;}
+const isLangBundle=(nl==='lang.pak');
+if(!nl.endsWith('.py')&&!nl.endsWith('.html')&&!nl.endsWith('.nbo')&&!isLangBundle){s.className='s err';s.innerText=t('update.errType','Nur .py, .html oder .nbo Dateien erlaubt!')+' '+t('update.errTypeLang','Zusatz: lang.pak ist erlaubt.');s.style.display='block';return;}
+if(!devMode&&!nl.endsWith('.nbo')&&!isLangBundle){s.className='s err';s.innerText=t('update.errDevOff','Developer-Modus ist aus: Nur firmware.nbo Bundles erlaubt (siehe System-Seite).')+' '+t('update.langBundleHint','lang.pak ist ebenfalls erlaubt.');s.style.display='block';return;}
 const tgt=tgtFromName(f.name);
-const isBinary=nl.endsWith('.nbo');
+const isBinary=nl.endsWith('.nbo')||isLangBundle;
 const rd=new FileReader();
 rd.onload=function(e){
 try{
@@ -87,6 +130,14 @@ b=new Uint8Array(e.target.result);
 }else{
 const ct=e.target.result,enc=new TextEncoder();
 b=enc.encode(ct);
+}
+let entries=[];
+if(isBinary){
+entries=parseBundleEntryNames(b);
+}
+let bundleMode=classifyBundleMode(entries,isLangBundle);
+if(entries.length===0){
+entries=[tgt];
 }
 let bn='';
 for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);}
@@ -100,7 +151,7 @@ function nc(){
 if(idx>=tc){
 setProgress(100);
 fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{
-if(d.ok){s.className='s ok';s.innerText='Fertig: '+d.message+(d.restart?' Neustart laeuft...':' Seite neu laden, um Aenderung zu sehen.');}
+if(d.ok){s.className='s ok';s.innerText=t('update.donePrefix','Fertig: ')+d.message+(d.restart?(' '+t('update.restarting','Neustart laeuft...')):(' '+t('update.reloadHint','Seite neu laden, um Aenderung zu sehen.')));}
 else{s.className='s err';s.innerText='Fehler: '+d.error;}
 }).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});
 return;
@@ -111,11 +162,21 @@ if(d.ok){idx++;setProgress(Math.round((idx/tc)*100));nc();}
 else{s.className='s err';s.innerText='Fehler: '+d.error;}
 }).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});
 }
+const prepUrl='/prepare-upload?target='+encodeURIComponent(tgt)
+	+'&bundle_mode='+encodeURIComponent(bundleMode)
+	+'&entries='+encodeURIComponent(entries.join(','));
+s.className='s';
+s.innerText=t('update.preparing','Bereinige Speicher vor Upload...');
+s.style.display='block';
+fetch(prepUrl,{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok){s.className='s err';s.innerText='Fehler: '+(d.error||'Prepare fehlgeschlagen');return;}
 nc();
+}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});
 }catch(er){s.className='s err';s.innerText='Fehler: '+er;s.style.display='block';}
 };
 if(isBinary){rd.readAsArrayBuffer(f);}else{rd.readAsText(f);}
 }
+loadI18n().then(()=>{refreshDevMode();setInterval(loadI18n,5000);});
 </script>
 </body>
 </html>

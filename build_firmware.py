@@ -1761,6 +1761,13 @@ def main():
     parser.add_argument("--no-version-bump", action="store_true", help="Version nicht automatisch erhoehen")
     args = parser.parse_args()
 
+    # Ein reiner Dateiname ohne Verzeichnisanteil (z.B. "firmware.nbo") landet
+    # immer in BUILD_DIR statt im aktuellen Arbeitsverzeichnis (Projekt-Root) -
+    # verhindert versehentlich im Root abgelegte .nbo-Dateien bei manuellen
+    # CLI-Aufrufen wie "python build_firmware.py firmware.nbo".
+    if os.path.dirname(args.output_path) == "":
+        args.output_path = os.path.join(BUILD_DIR, args.output_path)
+
     include_boot_stack = False
     light_mode = False
     recovery_mode = False

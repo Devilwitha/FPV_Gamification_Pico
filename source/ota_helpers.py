@@ -198,7 +198,7 @@ def safe_base64_file_to_file(input_file, output_file, log=_noop_log, feed_wdt=_n
         return True
     except Exception as e:
         log(f"[BASE64-FILE-STREAM] Fehler: {e}")
-        return False
+        return str(e) or "unbekannter Fehler"
 
 
 def read_exact(f, n):
@@ -214,10 +214,11 @@ def read_exact(f, n):
     return bytes(data)
 
 
-def apply_firmware_bundle(bundle_path, allowed_targets, bundle_magic, log=_noop_log, feed_wdt=_noop_feed_wdt):
-    """Entpackt ein per build_firmware.py erzeugtes Firmware-Bundle
-    (firmware.nbo) und ersetzt jede enthaltene Datei einzeln auf dem
-    Pico-Dateisystem ohne Backup-Dateien, um Flash-Spitzen zu vermeiden.
+def _apply_firmware_bundle_from_stream(f, allowed_targets, bundle_magic, log=_noop_log, feed_wdt=_noop_feed_wdt):
+    """Kern-Logik von apply_firmware_bundle()/apply_firmware_bundle_from_base64():
+    liest ein Bundle aus einem beliebigen Objekt mit .read(n) (echte Datei
+    ODER Base64StreamReader) und ersetzt jede enthaltene Datei einzeln auf
+    dem Pico-Dateisystem ohne Backup-Dateien, um Flash-Spitzen zu vermeiden.
     Jeder Dateiname im Bundle wird gegen `allowed_targets` geprueft, bevor
     irgendetwas geschrieben wird (kein beliebiges Ueberschreiben von
     Dateien moeglich).
@@ -228,55 +229,150 @@ def apply_firmware_bundle(bundle_path, allowed_targets, bundle_magic, log=_noop_
     (8000ms, siehe boot.py) brauchen; ohne diese Callbacks wuerde der
     Watchdog mitten im Entpacken feuern und die Verbindung abrupt kappen."""
     extracted_files = []
-    with open(bundle_path, 'rb') as f:
-        magic = read_exact(f, len(bundle_magic))
-        if magic != bundle_magic:
-            raise Exception("Ungueltiges Firmware-Bundle (Magic-Header falsch)")
+    magic = read_exact(f, len(bundle_magic))
+    if magic != bundle_magic:
+        raise Exception("Ungueltiges Firmware-Bundle (Magic-Header falsch)")
 
-        count_bytes = read_exact(f, 4)
-        if len(count_bytes) < 4:
-            raise Exception("Bundle beschaedigt (Dateianzahl fehlt)")
-        (file_count,) = struct.unpack('>I', count_bytes)
+    count_bytes = read_exact(f, 4)
+    if len(count_bytes) < 4:
+        raise Exception("Bundle beschaedigt (Dateianzahl fehlt)")
+    (file_count,) = struct.unpack('>I', count_bytes)
 
-        for _ in range(file_count):
-            feed_wdt()
-            name_len_bytes = read_exact(f, 4)
-            if len(name_len_bytes) < 4:
-                raise Exception("Bundle beschaedigt (Namenslaenge fehlt)")
-            (name_len,) = struct.unpack('>I', name_len_bytes)
+    for _ in range(file_count):
+        feed_wdt()
+        name_len_bytes = read_exact(f, 4)
+        if len(name_len_bytes) < 4:
+            raise Exception("Bundle beschaedigt (Namenslaenge fehlt)")
+        (name_len,) = struct.unpack('>I', name_len_bytes)
 
-            name_bytes = read_exact(f, name_len)
-            if len(name_bytes) < name_len:
-                raise Exception("Bundle beschaedigt (Dateiname unvollstaendig)")
-            filename = name_bytes.decode('utf-8')
+        name_bytes = read_exact(f, name_len)
+        if len(name_bytes) < name_len:
+            raise Exception("Bundle beschaedigt (Dateiname unvollstaendig)")
+        filename = name_bytes.decode('utf-8')
 
-            content_len_bytes = read_exact(f, 4)
-            if len(content_len_bytes) < 4:
-                raise Exception(f"Bundle beschaedigt (Inhaltslaenge fehlt: {filename})")
-            (content_len,) = struct.unpack('>I', content_len_bytes)
+        content_len_bytes = read_exact(f, 4)
+        if len(content_len_bytes) < 4:
+            raise Exception(f"Bundle beschaedigt (Inhaltslaenge fehlt: {filename})")
+        (content_len,) = struct.unpack('>I', content_len_bytes)
 
-            if filename not in allowed_targets:
-                raise Exception(f"Datei im Bundle nicht erlaubt: {filename}")
+        if filename not in allowed_targets:
+            raise Exception(f"Datei im Bundle nicht erlaubt: {filename}")
 
-            tmp_name = filename + ".bndl_tmp"
-            remaining = content_len
-            with open(tmp_name, 'wb') as out:
-                while remaining > 0:
-                    feed_wdt()
-                    chunk = f.read(min(512, remaining))
-                    if not chunk:
-                        raise Exception(f"Bundle beschaedigt (Inhalt unvollstaendig: {filename})")
-                    out.write(chunk)
-                    remaining -= len(chunk)
+        tmp_name = filename + ".bndl_tmp"
+        remaining = content_len
+        with open(tmp_name, 'wb') as out:
+            while remaining > 0:
+                feed_wdt()
+                chunk = f.read(min(512, remaining))
+                if not chunk:
+                    raise Exception(f"Bundle beschaedigt (Inhalt unvollstaendig: {filename})")
+                out.write(chunk)
+                remaining -= len(chunk)
 
-            try:
-                os.remove(filename)
-            except Exception:
-                pass
-            os.rename(tmp_name, filename)
+        try:
+            os.remove(filename)
+        except Exception:
+            pass
+        os.rename(tmp_name, filename)
 
-            extracted_files.append(filename)
-            log(f"[OTA BUNDLE] Datei ersetzt: {filename} ({content_len} bytes)")
+        extracted_files.append(filename)
+        log(f"[OTA BUNDLE] Datei ersetzt: {filename} ({content_len} bytes)")
 
     needs_restart = "main.py" in extracted_files
     return extracted_files, needs_restart
+
+
+def apply_firmware_bundle(bundle_path, allowed_targets, bundle_magic, log=_noop_log, feed_wdt=_noop_feed_wdt):
+    """Entpackt ein bereits binaer vorliegendes Firmware-Bundle
+    (z.B. firmware.nbo) aus `bundle_path`. Siehe _apply_firmware_bundle_from_stream()."""
+    with open(bundle_path, 'rb') as f:
+        return _apply_firmware_bundle_from_stream(f, allowed_targets, bundle_magic, log=log, feed_wdt=feed_wdt)
+
+
+class Base64FileReader:
+    """Liest eine Base64-Text-Datei (z.B. 'update.pbp') und liefert ueber
+    .read(n) direkt dekodierte Binaerdaten - OHNE den kompletten dekodierten
+    Bundle-Inhalt jemals komplett auf dem Dateisystem zu materialisieren.
+
+    Grund: bei einem OTA-Firmware-Bundle (mehrere Dateien in einem Blob)
+    hat das vorherige Vorgehen (erst komplett nach OTA_STAGING_PATH
+    dekodieren, DANACH entpacken) einen zusaetzlichen, voll dekodierten
+    Bundle-Inhalt (mehrere hundert KB) waehrend des GESAMTEN Entpack-
+    vorgangs auf dem Flash gehalten - zusaetzlich zu den noch nicht
+    ersetzten Original-Dateien. Bei wachsender Bundle-Groesse (Sprachpakete,
+    neue Features) fuehrte das zu OSError 28 (ENOSPC, kein Speicherplatz
+    mehr frei). Mit dieser Klasse wird direkt aus der Base64-Datei
+    dekodiert, waehrend apply_firmware_bundle_from_base64() das Bundle
+    parst - es existiert nie mehr als ein kleiner Puffer decodierter
+    Bytes gleichzeitig im Speicher, und KEINE zusaetzliche Datei auf dem
+    Flash fuer den dekodierten Bundle-Inhalt."""
+
+    _ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+
+    def __init__(self, text_file, feed_wdt=_noop_feed_wdt):
+        self._f = text_file
+        self._feed_wdt = feed_wdt
+        self._text_carry = ""
+        self._byte_buffer = bytearray()
+        self._eof = False
+
+    def _decode_group(self, group, out):
+        nums = []
+        for c in group:
+            idx = self._ALPHABET.find(c)
+            nums.append(idx if idx >= 0 else 0)
+        b1 = (nums[0] << 2) | (nums[1] >> 4)
+        b2 = ((nums[1] & 0xF) << 4) | (nums[2] >> 2)
+        b3 = ((nums[2] & 0x3) << 6) | nums[3]
+        out.append(b1)
+        if group[2] != '=':
+            out.append(b2)
+        if group[3] != '=':
+            out.append(b3)
+
+    def _fill(self, min_bytes):
+        while len(self._byte_buffer) < min_bytes and not self._eof:
+            self._feed_wdt()
+            chunk = self._f.read(512)
+            if not chunk:
+                self._eof = True
+                if self._text_carry:
+                    padding = (4 - len(self._text_carry) % 4) % 4
+                    group = self._text_carry + ("=" * padding)
+                    for i in range(0, len(group), 4):
+                        g = group[i:i + 4]
+                        if len(g) < 4:
+                            continue
+                        self._decode_group(g, self._byte_buffer)
+                    self._text_carry = ""
+                break
+
+            data = self._text_carry + chunk
+            usable_len = (len(data) // 4) * 4
+            to_decode = data[:usable_len]
+            self._text_carry = data[usable_len:]
+            for i in range(0, len(to_decode), 4):
+                self._decode_group(to_decode[i:i + 4], self._byte_buffer)
+
+    def read(self, n):
+        self._fill(n)
+        result = bytes(self._byte_buffer[:n])
+        # MicroPython's bytearray unterstuetzt keine Slice-Loeschung
+        # (del arr[:n] -> "'bytearray' object doesn't support item
+        # deletion"), daher stattdessen per Slice neu zuweisen statt zu
+        # loeschen (funktioniert auf CPython UND MicroPython gleich).
+        self._byte_buffer = self._byte_buffer[len(result):]
+        return result
+
+
+def apply_firmware_bundle_from_base64(base64_path, allowed_targets, bundle_magic, log=_noop_log, feed_wdt=_noop_feed_wdt):
+    """Wie apply_firmware_bundle(), liest das Bundle aber direkt aus einer
+    NOCH base64-kodierten Datei (z.B. 'update.pbp') und dekodiert es
+    stromweise waehrend des Entpackens - ohne jemals eine komplett
+    dekodierte Kopie des Bundles auf dem Flash zu erzeugen (siehe
+    Base64FileReader). Spart bei grossen Bundles hunderte KB Flash-
+    Spitzenbedarf gegenueber dem Umweg ueber safe_base64_file_to_file()
+    + apply_firmware_bundle()."""
+    with open(base64_path, 'r') as text_f:
+        reader = Base64FileReader(text_f, feed_wdt=feed_wdt)
+        return _apply_firmware_bundle_from_stream(reader, allowed_targets, bundle_magic, log=log, feed_wdt=feed_wdt)

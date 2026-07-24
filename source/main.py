@@ -14,6 +14,7 @@ from ota_helpers import (
     safe_base64_decode_to_file as _ota_safe_base64_decode_to_file,
     safe_base64_file_to_file as _ota_safe_base64_file_to_file,
     apply_firmware_bundle as _ota_apply_firmware_bundle,
+    apply_firmware_bundle_from_base64 as _ota_apply_firmware_bundle_from_base64,
 )
 try:
     from hotspot_common import configure_hotspot
@@ -208,6 +209,7 @@ ota_total_chunks = 0
 ota_received_chunks = 0
 ota_target_file = "main.py"
 OTA_STAGING_PATH = "ota_staging.tmp"
+FIRMWARE_VERSION_FILE = "firmware_version.txt"
 # Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
 # keine beliebigen Dateinamen vom Client).
 OTA_ALLOWED_TARGETS = (
@@ -220,7 +222,7 @@ OTA_ALLOWED_TARGETS = (
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html", "admin_idcard.html",
     "de.pak", "en.pak", "es.pak", "fr.pak", "it.pak", "pt.pak", "tr.pak",
-    "firmware_version.txt",
+    FIRMWARE_VERSION_FILE,
 )
 # Spezial-Ziel: ein Firmware-Bundle (siehe build_firmware.py), das mehrere
 # der obigen Dateien in einem Rutsch aktualisiert. Wird in /finalize-upload
@@ -234,7 +236,7 @@ OTA_BUNDLE_MAGIC = b"FPVBNDL1"
 # abgelegt. Fallback "0.0.0", falls die Datei (noch) fehlt.
 def _load_firmware_version():
     try:
-        with open("firmware_version.txt", "r") as f:
+        with open(FIRMWARE_VERSION_FILE, "r") as f:
             version = f.read().strip()
         return version or "0.0.0"
     except Exception:
@@ -763,6 +765,14 @@ def apply_firmware_bundle(bundle_path):
     (firmware.nbo) - duenner Wrapper um ota_helpers.apply_firmware_bundle()
     mit main.py's eigener OTA_ALLOWED_TARGETS/OTA_BUNDLE_MAGIC/debug_log."""
     return _ota_apply_firmware_bundle(bundle_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
+
+
+def apply_firmware_bundle_from_base64(base64_path):
+    """Wie apply_firmware_bundle(), entpackt aber direkt aus der noch
+    base64-kodierten Datei (z.B. 'update.pbp') ohne kompletten dekodierten
+    Zwischenstand auf dem Flash - duenner Wrapper um
+    ota_helpers.apply_firmware_bundle_from_base64()."""
+    return _ota_apply_firmware_bundle_from_base64(base64_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
 
 
 def cleanup_update_artifacts(
@@ -1892,23 +1902,40 @@ async def _handle_finalize_upload(writer):
         is_bundle = (ota_target_file == OTA_BUNDLE_TARGET or ota_target_file == OTA_LANG_BUNDLE_TARGET)
         target = ota_target_file if (is_bundle or ota_target_file in OTA_ALLOWED_TARGETS) else "main.py"
 
-        decode_ok = safe_base64_file_to_file('update.pbp', OTA_STAGING_PATH)
-        if not decode_ok:
-            raise Exception("Base64 Dekodierung fehlgeschlagen")
-
-        try:
-            staged_size = os.stat(OTA_STAGING_PATH)[6]
-            debug_log(f"[OTA] Staging-Datei: {staged_size} bytes (Ziel: {target})")
-        except Exception:
-            staged_size = 0
-
         if is_bundle:
-            extracted_files, needs_restart = apply_firmware_bundle(OTA_STAGING_PATH)
+            # Bundle wird DIREKT aus der noch base64-kodierten 'update.pbp'
+            # gestreamt entpackt (apply_firmware_bundle_from_base64()) -
+            # OHNE zuerst den kompletten Bundle-Inhalt nach OTA_STAGING_PATH
+            # zu dekodieren. Das vermeidet, dass 'update.pbp' (Base64-Text,
+            # ca. 1.33x groesser als der Bundle-Inhalt) UND eine komplett
+            # dekodierte Kopie des Bundles gleichzeitig auf dem Flash liegen
+            # - genau das fuehrte bei wachsenden Bundles zu OSError 28
+            # (ENOSPC, kein Speicherplatz mehr frei).
+            extracted_files, needs_restart = apply_firmware_bundle_from_base64('update.pbp')
+            try:
+                os.remove('update.pbp')
+            except Exception:
+                pass
             cleanup_update_artifacts(OTA_ALLOWED_TARGETS)
             message = f"Firmware-Bundle angewendet: {len(extracted_files)} Datei(en) ersetzt ({', '.join(extracted_files)})"
             if needs_restart:
                 message += " Starte Neustart..."
         else:
+            decode_ok = safe_base64_file_to_file('update.pbp', OTA_STAGING_PATH)
+            if decode_ok is not True:
+                raise Exception(f"Base64 Dekodierung fehlgeschlagen: {decode_ok}")
+
+            try:
+                os.remove('update.pbp')
+            except Exception:
+                pass
+
+            try:
+                staged_size = os.stat(OTA_STAGING_PATH)[6]
+                debug_log(f"[OTA] Staging-Datei: {staged_size} bytes (Ziel: {target})")
+            except Exception:
+                staged_size = 0
+
             try:
                 os.remove(target)
             except Exception:

@@ -49,6 +49,7 @@ from ota_helpers import (
     read_exact,
     safe_base64_file_to_file as _ota_safe_base64_file_to_file,
     apply_firmware_bundle as _ota_apply_firmware_bundle,
+    apply_firmware_bundle_from_base64 as _ota_apply_firmware_bundle_from_base64,
 )
 
 try:
@@ -112,6 +113,14 @@ def apply_firmware_bundle(bundle_path):
     """Entpackt ein per build_firmware.py erzeugtes Firmware-Bundle
     (firmware.nbo) - duenner Wrapper um ota_helpers.apply_firmware_bundle()."""
     return _ota_apply_firmware_bundle(bundle_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
+
+
+def apply_firmware_bundle_from_base64(base64_path):
+    """Wie apply_firmware_bundle(), entpackt aber direkt aus der noch
+    base64-kodierten Datei (z.B. 'update.pbp') ohne kompletten dekodierten
+    Zwischenstand auf dem Flash - duenner Wrapper um
+    ota_helpers.apply_firmware_bundle_from_base64()."""
+    return _ota_apply_firmware_bundle_from_base64(base64_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
 
 
 def start_access_point():
@@ -476,26 +485,37 @@ async def handle_client(reader, writer):
                 is_bundle = (ota_target_file == OTA_BUNDLE_TARGET)
                 target = ota_target_file if (is_bundle or ota_target_file in OTA_ALLOWED_TARGETS) else "main.py"
 
-                decode_ok = safe_base64_file_to_file('update.pbp', OTA_STAGING_PATH)
-                if not decode_ok:
-                    raise Exception("Base64 Dekodierung fehlgeschlagen")
-
-                try:
-                    staged_size = os.stat(OTA_STAGING_PATH)[6]
-                    debug_log(f"[OTA] Staging-Datei: {staged_size} bytes (Ziel: {target})")
-                except Exception:
-                    staged_size = 0
-
                 if is_bundle:
-                    extracted_files, needs_restart = apply_firmware_bundle(OTA_STAGING_PATH)
+                    # Bundle wird DIREKT aus der noch base64-kodierten
+                    # 'update.pbp' gestreamt entpackt, OHNE zuerst den
+                    # kompletten Inhalt nach OTA_STAGING_PATH zu dekodieren -
+                    # vermeidet, dass 'update.pbp' UND eine komplett
+                    # dekodierte Bundle-Kopie gleichzeitig auf dem Flash
+                    # liegen (OSError 28 / ENOSPC bei grossen Bundles).
+                    extracted_files, needs_restart = apply_firmware_bundle_from_base64('update.pbp')
                     try:
-                        os.remove(OTA_STAGING_PATH)
+                        os.remove('update.pbp')
                     except Exception:
                         pass
                     message = f"Firmware-Bundle angewendet: {len(extracted_files)} Datei(en) ersetzt ({', '.join(extracted_files)})"
                     if needs_restart:
                         message += " Starte Neustart..."
                 else:
+                    decode_ok = safe_base64_file_to_file('update.pbp', OTA_STAGING_PATH)
+                    if decode_ok is not True:
+                        raise Exception(f"Base64 Dekodierung fehlgeschlagen: {decode_ok}")
+
+                    try:
+                        os.remove('update.pbp')
+                    except Exception:
+                        pass
+
+                    try:
+                        staged_size = os.stat(OTA_STAGING_PATH)[6]
+                        debug_log(f"[OTA] Staging-Datei: {staged_size} bytes (Ziel: {target})")
+                    except Exception:
+                        staged_size = 0
+
                     try:
                         os.remove(target)
                     except Exception:

@@ -3,7 +3,7 @@
   "recovery.py": "4d776e59664d5c94d15db15fa3ca4e8335788ae36d0bffe29ca066e5e06f4958",
   "hotspot_common.py": "948ac61554c8dad11ec57809faadaa261b5ce604be07f95069ce6001778d5f40",
   "boot_runtime.py": "da406d5c559b4e5da0df659eca3dbe9b7a65a6ad133016fe8641c5d50e11f094",
-  "firmware_version.txt": "752bcaf381c20b338b61dc0782f42a1d83522fa7f5fe2a122e7297d706449d3c",
+  "firmware_version.txt": "bd2740384ed90eba420867388994dbc4c1d8c1793c5ea4feb6192d8aed94138c",
   "en.pak": "d8b9678690ab9fcaeab17ba22f7580a7b7f94dfa07d4fbcc38f5842da501f01c",
   "de.pak": "4b55830c7ac0010f4ad3aa46b5d43f77d0b2e86dfffbf76671c7da1de35a5ac0",
   "ota_helpers.py": "f036d5a1a10881f50761467d9b338be503a0f65361b6e53994d668ff81afb706",

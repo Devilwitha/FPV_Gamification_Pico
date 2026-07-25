@@ -193,9 +193,28 @@ Es gibt zwei Downloads im UI:
 
 Technisch wird zuerst eine Exportdatei geschrieben (in 512-Byte-Haeppchen gestreamt, nicht als ein grosser RAM-String) und danach als Download gesendet.
 
-## Wichtige Konfigurationsvariablen
+## Wichtige Konfiguration
 
-Diese Variablen kannst du direkt in `main.py` oben anpassen:
+Den normalen Pico-Hotspot stellst du in `source/hotspot.conf` ein:
+
+```json
+{
+   "ssid": "FPV_Gamification_Pico",
+   "password": "drohnenspiel"
+}
+```
+
+Boot, Main, Recovery und LilyGO lesen diese Datei beim Start. Bei fehlender
+oder ungueltiger Datei gelten dieselben Werte als Fallback.
+
+Der Infection-Modus ist davon getrennt. Seine Spiel-SSID und sein Passwort
+werden auf jedem Pico in `infection.conf` gespeichert. Diese Datei entsteht
+beim Speichern der Infection-Einstellungen, wird nicht ins Firmware-Bundle
+gepackt und veraendert `hotspot.conf` nicht. Nach Spielende wird der normale
+Hotspot aus `hotspot.conf` wieder aktiviert. Eine vorhandene alte
+`infection_config.json` wird einmalig nach `infection.conf` migriert.
+
+Weitere Variablen kannst du direkt in `main.py` oben anpassen:
 
 - `COPTER_NAME`: Name des Copters (Exporte; fuer die Web-UI siehe Hinweis in [Speicher-Architektur](#speicher-architektur-warum-so-viele-dateien))
 - `DEFAULT_PILOT_NAME`: Standard-Pilot fuer Highscore
@@ -203,8 +222,6 @@ Diese Variablen kannst du direkt in `main.py` oben anpassen:
 - `ENABLE_HOTSPOT`: Hotspot an/aus
 - `ENABLE_SERIAL_DEBUG`: Serielle Logs an/aus
 - `ENABLE_LIVE_GYRO_DEBUG`: Live-Gyro Konsolenlogs an/aus
-- `AP_SSID`: WLAN Name
-- `AP_PASSWORD`: WLAN Passwort
 
 ## Trick-Tuning-Profile
 

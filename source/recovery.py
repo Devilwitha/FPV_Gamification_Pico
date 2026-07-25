@@ -42,7 +42,7 @@ import json
 import os
 import gc
 import struct
-from hotspot_common import configure_hotspot
+from hotspot_common import configure_hotspot, load_hotspot_config
 from ota_helpers import (
     url_decode,
     parse_query,
@@ -60,19 +60,20 @@ except Exception:
 # ==================== CONFIGURATION ====================
 ENABLE_SERIAL_DEBUG = True
 
-AP_SSID = "FPV_Gamification_Pico"
-AP_PASSWORD = "drohnenspiel"
+_HOTSPOT_CONFIG = load_hotspot_config()
+AP_SSID = _HOTSPOT_CONFIG["ssid"]
+AP_PASSWORD = _HOTSPOT_CONFIG["password"]
 # =======================================================
 
 OTA_STAGING_PATH = "ota_staging.tmp"
 # Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
 # keine beliebigen Dateinamen vom Client) - identische Whitelist wie in main.py.
 OTA_ALLOWED_TARGETS = (
-    "boot.py", "recovery.py", "hotspot_common.py", "boot_runtime.py",
-    "ota_helpers.py",
+    "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "boot_runtime.py",
+    "ota_helpers.py", "infection_mode.py",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
-    "admin_profiles.html", "admin_system.html",
+    "admin_profiles.html", "admin_system.html", "admin_infection.html", "infection_view.html",
     "firmware_version.txt",
 )
 # Spezial-Ziel: komplettes Firmware-Bundle (siehe build_firmware.py), das

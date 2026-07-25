@@ -1,5 +1,31 @@
 import network
 import time
+import json
+
+
+HOTSPOT_CONFIG_FILE = "hotspot.conf"
+DEFAULT_HOTSPOT_SSID = "FPV_Gamification_Pico"
+DEFAULT_HOTSPOT_PASSWORD = "drohnenspiel"
+
+
+def load_hotspot_config(config_path=HOTSPOT_CONFIG_FILE):
+    config = {
+        "ssid": DEFAULT_HOTSPOT_SSID,
+        "password": DEFAULT_HOTSPOT_PASSWORD,
+    }
+    try:
+        with open(config_path, "r") as config_file:
+            values = json.loads(config_file.read())
+        if isinstance(values, dict):
+            ssid = str(values.get("ssid") or "").strip()
+            password = str(values.get("password") or "")
+            if ssid:
+                config["ssid"] = ssid[:32]
+            if len(password) >= 8:
+                config["password"] = password
+    except Exception:
+        pass
+    return config
 
 
 def configure_hotspot(ssid, password="", debug_log=None, serial_debug=False):

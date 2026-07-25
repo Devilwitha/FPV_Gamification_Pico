@@ -84,19 +84,21 @@ LANGUAGE_FALLBACK_PACK = "en.pak"
 BOOT_STACK_FILES_TO_BUNDLE = [
     "boot.py",
     "recovery.py",
-    "hotspot_common.py",
     "boot_runtime.py",
 ]
 
 APP_FILES_TO_BUNDLE = [
     "firmware_version.txt",
+    "hotspot.conf",
     "en.pak",
     "de.pak",
+    "hotspot_common.py",
     "ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
     "upload_helpers.py",
     "challenge_helpers.py",
+    "infection_mode.py",
     "main.py",
     "main_LilyGo.py",
     "index.html",
@@ -107,13 +109,16 @@ APP_FILES_TO_BUNDLE = [
     "admin_system.html",
     "admin_idcard.html",
     "admin_challenges.html",
+    "admin_infection.html",
     "challenges_view.html",
+    "infection_view.html",
 ]
 
 RECOVERY_FILES_TO_BUNDLE = [
     "boot.py",
     "recovery.py",
     "hotspot_common.py",
+    "hotspot.conf",
     "boot_runtime.py",
     "ota_helpers.py",
     "firmware_version.txt",

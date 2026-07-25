@@ -27,6 +27,10 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 .admin{color:#89a7c4;font-size:.78em;text-decoration:none}
 .card.challenge-card{display:block;text-decoration:none;color:inherit;border-color:#3a2a12;background:linear-gradient(135deg,rgba(243,156,18,.16),rgba(13,20,31,.98));cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
 .card.challenge-card:hover{transform:translateY(-2px);border-color:var(--accent);box-shadow:0 10px 24px rgba(243,156,18,.12)}
+.card.infection-card{display:block;text-decoration:none;color:inherit;border-color:#542b2b;background:linear-gradient(135deg,rgba(192,57,43,.18),rgba(13,20,31,.98));cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.card.infection-card:hover{transform:translateY(-2px);border-color:var(--red);box-shadow:0 10px 24px rgba(192,57,43,.14)}
+.infection-card .cc-arrow{color:#e96b5d}
+.infection-state{color:var(--muted);font-size:.78em;font-weight:700;margin-left:auto}
 .cc-top{display:flex;justify-content:space-between;align-items:center}
 .cc-top h2{margin:0;font-size:1em;color:#d8e5f4;display:flex;align-items:center;gap:8px;letter-spacing:.4px}
 .cc-arrow{color:var(--accent);font-size:1.3em;font-weight:800;line-height:1}
@@ -46,6 +50,10 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 <a class="card challenge-card" href="/challenges-view">
 <div class="cc-top"><h2><span class="dot" id="cc_dot"></span> <span data-i18n="index.challengesTitle">&#127942; Challenges</span></h2><span class="cc-arrow">&#8594;</span></div>
 <p class="cc-text" data-i18n="index.challengesText">Touch &amp; Go, Altitude-Hold/Limbo und Eco-Challenge live verfolgen</p>
+</a>
+<a class="card infection-card" href="/infection-view">
+<div class="cc-top"><h2><span class="dot" id="infection_dot"></span> <span data-i18n="index.infectionTitle">Infection Modus</span></h2><span id="infection_state" class="infection-state" data-i18n="infection.inactive">Inaktiv</span><span class="cc-arrow">&#8594;</span></div>
+<p class="cc-text" id="infection_text" data-i18n="index.infectionText">Infizierten suchen, Rollen wechseln und Restzeit live verfolgen</p>
 </a>
 <div class="btnrow"><button class="b" onclick="dl()" data-i18n="index.download">&#128229; Download</button><button class="b" onclick="dld()" data-i18n="index.debugLog">&#129514; Debug-Log</button></div>
 <div class="footer-row"><span class="ver" id="ver">v-.-.-</span><a class="admin" href="/admin" data-i18n="index.admin">&#9881;&#65039; Admin</a></div>
@@ -80,7 +88,14 @@ function handleHighscorePopup(d){
     }
   });
 }
-function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):t('index.noTricks','Keine Tricks');if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}document.getElementById("ver").innerText="v"+(d.firmware_version||"?");handleHighscorePopup(d);}).catch(e=>0)}
+function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):t('index.noTricks','Keine Tricks');if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}document.getElementById("ver").innerText="v"+(d.firmware_version||"?");updateInfectionStatus(d.infection||{});handleHighscorePopup(d);}).catch(e=>0)}
+function updateInfectionStatus(infection){
+  const running=!!infection.running,role=infection.role||'seeker',dot=document.getElementById('infection_dot'),state=document.getElementById('infection_state'),text=document.getElementById('infection_text');
+  dot.classList.toggle('on',running);
+  state.innerText=running?(role==='host'?t('infection.host','Infizierter'):t('infection.seeker','Sucher')):t('infection.inactive','Inaktiv');
+  if(running){const sec=Math.max(0,Number(infection.remaining_seconds)||0);text.innerText=t('index.infectionRemaining','Restzeit')+': '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+' | '+(infection.last_event||'');}
+  else{text.innerHTML=t('index.infectionText','Infizierten suchen, Rollen wechseln und Restzeit live verfolgen');}
+}
 function setP(){let p=document.getElementById("prof").value;document.getElementById("pn").innerText=t('index.saving','Speichert...');fetch("/set-trick-profile?profile="+p).then(r=>r.json()).then(d=>{document.getElementById("pn").innerText=t('index.ok','OK')}).catch(e=>{document.getElementById("pn").innerText=t('index.error','Fehler')})}
 function dl(){window.open("/download?manual=1","_blank")}
 function dld(){window.open("/download-debug?manual=1","_blank")}

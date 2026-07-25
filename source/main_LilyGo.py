@@ -6,9 +6,11 @@ import os
 import socket
 import time
 import framebuf
+from hotspot_common import load_hotspot_config
 
-WIFI_SSID = "FPV_Gamification_Pico"
-WIFI_PASSWORD = "drohnenspiel"
+_HOTSPOT_CONFIG = load_hotspot_config()
+WIFI_SSID = _HOTSPOT_CONFIG["ssid"]
+WIFI_PASSWORD = _HOTSPOT_CONFIG["password"]
 PICO_HOST = "192.168.4.1"
 POLL_INTERVAL_MS = 2000
 RECONNECT_DELAY_MS = 1500
@@ -469,12 +471,18 @@ class LilyGoApp:
         score = data.get("score", 0)
         history = data.get("history", [])
         latest = history[-1] if history else "Noch kein Trick"
+        infection = data.get("infection", {})
 
         self.display.clear()
         self.display.fill_rect(0, 0, DISPLAY_WIDTH, 38, PANEL)
         self.display.text("FPV LIVE", 52, 15, GREEN)
         self.display.text("SCORE", 8, 62, CYAN)
         self.display.text(str(score), 8, 82, WHITE)
+        if infection.get("running"):
+            role = "HOST" if infection.get("infected") else "SUCHE"
+            remaining = int(infection.get("remaining_seconds", 0))
+            self.display.text("INF " + role, 75, 62, RED if infection.get("infected") else GREEN)
+            self.display.text(str(remaining // 60) + ":%02d" % (remaining % 60), 75, 82, WHITE)
         self.display.fill_rect(8, 108, 154, 1, CYAN)
         self.display.text("LETZTES EVENT", 8, 126, CYAN)
 

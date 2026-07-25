@@ -26,9 +26,12 @@ from ota_helpers import (
 # EIN eigener, spaeterer Kompilierschritt, NACHDEM `import main` bereits
 # erfolgreich zurueckgekehrt ist.
 try:
-    from hotspot_common import configure_hotspot
+    from hotspot_common import configure_hotspot, load_hotspot_config
 except Exception:
     # Kompakter Fallback fuer den Fall, dass hotspot_common.py fehlt.
+    def load_hotspot_config():
+        return {"ssid": "FPV_Gamification_Pico", "password": "drohnenspiel"}
+
     def configure_hotspot(ssid, password="", debug_log=None, serial_debug=False):
         ap = network.WLAN(network.AP_IF)
         try:
@@ -68,8 +71,9 @@ ENABLE_LIVE_GYRO_DEBUG = True
 ENABLE_TRICK_GYRO_IN_TXT_LOG = True
 TRICK_TUNING_PROFILE = "aggressive"
 
-AP_SSID = "FPV_Gamification_Pico"
-AP_PASSWORD = "drohnenspiel"  
+_HOTSPOT_CONFIG = load_hotspot_config()
+AP_SSID = _HOTSPOT_CONFIG["ssid"]
+AP_PASSWORD = _HOTSPOT_CONFIG["password"]
 COPTER_NAME = "Test"
 DEFAULT_PILOT_NAME = "Test"
 COPIL_FILE_PATH = "copil"
@@ -214,7 +218,10 @@ boot_health_marked = False
 _idcard_route_handler = None
 _misc_route_handler = None
 _challenge_route_handler = None
+_infection_route_handler = None
 _upload_helpers_module = None
+infection_manager = None
+infection_task = None
 # Developer-Modus (Schiebeschalter auf der System-Seite): standardmaessig AUS,
 # dann akzeptiert OTA nur komplette firmware.nbo Bundles. Erst wenn aktiviert,
 # duerfen auch einzelne .py/.html Dateien per OTA hochgeladen werden.
@@ -236,17 +243,19 @@ FIRMWARE_VERSION_FILE = "firmware_version.txt"
 # Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
 # keine beliebigen Dateinamen vom Client).
 OTA_ALLOWED_TARGETS = (
-    "boot.py", "recovery.py", "hotspot_common.py", "boot_runtime.py",
+    "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "boot_runtime.py",
     "ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
     "upload_helpers.py",
     "challenge_helpers.py",
+    "infection_mode.py",
     "copil",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html", "admin_idcard.html", "admin_challenges.html",
-    "challenges_view.html",
+    "admin_infection.html",
+    "challenges_view.html", "infection_view.html",
     "de.pak", "en.pak", "es.pak", "fr.pak", "it.pak", "pt.pak", "tr.pak",
     FIRMWARE_VERSION_FILE,
 )
@@ -1309,6 +1318,15 @@ def _ensure_challenges():
     return challenges
 
 
+def _ensure_infection_manager():
+    global infection_manager
+    if infection_manager is None:
+        gc.collect()
+        from infection_mode import InfectionMode
+        infection_manager = InfectionMode(AP_SSID, AP_PASSWORD, log=debug_log)
+    return infection_manager
+
+
 async def simulate_trick(trick_kind="roll"):
     """Speist synthetische Gyro-Daten in den echten Trick-Detector ein,
     damit Tricks ohne angeschlossene Drohne/Telemetrie getestet werden koennen.
@@ -1518,10 +1536,12 @@ ADMIN_PROFILES_HTML_PATH = "admin_profiles.html"
 ADMIN_SYSTEM_HTML_PATH = "admin_system.html"
 ADMIN_IDCARD_HTML_PATH = "admin_idcard.html"
 ADMIN_CHALLENGES_HTML_PATH = "admin_challenges.html"
+ADMIN_INFECTION_HTML_PATH = "admin_infection.html"
 # Oeffentliche, huebsch gestaltete Live-Visualisierung der Challenges (kein
 # Login noetig, gleiche Zielgruppe wie index.html - im Gegensatz zu
 # admin_challenges.html, das die technischen Start/Stopp-Controls enthaelt).
 CHALLENGES_VIEW_HTML_PATH = "challenges_view.html"
+INFECTION_VIEW_HTML_PATH = "infection_view.html"
 
 
 async def send_html_file(writer, file_path):
@@ -1770,6 +1790,7 @@ async def _send_reset_highscore_response(writer, query_params, body_params):
 async def _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
     global TRICK_TUNING_PROFILE, DEVELOPER_MODE_ENABLED, LANGUAGE_CODE
     global _idcard_route_handler, _misc_route_handler, _challenge_route_handler
+    global _infection_route_handler
 
     if request_path == '/admin-idcard':
         await send_html_file(writer, ADMIN_IDCARD_HTML_PATH)
@@ -1779,8 +1800,30 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
         await send_html_file(writer, ADMIN_CHALLENGES_HTML_PATH)
         return True
 
+    if request_path == '/admin-infection':
+        await send_html_file(writer, ADMIN_INFECTION_HTML_PATH)
+        return True
+
+    if request_path.startswith('/infection-'):
+        if _infection_route_handler is None:
+            from infection_mode import handle_infection_route as _lazy_infection_route_handler
+            _infection_route_handler = _lazy_infection_route_handler
+        if await _infection_route_handler(
+            writer,
+            request_path,
+            request_method,
+            query_params,
+            body_params,
+            _ensure_infection_manager(),
+        ):
+            return True
+
     if request_path == '/challenges-view':
         await send_html_file(writer, CHALLENGES_VIEW_HTML_PATH)
+        return True
+
+    if request_path == '/infection-view':
+        await send_html_file(writer, INFECTION_VIEW_HTML_PATH)
         return True
 
     if request_path.startswith('/challenge') or request_path.startswith('/mission') or request_path == '/missions-list':
@@ -1914,6 +1957,7 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "simulate_trick": simulate_trick,
             "perform_emergency_delete_main": _perform_emergency_delete_main,
             "perform_emergency_delete_boot": _perform_emergency_delete_boot,
+            "infection_status": _ensure_infection_manager().status,
         },
     )
 
@@ -2046,7 +2090,7 @@ async def handle_client(reader, writer):
 
 
 async def main_async():
-    global system_ready, status_led_last_toggle_ms
+    global system_ready, status_led_last_toggle_ms, infection_task
     # Lazy-Import/Init von ChallengeManager (challenge_helpers.py) - ganz am
     # Anfang, damit dieser separate Kompilierschritt VOR dem Start des
     # HTTP-Servers/Telemetrie-Loops abgeschlossen ist, aber unabhaengig von
@@ -2067,6 +2111,7 @@ async def main_async():
             start_access_point()
 
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
+    infection_task = asyncio.create_task(_ensure_infection_manager().run())
     _boot_mark_healthy_once()
     system_ready = True
     status_led_last_toggle_ms = time.ticks_ms()

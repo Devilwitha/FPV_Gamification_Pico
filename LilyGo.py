@@ -317,7 +317,14 @@ class LilyGoInstallerGUI:
         active_port = find_current_lilygo_port(active_port)
 
         source_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "source")
-        files = ["boot_runtime.py", "main_LilyGo.py", "lilygo.device", "boot.py"]
+        files = [
+            "boot_runtime.py",
+            "hotspot_common.py",
+            "hotspot.conf",
+            "main_LilyGo.py",
+            "lilygo.device",
+            "boot.py",
+        ]
 
         success = True
         for filename in files:

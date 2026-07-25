@@ -14,6 +14,8 @@ class _SimState:
     mem_alloc_bytes = 70 * 1024
     net_latency_ms = 0
     ap_active = False
+    sta_active = False
+    sta_connected = False
     ap_config = {
         "essid": "FPV_Gamification_Pico_SIM",
         "password": "",
@@ -184,10 +186,13 @@ class _WLAN:
         self.interface = interface
 
     def active(self, enabled=None):
+        state_name = "ap_active" if self.interface == 1 else "sta_active"
         if enabled is None:
-            return _SimState.ap_active
-        _SimState.ap_active = bool(enabled)
-        return _SimState.ap_active
+            return getattr(_SimState, state_name)
+        setattr(_SimState, state_name, bool(enabled))
+        if self.interface != 1 and not enabled:
+            _SimState.sta_connected = False
+        return getattr(_SimState, state_name)
 
     def config(self, *args, **kwargs):
         if args and isinstance(args[0], str):
@@ -202,9 +207,28 @@ class _WLAN:
         _SimState.ap_ifconfig = tuple(cfg)
         return _SimState.ap_ifconfig
 
+    def connect(self, ssid, password=None):
+        if self.interface != 0:
+            return None
+        _SimState.sta_active = True
+        _SimState.sta_connected = bool(ssid)
+        return None
+
+    def disconnect(self):
+        if self.interface == 0:
+            _SimState.sta_connected = False
+        return None
+
+    def isconnected(self):
+        return self.interface == 0 and _SimState.sta_connected
+
+    def scan(self):
+        return []
+
 
 def _install_network_module():
     network_mod = types.ModuleType("network")
+    network_mod.STA_IF = 0
     network_mod.AP_IF = 1
     network_mod.WLAN = _WLAN
     sys.modules["network"] = network_mod

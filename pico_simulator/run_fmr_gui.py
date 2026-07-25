@@ -15,7 +15,7 @@ class SimulatorGui(tk.Tk):
         super().__init__()
         self.title("FPV Pico Simulator Launcher")
         self.geometry("760x520")
-        self.minsize(720, 500)
+        self.minsize(720, 800)
 
         self.process = None
         self.log_queue = queue.Queue()

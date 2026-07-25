@@ -5,8 +5,11 @@ import gc
 import os
 
 try:
-    from hotspot_common import configure_hotspot
+    from hotspot_common import configure_hotspot, load_hotspot_config
 except Exception:
+    def load_hotspot_config():
+        return {"ssid": "FPV_Gamification_Pico", "password": "drohnenspiel"}
+
     def configure_hotspot(ssid, password="", debug_log=None, serial_debug=False):
         ap = network.WLAN(network.AP_IF)
         try:
@@ -36,8 +39,9 @@ except Exception:
 
 import boot_runtime
 
-AP_SSID = "FPV_Gamification_Pico"
-AP_PASSWORD = "drohnenspiel"
+_HOTSPOT_CONFIG = load_hotspot_config()
+AP_SSID = _HOTSPOT_CONFIG["ssid"]
+AP_PASSWORD = _HOTSPOT_CONFIG["password"]
 ENABLE_SERIAL_DEBUG = True
 BOOT_WDT_TIMEOUT_MS = 8000
 LILYGO_MARKER_FILE = "lilygo.device"

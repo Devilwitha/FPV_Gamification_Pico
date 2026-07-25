@@ -57,6 +57,7 @@ async def handle_misc_routes(
     simulate_trick = deps["simulate_trick"]
     perform_emergency_delete_main = deps["perform_emergency_delete_main"]
     perform_emergency_delete_boot = deps["perform_emergency_delete_boot"]
+    infection_status = deps.get("infection_status")
 
     if request_path == '/admin-profiles':
         await send_html_file(writer, admin_profiles_html_path)
@@ -346,6 +347,11 @@ async def handle_misc_routes(
             "pending_highscore_score": pending_highscore["score"],
             "firmware_version": firmware_version,
         }
+        if infection_status is not None:
+            try:
+                data["infection"] = infection_status()
+            except Exception:
+                data["infection"] = {"enabled": False, "running": False}
         response_data = json.dumps(data).encode('utf-8')
         writer.write(b'HTTP/1.1 200 OK\r\n')
         writer.write(b'Content-Type: application/json\r\n')

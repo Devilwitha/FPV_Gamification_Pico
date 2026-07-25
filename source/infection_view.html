@@ -24,10 +24,11 @@
 <div class="stat"><div class="lbl" data-i18n="infectionView.proximity">Naehe zum Infizierten</div><div id="rssi" class="val">-</div><div id="signal" class="signal"><i></i><i></i><i></i><i></i></div></div>
 <div class="stat"><div class="lbl" data-i18n="infectionView.lastContact">Letzter Kontakt</div><div id="peer" class="val">-</div></div>
 <div class="stat"><div class="lbl" data-i18n="infectionView.roleChanges">Rollenwechsel</div><div id="count" class="val">0</div></div>
+<div class="stat"><div class="lbl">Aktuell infiziert</div><div id="current_infected" class="val">Niemand</div></div>
 <div class="stat"><div class="lbl">Node ID</div><div id="node" class="val">-</div></div>
 </section>
 <section class="event"><div class="lbl" data-i18n="infectionView.latestEvent">Letztes Ereignis</div><div id="event" class="val">-</div></section>
-<section id="summary" class="summary" hidden><div class="lbl">Rundenergebnis</div><div id="result" class="result"></div><div class="lbl">Infektionskontakte</div><div id="contacts" class="contacts"></div></section>
+<section id="summary" class="summary" hidden><div class="lbl">Rundenergebnis</div><div id="result" class="result"></div><div class="lbl">Kontaktverlauf (historisch)</div><div id="contacts" class="contacts"></div></section>
 <p class="hint" data-i18n="infectionView.hint">Das Spiel erkennt Mitspieler per Bluetooth LE. Der normale Hotspot aus hotspot.conf bleibt durchgehend aktiv.</p>
 <nav class="buttons"><a class="b control" href="/admin-infection" data-i18n="infectionView.controlButton">Modus steuern</a><a class="b" href="/" data-i18n="infectionView.homeButton">Zur Startseite</a></nav>
 <div id="version" class="footer"></div>
@@ -55,7 +56,7 @@ function update(d){
  document.getElementById('timer').innerText=fmt(remaining);document.getElementById('timebar').style.width=(running&&roundTotal?Math.min(100,remaining/roundTotal*100):0)+'%';
  document.getElementById('rssi').innerText=d.last_rssi===null||d.last_rssi===undefined?t('infectionView.searching','Suche...'):d.last_rssi+' dBm';
  const bars=signalBars(d.last_rssi);document.querySelectorAll('#signal i').forEach((el,i)=>el.classList.toggle('on',i<bars));
- document.getElementById('peer').innerText=d.last_peer||'-';document.getElementById('count').innerText=d.infection_count||0;document.getElementById('node').innerText=d.node_id||'-';document.getElementById('event').innerText=d.last_event||'-';
+ const owner=d.current_infected;document.getElementById('peer').innerText=d.last_peer||'-';document.getElementById('count').innerText=d.infection_count||0;document.getElementById('current_infected').innerText=owner?(owner.name+(owner.self?' (dieser Pico)':'')):'Niemand';document.getElementById('node').innerText=d.node_id||'-';document.getElementById('event').innerText=d.last_event||'-';
  showSummary(d);
 }
 function poll(){fetch('/infection-data',{cache:'no-store'}).then(r=>r.json()).then(update).catch(()=>{}).finally(()=>setTimeout(poll,1000))}

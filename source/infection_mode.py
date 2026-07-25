@@ -13,13 +13,19 @@ DEFAULT_RSSI_THRESHOLD = -55
 DEFAULT_COOLDOWN_SECONDS = 10
 SCAN_INTERVAL_MS = 1500
 HANDOFF_WINDOW_MS = 12000
+CLAIM_WINDOW_MS = 5000
+HOST_STALE_MS = 6000
+STOP_ADVERTISEMENT_MS = 4000
 ADVERTISEMENT_INTERVAL_US = 250000
 SCAN_DURATION_MS = 1200
 COMPANY_ID = b"\xf0\x0f"
 PROTOCOL_MAGIC = b"IF"
-PROTOCOL_VERSION = 1
-ROLE_HOST = 1
-ROLE_SEEKER = 0
+PROTOCOL_VERSION = 2
+STATE_SEEKER = 0
+STATE_HOST = 1
+STATE_CLAIM = 2
+STATE_GRANT = 3
+STATE_STOP = 4
 ZERO_NODE_ID = b"\x00" * 8
 _IRQ_SCAN_RESULT = 5
 _IRQ_SCAN_DONE = 6
@@ -91,8 +97,14 @@ class InfectionMode:
         self.round_started_ms = 0
         self.round_result = None
         self.contacts = []
-        self.handoff_target = ZERO_NODE_ID
-        self.handoff_until_ms = 0
+        self.ble_state = STATE_SEEKER
+        self.target_node = ZERO_NODE_ID
+        self.state_until_ms = 0
+        self.token_epoch = 0
+        self.current_host_raw = ZERO_NODE_ID
+        self.current_host_seen_ms = 0
+        self.stopped_host_raw = ZERO_NODE_ID
+        self.stopped_host_epoch = 0
         self.scan_done = True
         self.pending_packet = None
 
@@ -197,8 +209,14 @@ class InfectionMode:
         return "node-" + _hex_id(raw_node_id)
 
     def _advertisement(self):
-        role = ROLE_HOST if self.role == "host" else ROLE_SEEKER
-        payload = COMPANY_ID + PROTOCOL_MAGIC + bytes((PROTOCOL_VERSION, role)) + self.node_raw + self.handoff_target
+        payload = (
+            COMPANY_ID
+            + PROTOCOL_MAGIC
+            + bytes((PROTOCOL_VERSION, self.ble_state))
+            + self.node_raw
+            + self.target_node
+            + bytes(((self.token_epoch >> 8) & 0xFF, self.token_epoch & 0xFF))
+        )
         manufacturer = bytes((len(payload) + 1, 0xFF)) + payload
         return b"\x02\x01\x06" + manufacturer
 
@@ -207,7 +225,7 @@ class InfectionMode:
             self.ble.gap_advertise(None)
         except Exception:
             pass
-        if self.running:
+        if self.running or self.ble_state == STATE_STOP:
             self.ble.gap_advertise(ADVERTISEMENT_INTERVAL_US, adv_data=self._advertisement())
 
     def _parse_advertisement(self, adv_data):
@@ -219,10 +237,11 @@ class InfectionMode:
                 break
             ad_type = data[index + 1]
             value = data[index + 2:index + 1 + length]
-            if ad_type == 0xFF and len(value) >= 22 and value[:2] == COMPANY_ID and value[2:4] == PROTOCOL_MAGIC:
+            if ad_type == 0xFF and len(value) >= 24 and value[:2] == COMPANY_ID and value[2:4] == PROTOCOL_MAGIC:
                 if value[4] != PROTOCOL_VERSION:
                     return None
-                return value[5], bytes(value[6:14]), bytes(value[14:22])
+                epoch = (value[22] << 8) | value[23]
+                return value[5], bytes(value[6:14]), bytes(value[14:22]), epoch
             index += length + 1
         return None
 
@@ -232,17 +251,59 @@ class InfectionMode:
                 _addr_type, _addr, _adv_type, rssi, adv_data = data
                 packet = self._parse_advertisement(adv_data)
                 if packet is not None:
-                    role, sender, target = packet
+                    state, sender, target, epoch = packet
+                    if state == STATE_STOP:
+                        self.stopped_host_raw = sender
+                        self.stopped_host_epoch = epoch
+                        if self.current_host_raw == sender:
+                            self.current_host_raw = ZERO_NODE_ID
+                            self.current_host_seen_ms = 0
+                    stopped_token = (
+                        self.stopped_host_epoch == epoch
+                        and (
+                            (state == STATE_HOST and self.stopped_host_raw == sender)
+                            or (state == STATE_GRANT and self.stopped_host_raw == target)
+                        )
+                    )
+                    if state == STATE_HOST and not stopped_token:
+                        self.current_host_raw = sender
+                        self.current_host_seen_ms = time.ticks_ms()
+                    elif state == STATE_GRANT and not stopped_token:
+                        self.current_host_raw = target
+                        self.current_host_seen_ms = time.ticks_ms()
                     relevant = (
-                        self.role == "seeker" and role == ROLE_HOST
+                        self.role == "seeker"
+                        and (
+                            (state == STATE_HOST and self.ble_state == STATE_SEEKER)
+                            or (state == STATE_GRANT and target == self.node_raw)
+                            or (
+                                self.ble_state == STATE_GRANT
+                                and state == STATE_HOST
+                                and sender == self.target_node
+                                and epoch == self.token_epoch
+                            )
+                            or (
+                                self.ble_state == STATE_GRANT
+                                and state == STATE_STOP
+                                and sender == self.target_node
+                                and epoch == self.token_epoch
+                            )
+                        )
                     ) or (
                         self.role == "host"
-                        and role == ROLE_HOST
+                        and state == STATE_CLAIM
                         and target == self.node_raw
+                        and epoch == self.token_epoch
                     )
                     current = self.pending_packet
-                    if relevant and (current is None or int(rssi) > current[3]):
-                        self.pending_packet = (role, sender, target, int(rssi))
+                    targeted_grant = state == STATE_GRANT and target == self.node_raw
+                    targeted_stop = state == STATE_STOP and sender == self.target_node
+                    current_is_grant = current is not None and current[0] == STATE_GRANT
+                    if relevant and (
+                        targeted_grant or targeted_stop
+                        or (not current_is_grant and (current is None or int(rssi) > current[4]))
+                    ):
+                        self.pending_packet = (state, sender, target, epoch, int(rssi))
             except Exception:
                 pass
         elif event == _IRQ_SCAN_DONE:
@@ -271,8 +332,14 @@ class InfectionMode:
         self.contacts = []
         self.round_end_ms = _ticks_add(now, self.config["round_seconds"] * 1000)
         self.cooldown_until_ms = _ticks_add(now, self.config["cooldown_seconds"] * 1000)
-        self.handoff_target = ZERO_NODE_ID
-        self.handoff_until_ms = 0
+        self.ble_state = STATE_HOST if self.role == "host" else STATE_SEEKER
+        self.target_node = ZERO_NODE_ID
+        self.state_until_ms = 0
+        self.token_epoch = ((now // 100) & 0xFFFF) or 1
+        self.current_host_raw = self.node_raw if self.role == "host" else ZERO_NODE_ID
+        self.current_host_seen_ms = now if self.role == "host" else 0
+        self.stopped_host_raw = ZERO_NODE_ID
+        self.stopped_host_epoch = 0
         self.pending_packet = None
         self.ble.active(True)
         self.ble.irq(self._ble_irq)
@@ -281,7 +348,15 @@ class InfectionMode:
 
     def stop_round(self, reason="Beendet"):
         was_running = self.running
+        stopped_epoch = self.token_epoch
         self.running = False
+        self.pending_packet = None
+        self.ble_state = STATE_STOP if was_running else STATE_SEEKER
+        self.target_node = ZERO_NODE_ID
+        self.token_epoch = stopped_epoch
+        self.state_until_ms = _ticks_add(time.ticks_ms(), STOP_ADVERTISEMENT_MS) if was_running else 0
+        self.current_host_raw = ZERO_NODE_ID
+        self.current_host_seen_ms = 0
         self.last_event = reason
         if was_running and self.round_result is None:
             self.round_result = "stopped"
@@ -294,15 +369,24 @@ class InfectionMode:
         except Exception:
             pass
         try:
-            self.ble.active(False)
+            if was_running:
+                self.ble.active(True)
+                self._update_advertisement()
+            else:
+                self.ble.active(False)
         except Exception:
             pass
         self.log("[INFECTION] " + reason)
 
-    def _become_host(self, handoff_target=ZERO_NODE_ID):
+    def _become_host(self, epoch=None):
         self.role = "host"
-        self.handoff_target = handoff_target
-        self.handoff_until_ms = _ticks_add(time.ticks_ms(), HANDOFF_WINDOW_MS) if handoff_target != ZERO_NODE_ID else 0
+        self.ble_state = STATE_HOST
+        self.target_node = ZERO_NODE_ID
+        self.state_until_ms = 0
+        if epoch is not None:
+            self.token_epoch = epoch
+        self.current_host_raw = self.node_raw
+        self.current_host_seen_ms = time.ticks_ms()
         self.cooldown_until_ms = _ticks_add(time.ticks_ms(), self.config["cooldown_seconds"] * 1000)
         self.last_event = "Infiziert - BLE-Host aktiv"
         self._update_advertisement()
@@ -310,12 +394,51 @@ class InfectionMode:
 
     def _become_seeker(self):
         self.role = "seeker"
-        self.handoff_target = ZERO_NODE_ID
-        self.handoff_until_ms = 0
+        self.ble_state = STATE_SEEKER
+        self.target_node = ZERO_NODE_ID
+        self.state_until_ms = 0
         self.cooldown_until_ms = _ticks_add(time.ticks_ms(), self.config["cooldown_seconds"] * 1000)
         self.last_event = "Suche Infizierten per BLE"
         self._update_advertisement()
         self.log("[INFECTION] Rolle: seeker")
+
+    def _request_handoff(self, host, epoch):
+        self.ble_state = STATE_CLAIM
+        self.target_node = host
+        self.token_epoch = epoch
+        self.state_until_ms = _ticks_add(time.ticks_ms(), CLAIM_WINDOW_MS)
+        self.last_event = "Infektion beim Host angefragt"
+        self._update_advertisement()
+
+    def _grant_handoff(self, seeker):
+        next_epoch = (self.token_epoch + 1) & 0xFFFF
+        if next_epoch == 0:
+            next_epoch = 1
+        peer_name = self._player_label(seeker)
+        peer_id = _hex_id(seeker)
+        contact = self._record_contact("infected_by_me", peer_name, peer_id)
+        self.last_peer = contact["peer_name"]
+        self.last_event = "Infiziertenrolle uebergeben: " + self.last_peer
+        self.infection_count += 1
+        self.role = "seeker"
+        self.ble_state = STATE_GRANT
+        self.target_node = seeker
+        self.token_epoch = next_epoch
+        self.state_until_ms = _ticks_add(time.ticks_ms(), HANDOFF_WINDOW_MS)
+        self.current_host_raw = seeker
+        self.current_host_seen_ms = time.ticks_ms()
+        self.cooldown_until_ms = _ticks_add(time.ticks_ms(), self.config["cooldown_seconds"] * 1000)
+        self._update_advertisement()
+        self.log("[INFECTION] Rolle an " + peer_id + " uebergeben")
+
+    def _accept_handoff(self, previous_host, epoch):
+        peer_name = self._player_label(previous_host)
+        peer_id = _hex_id(previous_host)
+        contact = self._record_contact("infected_me", peer_name, peer_id)
+        self.last_peer = contact["peer_name"]
+        self.last_event = "Infiziertenrolle uebernommen"
+        self.infection_count += 1
+        self._become_host(epoch)
 
     def _record_contact(self, direction, peer_name, peer_id):
         elapsed_seconds = 0
@@ -332,41 +455,84 @@ class InfectionMode:
             self.contacts.pop(0)
         return contact
 
-    def _handle_packet(self, role, sender, target, rssi):
+    def _handle_packet(self, state, sender, target, epoch, rssi):
         if sender == self.node_raw:
             return
         player = self._player_for(sender)
         if player is None:
             return
         self.last_rssi = rssi
-        peer_name = self._player_label(sender)
-        peer_id = _hex_id(sender)
 
-        if self.role == "host" and role == ROLE_HOST and target == self.node_raw:
-            contact = self._record_contact("infected_by_me", peer_name, peer_id)
-            self.last_peer = contact["peer_name"]
-            self.last_event = "Pilot angesteckt: " + self.last_peer
-            self.infection_count += 1
-            self._become_seeker()
+        if self.role == "host" and state == STATE_CLAIM and target == self.node_raw and epoch == self.token_epoch:
+            if rssi >= self.config["rssi_threshold"]:
+                self._grant_handoff(sender)
+            return
+
+        if self.role == "seeker" and state == STATE_GRANT and target == self.node_raw:
+            self._accept_handoff(sender, epoch)
+            return
+
+        if (
+            self.role == "seeker"
+            and self.ble_state == STATE_GRANT
+            and state == STATE_HOST
+            and sender == self.target_node
+            and epoch == self.token_epoch
+        ):
+            self.ble_state = STATE_SEEKER
+            self.target_node = ZERO_NODE_ID
+            self.state_until_ms = 0
+            self._update_advertisement()
+            return
+
+        if (
+            self.role == "seeker"
+            and self.ble_state == STATE_GRANT
+            and state == STATE_STOP
+            and sender == self.target_node
+            and epoch == self.token_epoch
+        ):
+            self.ble_state = STATE_SEEKER
+            self.target_node = ZERO_NODE_ID
+            self.state_until_ms = 0
+            self.current_host_raw = ZERO_NODE_ID
+            self.current_host_seen_ms = 0
+            self._update_advertisement()
             return
 
         now = time.ticks_ms()
         if _ticks_diff(now, self.cooldown_until_ms) < 0:
             return
 
-        if self.role == "seeker" and role == ROLE_HOST and rssi >= self.config["rssi_threshold"]:
-            contact = self._record_contact("infected_me", peer_name, peer_id)
-            self.last_peer = contact["peer_name"]
-            self.last_event = "Angesteckt per BLE - uebernehme Host"
-            self.infection_count += 1
-            self._become_host(sender)
+        if self.role == "seeker" and self.ble_state == STATE_SEEKER and state == STATE_HOST and rssi >= self.config["rssi_threshold"]:
+            self._request_handoff(sender, epoch)
 
     def remaining_seconds(self):
         if not self.running:
             return 0
         return max(0, _ticks_diff(self.round_end_ms, time.ticks_ms()) // 1000)
 
+    def _current_infected(self):
+        if not self.running:
+            return None
+        if self.role == "host":
+            return {
+                "id": self.node_id,
+                "name": self.player_name or ("node-" + self.node_id),
+                "self": True,
+            }
+        if self.current_host_raw == ZERO_NODE_ID:
+            return None
+        if _ticks_diff(time.ticks_ms(), self.current_host_seen_ms) > HOST_STALE_MS:
+            return None
+        return {
+            "id": _hex_id(self.current_host_raw),
+            "name": self._player_label(self.current_host_raw),
+            "self": False,
+        }
+
     def status(self):
+        current_infected = self._current_infected()
         return {
             "ok": True,
             "enabled": self.config["enabled"],
@@ -382,6 +548,7 @@ class InfectionMode:
             "player_name": self.player_name or ("node-" + self.node_id),
             "round_result": self.round_result,
             "contacts": list(self.contacts),
+            "current_infected": current_infected,
             "players": list(self.players),
             "config": dict(self.config),
             "transport": "ble",
@@ -406,6 +573,18 @@ class InfectionMode:
     async def run(self):
         while True:
             if not self.running:
+                if (
+                    self.ble_state == STATE_STOP
+                    and self.state_until_ms
+                    and _ticks_diff(time.ticks_ms(), self.state_until_ms) >= 0
+                ):
+                    try:
+                        self.ble.gap_advertise(None)
+                        self.ble.active(False)
+                    except Exception:
+                        pass
+                    self.ble_state = STATE_SEEKER
+                    self.state_until_ms = 0
                 await asyncio.sleep_ms(500)
                 continue
 
@@ -420,15 +599,16 @@ class InfectionMode:
                 self.stop_round("Runde beendet")
                 continue
 
-            if self.handoff_until_ms and _ticks_diff(now, self.handoff_until_ms) >= 0:
-                self.handoff_target = ZERO_NODE_ID
-                self.handoff_until_ms = 0
+            if self.state_until_ms and _ticks_diff(now, self.state_until_ms) >= 0:
+                self.ble_state = STATE_SEEKER
+                self.target_node = ZERO_NODE_ID
+                self.state_until_ms = 0
                 self._update_advertisement()
 
             packet = self.pending_packet
             self.pending_packet = None
             if packet is not None:
-                self._handle_packet(packet[0], packet[1], packet[2], packet[3])
+                self._handle_packet(packet[0], packet[1], packet[2], packet[3], packet[4])
 
             if self.scan_done:
                 self.scan_done = False

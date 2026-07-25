@@ -13,6 +13,7 @@ DEFAULT_ROUND_SECONDS = 300
 DEFAULT_RSSI_THRESHOLD = -55
 DEFAULT_COOLDOWN_SECONDS = 10
 HANDOFF_DELAY_MS = 1800
+HOST_RELEASE_DELAY_MS = 3000
 CONNECT_TIMEOUT_MS = 7000
 SCAN_INTERVAL_MS = 1500
 
@@ -35,10 +36,27 @@ def _clamp(value, low, high):
     return max(low, min(high, value))
 
 
+def _url_encode(value):
+    encoded = str(value or "").encode("utf-8")
+    result = ""
+    for byte in encoded:
+        if (
+            65 <= byte <= 90
+            or 97 <= byte <= 122
+            or 48 <= byte <= 57
+            or byte in (45, 46, 95, 126)
+        ):
+            result += chr(byte)
+        else:
+            result += "%%%02X" % byte
+    return result
+
+
 class InfectionMode:
-    def __init__(self, normal_ssid, normal_password, log=None):
+    def __init__(self, normal_ssid, normal_password, player_name="", log=None):
         self.normal_ssid = normal_ssid
         self.normal_password = normal_password
+        self.player_name = str(player_name or "").strip()[:32]
         self.log = log or (lambda _message: None)
 
         self.ap = network.WLAN(network.AP_IF)
@@ -67,6 +85,9 @@ class InfectionMode:
         self.last_event = "Bereit"
         self.last_rssi = None
         self.infection_count = 0
+        self.round_started_ms = 0
+        self.round_result = None
+        self.contacts = []
 
         # Dauerhafter Start des eigenen Haupt-Hotspots
         self._ensure_primary_ap()
@@ -147,29 +168,37 @@ class InfectionMode:
         os.rename(temp_path, CONFIG_FILE)
 
     def _ensure_primary_ap(self, ssid=None, password=None):
-        """Stellt sicher, dass der Steuerungs-Hotspot IMMER erreichbar bleibt."""
+        """Stellt sicher, dass der gewuenschte Host-Hotspot aktiv ist."""
         target_ssid = ssid or self.normal_ssid
         target_pw = password or self.normal_password
-
-        if not self.ap.active():
-            self.ap.active(True)
-            time.sleep_ms(50)
 
         try:
             current_essid = self.ap.config("essid")
         except Exception:
             current_essid = ""
 
-        if current_essid != target_ssid:
-            self.ap.config(essid=target_ssid)
-            if target_pw:
-                try:
-                    self.ap.config(password=target_pw)
-                except Exception:
-                    pass
-            self.ap.ifconfig(
-                ("192.168.4.1", "255.255.255.0", "192.168.4.1", "192.168.4.1")
-            )
+        if not self.ap.active() or current_essid != target_ssid:
+            self._start_ap(target_ssid, target_pw)
+
+    def _start_ap(self, ssid, password):
+        try:
+            self.sta.disconnect()
+        except Exception:
+            pass
+        try:
+            self.sta.active(False)
+        except Exception:
+            pass
+        self.ap.active(True)
+        time.sleep_ms(120)
+        self.ap.config(essid=ssid)
+        try:
+            self.ap.config(password=password)
+        except Exception:
+            pass
+        self.ap.ifconfig(
+            ("192.168.4.1", "255.255.255.0", "192.168.4.1", "192.168.4.1")
+        )
 
     def configure(self, values):
         updated = dict(self.config)
@@ -190,6 +219,9 @@ class InfectionMode:
         self.last_event = "Runde gestartet"
         self.infection_count = 0
         now = time.ticks_ms()
+        self.round_started_ms = now
+        self.round_result = None
+        self.contacts = []
         self.round_end_ms = _ticks_add(
             now, self.config["round_seconds"] * 1000
         )
@@ -201,9 +233,12 @@ class InfectionMode:
         self.log("[INFECTION] Runde gestartet als " + self.role)
 
     def stop_round(self, reason="Beendet"):
+        was_running = self.running
         self.running = False
         self.pending_role = None
         self.last_event = reason
+        if was_running and self.round_result is None:
+            self.round_result = "stopped"
 
         try:
             self.sta.disconnect()
@@ -214,13 +249,13 @@ class InfectionMode:
         except Exception:
             pass
 
-        self._ensure_primary_ap(self.normal_ssid, self.normal_password)
+        self._start_ap(self.normal_ssid, self.normal_password)
         self.last_event = reason + " - Hotspot wieder aktiv"
         self.log("[INFECTION] " + reason)
 
     def _become_host(self):
         # Der Host schaltet den Hotspot auf die Infektions-SSID um
-        self._ensure_primary_ap(self.config["ssid"], self.config["password"])
+        self._start_ap(self.config["ssid"], self.config["password"])
         self.role = "host"
         self.last_event = "Infiziert - Host aktiv"
         self.cooldown_until_ms = _ticks_add(
@@ -229,8 +264,12 @@ class InfectionMode:
         self.log("[INFECTION] Rolle: host")
 
     def _become_seeker(self):
-        # Der Seeker behält die normale SSID für die Steuerung
-        self._ensure_primary_ap(self.normal_ssid, self.normal_password)
+        # Nur der Host darf die Infection-SSID senden. Der Seeker schaltet
+        # seinen eigenen AP aus, damit er sich beim Scan nicht selbst findet.
+        try:
+            self.ap.active(False)
+        except Exception:
+            pass
         self.sta.active(True)
         try:
             self.sta.disconnect()
@@ -247,16 +286,44 @@ class InfectionMode:
         self.pending_role = role
         self.pending_role_at_ms = _ticks_add(time.ticks_ms(), delay_ms)
 
-    def register_touch(self, peer_id):
+    def _peer_name(self, peer_name, peer_id):
+        name = str(peer_name or "").strip()[:32]
+        if name:
+            return name
+        node = str(peer_id or "").strip()[:32]
+        return "node-" + node if node and node != "unknown" else "Unbekannter Pilot"
+
+    def _record_contact(self, direction, peer_name, peer_id):
+        elapsed_seconds = 0
+        if self.round_started_ms:
+            elapsed_seconds = max(
+                0,
+                _ticks_diff(time.ticks_ms(), self.round_started_ms) // 1000,
+            )
+        contact = {
+            "direction": direction,
+            "peer_name": self._peer_name(peer_name, peer_id),
+            "peer_id": str(peer_id or "unknown")[:32],
+            "elapsed_seconds": elapsed_seconds,
+        }
+        self.contacts.append(contact)
+        if len(self.contacts) > 32:
+            self.contacts.pop(0)
+        return contact
+
+    def register_touch(self, peer_id, peer_name=""):
         now = time.ticks_ms()
         if not self.running or self.role != "host":
             return False, "Kein aktiver Host"
+        if self.pending_role:
+            return False, "Rollenwechsel laeuft"
         if _ticks_diff(now, self.cooldown_until_ms) < 0:
             return False, "Immunitaetszeit aktiv"
-        self.last_peer = str(peer_id or "unknown")[:32]
+        contact = self._record_contact("infected_by_me", peer_name, peer_id)
+        self.last_peer = contact["peer_name"]
         self.last_event = "Pilot angesteckt: " + self.last_peer
         self.infection_count += 1
-        self._schedule_role("seeker")
+        self._schedule_role("seeker", HOST_RELEASE_DELAY_MS)
         self.log("[INFECTION] Handshake mit " + self.last_peer)
         return True, "Infiziert"
 
@@ -279,8 +346,41 @@ class InfectionMode:
             "last_event": self.last_event,
             "last_rssi": self.last_rssi,
             "infection_count": self.infection_count,
+            "player_name": self.player_name or ("node-" + self.node_id),
+            "round_result": self.round_result,
+            "contacts": list(self.contacts),
             "config": dict(self.config),
         }
+
+    def session_summary_text(self):
+        if not self.round_result and not self.contacts:
+            return ""
+        result_labels = {
+            "won": "GEWONNEN",
+            "lost": "VERLOREN",
+            "stopped": "ABGEBROCHEN",
+        }
+        text = "INFECTION-RUNDE\n"
+        text += "Ergebnis: " + result_labels.get(self.round_result, "LAEUFT") + "\n"
+        text += "Pilot: " + (self.player_name or ("node-" + self.node_id)) + "\n"
+        text += "Kontakte:\n"
+        if not self.contacts:
+            return text + "- Keine direkten Infektionskontakte -\n"
+        for contact in self.contacts:
+            elapsed = int(contact.get("elapsed_seconds", 0))
+            timestamp = "%d:%02d" % (elapsed // 60, elapsed % 60)
+            action = (
+                "hat mich infiziert"
+                if contact.get("direction") == "infected_me"
+                else "von mir infiziert"
+            )
+            text += "- %s | %s | %s (%s)\n" % (
+                timestamp,
+                action,
+                contact.get("peer_name", "Unbekannter Pilot"),
+                contact.get("peer_id", "unknown"),
+            )
+        return text
 
     def _scan_target(self):
         target = self.config["ssid"]
@@ -310,7 +410,7 @@ class InfectionMode:
     async def _read_response(self, reader):
         status_line = await reader.readline()
         if not status_line or b" 200 " not in status_line:
-            return False
+            return None
         content_length = 0
         while True:
             line = await reader.readline()
@@ -321,9 +421,18 @@ class InfectionMode:
                     content_length = int(line.split(b":", 1)[1].strip())
                 except Exception:
                     content_length = 0
-        if content_length > 0:
-            await reader.read(content_length)
-        return True
+        if content_length <= 0:
+            return {}
+        try:
+            body = bytearray()
+            while len(body) < content_length:
+                chunk = await reader.read(content_length - len(body))
+                if not chunk:
+                    break
+                body.extend(chunk)
+            return json.loads(bytes(body).decode("utf-8"))
+        except Exception:
+            return {}
 
     async def _attempt_infection(self):
         rssi = self._scan_target()
@@ -356,17 +465,24 @@ class InfectionMode:
             reader, writer = await asyncio.open_connection("192.168.4.1", 80)
             request = (
                 "GET /infection-touch?node="
-                + self.node_id
+                + _url_encode(self.node_id)
+                + "&name="
+                + _url_encode(self.player_name)
                 + " HTTP/1.0\r\nHost: 192.168.4.1\r\nConnection: close\r\n\r\n"
             )
             writer.write(request.encode())
             await writer.drain()
 
-            if await self._read_response(reader):
-                self.last_peer = "host"
+            response = await self._read_response(reader)
+            if response is not None:
+                host_status = response.get("status", {}) if isinstance(response, dict) else {}
+                host_id = host_status.get("node_id", "host")
+                host_name = host_status.get("player_name", "")
+                contact = self._record_contact("infected_me", host_name, host_id)
+                self.last_peer = contact["peer_name"]
                 self.last_event = "Angesteckt - uebernehme Host"
                 self.infection_count += 1
-                self._schedule_role("host", HANDOFF_DELAY_MS + 600)
+                self._schedule_role("host", HANDOFF_DELAY_MS)
         except Exception as error:
             self.last_event = "Handshake fehlgeschlagen: " + str(error)
         finally:
@@ -394,6 +510,7 @@ class InfectionMode:
                     self._save_config()
                 except Exception:
                     pass
+                self.round_result = "lost" if self.role == "host" else "won"
                 self.stop_round("Runde beendet")
                 continue
 
@@ -417,8 +534,6 @@ class InfectionMode:
                 await asyncio.sleep_ms(300)
                 continue
 
-            # Als Seeker stellen wir sicher, dass unser Steuerungs-Hotspot aktiv bleibt
-            self._ensure_primary_ap(self.normal_ssid, self.normal_password)
             await self._attempt_infection()
             await asyncio.sleep_ms(SCAN_INTERVAL_MS)
 
@@ -442,7 +557,8 @@ async def handle_infection_route(
 
     if request_path == "/infection-touch":
         ok, message = manager.register_touch(
-            query_params.get("node", "unknown")
+            query_params.get("node", "unknown"),
+            query_params.get("name", ""),
         )
         await send_json(
             writer,

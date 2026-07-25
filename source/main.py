@@ -900,6 +900,11 @@ def build_session_txt_content():
     else:
         txt_content += f"- {tx('session.noTricks', 'Keine Tricks aufgezeichnet')} -\n"
 
+    if infection_manager is not None:
+        infection_summary = infection_manager.session_summary_text()
+        if infection_summary:
+            txt_content += "\n----------------------------------------\n" + infection_summary
+
     txt_content += "\n----------------------------------------\n"
     txt_content += f"{tx('session.totalScore', 'GESAMT-PUNKTESTAND')}: {detector.score} {points_unit}\n"
     txt_content += f"{tx('session.highscore', 'HIGHSCORE')}: {highscore_data['score']} {points_unit}\n"
@@ -1333,7 +1338,7 @@ def _ensure_infection_manager():
     if infection_manager is None:
         gc.collect()
         from infection_mode import InfectionMode
-        infection_manager = InfectionMode(AP_SSID, AP_PASSWORD, log=debug_log)
+        infection_manager = InfectionMode(AP_SSID, AP_PASSWORD, DEFAULT_PILOT_NAME, debug_log)
     return infection_manager
 
 
@@ -1964,6 +1969,7 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "send_file_as_download": send_file_as_download,
             "build_debug_export_file": build_debug_export_file,
             "debug_export_file_path": DEBUG_EXPORT_FILE_PATH,
+            "init_debug_log_file": init_debug_log_file,
             "simulate_trick": simulate_trick,
             "perform_emergency_delete_main": _perform_emergency_delete_main,
             "perform_emergency_delete_boot": _perform_emergency_delete_boot,

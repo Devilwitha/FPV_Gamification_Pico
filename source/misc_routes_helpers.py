@@ -54,6 +54,7 @@ async def handle_misc_routes(
     send_file_as_download = deps["send_file_as_download"]
     build_debug_export_file = deps["build_debug_export_file"]
     debug_export_file_path = deps["debug_export_file_path"]
+    init_debug_log_file = deps["init_debug_log_file"]
     simulate_trick = deps["simulate_trick"]
     perform_emergency_delete_main = deps["perform_emergency_delete_main"]
     perform_emergency_delete_boot = deps["perform_emergency_delete_boot"]
@@ -120,6 +121,64 @@ async def handle_misc_routes(
         writer.write(b'Content-Type: application/json\r\n')
         writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
         writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/hotspot-config':
+        try:
+            with open('hotspot.conf', 'r') as config_file:
+                config = json.loads(config_file.read())
+            ssid = str(config.get('ssid', ap_ssid))
+            password = str(config.get('password', ''))
+        except Exception:
+            ssid = ap_ssid
+            password = ''
+        response_data = json.dumps({
+            "ok": True,
+            "ssid": ssid,
+            "password": password,
+        }).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/set-hotspot-config' and request_method == 'POST':
+        ssid = body_params.get('ssid', '').strip()
+        password = body_params.get('password', '')
+        error = ''
+        if not ssid or len(ssid) > 32:
+            error = 'SSID muss 1 bis 32 Zeichen lang sein'
+        elif len(password) < 8 or len(password) > 63:
+            error = 'Passwort muss 8 bis 63 Zeichen lang sein'
+        if error:
+            response_data = json.dumps({"ok": False, "error": error}).encode('utf-8')
+            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+        else:
+            try:
+                temp_path = 'hotspot.conf.tmp'
+                with open(temp_path, 'w') as config_file:
+                    config_file.write(json.dumps({"ssid": ssid, "password": password}))
+                try:
+                    os.remove('hotspot.conf')
+                except Exception:
+                    pass
+                os.rename(temp_path, 'hotspot.conf')
+                response_data = json.dumps({
+                    "ok": True,
+                    "message": "Hotspot gespeichert. Neustart erforderlich.",
+                }).encode('utf-8')
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+            except Exception as error_value:
+                response_data = json.dumps({"ok": False, "error": str(error_value)}).encode('utf-8')
+                writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
         writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
         writer.write(b'Connection: close\r\n\r\n')
         writer.write(response_data)
@@ -489,6 +548,34 @@ async def handle_misc_routes(
 
     if request_path == '/reset-highscore':
         await send_reset_highscore_response(writer, query_params, body_params)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path in ('/clear-debug-log', '/clear-session-log') and request_method == 'POST':
+        if query_params.get('confirm', '') != '1':
+            payload = json.dumps({"ok": False, "error": "Bestaetigung fehlt"}).encode('utf-8')
+            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+        else:
+            if request_path == '/clear-debug-log':
+                for path in ('fpv_debug_session.txt', debug_export_file_path):
+                    try:
+                        os.remove(path)
+                    except Exception:
+                        pass
+                init_debug_log_file()
+                message = "Debug-Log geloescht"
+            else:
+                try:
+                    os.remove(session_export_file_path)
+                except Exception:
+                    pass
+                message = "Session-Log geloescht"
+            payload = json.dumps({"ok": True, "message": message}).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(payload)
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path in ('/download', '/download-session'):

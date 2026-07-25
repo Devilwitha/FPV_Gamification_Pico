@@ -27,6 +27,10 @@ h1{color:#8e44ad;font-size:1.3em;margin:0 0 10px}
 .slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#e8f0f8;transition:.2s;border-radius:50%}
 input:checked+.slider{background:#8e44ad}
 input:checked+.slider:before{transform:translateX(20px)}
+.field{display:flex;flex-direction:column;gap:5px;margin:9px 0;color:#9fb4cb;font-size:.82em}
+.field input{background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;padding:9px;font-family:monospace}
+.inline-check{display:flex;align-items:center;gap:7px;color:#9fb4cb;font-size:.78em;margin:7px 0}.inline-check input{accent-color:#8e44ad}
+.b.secondary{background:#53657a}.b.warning{background:#8a5a20}.msg{color:#9fb4cb;font-size:.82em;min-height:1.3em;margin-top:7px}
 </style>
 </head>
 <body>
@@ -66,12 +70,28 @@ input:checked+.slider:before{transform:translateX(20px)}
 <div id="langMsg" style="color:#9fb4cb;font-size:.78em;margin-top:6px"></div>
 </div>
 <div class="s">
+<h2 data-i18n="system.hotspot">Hotspot-Konfiguration</h2>
+<label class="field"><span data-i18n="system.hotspotSsid">SSID</span><input id="hotspotSsid" maxlength="32" autocomplete="off"></label>
+<label class="field"><span data-i18n="system.hotspotPassword">Passwort</span><input id="hotspotPassword" type="password" minlength="8" maxlength="63" autocomplete="new-password"></label>
+<label class="inline-check"><input id="showHotspotPassword" type="checkbox" onchange="toggleHotspotPassword()"><span data-i18n="system.hotspotShowPassword">Passwort anzeigen</span></label>
+<button class="b secondary" onclick="saveHotspot(false)" data-i18n="system.hotspotSave">Speichern</button>
+<button class="b" onclick="saveHotspot(true)" data-i18n="system.hotspotSaveRestart">Speichern &amp; Neustart</button>
+<div id="hotspotMsg" class="msg"></div>
+</div>
+<div class="s">
 <h2 data-i18n="system.developerMode">Developer-Modus</h2>
 <div class="st2">
 <span data-i18n="system.developerModeLabel">Einzeldatei-Uploads (.py/.html) per OTA erlauben</span>
 <label class="toggle"><input type="checkbox" id="devmode" onchange="toggleDev()"><span class="slider"></span></label>
 </div>
 <div style="color:#9fb4cb;font-size:.78em;margin-top:6px" data-i18n="system.developerModeHint">Standardmaessig (aus) akzeptiert OTA nur komplette <b>firmware.nbo</b> Bundles. Aktiviert erlaubt zusaetzlich einzelne main.py/*.html Dateien (schneller, aber riskanter).</div>
+</div>
+<div class="s">
+<h2 data-i18n="system.logs">Log-Dateien</h2>
+<div data-i18n="system.logsHint" style="color:#9fb4cb;font-size:.78em;margin-bottom:8px">Loescht die gespeicherten TXT-Logdateien auf dem Pico.</div>
+<button class="b warning" onclick="clearLog('debug')" data-i18n="system.clearDebugLog">Debug-Log TXT loeschen</button>
+<button class="b warning" onclick="clearLog('session')" data-i18n="system.clearSessionLog">Session-Log TXT loeschen</button>
+<div id="logMsg" class="msg"></div>
 </div>
 <div class="s">
 <h2 data-i18n="system.restart">Restart</h2>
@@ -116,6 +136,29 @@ function fmtBytes(n){
 if(n<0||n===undefined||n===null)return '?';
 if(n>=1024*1024)return (n/(1024*1024)).toFixed(2)+' MB';
 return (n/1024).toFixed(1)+' KB';
+}
+function toggleHotspotPassword(){document.getElementById('hotspotPassword').type=document.getElementById('showHotspotPassword').checked?'text':'password';}
+function loadHotspot(){
+fetch('/hotspot-config',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok)return;document.getElementById('hotspotSsid').value=d.ssid||'';document.getElementById('hotspotPassword').value=d.password||'';
+}).catch(()=>{});
+}
+function saveHotspot(restart){
+const ssid=document.getElementById('hotspotSsid').value.trim(),password=document.getElementById('hotspotPassword').value,msg=document.getElementById('hotspotMsg');
+if(!ssid||ssid.length>32){msg.innerText=t('system.hotspotSsidError','SSID muss 1 bis 32 Zeichen lang sein.');return;}
+if(password.length<8||password.length>63){msg.innerText=t('system.hotspotPasswordError','Passwort muss 8 bis 63 Zeichen lang sein.');return;}
+msg.innerText=t('system.hotspotSaving','Speichere...');
+const body='ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(password);
+fetch('/set-hotspot-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body}).then(r=>r.json()).then(d=>{
+if(!d.ok)throw new Error(d.error||'Fehler');msg.innerText=t('system.hotspotSaved','Gespeichert. Nach einem Neustart gilt der neue Hotspot.');
+if(restart){setTimeout(()=>fetch('/restart-pico',{cache:'no-store'}).catch(()=>{}),300);}
+}).catch(e=>msg.innerText=e.message);
+}
+function clearLog(kind){
+const debug=kind==='debug',label=debug?t('system.debugLogName','Debug-Log TXT'):t('system.sessionLogName','Session-Log TXT');
+if(!confirm(t('system.clearLogConfirm','Wirklich loeschen?')+' '+label))return;
+const url=debug?'/clear-debug-log?confirm=1':'/clear-session-log?confirm=1',msg=document.getElementById('logMsg');
+fetch(url,{method:'POST',cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.ok)throw new Error(d.error||'Fehler');msg.innerText=d.message||t('system.logDeleted','Log geloescht.');}).catch(e=>msg.innerText=e.message);
 }
 function upd(){
 fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
@@ -209,7 +252,7 @@ msg.innerText=t('system.languageSaveError','Speichern fehlgeschlagen.');
 }
 }).catch(()=>{});
 }
-loadI18n().then(()=>{upd();loadLanguages();setInterval(upd,3000);setInterval(loadI18n,5000);});
+loadI18n().then(()=>{upd();loadLanguages();loadHotspot();setInterval(upd,3000);setInterval(loadI18n,5000);});
 </script>
 </body>
 </html>

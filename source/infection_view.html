@@ -11,6 +11,7 @@
 .role-label{color:var(--muted);font-size:.74em;text-transform:uppercase}.role{font-size:2em;font-weight:900;margin:4px 0 12px}.timer-label{color:var(--muted);font-size:.74em}.timer{font:800 2.7em monospace;color:#fff;margin-top:2px}.bar{height:10px;background:#0b1015;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px}.fill{width:0;height:100%;background:linear-gradient(90deg,var(--red2),var(--red));transition:width .4s}
 .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{min-height:86px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:#0e141a}.lbl{color:var(--muted);font-size:.72em;text-transform:uppercase}.val{font-weight:800;margin-top:8px;overflow-wrap:anywhere}.signal{display:flex;align-items:flex-end;gap:3px;height:22px;margin-top:8px}.signal i{display:block;width:6px;background:#37434d;border-radius:2px}.signal i:nth-child(1){height:6px}.signal i:nth-child(2){height:10px}.signal i:nth-child(3){height:15px}.signal i:nth-child(4){height:21px}.signal i.on{background:var(--green)}
 .event{margin-top:12px;padding:15px;border-left:4px solid var(--amber);border-radius:4px 12px 12px 4px;background:#15171a}.event .val{color:#f5d28b}.hint{color:var(--muted);font-size:.78em;line-height:1.5;margin-top:12px}.buttons{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.b{display:inline-flex;align-items:center;justify-content:center;flex:1 1 180px;padding:11px 14px;border:0;border-radius:10px;text-decoration:none;color:#fff;font-weight:800;background:var(--blue)}.b.control{background:#752f35}.footer{margin-top:12px;color:#778995;font-size:.72em;text-align:right}@media(max-width:570px){.c{padding:16px}.hero{grid-template-columns:1fr;text-align:center}.radar{margin:auto;width:156px;height:156px}.stats{grid-template-columns:1fr}.timer{font-size:2.25em}}
+.summary{margin-top:12px;padding:15px;border:1px solid var(--line);border-radius:8px;background:#0e141a}.result{font-size:1.45em;font-weight:900;margin:5px 0 12px}.result.won{color:var(--green)}.result.lost{color:var(--red)}.result.stopped{color:var(--amber)}.contacts{display:grid;gap:7px}.contact{padding:8px 0;border-top:1px solid var(--line);font-size:.82em}.contact time{color:var(--muted);margin-right:8px}
 </style>
 </head>
 <body><main class="c">
@@ -26,6 +27,7 @@
 <div class="stat"><div class="lbl">Node ID</div><div id="node" class="val">-</div></div>
 </section>
 <section class="event"><div class="lbl" data-i18n="infectionView.latestEvent">Letztes Ereignis</div><div id="event" class="val">-</div></section>
+<section id="summary" class="summary" hidden><div class="lbl">Rundenergebnis</div><div id="result" class="result"></div><div class="lbl">Infektionskontakte</div><div id="contacts" class="contacts"></div></section>
 <p class="hint" data-i18n="infectionView.hint">Das Spiel nutzt seine eigene WLAN-Konfiguration. Nach Spielende wird der normale Hotspot aus hotspot.conf wieder aktiviert.</p>
 <nav class="buttons"><a class="b control" href="/admin-infection" data-i18n="infectionView.controlButton">Modus steuern</a><a class="b" href="/" data-i18n="infectionView.homeButton">Zur Startseite</a></nav>
 <div id="version" class="footer"></div>
@@ -37,6 +39,13 @@ function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const
 function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n()}).catch(()=>{})}
 function fmt(sec){sec=Math.max(0,Number(sec)||0);return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
 function signalBars(rssi){if(rssi===null||rssi===undefined)return 0;if(rssi>=-45)return 4;if(rssi>=-60)return 3;if(rssi>=-75)return 2;return 1}
+function showSummary(d){
+ const contacts=Array.isArray(d.contacts)?d.contacts:[],box=document.getElementById('summary'),result=document.getElementById('result'),list=document.getElementById('contacts');
+ box.hidden=!d.round_result&&!contacts.length;if(box.hidden)return;
+ const labels={won:'GEWONNEN',lost:'VERLOREN',stopped:'ABGEBROCHEN'};result.className='result '+(d.round_result||'');result.textContent=labels[d.round_result]||'RUNDE LAEUFT';list.replaceChildren();
+ if(!contacts.length){const row=document.createElement('div');row.className='contact';row.textContent='Keine direkten Infektionskontakte';list.appendChild(row);return}
+ contacts.forEach(c=>{const row=document.createElement('div'),tm=document.createElement('time'),text=document.createElement('span');row.className='contact';tm.textContent=fmt(c.elapsed_seconds);text.textContent=(c.direction==='infected_me'?'Hat mich infiziert: ':'Von mir infiziert: ')+(c.peer_name||('node-'+(c.peer_id||'unknown')));row.append(tm,text);list.appendChild(row)})
+}
 function update(d){
  const running=!!d.running,role=d.role||'seeker',host=role==='host';
  document.getElementById('radar').classList.toggle('off',!running);document.getElementById('core').className='core '+(running?role:'');
@@ -47,6 +56,7 @@ function update(d){
  document.getElementById('rssi').innerText=d.last_rssi===null||d.last_rssi===undefined?t('infectionView.searching','Suche...'):d.last_rssi+' dBm';
  const bars=signalBars(d.last_rssi);document.querySelectorAll('#signal i').forEach((el,i)=>el.classList.toggle('on',i<bars));
  document.getElementById('peer').innerText=d.last_peer||'-';document.getElementById('count').innerText=d.infection_count||0;document.getElementById('node').innerText=d.node_id||'-';document.getElementById('event').innerText=d.last_event||'-';
+ showSummary(d);
 }
 function poll(){fetch('/infection-data',{cache:'no-store'}).then(r=>r.json()).then(update).catch(()=>{}).finally(()=>setTimeout(poll,1000))}
 function loadVersion(){fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>document.getElementById('version').innerText=d.firmware_version?'v'+d.firmware_version:'').catch(()=>{})}

@@ -34,7 +34,7 @@
   "infection.password": "Wi-Fi Password",
   "infection.threshold": "Proximity Threshold RSSI (dBm)",
   "infection.cooldown": "Immunity Time (sec.)",
-  "infection.hint": "These game credentials are stored separately in infection.conf and never change hotspot.conf. Both Picos must use the same values.",
+  "infection.hint": "Infection uses Bluetooth LE. The normal hotspot from hotspot.conf remains active throughout the round.",
   "infection.saveStart": "Save &amp; Start Round",
   "infection.stop": "Stop Round",
   "infection.saving": "Saving...",
@@ -51,7 +51,7 @@
   "infectionView.roleChanges": "Role Changes",
   "infectionView.latestEvent": "Latest Event",
   "infectionView.searching": "Searching...",
-  "infectionView.hint": "The game uses its own Wi-Fi configuration. After the game, the normal hotspot from hotspot.conf is restored.",
+  "infectionView.hint": "The game detects players via Bluetooth LE. The normal hotspot from hotspot.conf stays active.",
   "infectionView.controlButton": "Control Mode",
   "infectionView.homeButton": "Back to Home",
 

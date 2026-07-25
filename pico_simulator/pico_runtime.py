@@ -22,6 +22,7 @@ class _SimState:
         "pm": 0,
     }
     ap_ifconfig = ("192.168.4.1", "255.255.255.0", "192.168.4.1", "192.168.4.1")
+    ble_devices = []
 
 
 _original_open = builtins.open
@@ -234,6 +235,48 @@ def _install_network_module():
     sys.modules["network"] = network_mod
 
 
+class _BLE:
+    def __init__(self):
+        self._active = False
+        self._irq_handler = None
+        self._advertisement = None
+        _SimState.ble_devices.append(self)
+
+    def active(self, enabled=None):
+        if enabled is None:
+            return self._active
+        self._active = bool(enabled)
+        if not self._active:
+            self._advertisement = None
+        return self._active
+
+    def irq(self, handler):
+        self._irq_handler = handler
+
+    def gap_advertise(self, interval_us, adv_data=None, **_kwargs):
+        if interval_us is None:
+            self._advertisement = None
+        elif self._active:
+            self._advertisement = bytes(adv_data or b"")
+
+    def gap_scan(self, duration_ms, *_args, **_kwargs):
+        if duration_ms is None or not self._active:
+            return
+        if self._irq_handler is not None:
+            for index, peer in enumerate(tuple(_SimState.ble_devices)):
+                if peer is self or not peer._active or not peer._advertisement:
+                    continue
+                address = bytes((0, 0, 0, 0, 0, index & 0xFF))
+                self._irq_handler(5, (0, address, 0, -42, peer._advertisement))
+            self._irq_handler(6, None)
+
+
+def _install_bluetooth_module():
+    bluetooth_mod = types.ModuleType("bluetooth")
+    bluetooth_mod.BLE = _BLE
+    sys.modules["bluetooth"] = bluetooth_mod
+
+
 def install(
     sim_port=8080,
     mem_free_bytes=180 * 1024,
@@ -249,6 +292,7 @@ def install(
     _install_asyncio_compat(sim_port=sim_port, cpu_scale=cpu_scale, net_latency_ms=net_latency_ms)
     _install_machine_module()
     _install_network_module()
+    _install_bluetooth_module()
     print(
         "[SIM] MicroPython compatibility layer installed "
         f"(mem_free={_SimState.mem_free_bytes}B, mem_alloc={_SimState.mem_alloc_bytes}B, "

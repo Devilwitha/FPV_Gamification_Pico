@@ -207,11 +207,12 @@ Den normalen Pico-Hotspot stellst du in `source/hotspot.conf` ein:
 Boot, Main, Recovery und LilyGO lesen diese Datei beim Start. Bei fehlender
 oder ungueltiger Datei gelten dieselben Werte als Fallback.
 
-Der Infection-Modus ist davon getrennt. Seine Spiel-SSID und sein Passwort
-werden auf jedem Pico in `infection.conf` gespeichert. Diese Datei entsteht
-beim Speichern der Infection-Einstellungen, wird nicht ins Firmware-Bundle
-gepackt und veraendert `hotspot.conf` nicht. Nach Spielende wird der normale
-Hotspot aus `hotspot.conf` wieder aktiviert. Eine vorhandene alte
+Der Infection-Modus erkennt Mitspieler ueber verbindungslose Bluetooth-LE-
+Advertisements. Der normale Hotspot aus `hotspot.conf` bleibt deshalb auch
+waehrend einer Runde aktiv. Rundendauer, Startrolle, RSSI-Naehe und Immunitaet
+liegen in `infection.conf`. Erlaubte Mitspieler werden pro Pico als Name und
+Node-ID in `infection_players.conf` gespeichert; diese veraenderliche Datei
+wird nicht ins Firmware-Bundle gepackt. Eine vorhandene alte
 `infection_config.json` wird einmalig nach `infection.conf` migriert.
 
 Weitere Variablen kannst du direkt in `main.py` oben anpassen:

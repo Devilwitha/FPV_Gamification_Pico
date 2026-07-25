@@ -34,7 +34,7 @@
   "infection.password": "WLAN-Passwort",
   "infection.threshold": "Naeheschwelle RSSI (dBm)",
   "infection.cooldown": "Immunitaetszeit (Sek.)",
-  "infection.hint": "Diese Spiel-Zugangsdaten werden separat in infection.conf gespeichert und aendern hotspot.conf nicht. Beide Picos muessen dieselben Werte verwenden.",
+  "infection.hint": "Infection nutzt Bluetooth LE. Der normale Hotspot aus hotspot.conf bleibt waehrend der Runde aktiv.",
   "infection.saveStart": "Speichern &amp; Runde starten",
   "infection.stop": "Runde stoppen",
   "infection.saving": "Speichere...",
@@ -51,7 +51,7 @@
   "infectionView.roleChanges": "Rollenwechsel",
   "infectionView.latestEvent": "Letztes Ereignis",
   "infectionView.searching": "Suche...",
-  "infectionView.hint": "Das Spiel nutzt seine eigene WLAN-Konfiguration. Nach Spielende wird der normale Hotspot aus hotspot.conf wieder aktiviert.",
+  "infectionView.hint": "Das Spiel erkennt Mitspieler per Bluetooth LE. Der normale Hotspot aus hotspot.conf bleibt durchgehend aktiv.",
   "infectionView.controlButton": "Modus steuern",
   "infectionView.homeButton": "Zur Startseite",
 

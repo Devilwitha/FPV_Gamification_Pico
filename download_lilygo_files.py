@@ -48,21 +48,33 @@ def soft_reboot(port):
 
 
 def run_mpremote(port, arguments, check=True):
-    command = [sys.executable, "-m", "mpremote", "connect", port, "resume"] + list(arguments)
+    command = [
+        sys.executable,
+        "-m",
+        "mpremote",
+        "connect",
+        port,
+        "resume",
+    ] + list(arguments)
     return subprocess.run(command, capture_output=True, text=True, check=check)
 
 
 def verify_lilygo(port):
+    cmd = (
+        "import os; "
+        f"print('LILYGO_OK' if '{LILYGO_MARKER}' in os.listdir() else 'NOT_LILYGO')"
+    )
     result = run_mpremote(
         port,
-        ["exec", f"import os; print('LILYGO_OK' if '{LILYGO_MARKER}' in os.listdir() else 'NOT_LILYGO')"],
+        ["exec", cmd],
         check=False,
     )
     return result.returncode == 0 and "LILYGO_OK" in result.stdout
 
 
 def list_remote_files(port):
-    result = run_mpremote(port, ["exec", "import os; print('FILES:' + '|'.join(os.listdir()))"])
+    cmd = "import os; print('FILES:' + '|'.join(os.listdir()))"
+    result = run_mpremote(port, ["exec", cmd])
     for line in result.stdout.splitlines():
         if line.startswith("FILES:"):
             return set(line[6:].split("|"))
@@ -83,7 +95,9 @@ def copy_remote_file(port, remote_name, output_dir):
     if result.returncode != 0:
         if temp_destination.exists():
             temp_destination.unlink()
-        details = (result.stderr or result.stdout or "Unbekannter Fehler").strip()
+        details = (
+            result.stderr or result.stdout or "Unbekannter Fehler"
+        ).strip()
         raise RuntimeError(details)
 
     if destination.exists():
@@ -119,26 +133,47 @@ def download_exports(port, output_dir):
         soft_reboot(port)
 
 
-def default_output_dir():
-    return Path.home() / "Downloads" / "FPV_LilyGO"
-
-
 def main():
+    print("=== SKRIPT START (VERSION SKRIPT-ORDNER) ===")
+
+    # Pfad des Ordners ermitteln, in dem DIESE .py Datei liegt
+    script_directory = Path(__file__).resolve().parent
+    default_dir = script_directory / "FPV_LilyGO"
+
     parser = argparse.ArgumentParser(
         description="Laedt FPV-Session- und Debugdateien seriell vom LilyGO herunter."
     )
-    parser.add_argument("--port", help="Optionaler COM-Port, z.B. COM14")
-    parser.add_argument("--output", type=Path, default=default_output_dir(), help="Lokaler Zielordner")
-    parser.add_argument("--watch", action="store_true", help="Dauerhaft auf neue LilyGO-Verbindungen warten")
-    parser.add_argument("--interval", type=float, default=2.0, help="Suchintervall im Watch-Modus")
+    parser.add_argument(
+        "--port",
+        help="Optionaler COM-Port, z.B. COM14",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=default_dir,
+        help="Lokaler Zielordner (Standard: FPV_LilyGO im Skriptordner)",
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Dauerhaft auf neue LilyGO-Verbindungen warten",
+    )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Suchintervall im Watch-Modus",
+    )
     args = parser.parse_args()
+
+    target_output_dir = args.output.resolve()
 
     last_port = None
     while True:
         port = find_lilygo_port(args.port)
         if port and port != last_port:
             try:
-                download_exports(port, args.output.resolve())
+                download_exports(port, target_output_dir)
             except Exception as error:
                 print(f"[FEHLER] {error}")
             last_port = port
@@ -147,7 +182,9 @@ def main():
 
         if not args.watch:
             if not port:
-                print("[FEHLER] Kein LilyGO gefunden. USB verbinden und erneut starten.")
+                print(
+                    "[FEHLER] Kein LilyGO gefunden. USB verbinden und erneut starten."
+                )
                 return 1
             return 0
 

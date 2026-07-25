@@ -223,8 +223,8 @@ def main():
     parser.add_argument(
         "--entry",
         choices=["main", "boot", "recovery"],
-        default="main",
-        help="Firmware entry module from source (default: main)",
+        default="boot",
+        help="Firmware entry module from source (default: boot)",
     )
     parser.add_argument(
         "--source-dir",

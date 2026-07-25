@@ -111,16 +111,18 @@ def safe_base64_file_to_file(input_file, output_file):
 
 def apply_firmware_bundle(bundle_path):
     """Entpackt ein per build_firmware.py erzeugtes Firmware-Bundle
-    (firmware.nbo) - duenner Wrapper um ota_helpers.apply_firmware_bundle()."""
-    return _ota_apply_firmware_bundle(bundle_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
+    (firmware.nbo) ohne Einzeldatei-Whitelist - duenner Wrapper um
+    ota_helpers.apply_firmware_bundle()."""
+    return _ota_apply_firmware_bundle(bundle_path, None, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
 
 
 def apply_firmware_bundle_from_base64(base64_path):
     """Wie apply_firmware_bundle(), entpackt aber direkt aus der noch
     base64-kodierten Datei (z.B. 'update.pbp') ohne kompletten dekodierten
     Zwischenstand auf dem Flash - duenner Wrapper um
-    ota_helpers.apply_firmware_bundle_from_base64()."""
-    return _ota_apply_firmware_bundle_from_base64(base64_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
+    ota_helpers.apply_firmware_bundle_from_base64(). Die enthaltenen Dateien
+    werden nicht gegen OTA_ALLOWED_TARGETS geprueft."""
+    return _ota_apply_firmware_bundle_from_base64(base64_path, None, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
 
 
 def start_access_point():

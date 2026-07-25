@@ -44,15 +44,15 @@ def _noop_feed_wdt():
 # mehr einzeln gegen die feste OTA_ALLOWED_TARGETS-Liste geprueft werden (das
 # bremste z.B. neue Mission-Dateien mit beliebigen Namen aus, obwohl ein
 # Bundle als Ganzes bereits eine vertrauenswuerdige Update-Einheit ist). Es
-# bleibt aber eine strukturelle Sicherheitspruefung, damit ein praeparierter
-# Bundle-Dateiname kein Pfad-Traversal (z.B. "../boot.py") oder eine versteckte
-# Datei erzeugen kann.
+# bleibt nur eine minimale Pfad-Pruefung, damit ein Bundle-Eintrag nicht
+# ausserhalb des Pico-Dateisystem-Roots schreibt. Ansonsten ist jeder flache
+# Dateiname erlaubt, einschliesslich Punktdateien und Namen mit "..".
 def _is_safe_bundle_entry_filename(filename):
     if not filename:
         return False
-    if "/" in filename or "\\" in filename or ".." in filename:
+    if "/" in filename or "\\" in filename:
         return False
-    if filename.startswith("."):
+    if filename == "." or filename == "..":
         return False
     return True
 
@@ -277,7 +277,7 @@ def _apply_firmware_bundle_from_stream(f, allowed_targets, bundle_magic, log=_no
         (content_len,) = struct.unpack('>I', content_len_bytes)
 
         if not _is_safe_bundle_entry_filename(filename):
-            raise Exception(f"Datei im Bundle nicht erlaubt: {filename}")
+            raise Exception(f"Ungueltiger Dateipfad im Bundle: {filename}")
 
         tmp_name = filename + ".bndl_tmp"
         remaining = content_len

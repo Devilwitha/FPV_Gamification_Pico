@@ -62,10 +62,13 @@ Die GUI hat dafuer das Feld `Real RAM limit (MB)`.
 Aus dem Projekt-Root:
 
 ```powershell
-.venv\Scripts\python.exe pico_simulator\run_firmware.py --entry main --port 8080
+.venv\Scripts\python.exe pico_simulator\run_firmware.py --port 8080
 ```
 
-Beim ersten Start wird `data` automatisch aus `source` geklont.
+Standardmaessig startet der Simulator wie der echte Pico ueber `boot.py`.
+Fehlt `main.py` im beschreibbaren `data`-Abbild oder stuerzt es beim Import
+ab, startet `boot.py` automatisch `recovery.py`. Beim ersten Start wird
+`data` automatisch aus `source` geklont.
 
 Danach im Browser:
 
@@ -75,20 +78,20 @@ Danach im Browser:
 ## Weitere Starts
 
 ```powershell
-.venv\Scripts\python.exe pico_simulator\run_firmware.py --entry boot --port 8080
+.venv\Scripts\python.exe pico_simulator\run_firmware.py --entry main --port 8080
 .venv\Scripts\python.exe pico_simulator\run_firmware.py --entry recovery --port 8080
 ```
 
 Frischen Clone erzwingen:
 
 ```powershell
-.venv\Scripts\python.exe pico_simulator\run_firmware.py --entry main --port 8080 --refresh-data
+.venv\Scripts\python.exe pico_simulator\run_firmware.py --port 8080 --refresh-data
 ```
 
 Pico-W-nah mit frischem Clone:
 
 ```powershell
-.venv\Scripts\python.exe pico_simulator\run_firmware.py --entry main --port 8080 --refresh-data --sim-profile pico_w
+.venv\Scripts\python.exe pico_simulator\run_firmware.py --port 8080 --refresh-data --sim-profile pico_w
 ```
 
 Strenger Performance-Test (noch langsamer):

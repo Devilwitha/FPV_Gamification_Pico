@@ -35,7 +35,7 @@ class SimulatorGui(tk.Tk):
 
         row = 0
         ttk.Label(frame, text="Entry").grid(row=row, column=0, sticky="w")
-        self.entry_var = tk.StringVar(value="main")
+        self.entry_var = tk.StringVar(value="boot")
         entry_cb = ttk.Combobox(frame, textvariable=self.entry_var, values=["main", "boot", "recovery"], state="readonly")
         entry_cb.grid(row=row, column=1, sticky="ew", padx=(8, 0))
 

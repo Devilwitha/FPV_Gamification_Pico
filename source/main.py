@@ -642,9 +642,19 @@ def init_debug_log_file():
     global debug_log_file_enabled, debug_log_file_bytes, debug_log_file_limit_reached
     debug_log_file_limit_reached = False
     try:
-        with open(DEBUG_LOG_FILE_PATH, 'w') as f:
-            f.write(DEBUG_LOG_BOOT_MARKER)
-        debug_log_file_bytes = os.stat(DEBUG_LOG_FILE_PATH)[6]
+        try:
+            existing_size = os.stat(DEBUG_LOG_FILE_PATH)[6]
+        except Exception:
+            existing_size = 0
+
+        marker = DEBUG_LOG_BOOT_MARKER if existing_size == 0 else "\n" + DEBUG_LOG_BOOT_MARKER
+        if existing_size + len(marker) <= DEBUG_LOG_FILE_MAX_BYTES:
+            with open(DEBUG_LOG_FILE_PATH, 'a') as f:
+                f.write(marker)
+            debug_log_file_bytes = existing_size + len(marker)
+        else:
+            debug_log_file_bytes = existing_size
+            debug_log_file_limit_reached = True
     except Exception:
         debug_log_file_enabled = False
 

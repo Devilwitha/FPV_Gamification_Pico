@@ -40,10 +40,23 @@ class InfectionMode:
         self.normal_ssid = normal_ssid
         self.normal_password = normal_password
         self.log = log or (lambda _message: None)
+
         self.ap = network.WLAN(network.AP_IF)
         self.sta = network.WLAN(network.STA_IF)
+
         self.node_id = self._node_id()
         self.config = self._load_config()
+
+        if self.config["enabled"]:
+            self.config["enabled"] = False
+            try:
+                self._save_config()
+            except Exception as error:
+                self.log(
+                    "[INFECTION] Neustart-Status konnte nicht geloescht werden: "
+                    + str(error)
+                )
+
         self.role = self.config["initial_role"]
         self.running = False
         self.round_end_ms = 0
@@ -54,6 +67,9 @@ class InfectionMode:
         self.last_event = "Bereit"
         self.last_rssi = None
         self.infection_count = 0
+
+        # Dauerhafter Start des eigenen Haupt-Hotspots
+        self._ensure_primary_ap()
 
     def _node_id(self):
         try:
@@ -77,20 +93,36 @@ class InfectionMode:
         if isinstance(values, dict):
             config.update(values)
         config["enabled"] = bool(config.get("enabled", False))
-        config["initial_role"] = "host" if config.get("initial_role") == "host" else "seeker"
+        config["initial_role"] = (
+            "host" if config.get("initial_role") == "host" else "seeker"
+        )
         config["ssid"] = str(config.get("ssid") or DEFAULT_INFECTION_SSID)[:32]
         password = str(config.get("password") or DEFAULT_INFECTION_PASSWORD)
-        config["password"] = password if len(password) >= 8 else DEFAULT_INFECTION_PASSWORD
-        config["round_seconds"] = _clamp(int(config.get("round_seconds", DEFAULT_ROUND_SECONDS)), 30, 3600)
-        config["rssi_threshold"] = _clamp(int(config.get("rssi_threshold", DEFAULT_RSSI_THRESHOLD)), -95, -20)
-        config["cooldown_seconds"] = _clamp(int(config.get("cooldown_seconds", DEFAULT_COOLDOWN_SECONDS)), 3, 120)
+        config["password"] = (
+            password if len(password) >= 8 else DEFAULT_INFECTION_PASSWORD
+        )
+        config["round_seconds"] = _clamp(
+            int(config.get("round_seconds", DEFAULT_ROUND_SECONDS)), 30, 3600
+        )
+        config["rssi_threshold"] = _clamp(
+            int(config.get("rssi_threshold", DEFAULT_RSSI_THRESHOLD)),
+            -95,
+            -20,
+        )
+        config["cooldown_seconds"] = _clamp(
+            int(config.get("cooldown_seconds", DEFAULT_COOLDOWN_SECONDS)),
+            3,
+            120,
+        )
         return config
 
     def _load_config(self):
         for config_path in (CONFIG_FILE, LEGACY_CONFIG_FILE):
             try:
                 with open(config_path, "r") as config_file:
-                    config = self._normalize_config(json.loads(config_file.read()))
+                    config = self._normalize_config(
+                        json.loads(config_file.read())
+                    )
                 if config_path == LEGACY_CONFIG_FILE:
                     self.config = config
                     self._save_config()
@@ -114,6 +146,31 @@ class InfectionMode:
             pass
         os.rename(temp_path, CONFIG_FILE)
 
+    def _ensure_primary_ap(self, ssid=None, password=None):
+        """Stellt sicher, dass der Steuerungs-Hotspot IMMER erreichbar bleibt."""
+        target_ssid = ssid or self.normal_ssid
+        target_pw = password or self.normal_password
+
+        if not self.ap.active():
+            self.ap.active(True)
+            time.sleep_ms(50)
+
+        try:
+            current_essid = self.ap.config("essid")
+        except Exception:
+            current_essid = ""
+
+        if current_essid != target_ssid:
+            self.ap.config(essid=target_ssid)
+            if target_pw:
+                try:
+                    self.ap.config(password=target_pw)
+                except Exception:
+                    pass
+            self.ap.ifconfig(
+                ("192.168.4.1", "255.255.255.0", "192.168.4.1", "192.168.4.1")
+            )
+
     def configure(self, values):
         updated = dict(self.config)
         updated.update(values or {})
@@ -133,7 +190,10 @@ class InfectionMode:
         self.last_event = "Runde gestartet"
         self.infection_count = 0
         now = time.ticks_ms()
-        self.round_end_ms = _ticks_add(now, self.config["round_seconds"] * 1000)
+        self.round_end_ms = _ticks_add(
+            now, self.config["round_seconds"] * 1000
+        )
+
         if self.role == "host":
             self._become_host()
         else:
@@ -144,6 +204,7 @@ class InfectionMode:
         self.running = False
         self.pending_role = None
         self.last_event = reason
+
         try:
             self.sta.disconnect()
         except Exception:
@@ -152,30 +213,14 @@ class InfectionMode:
             self.sta.active(False)
         except Exception:
             pass
-        self._start_ap(self.normal_ssid, self.normal_password)
+
+        self._ensure_primary_ap(self.normal_ssid, self.normal_password)
         self.last_event = reason + " - Hotspot wieder aktiv"
         self.log("[INFECTION] " + reason)
 
-    def _start_ap(self, ssid, password):
-        try:
-            self.sta.disconnect()
-        except Exception:
-            pass
-        try:
-            self.sta.active(False)
-        except Exception:
-            pass
-        self.ap.active(True)
-        time.sleep_ms(120)
-        self.ap.config(essid=ssid)
-        try:
-            self.ap.config(password=password)
-        except Exception:
-            pass
-        self.ap.ifconfig(("192.168.4.1", "255.255.255.0", "192.168.4.1", "192.168.4.1"))
-
     def _become_host(self):
-        self._start_ap(self.config["ssid"], self.config["password"])
+        # Der Host schaltet den Hotspot auf die Infektions-SSID um
+        self._ensure_primary_ap(self.config["ssid"], self.config["password"])
         self.role = "host"
         self.last_event = "Infiziert - Host aktiv"
         self.cooldown_until_ms = _ticks_add(
@@ -184,10 +229,8 @@ class InfectionMode:
         self.log("[INFECTION] Rolle: host")
 
     def _become_seeker(self):
-        try:
-            self.ap.active(False)
-        except Exception:
-            pass
+        # Der Seeker behält die normale SSID für die Steuerung
+        self._ensure_primary_ap(self.normal_ssid, self.normal_password)
         self.sta.active(True)
         try:
             self.sta.disconnect()
@@ -247,14 +290,20 @@ class InfectionMode:
         except Exception as error:
             self.last_event = "Scanfehler: " + str(error)
             return None
+
         for entry in networks:
             try:
-                ssid = entry[0].decode() if isinstance(entry[0], bytes) else str(entry[0])
+                ssid = (
+                    entry[0].decode()
+                    if isinstance(entry[0], bytes)
+                    else str(entry[0])
+                )
                 rssi = int(entry[3])
             except Exception:
                 continue
             if ssid == target and (best_rssi is None or rssi > best_rssi):
                 best_rssi = rssi
+
         self.last_rssi = best_rssi
         return best_rssi
 
@@ -292,8 +341,12 @@ class InfectionMode:
             return
 
         deadline = _ticks_add(time.ticks_ms(), CONNECT_TIMEOUT_MS)
-        while not self.sta.isconnected() and _ticks_diff(deadline, time.ticks_ms()) > 0:
+        while (
+            not self.sta.isconnected()
+            and _ticks_diff(deadline, time.ticks_ms()) > 0
+        ):
             await asyncio.sleep_ms(100)
+
         if not self.sta.isconnected():
             self.last_event = "Verbindungstimeout"
             return
@@ -302,11 +355,13 @@ class InfectionMode:
         try:
             reader, writer = await asyncio.open_connection("192.168.4.1", 80)
             request = (
-                "GET /infection-touch?node=" + self.node_id +
-                " HTTP/1.0\r\nHost: 192.168.4.1\r\nConnection: close\r\n\r\n"
+                "GET /infection-touch?node="
+                + self.node_id
+                + " HTTP/1.0\r\nHost: 192.168.4.1\r\nConnection: close\r\n\r\n"
             )
             writer.write(request.encode())
             await writer.drain()
+
             if await self._read_response(reader):
                 self.last_peer = "host"
                 self.last_event = "Angesteckt - uebernehme Host"
@@ -320,12 +375,18 @@ class InfectionMode:
                     writer.close()
                 except Exception:
                     pass
+            # Nach dem Versuch als Seeker sofort wieder trennen
+            try:
+                self.sta.disconnect()
+            except Exception:
+                pass
 
     async def run(self):
         while True:
             if not self.running:
                 await asyncio.sleep_ms(500)
                 continue
+
             now = time.ticks_ms()
             if self.remaining_seconds() <= 0:
                 self.config["enabled"] = False
@@ -335,6 +396,7 @@ class InfectionMode:
                     pass
                 self.stop_round("Runde beendet")
                 continue
+
             if self.pending_role and _ticks_diff(now, self.pending_role_at_ms) >= 0:
                 role = self.pending_role
                 self.pending_role = None
@@ -343,16 +405,20 @@ class InfectionMode:
                 else:
                     self._become_seeker()
                 continue
+
             if self.pending_role or _ticks_diff(now, self.cooldown_until_ms) < 0:
                 await asyncio.sleep_ms(200)
                 continue
+
             if self.role == "host":
-                if not self.ap.active():
-                    self._become_host()
+                self._ensure_primary_ap(
+                    self.config["ssid"], self.config["password"]
+                )
                 await asyncio.sleep_ms(300)
                 continue
-            if self.ap.active():
-                self._become_seeker()
+
+            # Als Seeker stellen wir sicher, dass unser Steuerungs-Hotspot aktiv bleibt
+            self._ensure_primary_ap(self.normal_ssid, self.normal_password)
             await self._attempt_infection()
             await asyncio.sleep_ms(SCAN_INTERVAL_MS)
 
@@ -375,7 +441,9 @@ async def handle_infection_route(
         return True
 
     if request_path == "/infection-touch":
-        ok, message = manager.register_touch(query_params.get("node", "unknown"))
+        ok, message = manager.register_touch(
+            query_params.get("node", "unknown")
+        )
         await send_json(
             writer,
             {"ok": ok, "message": message, "status": manager.status()},
@@ -389,15 +457,23 @@ async def handle_infection_route(
             "initial_role": body_params.get("initial_role", "seeker"),
             "ssid": body_params.get("ssid", DEFAULT_INFECTION_SSID),
             "password": body_params.get("password", DEFAULT_INFECTION_PASSWORD),
-            "round_seconds": body_params.get("round_seconds", DEFAULT_ROUND_SECONDS),
-            "rssi_threshold": body_params.get("rssi_threshold", DEFAULT_RSSI_THRESHOLD),
-            "cooldown_seconds": body_params.get("cooldown_seconds", DEFAULT_COOLDOWN_SECONDS),
+            "round_seconds": body_params.get(
+                "round_seconds", DEFAULT_ROUND_SECONDS
+            ),
+            "rssi_threshold": body_params.get(
+                "rssi_threshold", DEFAULT_RSSI_THRESHOLD
+            ),
+            "cooldown_seconds": body_params.get(
+                "cooldown_seconds", DEFAULT_COOLDOWN_SECONDS
+            ),
         }
         try:
             status = manager.configure(values)
             await send_json(writer, status)
         except Exception as error:
-            await send_json(writer, {"ok": False, "error": str(error)}, "400 Bad Request")
+            await send_json(
+                writer, {"ok": False, "error": str(error)}, "400 Bad Request"
+            )
         return True
 
     if request_path == "/infection-stop" and request_method == "POST":

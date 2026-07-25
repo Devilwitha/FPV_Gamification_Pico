@@ -98,6 +98,7 @@ APP_FILES_TO_BUNDLE = [
     "upload_helpers.py",
     "challenge_helpers.py",
     "main.py",
+    "main_LilyGo.py",
     "index.html",
     "admin_dashboard.html",
     "admin_update.html",

@@ -39,6 +39,24 @@ def _noop_feed_wdt():
     pass
 
 
+# Bundles (firmware.nbo/lang.pak) werden ausschliesslich von build_firmware.py
+# auf dem PC zusammengestellt - die enthaltenen Dateien muessen daher NICHT
+# mehr einzeln gegen die feste OTA_ALLOWED_TARGETS-Liste geprueft werden (das
+# bremste z.B. neue Mission-Dateien mit beliebigen Namen aus, obwohl ein
+# Bundle als Ganzes bereits eine vertrauenswuerdige Update-Einheit ist). Es
+# bleibt aber eine strukturelle Sicherheitspruefung, damit ein praeparierter
+# Bundle-Dateiname kein Pfad-Traversal (z.B. "../boot.py") oder eine versteckte
+# Datei erzeugen kann.
+def _is_safe_bundle_entry_filename(filename):
+    if not filename:
+        return False
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return False
+    if filename.startswith("."):
+        return False
+    return True
+
+
 def url_decode(value):
     value = value.replace('+', ' ')
     out = ""
@@ -219,9 +237,12 @@ def _apply_firmware_bundle_from_stream(f, allowed_targets, bundle_magic, log=_no
     liest ein Bundle aus einem beliebigen Objekt mit .read(n) (echte Datei
     ODER Base64StreamReader) und ersetzt jede enthaltene Datei einzeln auf
     dem Pico-Dateisystem ohne Backup-Dateien, um Flash-Spitzen zu vermeiden.
-    Jeder Dateiname im Bundle wird gegen `allowed_targets` geprueft, bevor
-    irgendetwas geschrieben wird (kein beliebiges Ueberschreiben von
-    Dateien moeglich).
+    Jeder Dateiname im Bundle wird nur noch strukturell geprueft (siehe
+    _is_safe_bundle_entry_filename) statt gegen die feste `allowed_targets`-
+    Liste - ein Bundle ist bereits eine vertrauenswuerdige, von
+    build_firmware.py auf dem PC zusammengestellte Update-Einheit, daher
+    keine Einzeldatei-Whitelist-Pruefung mehr noetig (`allowed_targets` bleibt
+    nur aus Kompatibilitaetsgruenden im Funktionssignatur erhalten).
 
     `feed_wdt` wird bei jeder Datei UND bei jedem Schreib-Chunk aufgerufen -
     diese Funktion ist komplett synchron (kein await) und kann bei grossen
@@ -255,7 +276,7 @@ def _apply_firmware_bundle_from_stream(f, allowed_targets, bundle_magic, log=_no
             raise Exception(f"Bundle beschaedigt (Inhaltslaenge fehlt: {filename})")
         (content_len,) = struct.unpack('>I', content_len_bytes)
 
-        if filename not in allowed_targets:
+        if not _is_safe_bundle_entry_filename(filename):
             raise Exception(f"Datei im Bundle nicht erlaubt: {filename}")
 
         tmp_name = filename + ".bndl_tmp"

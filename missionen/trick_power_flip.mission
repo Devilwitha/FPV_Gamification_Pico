@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Power Flip",
+  "challenge_type": "trick",
+  "description": "Fliege einen Power Flip (80-190 Grad Pitchdrehung) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Power Flip",
+    "time_limit_s": 30,
+    "bonus_points": 20
+  }
+}

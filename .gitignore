@@ -5,3 +5,4 @@ __pycache__/main.cpython-311.pyc
 *.log
 /data
 /build
+*.device

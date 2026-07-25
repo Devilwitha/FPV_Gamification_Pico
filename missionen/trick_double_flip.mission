@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Double Flip",
+  "challenge_type": "trick",
+  "description": "Fliege einen Double Flip (190-320 Grad Pitchdrehung) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Double Flip",
+    "time_limit_s": 30,
+    "bonus_points": 50
+  }
+}

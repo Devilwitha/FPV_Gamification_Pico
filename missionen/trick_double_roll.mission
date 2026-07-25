@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Double Roll",
+  "challenge_type": "trick",
+  "description": "Fliege eine Double Roll (170-300 Grad Rolldrehung) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Double Roll",
+    "time_limit_s": 30,
+    "bonus_points": 50
+  }
+}

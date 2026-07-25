@@ -1,0 +1,10 @@
+========================================
+      TEST DEBUG LOG
+========================================
+
+=== FPV DEBUG SESSION START ===
+[DEBUG] [3185s] [TRICK PROFILE] Aktiv: freestyle
+[DEBUG] [3185s] tracker.run() wurde aufgerufen.
+[DEBUG] [3186s] [BOOT] boot.py gefunden, Hotspot-Start in main uebersprungen.
+[DEBUG] [3186s] [BOOT] Main-Start als gesund markiert
+[DEBUG] [3186s] Passiver CRSF-Telemetrie-Loop gestartet.

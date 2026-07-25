@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Flat Spin 360",
+  "challenge_type": "trick",
+  "description": "Fliege einen Flat Spin 360 (90-220 Grad Yawdrehung) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Flat Spin 360",
+    "time_limit_s": 30,
+    "bonus_points": 30
+  }
+}

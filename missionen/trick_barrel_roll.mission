@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Barrel Roll",
+  "challenge_type": "trick",
+  "description": "Fliege einen Barrel Roll (70-170 Grad Rolldrehung) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Barrel Roll",
+    "time_limit_s": 30,
+    "bonus_points": 20
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Juicy Pitch Flick",
+  "challenge_type": "trick",
+  "description": "Fliege einen schnellen Pitch-Flick (< 0.4s, > 120 Grad Pitchdrehung) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Juicy Pitch Flick",
+    "time_limit_s": 30,
+    "bonus_points": 36
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Beliebiger Trick",
+  "challenge_type": "trick",
+  "description": "Fliege irgendeinen der bereits erkannten Tricks (Roll/Flip/Spin, egal welche Variante) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Any",
+    "time_limit_s": 30,
+    "bonus_points": 25
+  }
+}

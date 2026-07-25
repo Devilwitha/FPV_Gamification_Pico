@@ -17,6 +17,10 @@ ROUTE_TO_FILE = {
     "/admin-simulate": "admin_simulate.html",
     "/admin-profiles": "admin_profiles.html",
     "/admin-system": "admin_system.html",
+    "/admin-challenges": "admin_challenges.html",
+    "/admin-infection": "admin_infection.html",
+    "/challenges-view": "challenges_view.html",
+    "/infection-view": "infection_view.html",
 }
 
 
@@ -55,6 +59,32 @@ class FpvDevHandler(SimpleHTTPRequestHandler):
 
         if path == "/version":
             return self._send_json({"version": "dev-local"})
+
+        if path == "/infection-data":
+            return self._send_json(
+                {
+                    "ok": True,
+                    "enabled": True,
+                    "running": True,
+                    "role": "seeker",
+                    "infected": False,
+                    "remaining_seconds": 247,
+                    "node_id": "pico-simulator",
+                    "last_peer": "pico-peer",
+                    "last_event": "Suche Infizierten",
+                    "last_rssi": -48,
+                    "infection_count": 2,
+                    "config": {
+                        "enabled": True,
+                        "initial_role": "seeker",
+                        "ssid": "FPV_Gamification_Pico",
+                        "password": "drohnenspiel",
+                        "round_seconds": 300,
+                        "rssi_threshold": -55,
+                        "cooldown_seconds": 10,
+                    },
+                }
+            )
 
         if path == "/system-info":
             return self._send_json(

@@ -16,10 +16,22 @@ from ota_helpers import (
     apply_firmware_bundle as _ota_apply_firmware_bundle,
     apply_firmware_bundle_from_base64 as _ota_apply_firmware_bundle_from_base64,
 )
+# HINWEIS: `from challenge_helpers import ChallengeManager` bewusst NICHT hier
+# (Modul-Top-Level) - challenge_helpers.py ist inzwischen ein grosses Modul
+# (~50KB+), dessen Kompilierung sich sonst mit main.py's eigener Kompilierung
+# WAEHREND desselben riskanten `import main` (boot.py) ueberlagert und die
+# Heap-Fragmentierung dieses Schritts erhoeht (siehe echte Haerdware-Crashes
+# in den Projektnotizen: "memory allocation failed" waehrend `import main`).
+# Stattdessen lazy per _ensure_challenges() in main_async() importiert -
+# EIN eigener, spaeterer Kompilierschritt, NACHDEM `import main` bereits
+# erfolgreich zurueckgekehrt ist.
 try:
-    from hotspot_common import configure_hotspot
+    from hotspot_common import configure_hotspot, load_hotspot_config
 except Exception:
     # Kompakter Fallback fuer den Fall, dass hotspot_common.py fehlt.
+    def load_hotspot_config():
+        return {"ssid": "FPV_Gamification_Pico", "password": "drohnenspiel"}
+
     def configure_hotspot(ssid, password="", debug_log=None, serial_debug=False):
         ap = network.WLAN(network.AP_IF)
         try:
@@ -59,8 +71,9 @@ ENABLE_LIVE_GYRO_DEBUG = True
 ENABLE_TRICK_GYRO_IN_TXT_LOG = True
 TRICK_TUNING_PROFILE = "aggressive"
 
-AP_SSID = "FPV_Gamification_Pico"
-AP_PASSWORD = "drohnenspiel"  
+_HOTSPOT_CONFIG = load_hotspot_config()
+AP_SSID = _HOTSPOT_CONFIG["ssid"]
+AP_PASSWORD = _HOTSPOT_CONFIG["password"]
 COPTER_NAME = "Test"
 DEFAULT_PILOT_NAME = "Test"
 COPIL_FILE_PATH = "copil"
@@ -75,6 +88,14 @@ uart = None
 # CRSF Konstanten
 CRSF_ADDRESS_FLIGHT_CONTROLLER = 0xC8
 CRSF_FRAMETYPE_ATTITUDE        = 0x1E  
+# Zusaetzliche, PASSIV ueber dieselbe TX/RX-Datenleitung mitgeschnittene
+# Telemetrie-Frametypen fuer die Real-Time-Challenges (siehe challenge_helpers.py).
+# Nicht jeder FC/ELRS-Aufbau sendet diese Frames - falls nicht, bleiben die
+# Challenges einfach ohne Sensordaten (kein Crash, siehe telemetry_loop()).
+CRSF_FRAMETYPE_VARIO           = 0x07  # Sinkrate/Steigrate in cm/s (int16)
+CRSF_FRAMETYPE_BATTERY_SENSOR  = 0x08  # Spannung/Strom/verbrauchte Kapazitaet/Restladung
+CRSF_FRAMETYPE_GPS             = 0x02  # Lat/Lon/Geschwindigkeit/Kurs/Hoehe/Satelliten (fuer Speed-Run)
+CRSF_FRAMETYPE_LINK_STATISTICS = 0x14  # RSSI/Link-Qualitaet/SNR (fuer Signal-Helden)
 
 # CRSF Frame- und Plausibilitaetsgrenzen
 CRSF_MAX_FRAME_LEN        = 64
@@ -192,11 +213,15 @@ status_led_available = False
 status_led_state = False
 status_led_last_toggle_ms = 0
 system_ready = False
-ota_update_active = False
 ota_led_cycle_start_ms = 0
 boot_health_marked = False
 _idcard_route_handler = None
 _misc_route_handler = None
+_challenge_route_handler = None
+_infection_route_handler = None
+_upload_helpers_module = None
+infection_manager = None
+infection_task = None
 # Developer-Modus (Schiebeschalter auf der System-Seite): standardmaessig AUS,
 # dann akzeptiert OTA nur komplette firmware.nbo Bundles. Erst wenn aktiviert,
 # duerfen auch einzelne .py/.html Dateien per OTA hochgeladen werden.
@@ -204,23 +229,33 @@ DEVELOPER_MODE_ENABLED = False
 LANGUAGE_CODE = "de"
 
 # ==================== OTA CHUNK STORAGE ====================
-ota_chunks = {}  # { "chunk_index": "base64_data", ... }
-ota_total_chunks = 0
-ota_received_chunks = 0
-ota_target_file = "main.py"
+# Als ein Dict statt vier einzelner Globals gehalten, damit es unveraendert
+# (by reference) an die lazy importierten upload_helpers.py Funktionen
+# durchgereicht werden kann (siehe _build_upload_deps()/_get_upload_helpers()).
+ota_state = {
+    "update_active": False,
+    "total_chunks": 0,
+    "received_chunks": 0,
+    "target_file": "main.py",
+}
 OTA_STAGING_PATH = "ota_staging.tmp"
 FIRMWARE_VERSION_FILE = "firmware_version.txt"
 # Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
 # keine beliebigen Dateinamen vom Client).
 OTA_ALLOWED_TARGETS = (
-    "boot.py", "recovery.py", "hotspot_common.py", "boot_runtime.py",
+    "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "boot_runtime.py",
     "ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
+    "upload_helpers.py",
+    "challenge_helpers.py",
+    "infection_mode.py",
     "copil",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
-    "admin_profiles.html", "admin_system.html", "admin_idcard.html",
+    "admin_profiles.html", "admin_system.html", "admin_idcard.html", "admin_challenges.html",
+    "admin_infection.html",
+    "challenges_view.html", "infection_view.html",
     "de.pak", "en.pak", "es.pak", "fr.pak", "it.pak", "pt.pak", "tr.pak",
     FIRMWARE_VERSION_FILE,
 )
@@ -575,7 +610,7 @@ def update_status_led():
         _set_status_led(False)
         return
 
-    if ota_update_active:
+    if ota_state["update_active"]:
         now = time.ticks_ms()
         if ota_led_cycle_start_ms == 0:
             ota_led_cycle_start_ms = now
@@ -607,9 +642,19 @@ def init_debug_log_file():
     global debug_log_file_enabled, debug_log_file_bytes, debug_log_file_limit_reached
     debug_log_file_limit_reached = False
     try:
-        with open(DEBUG_LOG_FILE_PATH, 'w') as f:
-            f.write(DEBUG_LOG_BOOT_MARKER)
-        debug_log_file_bytes = os.stat(DEBUG_LOG_FILE_PATH)[6]
+        try:
+            existing_size = os.stat(DEBUG_LOG_FILE_PATH)[6]
+        except Exception:
+            existing_size = 0
+
+        marker = DEBUG_LOG_BOOT_MARKER if existing_size == 0 else "\n" + DEBUG_LOG_BOOT_MARKER
+        if existing_size + len(marker) <= DEBUG_LOG_FILE_MAX_BYTES:
+            with open(DEBUG_LOG_FILE_PATH, 'a') as f:
+                f.write(marker)
+            debug_log_file_bytes = existing_size + len(marker)
+        else:
+            debug_log_file_bytes = existing_size
+            debug_log_file_limit_reached = True
     except Exception:
         debug_log_file_enabled = False
 
@@ -775,73 +820,43 @@ def apply_firmware_bundle_from_base64(base64_path):
     return _ota_apply_firmware_bundle_from_base64(base64_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
 
 
-def cleanup_update_artifacts(
-    managed_targets,
-    remove_fixed_files=True,
-    remove_txt_and_non_en_pak=False,
-    remove_target_files=None,
-):
-    """Entfernt nur bekannte Update-Reste fuer Firmware-Dateien.
+def _get_upload_helpers():
+    """Lazy-Import fuer upload_helpers.py (Chunk-Upload/Finalize/Restart/
+    Notaus-Loeschen) - dieser ~350-Zeilen-Codeblock wurde aus main.py
+    extrahiert, weil er main.py's eigene Kompiliergroesse waehrend des
+    riskanten `import main` in boot.py unnoetig vergroesserte (siehe
+    Speicherfragmentierungs-Crashes in den Projektnotizen). Wird erst beim
+    ersten tatsaechlichen Upload-/Restart-/Notaus-Request importiert."""
+    global _upload_helpers_module
+    if _upload_helpers_module is None:
+        import upload_helpers as _lazy_upload_helpers
+        _upload_helpers_module = _lazy_upload_helpers
+    return _upload_helpers_module
 
-    WICHTIG: Keine Benutzerdaten loeschen.
-        - Geloescht werden nur feste OTA-Tempdateien sowie alte Legacy-Backups
-            (*.bak/main_backup.py) und *.bndl_tmp, deren Basisdatei in
-            managed_targets enthalten ist.
-        - Optional (remove_txt_and_non_en_pak=True): entferne zusaetzlich
-            alle .txt-Dateien ausser firmware_version.txt sowie alle
-            .pak-Dateien.
-        - Optional (remove_target_files): entferne diese konkreten Dateien
-            vor dem Upload, um Platz fuer das neue Bundle zu schaffen.
-    - Nutzerdateien wie Profile (*.pro), Ausweisdateien (FPV_Ausweiss.*),
-      Highscore/Settings/COPIL bleiben unberuehrt.
-    """
-    managed_set = set(managed_targets)
-    remove_target_set = set(remove_target_files or ())
 
-    if remove_fixed_files:
-        for fixed_name in ("update.pbp", OTA_STAGING_PATH, OTA_BUNDLE_TARGET, OTA_LANG_BUNDLE_TARGET):
-            try:
-                os.remove(fixed_name)
-                debug_log(f"[OTA CLEANUP] Entfernt: {fixed_name}")
-            except Exception:
-                pass
+def _build_upload_deps():
+    """Baut das deps-Dict, das upload_helpers.py's Funktionen benoetigen -
+    siehe dortige cleanup_update_artifacts()/handle_*() Signaturen."""
+    return {
+        "debug_log": debug_log,
+        "url_decode": url_decode,
+        "developer_mode_enabled": DEVELOPER_MODE_ENABLED,
+        "ota_bundle_target": OTA_BUNDLE_TARGET,
+        "ota_lang_bundle_target": OTA_LANG_BUNDLE_TARGET,
+        "ota_allowed_targets": OTA_ALLOWED_TARGETS,
+        "ota_staging_path": OTA_STAGING_PATH,
+        "firmware_version_file": FIRMWARE_VERSION_FILE,
+        "apply_firmware_bundle_from_base64": apply_firmware_bundle_from_base64,
+        "safe_base64_file_to_file": safe_base64_file_to_file,
+    }
 
-    try:
-        entries = os.listdir()
-    except Exception:
-        entries = []
 
-    for name in entries:
-        remove = False
+async def _perform_emergency_delete_main(writer):
+    await _get_upload_helpers().handle_emergency_delete_main(writer, _build_upload_deps())
 
-        if name in remove_target_set:
-            remove = True
 
-        if remove_txt_and_non_en_pak:
-            if name.endswith('.txt') and name != FIRMWARE_VERSION_FILE:
-                remove = True
-            elif name.endswith('.pak'):
-                remove = True
-
-        if name == "main_backup.py" and "main.py" in managed_set:
-            remove = True
-        elif name.endswith('.bak'):
-            base = name[:-4]
-            if base in managed_set:
-                remove = True
-        elif name.endswith('.bndl_tmp'):
-            base = name[:-9]
-            if base in managed_set:
-                remove = True
-
-        if not remove:
-            continue
-
-        try:
-            os.remove(name)
-            debug_log(f"[OTA CLEANUP] Entfernt: {name}")
-        except Exception:
-            pass
+async def _perform_emergency_delete_boot(writer):
+    await _get_upload_helpers().handle_emergency_delete_boot(writer, _build_upload_deps())
 
 
 def build_session_txt_content():
@@ -884,6 +899,11 @@ def build_session_txt_content():
             txt_content += f"- {trick}\n"
     else:
         txt_content += f"- {tx('session.noTricks', 'Keine Tricks aufgezeichnet')} -\n"
+
+    if infection_manager is not None:
+        infection_summary = infection_manager.session_summary_text()
+        if infection_summary:
+            txt_content += "\n----------------------------------------\n" + infection_summary
 
     txt_content += "\n----------------------------------------\n"
     txt_content += f"{tx('session.totalScore', 'GESAMT-PUNKTESTAND')}: {detector.score} {points_unit}\n"
@@ -1034,6 +1054,7 @@ class LiveGyroTrickDetector:
         self.f_gyro_z = 0.0
         self.high_rate_since = None
         self.stable_since = None
+        self.challenge_history = []
 
     def _apply_deadband(self, value, deadband):
         if abs(value) < deadband:
@@ -1240,6 +1261,11 @@ class LiveGyroTrickDetector:
                 self.trick_history.pop(0)  
             debug_log(f"[SUCCESS] TRICK DETEKTIERT: {detected_name} | Gesamt-Score: {self.score}")
 
+            # Meldet den erkannten Trick zusaetzlich an eine evtl. laufende
+            # Trick-Challenge (challenges.trick) - vergibt bei Treffer einen
+            # Bonus, ohne die normale Trick-Punktevergabe hier zu veraendern.
+            challenges.update_trick_detected(detected_name, time.ticks_ms())
+
             global highscore_data, pending_highscore
             if self.score > highscore_data["score"]:
                 if (not pending_highscore["active"]) or self.score > pending_highscore["score"]:
@@ -1257,6 +1283,63 @@ class LiveGyroTrickDetector:
 
 
 detector = LiveGyroTrickDetector()
+
+
+def _add_challenge_score(points, description):
+    """Callback fuer ChallengeManager: vergibt Punkte auf denselben Gesamt-Score
+    wie die Trick-Erkennung und pflegt Highscore/Verlauf identisch mit
+    LiveGyroTrickDetector.evaluate_trick()'s Punktevergabe."""
+    global highscore_data, pending_highscore
+    if points <= 0:
+        return
+    detector.score += points
+    timestamp = time.ticks_ms() / 1000.0
+    detector.challenge_history.append(f"[{timestamp:.1f}s] {description} (+{points} Pkt)")
+    if len(detector.challenge_history) > 30:
+        detector.challenge_history.pop(0)
+    debug_log(f"[CHALLENGE] {description}: +{points} Punkte | Gesamt-Score: {detector.score}")
+
+    # Bestandene Challenge dauerhaft in Datei protokollieren (ueberlebt Neustart),
+    # im Gegensatz zu detector.challenge_history, das nur im RAM lebt.
+    challenges.record_result(description, points, get_datetime_string())
+
+    if detector.score > highscore_data["score"]:
+        if (not pending_highscore["active"]) or detector.score > pending_highscore["score"]:
+            pending_highscore["active"] = True
+            pending_highscore["score"] = detector.score
+            pending_highscore["timestamp"] = get_datetime_string()
+            debug_console_only(
+                f"[HIGHSCORE] Neuer Rekord entdeckt: {pending_highscore['score']} Pkt. Bitte im Web bestaetigen."
+            )
+
+
+challenges = None
+
+
+def _ensure_challenges():
+    """Lazy-Init fuer den ChallengeManager (siehe Kommentar oben bei den
+    Imports) - importiert/kompiliert challenge_helpers.py erst hier, in einem
+    eigenen Schritt NACH dem riskanten `import main`, statt eager am
+    Modul-Top-Level. Muss vor dem ersten Telemetrie-/HTTP-Request aufgerufen
+    werden (siehe main_async())."""
+    global challenges
+    if challenges is None:
+        # gc.collect() direkt vor dem Import/Kompilieren eines grossen Moduls -
+        # gleiches Muster wie boot.py's gc.collect() vor `import main`, um dem
+        # Compiler moeglichst viel zusammenhaengenden freien Heap zu geben.
+        gc.collect()
+        from challenge_helpers import ChallengeManager as _ChallengeManager
+        challenges = _ChallengeManager(add_score=_add_challenge_score, log=debug_log)
+    return challenges
+
+
+def _ensure_infection_manager():
+    global infection_manager
+    if infection_manager is None:
+        gc.collect()
+        from infection_mode import InfectionMode
+        infection_manager = InfectionMode(AP_SSID, AP_PASSWORD, DEFAULT_PILOT_NAME, debug_log)
+    return infection_manager
 
 
 async def simulate_trick(trick_kind="roll"):
@@ -1389,12 +1472,44 @@ async def telemetry_loop():
                                         last_live_yaw = yaw_deg
 
                                 detector.update(roll_deg, pitch_deg, yaw_deg)
+                                challenges.update_attitude(
+                                    max(abs(detector.f_gyro_x), abs(detector.f_gyro_y), abs(detector.f_gyro_z)),
+                                    time.ticks_ms(),
+                                )
+                                challenges.update_heading(yaw_deg, time.ticks_ms())
 
                                 if ENABLE_SERIAL_DEBUG and detector.in_trick:
                                     debug_live_gyro_trick(
                                         f"[LIVE GYRO TRICK] Roll: {roll_deg:6.1f} Grad | "
                                         f"Pitch: {pitch_deg:6.1f} Grad | Yaw: {yaw_deg:6.1f} Grad"
                                     )
+
+                            elif frame_type == CRSF_FRAMETYPE_VARIO and len(payload_buffer) == 2:
+                                (vspeed_cm_s,) = struct.unpack('>h', payload_buffer)
+                                challenges.update_vario(vspeed_cm_s, time.ticks_ms())
+
+                            elif frame_type == CRSF_FRAMETYPE_BATTERY_SENSOR and len(payload_buffer) == 8:
+                                voltage_raw, current_raw = struct.unpack('>HH', payload_buffer[0:4])
+                                capacity_used_mah = (payload_buffer[4] << 16) | (payload_buffer[5] << 8) | payload_buffer[6]
+                                remaining_pct = payload_buffer[7]
+                                challenges.update_battery(
+                                    capacity_used_mah, voltage_raw / 10.0, current_raw / 10.0, remaining_pct, time.ticks_ms()
+                                )
+
+                            elif frame_type == CRSF_FRAMETYPE_LINK_STATISTICS and len(payload_buffer) == 10:
+                                (
+                                    _up_rssi1, _up_rssi2, uplink_lq, _up_snr,
+                                    _active_ant, _rf_mode, _up_tx_power,
+                                    _down_rssi, _down_lq, _down_snr,
+                                ) = struct.unpack('>BBBbBBBBBb', payload_buffer)
+                                challenges.update_link_stats(uplink_lq, time.ticks_ms())
+
+                            elif frame_type == CRSF_FRAMETYPE_GPS and len(payload_buffer) == 15:
+                                (_lat, _lon, groundspeed_raw, _heading_raw, _alt_raw, _sats) = struct.unpack(
+                                    '>iiHHHB', payload_buffer
+                                )
+                                speed_kmh = groundspeed_raw / 10.0
+                                challenges.update_gps(speed_kmh, time.ticks_ms())
                         else:
                             crc_fail_count += 1
                             if ENABLE_SERIAL_DEBUG and (crc_fail_count % 40 == 0):
@@ -1435,6 +1550,13 @@ ADMIN_SIMULATE_HTML_PATH = "admin_simulate.html"
 ADMIN_PROFILES_HTML_PATH = "admin_profiles.html"
 ADMIN_SYSTEM_HTML_PATH = "admin_system.html"
 ADMIN_IDCARD_HTML_PATH = "admin_idcard.html"
+ADMIN_CHALLENGES_HTML_PATH = "admin_challenges.html"
+ADMIN_INFECTION_HTML_PATH = "admin_infection.html"
+# Oeffentliche, huebsch gestaltete Live-Visualisierung der Challenges (kein
+# Login noetig, gleiche Zielgruppe wie index.html - im Gegensatz zu
+# admin_challenges.html, das die technischen Start/Stopp-Controls enthaelt).
+CHALLENGES_VIEW_HTML_PATH = "challenges_view.html"
+INFECTION_VIEW_HTML_PATH = "infection_view.html"
 
 
 async def send_html_file(writer, file_path):
@@ -1680,368 +1802,58 @@ async def _send_reset_highscore_response(writer, query_params, body_params):
         writer.write(payload)
 
 
-async def _handle_upload_chunk(writer, body_text, body_params):
-    global ota_total_chunks, ota_received_chunks, ota_update_active, ota_target_file
-
-    chunk_index_str = '-1'
-    total_str = '0'
-    target_str = 'main.py'
-    if body_text:
-        idx_pos = body_text.find('index=')
-        if idx_pos >= 0:
-            idx_start = idx_pos + 6
-            idx_end = body_text.find('&', idx_start)
-            if idx_end < 0:
-                idx_end = len(body_text)
-            chunk_index_str = url_decode(body_text[idx_start:idx_end])
-
-        total_pos = body_text.find('total=')
-        if total_pos >= 0:
-            total_start = total_pos + 6
-            total_end = body_text.find('&', total_start)
-            if total_end < 0:
-                total_end = len(body_text)
-            total_str = url_decode(body_text[total_start:total_end])
-
-        target_pos = body_text.find('target=')
-        if target_pos >= 0:
-            target_start = target_pos + 7
-            target_end = body_text.find('&', target_start)
-            if target_end < 0:
-                target_end = len(body_text)
-            target_str = url_decode(body_text[target_start:target_end])
-
-    chunk_data = ''
-    if body_text:
-        marker = '&data='
-        pos = body_text.find(marker)
-        if pos >= 0:
-            chunk_data = url_decode(body_text[pos + len(marker):])
-        elif body_text.startswith('data='):
-            chunk_data = url_decode(body_text[5:])
-        else:
-            chunk_data = body_params.get('data', '')
-    else:
-        chunk_data = body_params.get('data', '')
-
-    try:
-        chunk_index = int(chunk_index_str)
-        total = int(total_str)
-        target_valid = True
-        target_error = ""
-
-        if chunk_index == 0:
-            if target_str == OTA_BUNDLE_TARGET or target_str == OTA_LANG_BUNDLE_TARGET:
-                target_valid = True
-            elif target_str in OTA_ALLOWED_TARGETS:
-                target_valid = DEVELOPER_MODE_ENABLED
-                if not target_valid:
-                    target_error = "Einzeldatei-Uploads sind deaktiviert. Aktiviere den Developer-Modus (System-Seite) oder lade ein firmware.nbo Bundle hoch."
-            else:
-                target_valid = False
-
-            if target_valid:
-                ota_total_chunks = total
-                ota_received_chunks = 0
-                ota_update_active = True
-                ota_target_file = target_str
-                # Vor einem neuen OTA-Lauf alte Update-Artefakte entfernen,
-                # um Speicher freizugeben (Benutzerdaten bleiben unberuehrt).
-                cleanup_update_artifacts(
-                    OTA_ALLOWED_TARGETS,
-                    remove_fixed_files=False,
-                    remove_txt_and_non_en_pak=True,
-                )
-                try:
-                    os.remove('update.pbp')
-                except Exception:
-                    pass
-                debug_log(f"[OTA] Chunk-Transfer gestartet: {total} Chunks erwartet, Ziel={target_str}")
-
-        if not target_valid:
-            response = json.dumps({"ok": False, "error": target_error or f"Ungueltiges Ziel: {target_str}"}).encode('utf-8')
-            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response)
-        else:
-            if chunk_data:
-                with open('update.pbp', 'a') as f:
-                    f.write(chunk_data)
-                ota_received_chunks += 1
-                debug_log(f"[OTA] Chunk {chunk_index+1}/{total} empfangen ({len(chunk_data)} bytes)")
-
-            response = json.dumps({"ok": True, "message": f"Chunk {chunk_index+1}/{total} gespeichert"}).encode('utf-8')
-            writer.write(b'HTTP/1.1 200 OK\r\n')
-            writer.write(b'Content-Type: application/json\r\n')
-            writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-            writer.write(b'Connection: close\r\n\r\n')
-            writer.write(response)
-
-            if chunk_index + 1 == total and ota_received_chunks == ota_total_chunks:
-                debug_log("[OTA] Alle Chunks empfangen, bitte /finalize-upload aufrufen")
-
-        # Nach jedem Chunk aufraeumen: bei ~200+ einzelnen HTTP-Requests in
-        # Folge (grosse .nbo Bundles) sammelt sich sonst Heap-Fragmentierung
-        # an, die spaeter im Upload zu einem MemoryError/Absturz fuehren
-        # kann (Verbindung bricht dann fuer den Browser als "Failed to
-        # fetch" ab). Siehe send_html_file() fuer denselben Grund/Pattern.
-        gc.collect()
-
-    except Exception as e:
-        debug_log(f"[OTA CHUNK] Fehler: {e}")
-        ota_update_active = False
-        response = json.dumps({"ok": False, "error": str(e)}).encode('utf-8')
-        writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response)
-
-
-async def _handle_prepare_upload(writer, query_params, body_params):
-    global ota_total_chunks, ota_received_chunks, ota_update_active, ota_target_file
-
-    target_str = query_params.get('target', '').strip()
-    if not target_str:
-        target_str = body_params.get('target', '').strip()
-
-    mode = query_params.get('bundle_mode', '').strip().lower()
-    if not mode:
-        mode = body_params.get('bundle_mode', '').strip().lower()
-    if mode not in ('complete', 'light', 'recovery', 'language'):
-        mode = 'light'
-
-    entries_raw = query_params.get('entries', '').strip()
-    if not entries_raw:
-        entries_raw = body_params.get('entries', '').strip()
-
-    bundle_entries = []
-    if entries_raw:
-        parts = entries_raw.split(',')
-        for part in parts:
-            name = part.strip()
-            if not name:
-                continue
-            if name not in bundle_entries:
-                bundle_entries.append(name)
-
-    target_valid = True
-    target_error = ""
-    if target_str == OTA_BUNDLE_TARGET or target_str == OTA_LANG_BUNDLE_TARGET:
-        target_valid = True
-    elif target_str in OTA_ALLOWED_TARGETS:
-        target_valid = DEVELOPER_MODE_ENABLED
-        if not target_valid:
-            target_error = "Einzeldatei-Uploads sind deaktiviert. Aktiviere den Developer-Modus (System-Seite) oder lade ein firmware.nbo Bundle hoch."
-    else:
-        target_valid = False
-
-    if not target_valid:
-        response = json.dumps({"ok": False, "error": target_error or f"Ungueltiges Ziel: {target_str}"}).encode('utf-8')
-        writer.write(b'HTTP/1.1 400 Bad Request\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response)
-        return
-
-    preserve_user_files = {'copil'}
-    if mode == 'complete':
-        remove_targets = [name for name in OTA_ALLOWED_TARGETS if name not in preserve_user_files]
-    elif bundle_entries:
-        remove_targets = [
-            name for name in bundle_entries
-            if (name in OTA_ALLOWED_TARGETS) and (name not in preserve_user_files)
-        ]
-    else:
-        remove_targets = [
-            target_str
-            for _ in (0,)
-            if (target_str in OTA_ALLOWED_TARGETS) and (target_str not in preserve_user_files)
-        ]
-
-    # Vor Empfang der ersten Upload-Chunks aufraeumen, um maximalen Platz
-    # fuer das kommende firmware.nbo/lang.pak zu schaffen.
-    cleanup_update_artifacts(
-        OTA_ALLOWED_TARGETS,
-        remove_fixed_files=True,
-        remove_txt_and_non_en_pak=True,
-        remove_target_files=remove_targets,
-    )
-    ota_total_chunks = 0
-    ota_received_chunks = 0
-    ota_update_active = False
-    ota_target_file = target_str
-
-    response = json.dumps({
-        "ok": True,
-        "target": target_str,
-        "bundle_mode": mode,
-        "removed_targets": len(remove_targets),
-        "message": "Cleanup vor Upload abgeschlossen",
-    }).encode('utf-8')
-    writer.write(b'HTTP/1.1 200 OK\r\n')
-    writer.write(b'Content-Type: application/json\r\n')
-    writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-    writer.write(b'Pragma: no-cache\r\n')
-    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-    writer.write(b'Connection: close\r\n\r\n')
-    writer.write(response)
-
-
-async def _handle_finalize_upload(writer):
-    global ota_total_chunks, ota_received_chunks, ota_update_active
-
-    try:
-        debug_log(f"[OTA] Finalisierung: {ota_received_chunks}/{ota_total_chunks} Chunks vorhanden")
-        if ota_received_chunks != ota_total_chunks:
-            raise Exception(f"Incomplete upload: {ota_received_chunks}/{ota_total_chunks}")
-
-        is_bundle = (ota_target_file == OTA_BUNDLE_TARGET or ota_target_file == OTA_LANG_BUNDLE_TARGET)
-        target = ota_target_file if (is_bundle or ota_target_file in OTA_ALLOWED_TARGETS) else "main.py"
-
-        if is_bundle:
-            # Bundle wird DIREKT aus der noch base64-kodierten 'update.pbp'
-            # gestreamt entpackt (apply_firmware_bundle_from_base64()) -
-            # OHNE zuerst den kompletten Bundle-Inhalt nach OTA_STAGING_PATH
-            # zu dekodieren. Das vermeidet, dass 'update.pbp' (Base64-Text,
-            # ca. 1.33x groesser als der Bundle-Inhalt) UND eine komplett
-            # dekodierte Kopie des Bundles gleichzeitig auf dem Flash liegen
-            # - genau das fuehrte bei wachsenden Bundles zu OSError 28
-            # (ENOSPC, kein Speicherplatz mehr frei).
-            extracted_files, needs_restart = apply_firmware_bundle_from_base64('update.pbp')
-            try:
-                os.remove('update.pbp')
-            except Exception:
-                pass
-            cleanup_update_artifacts(OTA_ALLOWED_TARGETS)
-            message = f"Firmware-Bundle angewendet: {len(extracted_files)} Datei(en) ersetzt ({', '.join(extracted_files)})"
-            if needs_restart:
-                message += " Starte Neustart..."
-        else:
-            decode_ok = safe_base64_file_to_file('update.pbp', OTA_STAGING_PATH)
-            if decode_ok is not True:
-                raise Exception(f"Base64 Dekodierung fehlgeschlagen: {decode_ok}")
-
-            try:
-                os.remove('update.pbp')
-            except Exception:
-                pass
-
-            try:
-                staged_size = os.stat(OTA_STAGING_PATH)[6]
-                debug_log(f"[OTA] Staging-Datei: {staged_size} bytes (Ziel: {target})")
-            except Exception:
-                staged_size = 0
-
-            try:
-                os.remove(target)
-            except Exception:
-                pass
-
-            os.rename(OTA_STAGING_PATH, target)
-            debug_log(f"[OTA] Finale Datei gespeichert: {target} ({staged_size} bytes)")
-
-            needs_restart = (target == "main.py")
-            cleanup_update_artifacts(OTA_ALLOWED_TARGETS)
-            message = f"Update erfolgreich gespeichert: {target} ({staged_size} bytes)!"
-            if needs_restart:
-                message += " Starte Neustart..."
-
-        response = json.dumps({"ok": True, "message": message, "restart": needs_restart}).encode('utf-8')
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response)
-
-        ota_total_chunks = 0
-        ota_received_chunks = 0
-        ota_update_active = False
-        cleanup_update_artifacts(OTA_ALLOWED_TARGETS)
-
-        try:
-            await writer.drain()
-        except Exception:
-            pass
-
-        if needs_restart:
-            await asyncio.sleep_ms(2000)
-            debug_log("[OTA] Starte machine.reset()...")
-            machine.reset()
-
-    except Exception as e:
-        debug_log(f"[OTA FINALIZE] Fehler: {str(e)[:100]}")
-        response = json.dumps({"ok": False, "error": str(e)[:100]}).encode('utf-8')
-        writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response)
-        ota_total_chunks = 0
-        ota_received_chunks = 0
-        ota_update_active = False
-        cleanup_update_artifacts(OTA_ALLOWED_TARGETS)
-
-
-async def _handle_restart_pico(writer):
-    response = json.dumps({"ok": True, "message": "Pico startet neu..."}).encode('utf-8')
-    writer.write(b'HTTP/1.1 200 OK\r\n')
-    writer.write(b'Content-Type: application/json\r\n')
-    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-    writer.write(b'Connection: close\r\n\r\n')
-    writer.write(response)
-    try:
-        await writer.drain()
-    except Exception:
-        pass
-    await asyncio.sleep_ms(1000)
-    debug_log("[RESTART] machine.reset() wird aufgerufen...")
-    machine.reset()
-
-
-async def _handle_emergency_delete_target(writer, target_file):
-    deleted = []
-    for path in (target_file,):
-        try:
-            os.remove(path)
-            deleted.append(path)
-            debug_log("[EMERGENCY] Geloescht: " + path)
-        except Exception as e:
-            debug_log("[EMERGENCY] Konnte nicht loeschen: %s (%s)" % (path, e))
-
-    message = "Notaus ausgefuehrt (%s). Neustart laeuft." % target_file
-    response = json.dumps({"ok": True, "message": message, "deleted": deleted}).encode('utf-8')
-    writer.write(b'HTTP/1.1 200 OK\r\n')
-    writer.write(b'Content-Type: application/json\r\n')
-    writer.write(b'Content-Length: ' + str(len(response)).encode() + b'\r\n')
-    writer.write(b'Connection: close\r\n\r\n')
-    writer.write(response)
-    try:
-        await writer.drain()
-    except Exception:
-        pass
-    await asyncio.sleep_ms(500)
-    machine.reset()
-
-
-async def _handle_emergency_delete_main(writer):
-    await _handle_emergency_delete_target(writer, "main.py")
-
-
-async def _handle_emergency_delete_boot(writer):
-    await _handle_emergency_delete_target(writer, "boot.py")
-
-
 async def _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
     global TRICK_TUNING_PROFILE, DEVELOPER_MODE_ENABLED, LANGUAGE_CODE
-    global _idcard_route_handler, _misc_route_handler
+    global _idcard_route_handler, _misc_route_handler, _challenge_route_handler
+    global _infection_route_handler
 
     if request_path == '/admin-idcard':
         await send_html_file(writer, ADMIN_IDCARD_HTML_PATH)
         return True
+
+    if request_path == '/admin-challenges':
+        await send_html_file(writer, ADMIN_CHALLENGES_HTML_PATH)
+        return True
+
+    if request_path == '/admin-infection':
+        await send_html_file(writer, ADMIN_INFECTION_HTML_PATH)
+        return True
+
+    if request_path.startswith('/infection-'):
+        if _infection_route_handler is None:
+            from infection_mode import handle_infection_route as _lazy_infection_route_handler
+            _infection_route_handler = _lazy_infection_route_handler
+        if await _infection_route_handler(
+            writer,
+            request_path,
+            request_method,
+            query_params,
+            body_params,
+            _ensure_infection_manager(),
+        ):
+            return True
+
+    if request_path == '/challenges-view':
+        await send_html_file(writer, CHALLENGES_VIEW_HTML_PATH)
+        return True
+
+    if request_path == '/infection-view':
+        await send_html_file(writer, INFECTION_VIEW_HTML_PATH)
+        return True
+
+    if request_path.startswith('/challenge') or request_path.startswith('/mission') or request_path == '/missions-list':
+        if _challenge_route_handler is None:
+            from challenge_helpers import handle_challenge_route as _lazy_challenge_route_handler
+            _challenge_route_handler = _lazy_challenge_route_handler
+        if await _challenge_route_handler(
+            writer,
+            request_path,
+            request_method,
+            query_params,
+            body_params,
+            challenges,
+        ):
+            return True
 
     if request_path.startswith('/idcard-'):
         if _idcard_route_handler is None:
@@ -2130,9 +1942,9 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "pending_highscore": pending_highscore,
             "default_pilot_name": DEFAULT_PILOT_NAME,
             "firmware_version": FIRMWARE_VERSION,
-            "ota_update_active": ota_update_active,
-            "ota_received_chunks": ota_received_chunks,
-            "ota_total_chunks": ota_total_chunks,
+            "ota_update_active": ota_state["update_active"],
+            "ota_received_chunks": ota_state["received_chunks"],
+            "ota_total_chunks": ota_state["total_chunks"],
             "list_profile_files": list_profile_files,
             "get_copil_payload": _get_copil_payload,
             "save_copil_names": _save_copil_names,
@@ -2157,9 +1969,11 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "send_file_as_download": send_file_as_download,
             "build_debug_export_file": build_debug_export_file,
             "debug_export_file_path": DEBUG_EXPORT_FILE_PATH,
+            "init_debug_log_file": init_debug_log_file,
             "simulate_trick": simulate_trick,
-            "perform_emergency_delete_main": _handle_emergency_delete_main,
-            "perform_emergency_delete_boot": _handle_emergency_delete_boot,
+            "perform_emergency_delete_main": _perform_emergency_delete_main,
+            "perform_emergency_delete_boot": _perform_emergency_delete_boot,
+            "infection_status": _ensure_infection_manager().status,
         },
     )
 
@@ -2251,16 +2065,16 @@ async def handle_client(reader, writer):
             await send_html_file(writer, ADMIN_SIMULATE_HTML_PATH)
 
         elif request_path == '/prepare-upload':
-            await _handle_prepare_upload(writer, query_params, body_params)
-                
+            await _get_upload_helpers().handle_prepare_upload(writer, query_params, body_params, ota_state, _build_upload_deps())
+
         elif request_path == '/upload-chunk' and request_method == 'POST':
-            await _handle_upload_chunk(writer, body_text, body_params)
-                
+            await _get_upload_helpers().handle_upload_chunk(writer, body_text, body_params, ota_state, _build_upload_deps())
+
         elif request_path == '/finalize-upload':
-            await _handle_finalize_upload(writer)
-                
+            await _get_upload_helpers().handle_finalize_upload(writer, ota_state, _build_upload_deps())
+
         elif request_path == '/restart-pico':
-            await _handle_restart_pico(writer)
+            await _get_upload_helpers().handle_restart_pico(writer, _build_upload_deps())
         
         elif await _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
             pass
@@ -2292,7 +2106,12 @@ async def handle_client(reader, writer):
 
 
 async def main_async():
-    global system_ready, status_led_last_toggle_ms
+    global system_ready, status_led_last_toggle_ms, infection_task
+    # Lazy-Import/Init von ChallengeManager (challenge_helpers.py) - ganz am
+    # Anfang, damit dieser separate Kompilierschritt VOR dem Start des
+    # HTTP-Servers/Telemetrie-Loops abgeschlossen ist, aber unabhaengig von
+    # main.py's eigenem `import main`-Schritt in boot.py laeuft.
+    _ensure_challenges()
     if ENABLE_HOTSPOT:
         boot_present = False
         try:
@@ -2308,6 +2127,7 @@ async def main_async():
             start_access_point()
 
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
+    infection_task = asyncio.create_task(_ensure_infection_manager().run())
     _boot_mark_healthy_once()
     system_ready = True
     status_led_last_toggle_ms = time.ticks_ms()

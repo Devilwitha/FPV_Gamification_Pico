@@ -1,0 +1,10 @@
+{
+  "name": "Trick: Super Multi-Roll",
+  "challenge_type": "trick",
+  "description": "Fliege einen Super Multi-Roll (>= 300 Grad Rolldrehung) innerhalb des Zeitfensters.",
+  "params": {
+    "target_name": "Super Multi-Roll",
+    "time_limit_s": 30,
+    "bonus_points": 100
+  }
+}

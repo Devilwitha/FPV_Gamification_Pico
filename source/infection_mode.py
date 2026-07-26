@@ -117,6 +117,12 @@ class InfectionMode:
         return {
             "enabled": False,
             "initial_role": "seeker",
+            # "bomb": klassische heisse Kartoffel - wer infiziert, wird sofort
+            #   wieder selbst zum Sucher (bestehendes Verhalten, unveraendert).
+            # "infect": wer infiziert, bleibt selbst infiziert - die Rolle wird
+            #   nur zusaetzlich an den neu Infizierten weitergegeben, es kann also
+            #   mit der Zeit mehrere gleichzeitig Infizierte geben.
+            "game_mode": "bomb",
             "round_seconds": DEFAULT_ROUND_SECONDS,
             "rssi_threshold": DEFAULT_RSSI_THRESHOLD,
             "cooldown_seconds": DEFAULT_COOLDOWN_SECONDS,
@@ -128,6 +134,7 @@ class InfectionMode:
             config.update(values)
         config["enabled"] = bool(config.get("enabled", False))
         config["initial_role"] = "host" if config.get("initial_role") == "host" else "seeker"
+        config["game_mode"] = "infect" if config.get("game_mode") == "infect" else "bomb"
         config["round_seconds"] = _clamp(int(config.get("round_seconds", DEFAULT_ROUND_SECONDS)), 30, 3600)
         config["rssi_threshold"] = _clamp(int(config.get("rssi_threshold", DEFAULT_RSSI_THRESHOLD)), -95, -20)
         config["cooldown_seconds"] = _clamp(int(config.get("cooldown_seconds", DEFAULT_COOLDOWN_SECONDS)), 3, 120)
@@ -420,7 +427,10 @@ class InfectionMode:
         self.last_peer = contact["peer_name"]
         self.last_event = "Infiziertenrolle uebergeben: " + self.last_peer
         self.infection_count += 1
-        self.role = "seeker"
+        # Im Infect-Modus bleibt der Infizierer selbst infiziert (bleibt "host"),
+        # im klassischen Bomben-Modus wird er sofort wieder zum Sucher.
+        if self.config.get("game_mode") != "infect":
+            self.role = "seeker"
         self.ble_state = STATE_GRANT
         self.target_node = seeker
         self.token_epoch = next_epoch
@@ -600,7 +610,11 @@ class InfectionMode:
                 continue
 
             if self.state_until_ms and _ticks_diff(now, self.state_until_ms) >= 0:
-                self.ble_state = STATE_SEEKER
+                # Nach Ablauf des GRANT-Fensters: im Infect-Modus bleibt ein
+                # Geraet, das "host" geblieben ist, weiter als Infizierter aktiv;
+                # im Bomben-Modus (bzw. nach einer erfolglosen CLAIM-Anfrage) geht
+                # es zurueck in den Sucher-Zustand.
+                self.ble_state = STATE_HOST if self.role == "host" else STATE_SEEKER
                 self.target_node = ZERO_NODE_ID
                 self.state_until_ms = 0
                 self._update_advertisement()
@@ -639,6 +653,7 @@ async def handle_infection_route(writer, request_path, request_method, query_par
         values = {
             "enabled": body_params.get("enabled", "0") in ("1", "true", "on"),
             "initial_role": body_params.get("initial_role", "seeker"),
+            "game_mode": body_params.get("game_mode", "bomb"),
             "round_seconds": body_params.get("round_seconds", DEFAULT_ROUND_SECONDS),
             "rssi_threshold": body_params.get("rssi_threshold", DEFAULT_RSSI_THRESHOLD),
             "cooldown_seconds": body_params.get("cooldown_seconds", DEFAULT_COOLDOWN_SECONDS),

@@ -24,6 +24,7 @@
 <div class="stat"><div class="lbl" data-i18n="infectionView.proximity">Naehe zum Infizierten</div><div id="rssi" class="val">-</div><div id="signal" class="signal"><i></i><i></i><i></i><i></i></div></div>
 <div class="stat"><div class="lbl" data-i18n="infectionView.lastContact">Letzter Kontakt</div><div id="peer" class="val">-</div></div>
 <div class="stat"><div class="lbl" data-i18n="infectionView.roleChanges">Rollenwechsel</div><div id="count" class="val">0</div></div>
+<div class="stat"><div class="lbl" data-i18n="infectionView.mode">Spielmodus</div><div id="mode" class="val">-</div></div>
 <div class="stat"><div class="lbl">Aktuell infiziert</div><div id="current_infected" class="val">Niemand</div></div>
 <div class="stat"><div class="lbl">Node ID</div><div id="node" class="val">-</div></div>
 </section>
@@ -57,6 +58,7 @@ function update(d){
  document.getElementById('rssi').innerText=d.last_rssi===null||d.last_rssi===undefined?t('infectionView.searching','Suche...'):d.last_rssi+' dBm';
  const bars=signalBars(d.last_rssi);document.querySelectorAll('#signal i').forEach((el,i)=>el.classList.toggle('on',i<bars));
  const owner=d.current_infected;document.getElementById('peer').innerText=d.last_peer||'-';document.getElementById('count').innerText=d.infection_count||0;document.getElementById('current_infected').innerText=owner?(owner.name+(owner.self?' (dieser Pico)':'')):'Niemand';document.getElementById('node').innerText=d.node_id||'-';document.getElementById('event').innerText=d.last_event||'-';
+ document.getElementById('mode').innerText=(d.config&&d.config.game_mode==='infect')?t('infection.modeInfect','Infect-Modus'):t('infection.modeBomb','Bomben-Modus');
  showSummary(d);
 }
 function poll(){fetch('/infection-data',{cache:'no-store'}).then(r=>r.json()).then(update).catch(()=>{}).finally(()=>setTimeout(poll,1000))}

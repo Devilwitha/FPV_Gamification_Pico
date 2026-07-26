@@ -1,0 +1,120 @@
+<!DOCTYPE html><html>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Game Modes</title>
+<style>
+:root{--bg:#070b12;--panel:#111824;--panel2:#0d141f;--line:#26354a;--text:#eef4fb;--muted:#9fb4cb;--koth:#e6a23c;--race:#2980b9;--good:#2ecc71}
+*{box-sizing:border-box}
+body{margin:0;padding:18px;font-family:sans-serif;background:radial-gradient(circle at top,#10203a 0,#070b12 45%,#04070c 100%);color:var(--text)}
+.c{max-width:680px;margin:0 auto;background:linear-gradient(180deg,rgba(20,27,37,.96),rgba(12,18,28,.98));padding:22px;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 45px rgba(0,0,0,.45)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+h1{margin:0;color:var(--text);font-size:1.5em;letter-spacing:1px;text-transform:uppercase}
+.badge{color:var(--muted);font-size:.82em;padding:.35rem .6rem;border:1px solid #30465f;border-radius:999px;background:#0e1622}
+.game{position:relative;background:linear-gradient(180deg,rgba(13,20,31,.98),rgba(9,14,22,.98));border:1px solid var(--line);border-left:4px solid var(--gc,var(--koth));border-radius:14px;padding:16px;margin-top:14px}
+.game h2{margin:0 0 10px;font-size:1.05em;color:#d8e5f4;display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:#555;flex-shrink:0}
+.dot.on{background:var(--good);box-shadow:0 0 8px var(--good);animation:pulse 1.4s infinite}
+@keyframes pulse{0%{opacity:1}50%{opacity:.35}100%{opacity:1}}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}
+.st{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.88em}
+.st b{text-align:right;overflow-wrap:anywhere}
+.lb,.lap{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:.85em}
+.hint{color:var(--muted);font-size:.78em;margin:6px 0 4px}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.b{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1 1 150px;background:var(--koth);color:#fff;border:none;border-radius:11px;padding:11px 14px;cursor:pointer;font-weight:700;text-decoration:none}
+.b.race{background:var(--race)}
+.b:hover{filter:brightness(1.08)}
+.footer-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
+.ver{color:#89a7c4;font-size:.78em}
+</style>
+</head>
+<body>
+<div class="c">
+<div class="top"><h1 data-i18n="gamemodesView.title">&#127942; GAME MODES</h1><div class="badge" data-i18n="gamemodesView.liveBadge">LIVE</div></div>
+
+<div class="game" style="--gc:var(--koth)">
+<h2><span class="dot" id="k_dot"></span> <span data-i18n="gamemodesView.kothSection">&#128081; King of the Hill</span></h2>
+<div class="grid">
+<div class="st"><span data-i18n="koth.state">Zustand</span><b id="k_role">-</b></div>
+<div class="st"><span data-i18n="koth.remaining">Restzeit</span><b id="k_remaining">-</b></div>
+<div class="st"><span data-i18n="koth.event">Letztes Ereignis</span><b id="k_event">-</b></div>
+<div class="st"><span data-i18n="koth.rssi">Signalstaerke</span><b id="k_rssi">-</b></div>
+<div class="st"><span data-i18n="koth.inRange">Empfang zum Huegel</span><b id="k_inrange">-</b></div>
+<div class="st"><span data-i18n="koth.score">Punktestand</span><b id="k_score">0</b></div>
+</div>
+<div class="hint" data-i18n="koth.leaderboardTitle">Bestenliste</div>
+<div id="k_leaderboard"></div>
+</div>
+
+<div class="game" style="--gc:var(--race)">
+<h2><span class="dot" id="r_dot"></span> <span data-i18n="gamemodesView.raceSection">&#127937; Race Modus</span></h2>
+<div class="grid">
+<div class="st"><span data-i18n="race.state">Zustand</span><b id="r_role">-</b></div>
+<div class="st"><span data-i18n="race.event">Letztes Ereignis</span><b id="r_event">-</b></div>
+<div class="st"><span data-i18n="race.waitingFor">Wartet auf</span><b id="r_waiting">-</b></div>
+<div class="st"><span data-i18n="race.lapProgress">Runde</span><b id="r_lapprogress">-</b></div>
+<div class="st"><span data-i18n="race.gateA">Tor A</span><b id="r_gatea">-</b></div>
+<div class="st"><span data-i18n="race.gateB">Tor B</span><b id="r_gateb">-</b></div>
+<div class="st"><span data-i18n="race.lastLap">Letzte Runde</span><b id="r_lastlap">-</b></div>
+<div class="st"><span data-i18n="race.bestLap">Beste Runde</span><b id="r_bestlap">-</b></div>
+<div class="st"><span data-i18n="race.totalTime">Gesamtzeit</span><b id="r_total">-</b></div>
+</div>
+<div class="hint" data-i18n="race.lapHistoryTitle">Rundenzeiten</div>
+<div id="r_laphistory"></div>
+</div>
+
+<p class="hint" data-i18n="gamemodesView.hint">Werte aktualisieren sich automatisch. Einstellungen/Starten/Stoppen erfolgt in den jeweiligen Steuerbereichen.</p>
+
+<div class="btnrow">
+<a class="b" href="/admin-koth" data-i18n="gamemodesView.controlKothButton">&#128081; King of the Hill steuern</a>
+<a class="b race" href="/admin-race" data-i18n="gamemodesView.controlRaceButton">&#127937; Race steuern</a>
+</div>
+<div class="btnrow">
+<a class="b" href="/" data-i18n="gamemodesView.homeButton">&#128029; Zur Startseite</a>
+</div>
+<div class="footer-row"><span class="ver" id="ver"></span></div>
+</div>
+<script>
+let I18N={strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const s=t(el.getAttribute('data-i18n'),'');if(s)el.innerHTML=s;});document.title=t('gamemodesView.pageTitle','Game Modes');}
+function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n();}).catch(()=>{});}
+function fmt(sec){sec=Math.max(0,Number(sec)||0);const m=Math.floor(sec/60),s=sec%60;return m+':'+String(s).padStart(2,'0');}
+function fmtMs(ms){if(ms===null||ms===undefined)return '-';return (Number(ms)/1000).toFixed(2)+'s';}
+
+function showKothLeaderboard(d){const list=document.getElementById('k_leaderboard'),entries=Array.isArray(d.leaderboard)?d.leaderboard:[];list.replaceChildren();if(!entries.length){const row=document.createElement('div');row.className='hint';row.innerText=t('koth.noPlayers','Noch keine Spieler erkannt.');list.appendChild(row);return}entries.forEach((e,i)=>{const row=document.createElement('div');row.className='lb';const label=document.createElement('span');label.innerText=(i+1)+'. '+(e.name||('node-'+e.id));const score=document.createElement('b');score.innerText=e.score;row.append(label,score);list.appendChild(row);});}
+function updateKoth(d){
+ const running=!!d.running,role=running?d.role:'inactive';
+ document.getElementById('k_dot').classList.toggle('on',running);
+ document.getElementById('k_role').innerText=role==='hill'?t('koth.roleHill','Huegel'):role==='player'?t('koth.rolePlayer','Spieler'):t('koth.inactive','Inaktiv');
+ document.getElementById('k_remaining').innerText=fmt(d.remaining_seconds);
+ document.getElementById('k_event').innerText=d.last_event||'-';
+ document.getElementById('k_rssi').innerText=d.last_rssi===null||d.last_rssi===undefined?'-':d.last_rssi+' dBm';
+ document.getElementById('k_inrange').innerText=d.in_range?t('common.yes','Ja'):t('common.no','Nein');
+ document.getElementById('k_score').innerText=d.score||0;
+ showKothLeaderboard(d);
+}
+function pollKoth(){fetch('/koth-data',{cache:'no-store'}).then(r=>r.json()).then(updateKoth).catch(()=>{}).finally(()=>setTimeout(pollKoth,1000));}
+
+function showRaceLapHistory(d){const list=document.getElementById('r_laphistory'),laps=Array.isArray(d.lap_times_ms)?d.lap_times_ms:[];list.replaceChildren();if(!laps.length){const row=document.createElement('div');row.className='hint';row.innerText=t('race.noLaps','Noch keine Runde abgeschlossen.');list.appendChild(row);return}laps.forEach((ms,i)=>{const row=document.createElement('div');row.className='lap';const label=document.createElement('span');label.innerText=t('race.lap','Runde')+' '+(i+1);const val=document.createElement('b');val.innerText=fmtMs(ms);row.append(label,val);list.appendChild(row);});}
+function updateRace(d){
+ const running=!!d.running,role=running?d.role:'inactive';
+ document.getElementById('r_dot').classList.toggle('on',running);
+ const roleLabels={racer:t('race.roleRacer','Rennfahrer'),gate_a:t('race.roleGateA','Tor A'),gate_b:t('race.roleGateB','Tor B'),inactive:t('race.inactive','Inaktiv')};
+ document.getElementById('r_role').innerText=roleLabels[role]||role;
+ document.getElementById('r_event').innerText=d.last_event||'-';
+ document.getElementById('r_waiting').innerText=d.waiting_for?('Tor '+d.waiting_for):'-';
+ document.getElementById('r_lapprogress').innerText=d.finished?t('race.finished','Fertig'):(d.lap_index+1)+' / '+d.laps_total;
+ document.getElementById('r_gatea').innerText=d.gate_a_in_range?t('race.inRange','In Reichweite'):t('race.outOfRange','Ausser Reichweite');
+ document.getElementById('r_gateb').innerText=d.gate_b_in_range?t('race.inRange','In Reichweite'):t('race.outOfRange','Ausser Reichweite');
+ document.getElementById('r_lastlap').innerText=fmtMs(d.last_lap_ms);
+ document.getElementById('r_bestlap').innerText=fmtMs(d.best_lap_ms);
+ document.getElementById('r_total').innerText=fmtMs(d.total_ms);
+ showRaceLapHistory(d);
+}
+function pollRace(){fetch('/race-data',{cache:'no-store'}).then(r=>r.json()).then(updateRace).catch(()=>{}).finally(()=>setTimeout(pollRace,500));}
+
+function loadVersion(){fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>document.getElementById('ver').innerText=d.firmware_version?'v'+d.firmware_version:'').catch(()=>{});}
+loadI18n().then(()=>{pollKoth();pollRace();loadVersion();});setInterval(loadI18n,5000);
+</script>
+</body></html>

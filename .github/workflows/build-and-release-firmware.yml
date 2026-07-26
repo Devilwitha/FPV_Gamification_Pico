@@ -20,7 +20,7 @@ on:
       - "source/ota_helpers.py"
       - "source/firmware_version.txt"
       - "source/version.json"
-      - "build_firmware.py"
+      - "tools/build_firmware.py"
   workflow_dispatch: {}
     # Manuelles Ausloesen ueber den "Run workflow"-Button im Actions-Tab.
 
@@ -42,11 +42,11 @@ jobs:
 
       - name: Firmware-Bundles bauen (alle Modi)
         run: |
-          python build_firmware.py build/firmware.nbo --mode normal
-          python build_firmware.py build/firmware-complete.nbo --mode complete --no-version-bump
-          python build_firmware.py build/firmware-light.nbo --mode light --no-version-bump
-          python build_firmware.py build/firmware-recovery.nbo --mode recovery --no-version-bump
-          python build_firmware.py build/emergency.nbo --mode bootmain --no-version-bump
+          python tools/build_firmware.py build/firmware.nbo --mode normal
+          python tools/build_firmware.py build/firmware-complete.nbo --mode complete --no-version-bump
+          python tools/build_firmware.py build/firmware-light.nbo --mode light --no-version-bump
+          python tools/build_firmware.py build/firmware-recovery.nbo --mode recovery --no-version-bump
+          python tools/build_firmware.py build/emergency.nbo --mode bootmain --no-version-bump
         # Erhoeht dabei automatisch die Firmware-Versionsnummer (version.json /
         # firmware_version.txt, Format X.Y.Z -> X.Y.Z+1, siehe build_firmware.py).
 

@@ -229,15 +229,18 @@ Hier ein kleiner Auszug, was unter der Haube schlummert:
 Damit du dich in diesem Projekt-Dschungel zurechtfindest, hier ein kleiner Wegweiser, was die einzelnen Skripte und Ordner eigentlich machen:
 
 ### 🏠 Root-Verzeichnis (Das Hauptverzeichnis des Repos)
-* `build_firmware.py` 📦: Das ist dein Helfer-Tool auf dem PC! Es verpackt alle Dateien aus dem `source`-Ordner in eine einzige `firmware.nbo`-Datei für bequeme OTA-Updates.
-* `check_pico_storage.py` 💾: Ein Tool, um den Speicherplatz auf deinem Pico zu checken.
-* `download_lilygo_files.py` ⬇️: Lädt spezifische Dateien herunter, die für das LilyGO T-Display Setup (mit Display) gebraucht werden.
-* `LilyGo.py` 📺: Eine spezielle Hauptdatei, wenn du das Projekt nicht auf einem normalen Pico, sondern auf einem LilyGO T-Display Board mit schickem Display laufen lässt.
-* `mission_builder.py` 🗺️: Baut und kompiliert Flug-Missionen.
-* `ota_checker.py` 🕵️‍♂️: Prüft den OTA-Status.
-* `profilemanager.py` 🎚️: Verwalte und erstelle deine Trick-Profile lokal.
-* `web_server.py` 🌐: Ein lokales Mockup des Webservers zum Testen am PC.
-* `ideen.txt` 💡: Die Schmiede! Hier werden neue Features und irre Ideen gesammelt.
+Die eigentlichen PC-Helfer-Skripte liegen im `tools`-Unterordner (siehe unten) - im Root-Verzeichnis selbst liegen nur noch diese `README.md` und die Projektordner (`source`, `source2`, `tools`, `data`, `build`, ...).
+
+### 🛠️ Der `tools`-Ordner (Helfer-Skripte fuer den PC)
+* `tools/build_firmware.py` 📦: Das ist dein Helfer-Tool auf dem PC! Es verpackt alle Dateien aus dem `source`-Ordner in eine einzige `firmware.nbo`-Datei für bequeme OTA-Updates (kann zusaetzlich auch die eigenstaendige `source2`-Firmware als `gatehill.nbo` bauen).
+* `tools/check_pico_storage.py` 💾: Ein Tool, um den Speicherplatz auf deinem Pico zu checken.
+* `tools/download_lilygo_files.py` ⬇️: Lädt spezifische Dateien herunter, die für das LilyGO T-Display Setup (mit Display) gebraucht werden.
+* `tools/LilyGo.py` 📺: Eine spezielle Hauptdatei, wenn du das Projekt nicht auf einem normalen Pico, sondern auf einem LilyGO T-Display Board mit schickem Display laufen lässt.
+* `tools/mission_builder.py` 🗺️: Baut und kompiliert Flug-Missionen.
+* `tools/ota_checker.py` 🕵️‍♂️: Prüft den OTA-Status.
+* `tools/profilemanager.py` 🎚️: Verwalte und erstelle deine Trick-Profile lokal.
+* `tools/web_server.py` 🌐: Ein lokales Mockup des Webservers zum Testen am PC.
+* `tools/ideen.txt` 💡: Die Schmiede! Hier werden neue Features und irre Ideen gesammelt.
 
 ### 📁 Der `source`-Ordner (Das Herzstück für den Pico)
 Hier liegen alle Dateien, die tatsächlich *auf* deinen Pico müssen (oder vom Build-Skript eingepackt werden):

@@ -17,8 +17,10 @@ def choose_and_analyze_file(file_path=None):
     root.withdraw()
     root.attributes("-topmost", True)  # Fenster in den Vordergrund bringen
 
-    # Ermittle das Verzeichnis, in dem dieses Skript ausgeführt wird
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Ermittle das Projekt-Root-Verzeichnis (Elternordner von tools/, wo
+    # dieses Skript liegt), damit der Dateidialog dort startet statt nur im
+    # tools/-Unterordner.
+    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     print(f"Öffne Dateimanager im Verzeichnis: {current_dir}")
     print("Bitte wähle die zu prüfende Python-Datei aus.")

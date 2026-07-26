@@ -30,6 +30,9 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 .card.infection-card{display:block;text-decoration:none;color:inherit;border-color:#542b2b;background:linear-gradient(135deg,rgba(192,57,43,.18),rgba(13,20,31,.98));cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
 .card.infection-card:hover{transform:translateY(-2px);border-color:var(--red);box-shadow:0 10px 24px rgba(192,57,43,.14)}
 .infection-card .cc-arrow{color:#e96b5d}
+.card.gamemodes-card{display:block;text-decoration:none;color:inherit;border-color:#1e3a3f;background:linear-gradient(135deg,rgba(41,128,185,.18),rgba(13,20,31,.98));cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.card.gamemodes-card:hover{transform:translateY(-2px);border-color:var(--blue);box-shadow:0 10px 24px rgba(41,128,185,.14)}
+.gamemodes-card .cc-arrow{color:var(--blue)}
 .infection-state{color:var(--muted);font-size:.78em;font-weight:700;margin-left:auto}
 .cc-top{display:flex;justify-content:space-between;align-items:center}
 .cc-top h2{margin:0;font-size:1em;color:#d8e5f4;display:flex;align-items:center;gap:8px;letter-spacing:.4px}
@@ -54,6 +57,10 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 <a class="card infection-card" href="/infection-view">
 <div class="cc-top"><h2><span class="dot" id="infection_dot"></span> <span data-i18n="index.infectionTitle">Infection Modus</span></h2><span id="infection_state" class="infection-state" data-i18n="infection.inactive">Inaktiv</span><span class="cc-arrow">&#8594;</span></div>
 <p class="cc-text" id="infection_text" data-i18n="index.infectionText">Infizierten suchen, Rollen wechseln und Restzeit live verfolgen</p>
+</a>
+<a class="card gamemodes-card" href="/gamemodes-view">
+<div class="cc-top"><h2><span class="dot" id="gm_dot"></span> <span data-i18n="index.gamemodesTitle">&#127942; King of the Hill / Race</span></h2><span class="cc-arrow">&#8594;</span></div>
+<p class="cc-text" data-i18n="index.gamemodesText">Huegel-Punkte und Rundenzeiten live verfolgen</p>
 </a>
 <div class="btnrow"><button class="b" onclick="dl()" data-i18n="index.download">&#128229; Download</button><button class="b" onclick="dld()" data-i18n="index.debugLog">&#129514; Debug-Log</button></div>
 <div class="footer-row"><span class="ver" id="ver">v-.-.-</span><a class="admin" href="/admin" data-i18n="index.admin">&#9881;&#65039; Admin</a></div>
@@ -107,6 +114,16 @@ function loadChallengeStatus(){
     if(dot)dot.classList.toggle("on",active);
   }).catch(()=>0);
 }
-loadI18n().then(()=>{setInterval(upd,1000);setInterval(loadCopil,4000);setInterval(loadI18n,5000);setInterval(loadChallengeStatus,2000);loadCopil();loadProfiles();loadChallengeStatus();upd();});
+function loadGameModesStatus(){
+  Promise.all([
+    fetch("/koth-data",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+    fetch("/race-data",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+  ]).then(([koth,race])=>{
+    const active=!!(koth&&koth.running)||!!(race&&race.running);
+    const dot=document.getElementById("gm_dot");
+    if(dot)dot.classList.toggle("on",active);
+  }).catch(()=>0);
+}
+loadI18n().then(()=>{setInterval(upd,1000);setInterval(loadCopil,4000);setInterval(loadI18n,5000);setInterval(loadChallengeStatus,2000);setInterval(loadGameModesStatus,2000);loadCopil();loadProfiles();loadChallengeStatus();loadGameModesStatus();upd();});
 </script>
 </body></html>

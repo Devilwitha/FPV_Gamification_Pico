@@ -38,6 +38,7 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 import base64
 import json
 import hashlib
@@ -50,7 +51,9 @@ try:
 except Exception:
     list_ports = None
 
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+# Dieses Skript liegt im tools/-Unterordner - PROJECT_ROOT ist daher das
+# Elternverzeichnis von tools/, nicht der Ordner dieser Datei selbst.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
 # source2: eigenstaendige, schlanke Tor-/Huegel-Firmware (nur KOTH/Race-BLE-
 # Logik + eigener Hotspot + eine kombinierte Konfigseite) - komplett getrennter
@@ -121,6 +124,7 @@ APP_FILES_TO_BUNDLE = [
     "admin_race.html",
     "challenges_view.html",
     "infection_view.html",
+    "gamemodes_view.html",
 ]
 
 RECOVERY_FILES_TO_BUNDLE = [
@@ -749,46 +753,78 @@ def _cleanup_remote_bundle_artifacts(mpremote_cmd, port, managed_targets=None, r
         _debug(f"remote cleanup skipped on {port}: {_shorten(e)}")
 
 
-def _run_mpremote(mpremote_cmd, args, timeout=120):
+# Fehlermuster, die typischerweise transiente USB/Treiber-Haenger sind (kein
+# echter Hardwaredefekt) - ein erneuter Versuch loest das meistens.
+_TRANSIENT_SERIAL_ERROR_MARKERS = (
+    "SerialTimeoutException",
+    "Write timeout",
+    "ClearCommError failed",
+)
+
+
+def _run_mpremote(mpremote_cmd, args, timeout=120, retries=0, retry_delay=2.0):
     cmd_text = " ".join(mpremote_cmd + args)
-    _debug(f"mpremote run: {cmd_text} timeout={timeout}")
-    try:
-        result = subprocess.run(
-            mpremote_cmd + args,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=True,
-        )
-        _debug(f"mpremote ok: {cmd_text} stdout={_shorten(result.stdout)} stderr={_shorten(result.stderr)}")
-        return result
-    except subprocess.CalledProcessError as e:
-        err = (e.stderr or e.stdout or "").strip()
-        _debug(f"mpremote error: {cmd_text} rc={e.returncode} raw={_shorten(err, 2000)}")
-        if (
-            "ClearCommError failed" in err
-            or "serial.serialutil.SerialException" in err
-            or "PermissionError(13" in err
-        ):
-            raise Exception(
-                "Serieller COM-Port ist blockiert oder kein gueltiger Pico-Port. "
-                "Bitte Thonny/Serial-Monitor schliessen, USB kurz neu verbinden und erneut versuchen."
-            ) from e
+    attempt = 0
+    while True:
+        attempt += 1
+        _debug(f"mpremote run: {cmd_text} timeout={timeout} attempt={attempt}/{retries + 1}")
+        try:
+            result = subprocess.run(
+                mpremote_cmd + args,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=True,
+            )
+            _debug(f"mpremote ok: {cmd_text} stdout={_shorten(result.stdout)} stderr={_shorten(result.stderr)}")
+            return result
+        except subprocess.CalledProcessError as e:
+            err = (e.stderr or e.stdout or "").strip()
+            is_transient = any(marker in err for marker in _TRANSIENT_SERIAL_ERROR_MARKERS)
+            if is_transient and attempt <= retries:
+                _debug(
+                    f"mpremote transient error (attempt {attempt}/{retries + 1}), "
+                    f"retrying in {retry_delay}s: {_shorten(err, 300)}"
+                )
+                time.sleep(retry_delay)
+                continue
+            _debug(f"mpremote error: {cmd_text} rc={e.returncode} raw={_shorten(err, 2000)}")
+            if (
+                "ClearCommError failed" in err
+                or "serial.serialutil.SerialException" in err
+                or "PermissionError(13" in err
+            ):
+                raise Exception(
+                    "Serieller COM-Port ist blockiert oder kein gueltiger Pico-Port. "
+                    "Bitte Thonny/Serial-Monitor schliessen, USB kurz neu verbinden und erneut versuchen."
+                ) from e
 
-        if "No space left on device" in err:
-            raise Exception(
-                "Pico-Dateisystem voll: fuer firmware.nbo ist nicht genug Platz frei. "
-                "Tipps: 1) altes Bundle/Temp-Dateien loeschen, 2) Light-Firmware bauen, "
-                "3) unnoetige Dateien auf dem Pico entfernen."
-            ) from e
+            if "SerialTimeoutException" in err or "Write timeout" in err:
+                raise Exception(
+                    "Serieller Schreib-Timeout: der Pico hat waehrend der Uebertragung nicht rechtzeitig "
+                    "reagiert (meist ein temporaerer USB/Treiber-Haenger, kein Codefehler). "
+                    "Tipps: anderes/kuerzeres USB-Kabel verwenden, andere USB-Buchse (moeglichst direkt am "
+                    "Mainboard statt Hub), Thonny/Serial-Monitor schliessen, dann erneut versuchen."
+                ) from e
 
-        if err:
-            lines = [line for line in err.splitlines() if line.strip()]
-            if len(lines) > 10:
-                err = "\n".join(lines[-10:])
-        raise Exception(err or f"mpremote Aufruf fehlgeschlagen: {' '.join(args)}") from e
-    except subprocess.TimeoutExpired as e:
-        raise Exception(f"mpremote Timeout: {' '.join(args)}") from e
+            if "No space left on device" in err:
+                raise Exception(
+                    "Pico-Dateisystem voll: fuer firmware.nbo ist nicht genug Platz frei. "
+                    "Tipps: 1) altes Bundle/Temp-Dateien loeschen, 2) Light-Firmware bauen, "
+                    "3) unnoetige Dateien auf dem Pico entfernen."
+                ) from e
+
+            if err:
+                lines = [line for line in err.splitlines() if line.strip()]
+                if len(lines) > 10:
+                    err = "\n".join(lines[-10:])
+            raise Exception(err or f"mpremote Aufruf fehlgeschlagen: {' '.join(args)}") from e
+        except subprocess.TimeoutExpired as e:
+            if attempt <= retries:
+                _debug(f"mpremote timeout (attempt {attempt}/{retries + 1}), retrying in {retry_delay}s")
+                time.sleep(retry_delay)
+                continue
+            raise Exception(f"mpremote Timeout: {' '.join(args)}") from e
 
 
 def _extract_serial_port_from_line(line):
@@ -1128,7 +1164,12 @@ def upload_bundle_via_serial(bundle_path, progress_callback=None):
                     managed_targets=managed_targets,
                     remove_targets=predelete_targets,
                 )
-                _run_mpremote(mpremote_cmd, ["connect", port, "cp", bundle_path, remote_device_bundle_path], timeout=240)
+                _run_mpremote(
+                    mpremote_cmd,
+                    ["connect", port, "cp", bundle_path, remote_device_bundle_path],
+                    timeout=240,
+                    retries=2,
+                )
                 selected_port = port
                 bundle_already_copied = True
                 _debug(f"fallback selected port via cp: {port}")
@@ -1160,7 +1201,12 @@ def upload_bundle_via_serial(bundle_path, progress_callback=None):
                 managed_targets=managed_targets,
                 remove_targets=predelete_targets,
             )
-            _run_mpremote(mpremote_cmd, ["connect", port, "cp", bundle_path, remote_device_bundle_path], timeout=240)
+            _run_mpremote(
+                mpremote_cmd,
+                ["connect", port, "cp", bundle_path, remote_device_bundle_path],
+                timeout=240,
+                retries=2,
+            )
             _debug(f"bundle copied to {port} at {remote_device_bundle_path}")
         except Exception as e:
             msg = str(e)

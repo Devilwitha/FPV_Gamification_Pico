@@ -21,6 +21,7 @@ from main import DEFAULT_PILOT_NAME, debug_log, send_html_file
 
 ADMIN_KOTH_HTML_PATH = "admin_koth.html"
 ADMIN_RACE_HTML_PATH = "admin_race.html"
+GAMEMODES_VIEW_HTML_PATH = "gamemodes_view.html"
 
 _koth_manager = None
 _race_manager = None
@@ -60,6 +61,10 @@ async def handle_admin_and_routes(writer, request_path, request_method, query_pa
 
     if request_path == '/admin-race':
         await send_html_file(writer, ADMIN_RACE_HTML_PATH)
+        return True
+
+    if request_path == '/gamemodes-view':
+        await send_html_file(writer, GAMEMODES_VIEW_HTML_PATH)
         return True
 
     if request_path.startswith('/koth-'):

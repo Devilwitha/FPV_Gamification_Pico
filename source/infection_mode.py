@@ -15,9 +15,18 @@ SCAN_INTERVAL_MS = 1500
 HANDOFF_WINDOW_MS = 12000
 CLAIM_WINDOW_MS = 5000
 HOST_STALE_MS = 6000
-STOP_ADVERTISEMENT_MS = 4000
+
+
+LOBBY_MAGIC = b"IL"   # separate magic for lobby-broadcast packets (discovery)
+
+GAME_MODES_LIST = ["bomb", "infect"]  # UI-Dropdown-Werte für game_mode
+
+DISCOVERY_DURATION_MS = 8000  # default für start_discovery wenn keine config vorhanden
 ADVERTISEMENT_INTERVAL_US = 250000
 SCAN_DURATION_MS = 1200
+DISCOVERY_DURATION_MS = 8000
+DISCOVERY_STALE_MS = 20000
+DISCOVERED_MAX = 40
 COMPANY_ID = b"\xf0\x0f"
 PROTOCOL_MAGIC = b"IF"
 PROTOCOL_VERSION = 2
@@ -107,6 +116,13 @@ class InfectionMode:
         self.stopped_host_epoch = 0
         self.scan_done = True
         self.pending_packet = None
+        self.discovered = {}
+        self.discovery_active = False
+        self.discovery_until_ms = 0
+
+        # Lobby-Broadcasting (Picos koennen sich als Host markieren)
+        self.lobby_broadcast_mode = None       # "bomb" oder "infect", None = kein Broadcast
+        self.lobby_broadcast_running = False
 
         self.ble = bluetooth.BLE()
         self.ble.active(True)
@@ -192,6 +208,39 @@ class InfectionMode:
         self._atomic_json_write(PLAYERS_FILE, self.players)
         return self.status()
 
+    def add_player(self, node_id, name):
+        updated = [{"id": node_id, "name": name}] + list(self.players)
+        return self.save_players(updated)
+
+    def start_discovery(self):
+        if not self.running:
+            try:
+                self.ble.active(True)
+                self.ble.irq(self._ble_irq)
+            except Exception:
+                pass
+        self.discovery_active = True
+        self.discovery_until_ms = _ticks_add(time.ticks_ms(), DISCOVERY_DURATION_MS)
+        return self.status()
+
+    def _discovered_list(self):
+        now = time.ticks_ms()
+        registered_ids = set(player["id"] for player in self.players)
+        stale = []
+        result = []
+        for node_id, last_seen_ms in self.discovered.items():
+            age_ms = _ticks_diff(now, last_seen_ms)
+            if age_ms > DISCOVERY_STALE_MS:
+                stale.append(node_id)
+                continue
+            if node_id in registered_ids:
+                continue
+            result.append({"id": node_id, "age_ms": age_ms})
+        for node_id in stale:
+            del self.discovered[node_id]
+        result.sort(key=lambda entry: entry["age_ms"])
+        return result
+
     def _atomic_json_write(self, path, value):
         temp_path = path + ".tmp"
         with open(temp_path, "w") as output_file:
@@ -259,6 +308,11 @@ class InfectionMode:
                 packet = self._parse_advertisement(adv_data)
                 if packet is not None:
                     state, sender, target, epoch = packet
+                    if sender != self.node_raw:
+                        self.discovered[_hex_id(sender)] = time.ticks_ms()
+                        if len(self.discovered) > DISCOVERED_MAX:
+                            oldest_id = min(self.discovered, key=self.discovered.get)
+                            del self.discovered[oldest_id]
                     if state == STATE_STOP:
                         self.stopped_host_raw = sender
                         self.stopped_host_epoch = epoch
@@ -560,6 +614,8 @@ class InfectionMode:
             "contacts": list(self.contacts),
             "current_infected": current_infected,
             "players": list(self.players),
+            "discovered": self._discovered_list(),
+            "discovery_active": self.discovery_active,
             "config": dict(self.config),
             "transport": "ble",
         }
@@ -590,11 +646,28 @@ class InfectionMode:
                 ):
                     try:
                         self.ble.gap_advertise(None)
-                        self.ble.active(False)
+                        if not self.discovery_active:
+                            self.ble.active(False)
                     except Exception:
                         pass
                     self.ble_state = STATE_SEEKER
                     self.state_until_ms = 0
+                if self.discovery_active:
+                    now = time.ticks_ms()
+                    if _ticks_diff(now, self.discovery_until_ms) >= 0:
+                        self.discovery_active = False
+                        try:
+                            self.ble.gap_scan(None)
+                            if self.ble_state != STATE_STOP:
+                                self.ble.active(False)
+                        except Exception:
+                            pass
+                    elif self.scan_done:
+                        self.scan_done = False
+                        try:
+                            self.ble.gap_scan(SCAN_DURATION_MS, 30000, 30000, False)
+                        except Exception:
+                            self.scan_done = True
                 await asyncio.sleep_ms(500)
                 continue
 
@@ -670,6 +743,19 @@ async def handle_infection_route(writer, request_path, request_method, query_par
             await send_json(writer, manager.save_players(players))
         except Exception as error:
             await send_json(writer, {"ok": False, "error": str(error)}, "400 Bad Request")
+        return True
+
+    if request_path == "/infection-players-add" and request_method == "POST":
+        raw = _raw_id(body_params.get("id"))
+        if raw is None:
+            await send_json(writer, {"ok": False, "error": "invalid_id"}, "400 Bad Request")
+            return True
+        name = str(body_params.get("name") or "").strip()[:32]
+        await send_json(writer, manager.add_player(_hex_id(raw), name))
+        return True
+
+    if request_path == "/infection-discover" and request_method == "POST":
+        await send_json(writer, manager.start_discovery())
         return True
 
     if request_path == "/infection-stop" and request_method == "POST":

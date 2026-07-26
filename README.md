@@ -223,6 +223,44 @@ Hier ein kleiner Auszug, was unter der Haube schlummert:
 
 ---
 
+## 🗂️ Was ist wo? (Datei-Übersicht)
+
+Damit du dich in diesem Projekt-Dschungel zurechtfindest, hier ein kleiner Wegweiser, was die einzelnen Skripte und Ordner eigentlich machen:
+
+### 🏠 Root-Verzeichnis (Das Hauptverzeichnis des Repos)
+* `build_firmware.py` 📦: Das ist dein Helfer-Tool auf dem PC! Es verpackt alle Dateien aus dem `source`-Ordner in eine einzige `firmware.nbo`-Datei für bequeme OTA-Updates.
+* `check_pico_storage.py` 💾: Ein Tool, um den Speicherplatz auf deinem Pico zu checken.
+* `download_lilygo_files.py` ⬇️: Lädt spezifische Dateien herunter, die für das LilyGO T-Display Setup (mit Display) gebraucht werden.
+* `LilyGo.py` 📺: Eine spezielle Hauptdatei, wenn du das Projekt nicht auf einem normalen Pico, sondern auf einem LilyGO T-Display Board mit schickem Display laufen lässt.
+* `mission_builder.py` 🗺️: Baut und kompiliert Flug-Missionen.
+* `ota_checker.py` 🕵️‍♂️: Prüft den OTA-Status.
+* `profilemanager.py` 🎚️: Verwalte und erstelle deine Trick-Profile lokal.
+* `web_server.py` 🌐: Ein lokales Mockup des Webservers zum Testen am PC.
+* `ideen.txt` 💡: Die Schmiede! Hier werden neue Features und irre Ideen gesammelt.
+
+### 📁 Der `source`-Ordner (Das Herzstück für den Pico)
+Hier liegen alle Dateien, die tatsächlich *auf* deinen Pico müssen (oder vom Build-Skript eingepackt werden):
+
+* **Python-Kernskripte:**
+  * `main.py` 🚀: Die absolute Boss-Datei. Startet den ganzen Zirkus (Webserver, Telemetrie, Tricks).
+  * `boot.py` & `boot_runtime.py` 🥾: MicroPython startet diese Dateien beim Booten. Sie entscheiden, ob z.B. der Notfall-Recovery-Modus geladen werden muss.
+  * `ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py` 🛠️: Wichtige Helferlein für OTA-Updates, Datei-Uploads und spezielle Web-Routen, ausgelagert um RAM zu sparen.
+  * `hotspot_common.py` & `hotspot.conf` 📡: Alles rund um den WLAN-Access-Point.
+  * `recovery.py` 🚑: Das Notfall-Skript. Startet einen minimalen OTA-Server, wenn alles andere brennt.
+* **Spielmodi & Challenges:**
+  * `challenge_helpers.py` 🎮: Die Logik hinter den Real-Time Mini-Games (Limbo, Eco, Touch & Go).
+  * `infection_mode.py` / `.mpy` ☣️: Der Code für den gnadenlosen Bluetooth Infection-Modus (das `.mpy` ist kompiliert für mehr Speed & RAM).
+  * `idcard_helpers.py` 🪪: Helfer für die Verwaltung von Spieler-IDs im Infection-Modus.
+* **Web-Oberfläche (Die HTML-Seiten):**
+  * `index.html`: Das Main-Dashboard für Piloten.
+  * `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`: Alle Kontrollzentren im Backend.
+  * `challenges_view.html` & `infection_view.html` 📺: Die hübschen, öffentlichen Ansichten für Zuschauer.
+* **Sprachpakete (.pak):**
+  * `de.pak`, `en.pak`, `es.pak`, `fr.pak`, `it.pak`, `pt.pak`, `tr.pak` 🌍: Internationalisierung, Baby! Übersetzungsdateien für das Webinterface.
+* `firmware_version.txt` & `version.json` 🏷️: Hier merkt sich das System, auf welcher Version du fliegst.
+
+---
+
 ## 🛠️ Troubleshooting
 
 * **Kein WLAN sichtbar:**

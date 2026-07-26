@@ -1819,7 +1819,7 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
         await send_html_file(writer, ADMIN_INFECTION_HTML_PATH)
         return True
 
-    if request_path.startswith('/infection-'):
+    if request_path.startswith('/infection-') or request_path.startswith('/lobby-'):
         if _infection_route_handler is None:
             from infection_mode import handle_infection_route as _lazy_infection_route_handler
             _infection_route_handler = _lazy_infection_route_handler
@@ -1832,6 +1832,9 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             _ensure_infection_manager(),
         ):
             return True
+
+    import gmr
+    if await gmr.handle_admin_and_routes(writer, request_path, request_method, query_params, body_params): return True
 
     if request_path == '/challenges-view':
         await send_html_file(writer, CHALLENGES_VIEW_HTML_PATH)
@@ -2128,6 +2131,8 @@ async def main_async():
 
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
     infection_task = asyncio.create_task(_ensure_infection_manager().run())
+    import gmr
+    gmr.start_tasks()
     _boot_mark_healthy_once()
     system_ready = True
     status_led_last_toggle_ms = time.ticks_ms()

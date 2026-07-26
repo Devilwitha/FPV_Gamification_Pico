@@ -52,6 +52,10 @@ except Exception:
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
+# source2: eigenstaendige, schlanke Tor-/Huegel-Firmware (nur KOTH/Race-BLE-
+# Logik + eigener Hotspot + eine kombinierte Konfigseite) - komplett getrennter
+# Quellordner/Bundle/Versionsstand von der Haupt-Firmware in SOURCE_DIR.
+SOURCE2_DIR = os.path.join(PROJECT_ROOT, "source2")
 BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
 # Missionen liegen NICHT in SOURCE_DIR, sondern in ihrem eigenen Ordner (siehe
 # mission_builder.py's MISSIONS_DIR) - werden aber trotzdem mit ins normale
@@ -99,6 +103,9 @@ APP_FILES_TO_BUNDLE = [
     "upload_helpers.py",
     "challenge_helpers.py",
     "infection_mode.py",
+    "koth_mode.py",
+    "race_mode.py",
+    "gmr.py",
     "main.py",
     "main_LilyGo.py",
     "index.html",
@@ -110,6 +117,8 @@ APP_FILES_TO_BUNDLE = [
     "admin_idcard.html",
     "admin_challenges.html",
     "admin_infection.html",
+    "admin_koth.html",
+    "admin_race.html",
     "challenges_view.html",
     "infection_view.html",
 ]
@@ -130,7 +139,26 @@ DEFAULT_BUILD_LIGHT_FIRMWARE = False
 DEFAULT_BUILD_RECOVERY_FIRMWARE = False
 DEFAULT_BUILD_LANGUAGE_PACK = False
 DEFAULT_BUILD_BOOT_MAIN_ONLY = False
+DEFAULT_BUILD_SOURCE2 = False
 MANIFEST_FILE = os.path.join(BUILD_DIR, ".last_bundle_manifest.json")
+
+# source2 hat immer ein Vollbundle (kein Light-/Recovery-/Sprachpaket-Modus
+# noetig - die Firmware ist klein genug), daher feste Dateiliste statt der
+# modusabhaengigen _resolve_files_to_bundle()-Logik der Haupt-Firmware.
+SOURCE2_FILES_TO_BUNDLE = [
+    "firmware_version.txt",
+    "hotspot.conf",
+    "hotspot_common.py",
+    "boot_runtime.py",
+    "ota_helpers.py",
+    "koth_mode.py",
+    "race_mode.py",
+    "index.html",
+    "recovery.py",
+    "main.py",
+    "boot.py",
+]
+SOURCE2_OUTPUT_NAME = "gatehill.nbo"
 
 
 def get_files_to_bundle(include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK):
@@ -454,6 +482,68 @@ def build_bundle(
 
     _debug(f"build_bundle done: included={len(included)} total_bytes={sum(size for _, size in included)}")
     _save_manifest(source_dir)
+
+    return included, missing
+
+
+def build_source2_bundle(output_path=None, progress_callback=None, bump_version=True):
+    """Baut das eigenstaendige source2-Bundle (Tor-/Huegel-Firmware,
+    Standardname 'gatehill.nbo'). Immer ein Vollbundle (kein Light-/Recovery-/
+    Sprachpaket-Modus wie bei der Haupt-Firmware) - eigener Quellordner
+    (SOURCE2_DIR), eigene Dateiliste (SOURCE2_FILES_TO_BUNDLE) und eigener,
+    unabhaengiger Versionsstand (source2/version.json), damit ein Build der
+    Haupt-Firmware NICHT die Versionsnummer von source2 mit erhoeht (und
+    umgekehrt)."""
+    output_path = output_path or os.path.join(BUILD_DIR, SOURCE2_OUTPUT_NAME)
+    _debug(f"build_source2_bundle start: output_path={output_path}")
+    if bump_version:
+        new_version = bump_firmware_version(SOURCE2_DIR)
+        _debug(f"build_source2_bundle version bumped to {new_version}")
+    else:
+        _debug(f"build_source2_bundle version kept at {_read_version_state(SOURCE2_DIR)}")
+
+    files_to_bundle = _order_bundle_files_for_apply(list(SOURCE2_FILES_TO_BUNDLE))
+    included = []
+    missing = []
+
+    bundle_entries = []
+    for filename in files_to_bundle:
+        content = _read_bundle_file_bytes(SOURCE2_DIR, filename)
+        if content is None:
+            missing.append(filename)
+            continue
+        bundle_entries.append((filename, content))
+
+    if missing:
+        print("WARNUNG (source2): Folgende Dateien fehlen und werden NICHT ins Bundle aufgenommen:")
+        for name in missing:
+            print(f"  - {name}")
+        print()
+        _debug(f"build_source2_bundle missing files: {missing}")
+
+    total = len(bundle_entries)
+
+    output_dir = os.path.dirname(os.path.abspath(output_path))
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    with open(output_path, "wb") as out:
+        out.write(BUNDLE_MAGIC)
+        out.write(struct.pack(">I", total))
+
+        for i, (filename, content) in enumerate(bundle_entries, start=1):
+            name_bytes = filename.encode("utf-8")
+            out.write(struct.pack(">I", len(name_bytes)))
+            out.write(name_bytes)
+            out.write(struct.pack(">I", len(content)))
+            out.write(content)
+
+            included.append((filename, len(content)))
+
+            if progress_callback:
+                progress_callback(i, total, filename)
+
+    _debug(f"build_source2_bundle done: included={len(included)} total_bytes={sum(size for _, size in included)}")
 
     return included, missing
 
@@ -1314,6 +1404,7 @@ def run_cli(
     language_pack_mode=False,
     boot_main_only_mode=False,
     bump_version=True,
+    with_source2=False,
 ):
     source_dir = SOURCE_DIR
     output_path = output_path or os.path.join(BUILD_DIR, "firmware.nbo")
@@ -1356,6 +1447,31 @@ def run_cli(
     print()
     print("Naechster Schritt: firmware.nbo im Admin-Bereich unter /admin-update hochladen.")
 
+    if with_source2:
+        source2_output_path = os.path.join(os.path.dirname(os.path.abspath(output_path)) or BUILD_DIR, SOURCE2_OUTPUT_NAME)
+        print()
+        print("Baue zusaetzlich source2 (Tor-/Huegel-Firmware)...")
+        s2_included, s2_missing = build_source2_bundle(
+            source2_output_path,
+            progress_callback=report,
+            bump_version=bump_version,
+        )
+        s2_total_size = sum(size for _, size in s2_included)
+        s2_bundle_size = os.path.getsize(source2_output_path)
+        print()
+        print(f"source2-Bundle erstellt: {source2_output_path}")
+        print(f"{'Datei':<28} {'Groesse':>10}")
+        print("-" * 40)
+        for filename, size in s2_included:
+            print(f"{filename:<28} {size:>8} B")
+        print("-" * 40)
+        print(f"{'Summe (Inhalte)':<28} {s2_total_size:>8} B")
+        print(f"{'Bundle-Datei gesamt':<28} {s2_bundle_size:>8} B")
+        if s2_missing:
+            print()
+            print(f"HINWEIS (source2): {len(s2_missing)} Datei(en) fehlten und wurden uebersprungen: {', '.join(s2_missing)}")
+
+
 
 def launch_gui():
     import tkinter as tk
@@ -1366,7 +1482,7 @@ def launch_gui():
 
     root = tk.Tk()
     root.title("FPV Gamification Pico - Firmware Bundle Builder")
-    root.geometry("980x560")
+    root.geometry("980x660")
     root.resizable(False, False)
 
     frame = ttk.Frame(root, padding=12)
@@ -1390,9 +1506,17 @@ def launch_gui():
     build_recovery_var = tk.BooleanVar(value=DEFAULT_BUILD_RECOVERY_FIRMWARE)
     build_language_pack_var = tk.BooleanVar(value=DEFAULT_BUILD_LANGUAGE_PACK)
     build_boot_main_only_var = tk.BooleanVar(value=DEFAULT_BUILD_BOOT_MAIN_ONLY)
+    build_source2_var = tk.BooleanVar(value=DEFAULT_BUILD_SOURCE2)
 
     def on_mode_change():
-        if build_language_pack_var.get():
+        if build_source2_var.get():
+            include_boot_stack_var.set(False)
+            build_light_var.set(False)
+            build_recovery_var.set(False)
+            build_language_pack_var.set(False)
+            build_boot_main_only_var.set(False)
+            output_var.set(os.path.join(BUILD_DIR, SOURCE2_OUTPUT_NAME))
+        elif build_language_pack_var.get():
             include_boot_stack_var.set(False)
             build_light_var.set(False)
             build_recovery_var.set(False)
@@ -1409,21 +1533,30 @@ def launch_gui():
             build_boot_main_only_var.set(False)
         elif include_boot_stack_var.get() or build_light_var.get():
             build_boot_main_only_var.set(False)
+        else:
+            output_name = os.path.basename(output_var.get().strip()).lower()
+            if output_name in (SOURCE2_OUTPUT_NAME, LANGUAGE_BUNDLE_FILENAME, EMERGENCY_BUNDLE_FILENAME):
+                output_var.set(default_output_path)
         scan_files()
 
     def scan_files():
         _debug("GUI scan_files triggered")
         tree.delete(*tree.get_children())
-        selected = _resolve_files_to_bundle(
-            source_dir,
-            include_boot_stack=include_boot_stack_var.get(),
-            light_mode=build_light_var.get(),
-            recovery_mode=build_recovery_var.get(),
-            language_pack_mode=build_language_pack_var.get(),
-            boot_main_only_mode=build_boot_main_only_var.get(),
-        )
+        if build_source2_var.get():
+            selected = list(SOURCE2_FILES_TO_BUNDLE)
+            scan_dir = SOURCE2_DIR
+        else:
+            selected = _resolve_files_to_bundle(
+                source_dir,
+                include_boot_stack=include_boot_stack_var.get(),
+                light_mode=build_light_var.get(),
+                recovery_mode=build_recovery_var.get(),
+                language_pack_mode=build_language_pack_var.get(),
+                boot_main_only_mode=build_boot_main_only_var.get(),
+            )
+            scan_dir = source_dir
         for filename in selected:
-            file_path = _bundle_source_path(source_dir, filename)
+            file_path = _bundle_source_path(scan_dir, filename)
             if os.path.isfile(file_path):
                 size = os.path.getsize(file_path)
                 tree.insert("", "end", text=filename, values=("Gefunden", f"{size} B"), tags=("ok",))
@@ -1465,6 +1598,12 @@ def launch_gui():
         mode_frame,
         text="Builde Emergency (emergency.nbo: nur main.py + boot.py)",
         variable=build_boot_main_only_var,
+        command=on_mode_change,
+    ).pack(anchor="w")
+    ttk.Checkbutton(
+        mode_frame,
+        text="Nur Source2 (Tor/Huegel) Firmware builden (gatehill.nbo)",
+        variable=build_source2_var,
         command=on_mode_change,
     ).pack(anchor="w")
 
@@ -1513,6 +1652,62 @@ def launch_gui():
     ttk.Button(btn_frame, text="Aktualisieren", command=scan_files).pack(side="left", padx=6)
 
     def build_worker(output_path):
+        if build_source2_var.get():
+            _debug(f"GUI build_worker (source2-only) start: output_path={output_path}")
+
+            def report_s2(done, total, filename):
+                def update():
+                    progress_var.set(done / total * 100 if total else 100)
+                    status_var.set(f"Verpacke {filename} ({done}/{total})...")
+                root.after(0, update)
+
+            try:
+                included, missing = build_source2_bundle(
+                    output_path,
+                    progress_callback=report_s2,
+                )
+                total_size = sum(size for _, size in included)
+                bundle_size = os.path.getsize(output_path)
+                current_version = _read_version_state(SOURCE2_DIR)
+                total_size_kb = total_size / 1024.0
+                bundle_size_kb = bundle_size / 1024.0
+
+                def finish_s2():
+                    progress_var.set(100)
+                    msg = (
+                        f"Fertig (Source2 Tor/Huegel): {output_path}\n"
+                        f"Firmware-Version: {current_version}\n"
+                        f"{len(included)} Datei(en), {total_size} B ({total_size_kb:.1f} KB) Inhalt, "
+                        f"{bundle_size} B ({bundle_size_kb:.1f} KB) Bundle."
+                    )
+                    if missing:
+                        msg += f"\nFehlend (uebersprungen): {', '.join(missing)}"
+                    msg += "\n\nJetzt mit 'Seriell ins Dateisystem + entpacken' hochladen."
+                    status_var.set(msg)
+                    build_button.config(state="normal")
+                    upload_button.config(state="normal")
+                    lang_upload_button.config(state="normal")
+                    lang_serial_upload_button.config(state="normal")
+                    serial_upload_button.config(state="normal")
+                    messagebox.showinfo("Source2-Bundle erstellt", msg)
+
+                root.after(0, finish_s2)
+            except Exception as e:
+                err_text = str(e)
+                _debug(f"GUI build_worker (source2-only) failed: {_shorten(err_text)}")
+
+                def fail_s2():
+                    status_var.set(f"Fehler: {err_text}")
+                    build_button.config(state="normal")
+                    upload_button.config(state="normal")
+                    lang_upload_button.config(state="normal")
+                    lang_serial_upload_button.config(state="normal")
+                    serial_upload_button.config(state="normal")
+                    messagebox.showerror("Fehler", err_text)
+
+                root.after(0, fail_s2)
+            return
+
         output_name = os.path.basename(output_path).lower()
         output_is_lang_bundle = output_name == LANGUAGE_BUNDLE_FILENAME
         include_boot_stack = include_boot_stack_var.get()
@@ -1609,6 +1804,24 @@ def launch_gui():
         _debug(f"GUI start_build called: output_path={output_path}")
         if not output_path:
             messagebox.showerror("Fehler", "Bitte einen Ausgabepfad angeben.")
+            return
+
+        if build_source2_var.get():
+            present = [
+                f for f in SOURCE2_FILES_TO_BUNDLE
+                if os.path.isfile(_bundle_source_path(SOURCE2_DIR, f))
+            ]
+            if not present:
+                messagebox.showerror("Fehler", "Keine der erwarteten Source2-Dateien gefunden.")
+                return
+            build_button.config(state="disabled")
+            upload_button.config(state="disabled")
+            lang_upload_button.config(state="disabled")
+            lang_serial_upload_button.config(state="disabled")
+            serial_upload_button.config(state="disabled")
+            progress_var.set(0)
+            status_var.set("Starte Source2-Build...")
+            threading.Thread(target=build_worker, args=(output_path,), daemon=True).start()
             return
 
         output_name = os.path.basename(output_path).lower()
@@ -1822,8 +2035,9 @@ def main():
 
     parser = argparse.ArgumentParser(description="FPV Firmware Bundle Builder")
     parser.add_argument("output_path", nargs="?", default=os.path.join(BUILD_DIR, "firmware.nbo"))
-    parser.add_argument("--mode", choices=["normal", "complete", "light", "recovery", "lang", "bootmain"], default="normal")
+    parser.add_argument("--mode", choices=["normal", "complete", "light", "recovery", "lang", "bootmain", "source2"], default="normal")
     parser.add_argument("--no-version-bump", action="store_true", help="Version nicht automatisch erhoehen")
+    parser.add_argument("--with-source2", action="store_true", help="Baut zusaetzlich die source2 Tor-/Huegel-Firmware (gatehill.nbo)")
     args = parser.parse_args()
 
     # Ein reiner Dateiname ohne Verzeichnisanteil (z.B. "firmware.nbo") landet
@@ -1832,6 +2046,36 @@ def main():
     # CLI-Aufrufen wie "python build_firmware.py firmware.nbo".
     if os.path.dirname(args.output_path) == "":
         args.output_path = os.path.join(BUILD_DIR, args.output_path)
+
+    if args.mode == "source2":
+        # source2 ist ein eigenstaendiges Bundle mit eigenem Quellordner/
+        # Versionsstand - laeuft komplett am normalen run_cli()-Pfad vorbei.
+        if args.output_path == os.path.join(BUILD_DIR, "firmware.nbo"):
+            args.output_path = os.path.join(BUILD_DIR, SOURCE2_OUTPUT_NAME)
+
+        def report(done, total, filename):
+            print(f"[{done}/{total}] {filename}")
+
+        included, missing = build_source2_bundle(
+            args.output_path,
+            progress_callback=report,
+            bump_version=(not args.no_version_bump),
+        )
+        total_size = sum(size for _, size in included)
+        bundle_size = os.path.getsize(args.output_path)
+        print()
+        print(f"source2-Bundle erstellt: {args.output_path}")
+        print(f"{'Datei':<28} {'Groesse':>10}")
+        print("-" * 40)
+        for filename, size in included:
+            print(f"{filename:<28} {size:>8} B")
+        print("-" * 40)
+        print(f"{'Summe (Inhalte)':<28} {total_size:>8} B")
+        print(f"{'Bundle-Datei gesamt':<28} {bundle_size:>8} B")
+        if missing:
+            print()
+            print(f"HINWEIS: {len(missing)} Datei(en) fehlten und wurden uebersprungen: {', '.join(missing)}")
+        return
 
     include_boot_stack = False
     light_mode = False
@@ -1859,6 +2103,7 @@ def main():
         language_pack_mode=language_pack_mode,
         boot_main_only_mode=boot_main_only_mode,
         bump_version=(not args.no_version_bump),
+        with_source2=args.with_source2,
     )
 
 

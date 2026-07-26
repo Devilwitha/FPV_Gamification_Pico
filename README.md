@@ -11,37 +11,42 @@ Das Skript klinkt sich passiv in deine Telemetrie ein, liest Attitude-Daten (Rol
 * 🛰️ **Passiver CRSF-UART Sniffer:** Klinkt sich geräuschlos in deine ELRS/TBS-Telemetrie ein (Attitude, Vario & Akku-Frames).
 * 🎯 **Smart Trick-Erkennung:** Automatische Erkennung von Flips, Rolls & Spins mit dynamischer Punktevergabe.
 * ☣️ **Infection-Modus (BLE):** Erkennt Mitspieler über verbindungslose Bluetooth-LE Advertisements direkt in der Luft!
-* 🏆 **Live Highscore-System:** Inklusive Piloten-Eingabe im Browser, Bestätigungs-Popup bei neuem Rekord und LED-Blink-Party!
-* 📡 **Eigener WLAN-Hotspot:** Keine App-Installation nötig – einfach per Smartphone/Tablet im Feld verbinden.
+* 🏆 **Live Highscore-System:** Mit Zeitstempel und Pilot. Inklusive Piloten-Eingabe im Browser, Bestätigungs-Popup bei neuem Rekord und LED-Blink-Party!
+* 📡 **Eigener WLAN-Hotspot:** Keine App-Installation nötig – einfach per Smartphone/Tablet im Feld mit dem Pico verbinden.
 * 🕹️ **Real-Time Mini-Games (Challenges):**
   * 🛬 **Touch & Go:** Belohnt Butterlandungen (ausgewertet über Sinkrate & Gyro-Aufprall).
   * 🎯 **Altitude-Hold / Limbo:** Fliege präzise auf Höhe oder bleibe unter der Limbo-Grenzlinie.
   * 🔋 **Eco-Challenge:** Wer fliegt am sparsamsten? Punkte basieren auf verbrauchten mAh.
-* 🎮 **Trick-Simulation:** Teste das Punkte- & Erkennungssystem im Admin-Panel ganz ohne Drohne.
-* 🚀 **OTA & Bundle Updates:** Komplette Firmware-Updates (`firmware.nbo`) oder einzelne HTML/Python-Dateien kabellos direkt im Browser aktualisieren.
+* 🎮 **Trick-Simulation:** Teste das Punkte- & Erkennungssystem im Admin-Panel ganz ohne Drohne (einfach per Klick auf Roll/Flip/Spin).
+* 🚀 **OTA & Bundle Updates:** Komplette Firmware-Updates (`firmware.nbo`) oder einzelne HTML/Python-Dateien kabellos direkt im Browser aktualisieren – nie wieder USB-Gefummel!
 * ⚙️ **Mehrstufiges Admin-Panel:** Dashboard, Trick-Profile (`.pro`), OTA-Update, Mini-Games & System-Monitor.
+* 💾 **Session & Debug Downloads:** Lade deine Historie und Debug-Logs als TXT direkt auf dein Gerät herunter.
 
 ---
 
-## 📂 Benötigte Dateien auf dem Pico
+## 📂 Benötigte Dateien auf dem Pico (Speicher-Architektur)
 
-Damit das Webinterface flüssig und ohne RAM-Engpässe läuft (der Pico hat nicht viel davon!), werden die HTML-Dateien in kleinen Häppchen direkt vom Dateisystem gestreamt. Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen:
+Damit das Webinterface flüssig und ohne RAM-Engpässe läuft (der Pico hat nur sehr wenig RAM, ca. 190-260 KB), haben wir uns einen cleveren Trick überlegt: Die HTML-Dateien sind bewusst **nicht** als Python-Strings im Skript eingebettet. Stattdessen werden sie beim Request in kleinen 512-Byte-Häppchen direkt vom Dateisystem gestreamt. Dadurch belegen die Seiten nur kurzzeitig während einer Anfrage Speicher!
+
+Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen (nicht nur `main.py`):
 
 | Datei | Zweck |
 |---|---|
-| `main.py` | 🚀 Hauptskript (Bootdatei, startet automatisch beim Einschalten) |
-| `ota_helpers.py` | 🛠️ OTA- & Kodier-Hilfsfunktionen (**Pflicht**, sonst gibt's einen `ImportError`!) |
-| `index.html` | 📱 Hauptseite (Scoreboard, Live-Feed, Downloads für Session/Debug, Challenges-Link) |
-| `admin_dashboard.html` | 🎛️ Admin-Startseite & Navigation zu allen Settings |
-| `admin_update.html` | 🔄 Browser OTA-Update Interface |
-| `admin_simulate.html` | 🕹️ Virtuelle Trick-Simulation (Rolls & Flips am PC testen) |
-| `admin_profiles.html` | 🎚️ Profil-Tuning & `.pro` Manager |
-| `admin_system.html` | 💻 System-Info, Developer-Modus & Neustart-Steuerung |
-| `admin_challenges.html` | 🎮 Mini-Games/Challenges Regie (Versuche starten/stoppen) |
-| `challenges_view.html` | 📺 Öffentliche Live-Visualisierung für Zuschauer/Piloten |
-| `firmware_version.txt` | 🏷️ Versionstag (`X.Y.Z` - wird automatisch generiert, Finger weg! 😉) |
+| `main.py` | 🚀 Hauptskript (Bootdatei, startet automatisch beim Einschalten). |
+| `ota_helpers.py` | 🛠️ OTA- & Kodier-Hilfsfunktionen. (**Pflicht**, `main.py` startet ohne diese Datei nicht! `ImportError`) |
+| `index.html` | 📱 Hauptseite (Scoreboard, Live-Feed, Historie, Downloads für Session/Debug). |
+| `admin_dashboard.html` | 🎛️ Admin-Startseite & Navigation zu allen Settings (Speicher, Uptime, IP). |
+| `admin_update.html` | 🔄 Browser OTA-Update Interface (Datei-Upload für Python/HTML). |
+| `admin_simulate.html` | 🕹️ Virtuelle Trick-Simulation. |
+| `admin_profiles.html` | 🎚️ Trick-Profile verwalten (anlegen, hoch-/runterladen, anwenden). |
+| `admin_system.html` | 💻 System-Info & manueller Restart. |
+| `admin_challenges.html` | 🎮 Mini-Games/Challenges Regie (technische Steuerung). |
+| `challenges_view.html` | 📺 Öffentliche Live-Visualisierung für Zuschauer/Piloten (Pulsierende Punkte, große Zahlen). |
+| `firmware_version.txt` | 🏷️ Versionstag (z.B. `1.0.1`). Wird vom GitHub-Workflow bei jedem Release **automatisch** hochgezählt und erzeugt. Nicht manuell bearbeiten! |
 
-*Zusätzliche Dateien (werden automatisch erstellt):* `fpv_highscore.json`, `fpv_trick_settings.json`, Log-Dateien, etc.
+*Zusätzliche Laufzeit-/Datendateien (legt das System selbst an):* `fpv_highscore.json`, `fpv_trick_settings.json`, Log-Dateien (`fpv_debug_session.txt`), Custom-Trick-Profile (`<name>.pro`), etc.
+
+**💡 Wichtiger Hinweis zu Thonny:** Teste das Skript **nicht** mit "Run current script". Dadurch wird der Text als fetter String in den RAM geladen und erzeugt schnell einen `MemoryError`. Speichere es als `main.py` und mache einen Hardware-Reset!
 
 ---
 
@@ -59,13 +64,16 @@ Du benötigst lediglich **3 Leitungen** vom Flight Controller (oder ELRS-Empfän
 +-------------------+             +-----------------------+
 ```
 
-> ⚠️ **Wichtig:** Niemals 5V direkt auf den `3V3`-Pin legen! Auf gemeinsame Masse (`GND`) achten, sonst gibt es Daten-Salat. Aktuelle UART-Konfiguration: RX ist auf **GP1**.
+> ⚠️ **Wichtig:**
+> - Niemals 5V direkt auf den `3V3`-Pin legen!
+> - Auf gemeinsame Masse (`GND`) achten, sonst kommen keine stabilen Daten an!
+> - **Aktuelle UART-Konfiguration im Code:** UART0 RX ist auf **GP1**! Hier kommen die CRSF-Daten rein. (UART0 TX liegt auf GP0, wird aber aktuell nicht aktiv genutzt).
 
 ---
 
 ## 🚀 Quick Start & Konfiguration
 
-### 1. Ersteinrichtung
+### 1. Erste Installation auf dem Pico
 1. Lade **alle oben gelisteten Dateien** via [Thonny](https://thonny.org/) (*Datei-Ansicht → Rechtsklick → Upload to /*) oder `ampy` auf deinen Pico.
 2. Starte den Pico neu (Hardware-Reset oder Strom weg und wieder dran).
 3. Verbinde dich mit dem neuen WLAN-Hotspot:
@@ -73,9 +81,9 @@ Du benötigst lediglich **3 Leitungen** vom Flight Controller (oder ELRS-Empfän
    * **Passwort:** `drohnenspiel` *(Standard)*
    * **URL im Browser:** `http://192.168.4.1`
 
-### 2. Wichtige Konfigurationen
+### 2. Wichtige Konfigurationen im Code
 * **Hotspot-Einstellungen (`source/hotspot.conf`):**
-  Wenn du den Namen des WLANs ändern willst, pass diese Datei an:
+  Der normale Pico-Hotspot wird hier definiert. Fehlt die Datei, gelten Fallback-Werte.
   ```json
   {
      "ssid": "FPV_Gamification_Pico",
@@ -83,16 +91,19 @@ Du benötigst lediglich **3 Leitungen** vom Flight Controller (oder ELRS-Empfän
   }
   ```
 * **Infection-Modus (`infection.conf` & `infection_players.conf`):**
-  Steuert Rundendauer, Startrolle, RSSI-Nähe und Immunität. Der Infection-Modus nutzt Bluetooth LE Advertisements im Hintergrund, während der Access Point aktiv bleibt!
-* **Globale Variablen (`main.py`):**
-  Du kannst direkt in `main.py` Dinge wie `COPTER_NAME`, `DEFAULT_PILOT_NAME` oder das Standard-Trick-Profil einstellen. (Tipp: Wenn du den Copter-Namen anpasst, ändere ihn auch in der `index.html`!).
+  Der Infection-Modus erkennt Mitspieler über verbindungslose Bluetooth-LE-Advertisements. Der normale Hotspot bleibt währenddessen aktiv! Du kannst Rundendauer, Startrolle, RSSI-Nähe und Immunität in `infection.conf` einstellen.
+* **Globale Variablen (direkt in `main.py`):**
+  Pass das Erlebnis oben im Code an:
+  * `COPTER_NAME`: Name deines Quads für Exporte (Hinweis: Ändere das auch in der `index.html`!).
+  * `DEFAULT_PILOT_NAME`: Standard-Pilot für den Highscore.
+  * `TRICK_TUNING_PROFILE`: Profil beim ersten Start.
+  * `ENABLE_HOTSPOT`, `ENABLE_SERIAL_DEBUG`, `ENABLE_LIVE_GYRO_DEBUG`: Zum Debuggen an-/ausschalten.
 
 ---
 
 ## 🎮 Spielmodi & Real-Time Challenges
 
-### ☣️ Infection-Modus (BLE)
-Erkennt Mitspieler über verbindungslose Bluetooth-LE-Advertisements in der Luft! Über RSSI-Distanzmessung wird ausgewertet, wer wen infiziert hat. Spannende Dogfights sind garantiert!
+Neben der normalen Trick-Erkennung haben wir krasse Mini-Games am Start! Diese funktionieren komplett passiv aus dem CRSF-Datenstrom, solange dein Flight Controller die entsprechenden Telemetrie-Frames (Vario, Battery) sendet.
 
 ### 🕹️ Real-Time Mini-Games (`/admin-challenges`)
 ```text
@@ -102,57 +113,88 @@ Erkennt Mitspieler über verbindungslose Bluetooth-LE-Advertisements in der Luft
  misst Sinkrate & Gyro    unter Zeitdruck          Punkte pro mAh
 ```
 
-1. **Öffentlicher Screen (`/challenges-view`):** Wirf den Screen auf ein Tablet an der Startline – fette Balken & pulsierende Live-Punkte inklusive!
-2. **Admin-Regie (`/admin-challenges`):** Startet/stoppt Versuche, stellt Höhengrenzen, Dauer und Toleranzen ein.
-*(Achtung: Dein FC muss CRSF Vario- oder Battery-Sensor-Telemetrie senden, damit Limbo und Eco funktionieren!)*
+1. **Touch & Go / Präzisions-Landung:**
+   Nutzt den CRSF Vario-Frame `0x07` (Sinkrate) und das Gyro. Punkte gibt es nur bei butterweichem Aufsetzen: Die Sinkrate muss vorher negativ gewesen sein (echter Sinkflug) und beim Erreichen von 0 darf es keinen Gyro-Spike (harter Aufprall) geben!
+2. **Altitude-Hold- / Limbo-Challenge:**
+   Die relative Höhe wird geschätzt, indem die Sinkrate vom Startpunkt an integriert wird.
+   - *Hold-Modus:* Höhe für X Sekunden innerhalb einer Toleranz halten.
+   - *Limbo-Modus:* X Sekunden unterhalb einer frei wählbaren Decke fliegen.
+3. **Energy Management / Eco-Challenge:**
+   Nutzt den CRSF Battery-Sensor-Frame `0x08`. Deine Punkte sinken mit der verbrauchten Kapazität (mAh). Wer hat den sanftesten Gasfinger?
+
+*(Hinweis: Auf `/challenges-view` gibt es eine hübsch gestaltete Live-Visualisierung mit Fortschrittsbalken für Zuschauer während des Fluges!)*
+
+---
+
+## 🏆 Highscore-Flow
+
+Wenn du ordentlich Punkte sammelst und der Trick-Detektor glüht:
+1. Das System erkennt einen neuen Rekord. Die LED fängt langsam an zu blinken.
+2. Beim nächsten Laden der Startseite (oder bei aktiver Verbindung) ploppt ein Browser-Dialog auf.
+3. Trag deinen Piloten-Namen ein und bestätige. ZACK! Dein Highscore ist gesichert.
+4. (Brichst du ab, wird `DEFAULT_PILOT_NAME` verwendet).
 
 ---
 
 ## 🎚️ Trick-Tuning-Profile
 
-Das System unterstützt vordefinierte und eigene Tuning-Profile für die Stunt-Erkennung, speichert sie und lädt sie beim nächsten Start (`fpv_trick_settings.json`):
+Das System unterstützt vordefinierte und eigene Tuning-Profile für die Stunt-Erkennung. Die Auswahl wird dauerhaft in `fpv_trick_settings.json` gespeichert.
 
-* 🟢 **`beginner`:** Erkennt leichter, gut für sanfte Manöver (kann eher zu False Positives neigen).
-* 🟡 **`freestyle`:** Der perfekte Allrounder für normale Sessions.
-* 🔴 **`aggressive`:** Strengere Erkennung gegen Fehltrigger bei schnellen, wilden Bewegungen. Startet standardmäßig in diesem Modus.
-* 🛠️ **Eigene Custom-Profile (`.pro`):** Können im Admin-Bereich (`/admin-profiles`) ganz einfach per Webinterface erstellt, heruntergeladen und verwaltet werden.
+* 🟢 **`beginner`:** Erkennt leichter, gut für kleinere/weichere Manöver (kann eher zu False Positives neigen).
+* 🟡 **`freestyle`:** Der perfekte Mittelweg für normale Sessions.
+* 🔴 **`aggressive`:** Strengere Erkennung gegen Fehltrigger bei wilden Bewegungen (braucht deutlichere Tricks). Startet standardmäßig in diesem Modus.
+* 🛠️ **Eigene Custom-Profile (`.pro`):** Können im Admin-Bereich (`/admin-profiles`) per Webinterface angelegt, hoch-/runtergeladen und gelöscht werden.
 
 ### ⚙️ Feinjustierung der Trick-Erkennung
-Willst du es ganz genau wissen? Du kannst Werte wie `GYRO_TRICK_THRESHOLD`, `STABLE_THRESHOLD`, `MIN_TRICK_DURATION` oder `GYRO_LOWPASS_ALPHA` anpassen (global in `main.py` oder pro Profil).
+Je nach Copter, Rate und Filter kannst du folgende Parameter im Code oder Profil anpassen:
+`GYRO_TRICK_THRESHOLD`, `STABLE_THRESHOLD`, `TRICK_START_HOLD_MS`, `STABLE_HOLD_MS`, `TRICK_FORCE_END_MS`, `MIN_TRICK_DURATION`, `MAX_TRICK_DURATION`, `GYRO_DEADBAND`, `GYRO_LOWPASS_ALPHA`.
 
 ---
 
 ## 🚦 LED Status Signalisation
 
+Den Rhythmus steuerst du mit Variablen wie `LED_BLINK_INTERVAL_MS`.
+
 | Status | LED-Verhalten |
 |---|---|
-| 🟢 **Bereit** | Dauerhaft AN (WLAN & Server aktiv) |
-| 🥳 **New Highscore!** | Langsames Blinken (wartet auf Piloten-Name im Browser) |
-| ⚡ **OTA-Update** | Schnelles Blinken (Übertragung läuft, bitte warten!) |
+| 🟢 **Bereit** | Dauerhaft AN (System ist bereit, Server gestartet) |
+| 🥳 **New Highscore!** | Langsames Blinken (wartet auf Piloten-Bestätigung) |
+| ⚡ **OTA-Update** | Schnelles Blinken (OTA-Übertragung läuft) |
 
 ---
 
-## 🔄 OTA & Bundle Updates (Updates ohne Kabel!)
+## 🔄 OTA Updates über WiFi (Nie wieder Kabel!)
 
-Du kannst `main.py` und alle HTML-Seiten direkt über den Browser aktualisieren!
+Der Pico unterstützt **Over-the-Air (OTA) Updates**. Du kannst sowohl `main.py` als auch HTML-Seiten direkt über den Browser aktualisieren!
 
-1. Ab in den Admin-Bereich: **Update** (`/admin-update`).
-2. Wähle die aktualisierte Datei aus.
-   * Lädst du eine `.py` hoch, wird sie zu `main.py`.
-   * Lädst du eine passende `.html` hoch, wird genau diese ersetzt.
-3. Klick auf **📤 Upload**. Der Pico macht automatisch ein Backup (z.B. `main_backup.py`) und speichert die neue Version. Bei `main.py` startet er direkt neu!
+### Wie man ein Einzel-Update durchführt:
+1. Im WLAN `FPV_Gamification_Pico` anmelden, auf `http://192.168.4.1` gehen.
+2. Im Admin-Bereich auf **Update** (`/admin-update`) klicken.
+3. Datei auswählen:
+   - Jedes `.py`-Skript wird automatisch als `main.py` gespeichert!
+   - Eine Datei mit passendem Namen (z.B. `index.html`) ersetzt genau diese HTML-Seite. Andere Dateinamen werden sicherheitshalber abgelehnt.
+4. Auf **📤 Upload** klicken. Der Pico sichert die bisherige Zieldatei (Backup z.B. als `main_backup.py`) und überschreibt sie.
+5. Bei `main.py` startet der Pico danach automatisch neu. Bei HTML reicht ein Reload im Browser!
 
-📦 **Tipp: Das Firmware-Bundle (`firmware.nbo`)!**
-Mit dem Python-Skript `build_firmware.py` auf deinem PC kannst du alle Dateien in ein einziges Bundle packen. Lade dann einfach die `firmware.nbo` über das OTA-Interface hoch und der Pico aktualisiert *alle* Dateien in einem Rutsch!
+> **⚠️ Wichtig:** Stell sicher, dass deine `main.py` syntaktisch korrekt ist, sonst hängst du in einem Bootloop. Bitte nicht fliegen, während ein Update läuft!
 
-*(Hinweis: Auf der Admin-Unterseite System (`/admin-system`) kannst du den **Developer-Modus** aktivieren, um auch einzelne Dateien außerhalb von Bundles hochzuladen.)*
+### 📦 Firmware-Bundle-Update (Alle Dateien auf einmal)
+Statt alles einzeln hochzuladen, kannst du mit dem Skript `build_firmware.py` auf deinem PC alle Dateien in eine Datei `firmware.nbo` packen.
+Lade diese `.nbo`-Datei hoch, und der Pico entpackt sie komplett serverseitig und aktualisiert alle HTMLs + Skripte in einem Rutsch (inkl. Backups)!
+*(Im Bundle-Format versteckt sich ein robuster Header `FPVBNDL1`, der alles super sicher und MicroPython-freundlich macht).*
+
+**Developer-Modus (`/admin-system`):** Standardmäßig akzeptiert das OTA-System nur Bundles. Schaltest du den Developer-Modus ein, kannst du auch wieder einzelne `main.py` oder `.html` Dateien hochladen.
 
 ---
 
 ## 🚑 Notfall: Recovery-Modus (`recovery.py`)
 
-Hast du deine `main.py` geschrottet oder eine ur-alte Version drauf? Kein Problem!
-Lade `recovery.py` via Thonny hoch und starte den Pico neu. Er startet nun im Recovery-Modus (selbes WLAN, selbes Passwort). Rufe `http://192.168.4.1` auf, lade ein frisches `firmware.nbo`-Bundle hoch und boom – deine Drohne lebt wieder! 🧟‍♂️
+Hast du deine `main.py` völlig geschrottet oder hast noch eine ur-alte Installation ohne OTA-Support?
+`recovery.py` ist dein Retter!
+1. Lade `recovery.py` per USB (Thonny) hoch.
+2. Neustart. Wenn `main.py` crasht, bootet der Pico ins Recovery-Skript.
+3. Das Skript erzeugt ein minimales WLAN und eine Update-Seite (alles steckt in einem String, keine externen HTMLs nötig).
+4. Verbinde dich, rufe `http://192.168.4.1` auf, lade ein frisches `firmware.nbo`-Bundle hoch. Der Pico fixt sich selbst und startet glücklich neu! 🧟‍♂️
 
 ---
 
@@ -163,7 +205,9 @@ Hier ein kleiner Auszug, was unter der Haube schlummert:
 | Route | Zweck |
 |---|---|
 | `/` | 📱 Webinterface Hauptseite (`index.html`) |
-| `/data` | 📊 Live JSON Data (Score, Profil, Highscore) |
+| `/data` | 📊 Live JSON Data (Score, Profil, Highscore, Historie) |
+| `/system-info` | 💻 Live JSON (Speicher, Uptime, SSID, OTA-Status) |
+| `/challenges-data`| 🎮 Live JSON (Status aller 3 Challenges, Höhe/Batterie) |
 | `/challenges-view` | 📺 Live Mini-Game Visualisierung |
 | `/admin` | 🎛️ Admin Dashboard |
 | `/admin-update` | 🔄 Browser OTA Update (Einzeldateien oder `firmware.nbo`) |
@@ -171,21 +215,30 @@ Hier ein kleiner Auszug, was unter der Haube schlummert:
 | `/admin-profiles` | 🎚️ Profil-Tuning & Custom-Profile |
 | `/admin-system` | 💻 System-Info, Developer Mode & Restart |
 | `/admin-challenges` | 🎮 Challenge Manager |
-| `/upload-chunk` | 📦 Firmware & HTML File Uploader |
+| `/upload-chunk` / `/finalize-upload`| 📦 Firmware & HTML File Uploader |
 | `/simulate-trick` | 🎲 Synthetic Gyro Trigger (`?type=roll\|flip\|spin`) |
-| `/download-session` | 💾 Session TXT Export laden |
+| `/download`, `/download-debug` | 💾 Session/Debug TXT Export laden |
+
+*(Zudem gibt es zig Unter-Routen wie `/set-trick-profile`, `/challenge-touchgo-start`, `/confirm-highscore` etc., mit denen das Frontend mit dem Backend kommuniziert).*
 
 ---
 
 ## 🛠️ Troubleshooting
 
-* **Kein WLAN sichtbar:** Prüfe `ENABLE_HOTSPOT = True` in `main.py` und die seriellen Konsole-Logs.
+* **Kein WLAN sichtbar:**
+  Prüfe `ENABLE_HOTSPOT = True` in `main.py` und die seriellen Konsole-Logs.
 * **Webseite erreichbar, aber keine Live-Daten:**
   * Ist CRSF TX wirklich auf **GP1** am Pico angeschlossen?
   * Haben FC und Pico eine gemeinsame Masse (**GND**)?
-  * Sendet der FC wirklich CRSF-Attitude Frames? (Betaflight Ports / Serial RX prüfen).
-* **`MemoryError` beim Booten:** Vergewissere dich, dass du das Skript als `main.py` auf den Pico hochlädst und per Hardware-Reset startest (statt "Run current script" in Thonny zu drücken). Thonny sendet sonst das Skript als fetten String in den knappen RAM.
-* **Download funktioniert nicht stabil?** Einfach Tab neu laden. Die Exporte werden in kleinen 512-Byte-Häppchen gestreamt, um den RAM zu schonen!
+  * Sendet der FC wirklich CRSF-Attitude Frames? (In Betaflight prüfen, welcher UART "Serial RX" hat).
+* **`/` oder Admin-Seite liefert Fehler:**
+  Prüfe, ob du wirklich *alle* `.html` Dateien hochgeladen hast. Diese kommen nicht automatisch mit der `main.py` mit!
+* **`MemoryError` beim Booten:**
+  Testest du in Thonny mit "Run current script"? Das lädt den Code als riesigen String hoch! Bitte lokal als `main.py` speichern und per Hardware-Reset starten.
+* **Falsche Trick-Erkennung?**
+  Thresholds anpassen, Live-Debug aktivieren, und sicherstellen, dass das richtige Tuning-Profil (`freestyle`/`aggressive`) aktiv ist!
+* **Download funktioniert nicht stabil?**
+  Einfach Tab neu laden. Die Exporte werden sicherheitshalber in kleinen 512-Byte-Häppchen gestreamt, um den RAM zu schonen!
 
 ---
 

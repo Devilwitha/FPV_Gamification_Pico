@@ -184,6 +184,64 @@ async def handle_misc_routes(
         writer.write(response_data)
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
+    if request_path == '/wlan-config':
+        try:
+            with open('wlan.conf', 'r') as config_file:
+                config = json.loads(config_file.read())
+            ssid = str(config.get('ssid', ''))
+            password = str(config.get('password', ''))
+        except Exception:
+            ssid = ''
+            password = ''
+        response_data = json.dumps({
+            "ok": True,
+            "ssid": ssid,
+            "password": password,
+        }).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/set-wlan-config' and request_method == 'POST':
+        ssid = body_params.get('ssid', '').strip()
+        password = body_params.get('password', '')
+        error = ''
+        if not ssid or len(ssid) > 32:
+            error = 'SSID muss 1 bis 32 Zeichen lang sein'
+        elif password and (len(password) < 8 or len(password) > 63):
+            error = 'Passwort muss leer (offenes WLAN) oder 8 bis 63 Zeichen lang sein'
+        if error:
+            response_data = json.dumps({"ok": False, "error": error}).encode('utf-8')
+            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+        else:
+            try:
+                temp_path = 'wlan.conf.tmp'
+                with open(temp_path, 'w') as config_file:
+                    config_file.write(json.dumps({"ssid": ssid, "password": password}))
+                try:
+                    os.remove('wlan.conf')
+                except Exception:
+                    pass
+                os.rename(temp_path, 'wlan.conf')
+                response_data = json.dumps({
+                    "ok": True,
+                    "message": "WLAN gespeichert.",
+                }).encode('utf-8')
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+            except Exception as error_value:
+                response_data = json.dumps({"ok": False, "error": str(error_value)}).encode('utf-8')
+                writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
     if request_path == '/language-packs':
         codes = list_language_codes()
         response_data = json.dumps({

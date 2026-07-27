@@ -101,6 +101,7 @@ APP_FILES_TO_BUNDLE = [
     "de.pak",
     "hotspot_common.py",
     "ota_helpers.py",
+    "github_ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
     "upload_helpers.py",

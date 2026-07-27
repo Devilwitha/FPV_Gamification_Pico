@@ -148,6 +148,74 @@ async def handle_misc_routes(
         writer.write(response_data)
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
+    if request_path == '/client-wifi-config':
+        import github_ota
+        config = github_ota.load_client_wifi_config()
+        response_data = json.dumps({
+            "ok": True,
+            "ssid": config.get("ssid", ""),
+            "password": config.get("password", ""),
+        }).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/set-client-wifi-config' and request_method == 'POST':
+        ssid = body_params.get('ssid', '').strip()
+        password = body_params.get('password', '')
+
+        import github_ota
+        saved_ok = github_ota.save_client_wifi_config(ssid, password)
+        if not saved_ok:
+            response_data = json.dumps({"ok": False, "error": "Fehler beim Speichern"}).encode('utf-8')
+            writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+        else:
+            response_data = json.dumps({"ok": True}).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/trigger-github-update' and request_method == 'POST':
+        import github_ota
+        led = deps.get("led")
+        feed_wdt = deps.get("feed_wdt")
+        bundle_magic = deps.get("bundle_magic")
+        log = deps.get("debug_log", print)
+
+        result = github_ota.check_and_apply_github_update(led, feed_wdt, bundle_magic, log=log)
+
+        response_data = json.dumps(result).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+
+        # Falls ein Update installiert wurde, wird ein Neustart angefordert.
+        # Wir returnen und das Skript kuemmert sich um den Neustart, wenn `restart` in der Response True ist
+        # Das wird im Frontend aber normal über AJAX abgefangen. Wenn das Backend neu startet, bricht die Verbindung ab.
+        if result.get("restart"):
+            import asyncio
+            import machine
+            try:
+                await writer.drain()
+            except Exception:
+                pass
+            await asyncio.sleep_ms(2000)
+            machine.reset()
+
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
     if request_path == '/set-hotspot-config' and request_method == 'POST':
         ssid = body_params.get('ssid', '').strip()
         password = body_params.get('password', '')

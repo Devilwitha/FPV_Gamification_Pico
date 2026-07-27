@@ -582,6 +582,60 @@ async def handle_client(reader, writer):
                 except Exception:
                     pass
 
+        elif request_path == '/client-wifi-config':
+            import github_ota
+            config = github_ota.load_client_wifi_config()
+            response_data = json.dumps({
+                "ok": True,
+                "ssid": config.get("ssid", ""),
+                "password": config.get("password", ""),
+            }).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store\r\n')
+            writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response_data)
+
+        elif request_path == '/set-client-wifi-config' and request_method == 'POST':
+            ssid = parse_query(body_text).get('ssid', '').strip()
+            password = parse_query(body_text).get('password', '')
+
+            import github_ota
+            saved_ok = github_ota.save_client_wifi_config(ssid, password)
+            if not saved_ok:
+                response_data = json.dumps({"ok": False, "error": "Fehler beim Speichern"}).encode('utf-8')
+                writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+            else:
+                response_data = json.dumps({"ok": True}).encode('utf-8')
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store\r\n')
+            writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response_data)
+
+        elif request_path == '/trigger-github-update' and request_method == 'POST':
+            import github_ota
+            result = github_ota.check_and_apply_github_update(led, _boot_feed_watchdog, OTA_BUNDLE_MAGIC, log=debug_log)
+
+            response_data = json.dumps(result).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store\r\n')
+            writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(response_data)
+
+            if result.get("restart"):
+                try:
+                    await writer.drain()
+                except Exception:
+                    pass
+                await asyncio.sleep_ms(2000)
+                machine.reset()
+
         elif request_path == '/restart-pico':
             response = json.dumps({"ok": True, "message": "Pico is restarting..."}).encode('utf-8')
             writer.write(b'HTTP/1.1 200 OK\r\n')

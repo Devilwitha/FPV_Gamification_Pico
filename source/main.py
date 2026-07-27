@@ -1974,6 +1974,10 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "perform_emergency_delete_main": _perform_emergency_delete_main,
             "perform_emergency_delete_boot": _perform_emergency_delete_boot,
             "infection_status": _ensure_infection_manager().status,
+            "led": led,
+            "feed_wdt": _main_feed_watchdog,
+            "bundle_magic": OTA_FIRMWARE_BUNDLE_MAGIC_HEADER,
+            "debug_log": debug_log,
         },
     )
 

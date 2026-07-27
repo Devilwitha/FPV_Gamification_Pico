@@ -79,6 +79,15 @@ input:checked+.slider:before{transform:translateX(20px)}
 <div id="hotspotMsg" class="msg"></div>
 </div>
 <div class="s">
+<h2 data-i18n="system.clientWifi">Client WLAN-Konfiguration (fuer OTA via GitHub)</h2>
+<div style="color:#9fb4cb;font-size:.78em;margin-bottom:8px" data-i18n="system.clientWifiHint">Verbinde den Pico mit einem externen WLAN (z.B. Smartphone-Hotspot), um OTA-Updates von GitHub zu laden.</div>
+<label class="field"><span data-i18n="system.clientWifiSsid">SSID</span><input id="clientWifiSsid" maxlength="32" autocomplete="off"></label>
+<label class="field"><span data-i18n="system.clientWifiPassword">Passwort</span><input id="clientWifiPassword" type="password" minlength="8" maxlength="63" autocomplete="new-password"></label>
+<label class="inline-check"><input id="showClientWifiPassword" type="checkbox" onchange="toggleClientWifiPassword()"><span data-i18n="system.clientWifiShowPassword">Passwort anzeigen</span></label>
+<button class="b secondary" onclick="saveClientWifi()" data-i18n="system.clientWifiSave">Speichern</button>
+<div id="clientWifiMsg" class="msg"></div>
+</div>
+<div class="s">
 <h2 data-i18n="system.developerMode">Developer-Modus</h2>
 <div class="st2">
 <span data-i18n="system.developerModeLabel">Einzeldatei-Uploads (.py/.html) per OTA erlauben</span>
@@ -138,9 +147,15 @@ if(n>=1024*1024)return (n/(1024*1024)).toFixed(2)+' MB';
 return (n/1024).toFixed(1)+' KB';
 }
 function toggleHotspotPassword(){document.getElementById('hotspotPassword').type=document.getElementById('showHotspotPassword').checked?'text':'password';}
+function toggleClientWifiPassword(){document.getElementById('clientWifiPassword').type=document.getElementById('showClientWifiPassword').checked?'text':'password';}
 function loadHotspot(){
 fetch('/hotspot-config',{cache:'no-store'}).then(r=>r.json()).then(d=>{
 if(!d.ok)return;document.getElementById('hotspotSsid').value=d.ssid||'';document.getElementById('hotspotPassword').value=d.password||'';
+}).catch(()=>{});
+}
+function loadClientWifi(){
+fetch('/client-wifi-config',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok)return;document.getElementById('clientWifiSsid').value=d.ssid||'';document.getElementById('clientWifiPassword').value=d.password||'';
 }).catch(()=>{});
 }
 function saveHotspot(restart){
@@ -152,6 +167,14 @@ const body='ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(pass
 fetch('/set-hotspot-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body}).then(r=>r.json()).then(d=>{
 if(!d.ok)throw new Error(d.error||'Fehler');msg.innerText=t('system.hotspotSaved','Gespeichert. Nach einem Neustart gilt der neue Hotspot.');
 if(restart){setTimeout(()=>fetch('/restart-pico',{cache:'no-store'}).catch(()=>{}),300);}
+}).catch(e=>msg.innerText=e.message);
+}
+function saveClientWifi(){
+const ssid=document.getElementById('clientWifiSsid').value.trim(),password=document.getElementById('clientWifiPassword').value,msg=document.getElementById('clientWifiMsg');
+msg.innerText=t('system.clientWifiSaving','Speichere...');
+const body='ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(password);
+fetch('/set-client-wifi-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body}).then(r=>r.json()).then(d=>{
+if(!d.ok)throw new Error(d.error||'Fehler');msg.innerText=t('system.clientWifiSaved','Gespeichert.');
 }).catch(e=>msg.innerText=e.message);
 }
 function clearLog(kind){
@@ -252,7 +275,7 @@ msg.innerText=t('system.languageSaveError','Speichern fehlgeschlagen.');
 }
 }).catch(()=>{});
 }
-loadI18n().then(()=>{upd();loadLanguages();loadHotspot();setInterval(upd,3000);setInterval(loadI18n,5000);});
+loadI18n().then(()=>{upd();loadLanguages();loadHotspot();loadClientWifi();setInterval(upd,3000);setInterval(loadI18n,5000);});
 </script>
 </body>
 </html>

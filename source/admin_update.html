@@ -43,6 +43,10 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 <div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
 <div id="s" class="s"></div>
 <button class="b" onclick="u()" data-i18n="update.uploadButton">Upload</button>
+<hr style="border:0;border-top:1px solid #335174;margin:20px 0;">
+<div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px" data-i18n="update.githubHint">Pruefe auf GitHub nach neuen Releases. Pico muss dafuer mit einem externen WLAN verbunden werden koennen (siehe System-Seite). Waehrenddessen ist der Pico-Hotspot kurzzeitig offline.</div>
+<button class="b" style="background:#3498db" onclick="ghUpdate()" data-i18n="update.githubButton">Check GitHub for Updates</button>
+<div id="ghs" class="s" style="margin-top:10px;"></div>
 </div>
 <script>
 let I18N={strings:{}};
@@ -177,6 +181,24 @@ nc();
 }catch(er){s.className='s err';s.innerText='Fehler: '+er;s.style.display='block';}
 };
 if(isBinary){rd.readAsArrayBuffer(f);}else{rd.readAsText(f);}
+}
+function ghUpdate(){
+const ghs=document.getElementById('ghs');
+ghs.className='s';
+ghs.innerText=t('update.githubChecking','Verbinde mit externem WLAN und pruefe GitHub... Bitte warten. (Verbindung zum Pico kann kurzfristig abbrechen)');
+ghs.style.display='block';
+fetch('/trigger-github-update',{method:'POST',cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){
+ghs.className='s ok';
+ghs.innerText=d.message+(d.restart?(' '+t('update.restarting','Neustart laeuft...')):'');
+}else{
+ghs.className='s err';
+ghs.innerText='Fehler: '+(d.error||'Unbekannt');
+}
+}).catch(er=>{
+ghs.className='s err';
+ghs.innerText='Netzwerkfehler: '+(er.message||'Pico ist moeglicherweise offline oder neugestartet.');
+});
 }
 loadI18n().then(()=>{refreshDevMode();setInterval(loadI18n,5000);});
 </script>

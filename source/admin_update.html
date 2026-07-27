@@ -36,6 +36,7 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 <a href="/admin-infection" data-i18n="nav.infection">Infection</a>
 <a href="/" data-i18n="nav.home">Home</a>
 </div>
+<div id="manualUploadSection" style="display:none; padding-bottom: 20px; border-bottom: 1px solid #335174; margin-bottom: 20px;">
 <div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px" data-i18n="update.allowedHint">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html, admin_idcard.html - oder ein komplettes <b>firmware.nbo</b> Bundle (alle Dateien auf einmal, siehe build_firmware.py)</div>
 <div id="devhint" style="color:#9fb4cb;font-size:.78em;margin-bottom:6px"></div>
 <input type="file" id="f" accept=".py,.html,.nbo,.pak">
@@ -43,11 +44,25 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 <div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
 <div id="s" class="s"></div>
 <button class="b" onclick="u()" data-i18n="update.uploadButton">Upload</button>
-<hr style="border:0;border-top:1px solid #335174;margin:20px 0;">
+</div>
+
 <div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px" data-i18n="update.githubHint">Pruefe auf GitHub nach neuen Releases. Pico muss dafuer mit einem externen WLAN verbunden werden koennen (siehe System-Seite). Waehrenddessen ist der Pico-Hotspot kurzzeitig offline.</div>
-<button class="b" style="background:#3498db" onclick="ghUpdate()" data-i18n="update.githubButton">Check GitHub for Updates</button>
+<button id="ghBtn" class="b" style="background:#3498db; position:relative;" onclick="ghUpdate()" data-i18n="update.githubButton">Nach Updates suchen</button>
 <div id="ghs" class="s" style="margin-top:10px;"></div>
 </div>
+
+<style>
+@keyframes pulseBtn {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.btn-loading {
+  animation: pulseBtn 1s infinite;
+  pointer-events: none;
+  filter: brightness(0.8);
+}
+</style>
 <script>
 let I18N={strings:{}};
 function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
@@ -108,11 +123,14 @@ let devMode=false;
 function refreshDevMode(){
 fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
 devMode=!!d.developer_mode;
+const uploadSection=document.getElementById('manualUploadSection');
 const fEl=document.getElementById('f'),hint=document.getElementById('devhint');
 if(devMode){
+uploadSection.style.display='block';
 fEl.setAttribute('accept','.py,.html,.nbo,.pak');
 hint.innerText=t('update.devOnHint','Developer-Modus AN: Einzeldateien (.py/.html) und .nbo Bundles erlaubt.');
 }else{
+uploadSection.style.display='none';
 fEl.setAttribute('accept','.nbo,.pak');
 hint.innerText=t('update.devOffHint','Developer-Modus AUS: Nur komplette firmware.nbo Bundles erlaubt (siehe System-Seite).')+' '+t('update.langBundleHint','lang.pak ist ebenfalls erlaubt.');
 }
@@ -183,11 +201,16 @@ nc();
 if(isBinary){rd.readAsArrayBuffer(f);}else{rd.readAsText(f);}
 }
 function ghUpdate(){
+if(!confirm(t('update.githubConfirm','Achtung! Der Pico beendet nun seinen Hotspot und versucht sich mit dem WLAN (siehe System-Seite) zu verbinden. Dein Browser verliert kurz die Verbindung. Fortfahren?'))) return;
+
 const ghs=document.getElementById('ghs');
+const btn=document.getElementById('ghBtn');
+btn.classList.add('btn-loading');
 ghs.className='s';
 ghs.innerText=t('update.githubChecking','Verbinde mit externem WLAN und pruefe GitHub... Bitte warten. (Verbindung zum Pico kann kurzfristig abbrechen)');
 ghs.style.display='block';
 fetch('/trigger-github-update',{method:'POST',cache:'no-store'}).then(r=>r.json()).then(d=>{
+btn.classList.remove('btn-loading');
 if(d.ok){
 ghs.className='s ok';
 ghs.innerText=d.message+(d.restart?(' '+t('update.restarting','Neustart laeuft...')):'');
@@ -196,6 +219,7 @@ ghs.className='s err';
 ghs.innerText='Fehler: '+(d.error||'Unbekannt');
 }
 }).catch(er=>{
+btn.classList.remove('btn-loading');
 ghs.className='s err';
 ghs.innerText='Netzwerkfehler: '+(er.message||'Pico ist moeglicherweise offline oder neugestartet.');
 });

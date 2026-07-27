@@ -6,7 +6,7 @@ import urequests
 import os
 from ota_helpers import apply_firmware_bundle
 
-CLIENT_WIFI_CONF = "client_wifi.conf"
+CLIENT_WIFI_CONF = "wlan.conf"
 GITHUB_API_URL = "https://api.github.com/repos/Devilwitha/FPV_Gamification_Pico/releases/latest"
 
 def load_client_wifi_config():
@@ -45,37 +45,42 @@ def check_and_apply_github_update(led, feed_wdt, bundle_magic, log=print):
 
     wlan_sta.active(True)
 
-    connected = False
-    for attempt in range(3):
-        log(f"Connecting to {ssid}... (Attempt {attempt+1})")
-        wlan_sta.connect(ssid, password)
+    blink_timer = machine.Timer(-1)
+    led_state = False
+    def blink_cb(t):
+        nonlocal led_state
+        led_state = not led_state
+        led.value(1 if led_state else 0)
 
-        timeout = 15
-        while not wlan_sta.isconnected() and timeout > 0:
-            # Blink LED: 2s ON, 2s OFF
-            led.value(1)
-            feed_wdt()
-            time.sleep_ms(2000)
-            led.value(0)
-            feed_wdt()
-            time.sleep_ms(2000)
-            timeout -= 4
-
-        if wlan_sta.isconnected():
-            connected = True
-            break
-
-        wlan_sta.disconnect()
-
-    if not connected:
-        wlan_sta.active(False)
-        if was_ap_active:
-            wlan_ap.active(True)
-        return {"ok": False, "error": "Could not connect to Wi-Fi."}
-
-    log("Connected to Wi-Fi. Checking GitHub...")
+    blink_timer.init(period=2000, mode=machine.Timer.PERIODIC, callback=blink_cb)
 
     try:
+        connected = False
+        for attempt in range(3):
+            log(f"Connecting to {ssid}... (Attempt {attempt+1})")
+            wlan_sta.connect(ssid, password)
+
+            timeout = 15
+            while not wlan_sta.isconnected() and timeout > 0:
+                feed_wdt()
+                time.sleep_ms(1000)
+                timeout -= 1
+
+            if wlan_sta.isconnected():
+                connected = True
+                break
+
+            wlan_sta.disconnect()
+
+        if not connected:
+            blink_timer.deinit()
+            led.value(1)
+            wlan_sta.active(False)
+            if was_ap_active:
+                wlan_ap.active(True)
+            return {"ok": False, "error": "Could not connect to Wi-Fi nach 3 Versuchen."}
+
+        log("Connected to Wi-Fi. Checking GitHub...")
         headers = {'User-Agent': 'MicroPython-Pico'}
         res = urequests.get(GITHUB_API_URL, headers=headers)
         if res.status_code != 200:
@@ -140,10 +145,14 @@ def check_and_apply_github_update(led, feed_wdt, bundle_magic, log=print):
         except Exception:
             pass
 
+        blink_timer.deinit()
+        led.value(1)
         log("Update applied successfully. Rebooting...")
         return {"ok": True, "message": "Update installed. Rebooting...", "restart": True}
 
     except Exception as e:
+        blink_timer.deinit()
+        led.value(1)
         log(f"Update failed: {e}")
         wlan_sta.active(False)
         if was_ap_active:

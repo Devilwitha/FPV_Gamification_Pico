@@ -59,6 +59,8 @@ async def handle_misc_routes(
     perform_emergency_delete_main = deps["perform_emergency_delete_main"]
     perform_emergency_delete_boot = deps["perform_emergency_delete_boot"]
     infection_status = deps.get("infection_status")
+    trick_highscore_log_entries = deps["trick_highscore_log_entries"]
+    save_trick_highscore_log = deps["save_trick_highscore_log"]
 
     if request_path == '/admin-profiles':
         await send_html_file(writer, admin_profiles_html_path)
@@ -235,6 +237,29 @@ async def handle_misc_routes(
             except Exception as error_value:
                 response_data = json.dumps({"ok": False, "error": str(error_value)}).encode('utf-8')
                 writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/trick-highscore-log':
+        response_data = json.dumps({"ok": True, "log": trick_highscore_log_entries}).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/trick-highscore-log-clear':
+        del trick_highscore_log_entries[:]
+        ok, err = save_trick_highscore_log(trick_highscore_log_entries)
+        response_data = json.dumps({"ok": ok, "error": None if ok else err}).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
         writer.write(b'Content-Type: application/json\r\n')
         writer.write(b'Cache-Control: no-store\r\n')
         writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')

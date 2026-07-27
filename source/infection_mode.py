@@ -105,6 +105,51 @@ def _ascii_text(raw):
     return "".join(chars)
 
 
+def _datetime_string():
+    now = time.localtime()
+    return "%02d.%02d.%04d %02d:%02d:%02d" % (now[2], now[1], now[0], now[3], now[4], now[5])
+
+
+# Dauerhafter Verlauf abgeschlossener Infection-Runden (gleiches Muster wie
+# challenge_helpers.py's fpv_challenge_log.json) - fuer die Statistik-/
+# Verlaufs-Ansicht im Dashboard (admin_dashboard.html).
+INFECTION_LOG_FILE = "infection_log.json"
+INFECTION_LOG_MAX_ENTRIES = 50
+
+
+def load_infection_log():
+    try:
+        with open(INFECTION_LOG_FILE, "r") as f:
+            data = json.loads(f.read())
+        if isinstance(data, list):
+            return data[-INFECTION_LOG_MAX_ENTRIES:]
+    except Exception:
+        pass
+    return []
+
+
+def save_infection_log(entries):
+    trimmed = entries[-INFECTION_LOG_MAX_ENTRIES:]
+    payload = json.dumps(trimmed)
+    try:
+        tmp_path = INFECTION_LOG_FILE + ".tmp"
+        with open(tmp_path, "w") as f:
+            f.write(payload)
+        try:
+            os.remove(INFECTION_LOG_FILE)
+        except Exception:
+            pass
+        os.rename(tmp_path, INFECTION_LOG_FILE)
+        return True, ""
+    except Exception as e:
+        try:
+            with open(INFECTION_LOG_FILE, "w") as f:
+                f.write(payload)
+            return True, ""
+        except Exception as e2:
+            return False, f"{e} | fallback={e2}"
+
+
 class InfectionMode:
     def __init__(self, normal_ssid, normal_password, player_name="", log=None):
         self.normal_ssid = normal_ssid
@@ -139,6 +184,7 @@ class InfectionMode:
         self.round_started_ms = 0
         self.round_result = None
         self.contacts = []
+        self.log_entries = load_infection_log()
         self.ble_state = STATE_SEEKER
         self.target_node = ZERO_NODE_ID
         self.state_until_ms = 0
@@ -729,6 +775,17 @@ class InfectionMode:
         self.last_event = reason
         if was_running and self.round_result is None:
             self.round_result = "stopped"
+        if was_running:
+            self.log_entries.append({
+                "ts_s": int(time.time()),
+                "timestamp": _datetime_string(),
+                "result": self.round_result,
+                "infection_count": self.infection_count,
+                "game_mode": self.config.get("game_mode", "bomb"),
+            })
+            if len(self.log_entries) > INFECTION_LOG_MAX_ENTRIES:
+                del self.log_entries[0: len(self.log_entries) - INFECTION_LOG_MAX_ENTRIES]
+            save_infection_log(self.log_entries)
         try:
             self.ble.gap_scan(None)
         except Exception:
@@ -1059,6 +1116,16 @@ async def send_json(writer, payload, status="200 OK"):
 
 
 async def handle_infection_route(writer, request_path, request_method, query_params, body_params, manager):
+    if request_path == "/infection-log":
+        await send_json(writer, {"ok": True, "log": manager.log_entries})
+        return True
+
+    if request_path == "/infection-log-clear":
+        manager.log_entries = []
+        ok, err = save_infection_log(manager.log_entries)
+        await send_json(writer, {"ok": ok, "error": None if ok else err})
+        return True
+
     if request_path == "/infection-data":
         await send_json(writer, manager.status())
         return True

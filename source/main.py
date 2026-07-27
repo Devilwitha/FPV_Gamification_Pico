@@ -1137,8 +1137,70 @@ def save_highscore():
             return False, f"{e} | fallback={e2}"
 
 
+# Dauerhafter Verlauf ERREICHTER Trick-Highscores (im Gegensatz zu
+# highscore_data, das nur den AKTUELLEN Rekord haelt und bei jedem neuen
+# Rekord ueberschrieben wird) - gleiches Atomic-Write-Muster wie
+# save_highscore()/challenge_helpers.py's save_challenge_log(), fuer die
+# neue Statistik-/Verlaufs-Ansicht im Dashboard (admin_dashboard.html).
+TRICK_HIGHSCORE_LOG_FILE = "fpv_trick_highscore_log.json"
+TRICK_HIGHSCORE_LOG_MAX_ENTRIES = 50
+trick_highscore_log_entries = []
+
+
+def load_trick_highscore_log():
+    try:
+        with open(TRICK_HIGHSCORE_LOG_FILE, 'r') as f:
+            data = json.loads(f.read())
+        if isinstance(data, list):
+            return data[-TRICK_HIGHSCORE_LOG_MAX_ENTRIES:]
+    except Exception:
+        pass
+    return []
+
+
+def save_trick_highscore_log(entries):
+    trimmed = entries[-TRICK_HIGHSCORE_LOG_MAX_ENTRIES:]
+    payload = json.dumps(trimmed)
+    try:
+        tmp_path = TRICK_HIGHSCORE_LOG_FILE + ".tmp"
+        with open(tmp_path, 'w') as f:
+            f.write(payload)
+        try:
+            os.remove(TRICK_HIGHSCORE_LOG_FILE)
+        except Exception:
+            pass
+        os.rename(tmp_path, TRICK_HIGHSCORE_LOG_FILE)
+        return True, ""
+    except Exception as e:
+        try:
+            with open(TRICK_HIGHSCORE_LOG_FILE, 'w') as f:
+                f.write(payload)
+            return True, ""
+        except Exception as e2:
+            return False, f"{e} | fallback={e2}"
+
+
+def _record_trick_highscore_log_entry():
+    """Traegt den AKTUELLEN Inhalt von highscore_data dauerhaft in den
+    Verlauf ein - wird direkt nach jedem erfolgreichen save_highscore()
+    aufgerufen, das highscore_data tatsaechlich mit einem NEUEN Rekord
+    ueberschrieben hat (siehe die drei Aufrufstellen in
+    _send_highscore_name_response()/_send_confirm_highscore_response())."""
+    global trick_highscore_log_entries
+    trick_highscore_log_entries.append({
+        "ts_s": int(time.time()),
+        "timestamp": highscore_data.get("timestamp", "Unbekannt"),
+        "score": highscore_data.get("score", 0),
+        "player": highscore_data.get("player", DEFAULT_PILOT_NAME),
+    })
+    if len(trick_highscore_log_entries) > TRICK_HIGHSCORE_LOG_MAX_ENTRIES:
+        del trick_highscore_log_entries[0: len(trick_highscore_log_entries) - TRICK_HIGHSCORE_LOG_MAX_ENTRIES]
+    save_trick_highscore_log(trick_highscore_log_entries)
+
+
 init_debug_log_file()
 load_highscore()
+trick_highscore_log_entries = load_trick_highscore_log()
 init_status_led()
 load_trick_tuning_profile()
 apply_trick_tuning_profile()
@@ -1766,6 +1828,7 @@ async def _send_highscore_name_response(writer, query_params, body_params):
             debug_console_only(
                 f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
             )
+            _record_trick_highscore_log_entry()
         else:
             error = "Speichern fehlgeschlagen: " + str(save_error)
             debug_console_only("[HIGHSCORE ERROR] " + error)
@@ -1830,6 +1893,7 @@ async def _send_confirm_highscore_response(writer):
             debug_console_only(
                 f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
             )
+            _record_trick_highscore_log_entry()
         else:
             error = "Speichern fehlgeschlagen: " + str(save_error)
             debug_console_only("[HIGHSCORE ERROR] " + error)
@@ -1843,6 +1907,7 @@ async def _send_confirm_highscore_response(writer):
             debug_console_only(
                 f"[HIGHSCORE] Rekord gespeichert (Fallback): {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
             )
+            _record_trick_highscore_log_entry()
         else:
             error = "Speichern fehlgeschlagen: " + str(save_error)
             debug_console_only("[HIGHSCORE ERROR] " + error)
@@ -2104,6 +2169,8 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "perform_emergency_delete_main": _perform_emergency_delete_main,
             "perform_emergency_delete_boot": _perform_emergency_delete_boot,
             "infection_status": _ensure_infection_manager().status,
+            "trick_highscore_log_entries": trick_highscore_log_entries,
+            "save_trick_highscore_log": save_trick_highscore_log,
         },
     )
 

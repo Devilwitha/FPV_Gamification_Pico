@@ -14,7 +14,7 @@ import asyncio
 import json
 import os
 import gc
-from hotspot_common import configure_hotspot, load_hotspot_config
+from hotspot_common import configure_hotspot, load_hotspot_config, load_wlan_config
 from ota_helpers import (
     url_decode,
     parse_query,
@@ -45,8 +45,8 @@ OTA_STAGING_PATH = "ota_staging.tmp"
 # Eigene, schlanke Whitelist fuer source2 (nur Tor/Huegel-Dateien - keine
 # Trick-/Infection-/Profil-Dateien der Haupt-Firmware).
 OTA_ALLOWED_TARGETS = (
-    "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "boot_runtime.py",
-    "ota_helpers.py", "koth_mode.py", "race_mode.py",
+    "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "wlan.conf", "boot_runtime.py",
+    "ota_helpers.py", "github_ota_helpers.py", "koth_mode.py", "race_mode.py",
     "main.py", "index.html",
     "firmware_version.txt",
 )
@@ -57,6 +57,36 @@ ota_total_chunks = 0
 ota_received_chunks = 0
 ota_target_file = "main.py"
 ota_update_active = False
+
+# ==================== GITHUB-OTA ("Nach Updates suchen") ====================
+# Siehe github_ota_helpers.py: verbindet sich kurzzeitig mit wlan.conf,
+# prueft das neueste gatehill.nbo-Release (eigene Release-Reihe, siehe
+# .github/workflows/build-and-release-gatehill.yml) und installiert es bei
+# Bedarf. Gleiches Muster wie source/main.py, hier nur ohne separates
+# misc_routes_helpers.py-Modul (source2 hat nur main.py).
+GITHUB_REPO_OWNER = "Devilwitha"
+GITHUB_REPO_NAME = "FPV_Gamification_Pico"
+GITHUB_OTA_ASSET_NAME = "gatehill.nbo"
+GITHUB_OTA_STAGING_PATH = "github_update.nbo"
+GITHUB_OTA_LED_BLINK_INTERVAL_MS = 2000
+OTA_LED_BLINK_INTERVAL_MS = 90
+github_ota_state = {
+    "active": False,
+    "phase": "idle",
+    "ok": None,
+    "error": "",
+    "progress": 0,
+    "remote_version": "",
+    "restart_pending": False,
+}
+_github_ota_helpers_module = None
+
+status_led = None
+status_led_available = False
+status_led_state = False
+status_led_last_toggle_ms = 0
+ota_led_cycle_start_ms = 0
+github_ota_led_cycle_start_ms = 0
 
 boot_health_marked = False
 system_ready = False
@@ -117,6 +147,140 @@ def _read_firmware_version():
         return "?"
 
 
+FIRMWARE_VERSION = _read_firmware_version()
+
+
+def init_status_led():
+    global status_led, status_led_available
+    try:
+        status_led = machine.Pin("LED", machine.Pin.OUT)
+        status_led_available = True
+        return
+    except Exception:
+        status_led = None
+    try:
+        status_led = machine.Pin(25, machine.Pin.OUT)
+        status_led_available = True
+    except Exception:
+        status_led = None
+        status_led_available = False
+
+
+def _set_status_led(on):
+    global status_led_state
+    if not status_led_available or status_led is None:
+        return
+    status_led_state = bool(on)
+    status_led.value(1 if on else 0)
+
+
+def update_status_led():
+    """LED-Prioritaet: GitHub-Update-Suche (2s an/2s aus) > lokaler Chunk-
+    Upload (90ms an/aus) > dauerhaft an. Siehe source/main.py's gleichnamige
+    Funktion fuer die ausfuehrlichere Begruendung - source2 hat kein
+    Highscore-System, daher entfaellt diese Prioritaetsstufe hier."""
+    global status_led_last_toggle_ms, ota_led_cycle_start_ms, github_ota_led_cycle_start_ms
+    if not status_led_available:
+        return
+    if not system_ready:
+        _set_status_led(False)
+        return
+
+    if github_ota_state["active"]:
+        now = time.ticks_ms()
+        if github_ota_led_cycle_start_ms == 0:
+            github_ota_led_cycle_start_ms = now
+            _set_status_led(True)
+        elif time.ticks_diff(now, github_ota_led_cycle_start_ms) >= GITHUB_OTA_LED_BLINK_INTERVAL_MS:
+            _set_status_led(not status_led_state)
+            github_ota_led_cycle_start_ms = now
+        return
+    else:
+        github_ota_led_cycle_start_ms = 0
+
+    if ota_update_active:
+        now = time.ticks_ms()
+        if ota_led_cycle_start_ms == 0:
+            ota_led_cycle_start_ms = now
+            _set_status_led(True)
+        elif time.ticks_diff(now, ota_led_cycle_start_ms) >= OTA_LED_BLINK_INTERVAL_MS:
+            _set_status_led(not status_led_state)
+            ota_led_cycle_start_ms = now
+        return
+    else:
+        ota_led_cycle_start_ms = 0
+
+    _set_status_led(True)
+
+
+def _github_ota_led_tick():
+    """Schaltet die LED direkt um (2s-Rhythmus), OHNE ueber
+    update_status_led() zu gehen - waehrend github_ota_helpers.py's
+    blockierenden WLAN-/HTTPS-Schleifen laeuft die normale Idle-Loop
+    sowieso nicht (siehe main_async())."""
+    global github_ota_led_cycle_start_ms
+    now = time.ticks_ms()
+    if github_ota_led_cycle_start_ms == 0:
+        github_ota_led_cycle_start_ms = now
+        _set_status_led(True)
+    elif time.ticks_diff(now, github_ota_led_cycle_start_ms) >= GITHUB_OTA_LED_BLINK_INTERVAL_MS:
+        _set_status_led(not status_led_state)
+        github_ota_led_cycle_start_ms = now
+
+
+def _get_github_ota_helpers():
+    global _github_ota_helpers_module
+    if _github_ota_helpers_module is None:
+        import github_ota_helpers as _lazy_github_ota_helpers
+        _github_ota_helpers_module = _lazy_github_ota_helpers
+    return _github_ota_helpers_module
+
+
+def _build_github_ota_deps():
+    return {
+        "log": debug_log,
+        "feed_wdt": _boot_feed_watchdog,
+        "led_tick": _github_ota_led_tick,
+        "load_wlan_config": load_wlan_config,
+        "configure_hotspot": configure_hotspot,
+        "ap_ssid": AP_SSID,
+        "ap_password": AP_PASSWORD,
+        "firmware_version": FIRMWARE_VERSION,
+        "apply_firmware_bundle": apply_firmware_bundle,
+        "repo_owner": GITHUB_REPO_OWNER,
+        "repo_name": GITHUB_REPO_NAME,
+        "asset_name": GITHUB_OTA_ASSET_NAME,
+        "staging_path": GITHUB_OTA_STAGING_PATH,
+        "state": github_ota_state,
+    }
+
+
+async def _run_github_ota_update():
+    global github_ota_led_cycle_start_ms
+    github_ota_state["active"] = True
+    github_ota_state["phase"] = "connecting_wifi"
+    github_ota_state["ok"] = None
+    github_ota_state["error"] = ""
+    github_ota_state["progress"] = 0
+    github_ota_state["restart_pending"] = False
+    github_ota_led_cycle_start_ms = 0
+    try:
+        _get_github_ota_helpers().run_update_check(_build_github_ota_deps())
+    except Exception as e:
+        debug_log(f"[GH-OTA] Unerwarteter Fehler: {e}")
+        github_ota_state["phase"] = "error"
+        github_ota_state["ok"] = False
+        github_ota_state["error"] = str(e)[:120]
+    finally:
+        github_ota_state["active"] = False
+        _set_status_led(True)
+
+    if github_ota_state.get("restart_pending"):
+        await asyncio.sleep_ms(1500)
+        debug_log("[GH-OTA] Update erfolgreich, starte machine.reset()...")
+        machine.reset()
+
+
 async def send_html_file(writer, file_path):
     gc.collect()
     file_size = os.stat(file_path)[6]
@@ -153,6 +317,7 @@ def _json_response(writer, status_line, data):
 # Grenze der Haupt-Firmware zu riskieren.
 koth_manager = KothMode("", debug_log)
 race_manager = RaceMode("", debug_log)
+init_status_led()
 
 
 async def handle_client(reader, writer):
@@ -394,6 +559,55 @@ async def handle_client(reader, writer):
                 except Exception:
                     pass
 
+        elif request_path == '/wlan-config':
+            wlan_cfg = load_wlan_config()
+            _json_response(writer, '200 OK', {"ok": True, "ssid": wlan_cfg.get('ssid', ''), "password": wlan_cfg.get('password', '')})
+
+        elif request_path == '/set-wlan-config' and request_method == 'POST':
+            ssid = body_params.get('ssid', '').strip()
+            password = body_params.get('password', '')
+            error = ''
+            if not ssid or len(ssid) > 32:
+                error = 'SSID muss 1 bis 32 Zeichen lang sein'
+            elif password and (len(password) < 8 or len(password) > 63):
+                error = 'Passwort muss leer (offenes WLAN) oder 8 bis 63 Zeichen lang sein'
+            if error:
+                _json_response(writer, '400 Bad Request', {"ok": False, "error": error})
+            else:
+                try:
+                    temp_path = 'wlan.conf.tmp'
+                    with open(temp_path, 'w') as f:
+                        f.write(json.dumps({"ssid": ssid, "password": password}))
+                    try:
+                        os.remove('wlan.conf')
+                    except Exception:
+                        pass
+                    os.rename(temp_path, 'wlan.conf')
+                    _json_response(writer, '200 OK', {"ok": True, "message": "WLAN gespeichert."})
+                except Exception as e:
+                    _json_response(writer, '500 Internal Server Error', {"ok": False, "error": str(e)})
+
+        elif request_path == '/start-github-update':
+            if github_ota_state["active"]:
+                _json_response(writer, '409 Conflict', {"ok": False, "error": "Update-Suche laeuft bereits"})
+            else:
+                wlan_cfg = load_wlan_config()
+                if not wlan_cfg.get('ssid'):
+                    _json_response(writer, '400 Bad Request', {"ok": False, "error": "Kein WLAN konfiguriert"})
+                else:
+                    _json_response(writer, '200 OK', {"ok": True, "message": "Update-Suche gestartet"})
+                    try:
+                        await writer.drain()
+                    except Exception:
+                        pass
+                    await asyncio.sleep_ms(300)
+                    asyncio.create_task(_run_github_ota_update())
+
+        elif request_path == '/github-update-status':
+            status_payload = dict(github_ota_state)
+            status_payload["firmware_version"] = FIRMWARE_VERSION
+            _json_response(writer, '200 OK', status_payload)
+
         elif request_path == '/restart-pico':
             _json_response(writer, '200 OK', {"ok": True, "message": "Pico startet neu..."})
             if boot_runtime is not None:
@@ -460,9 +674,11 @@ async def main_async():
     _boot_mark_healthy_once()
     system_ready = True
     debug_log("FPV_GateHill (source2) laeuft. WLAN verbinden und http://192.168.4.1 aufrufen.")
+    update_status_led()
     while True:
         _boot_feed_watchdog()
-        await asyncio.sleep_ms(1000)
+        update_status_led()
+        await asyncio.sleep_ms(100)
 
 
 def run():

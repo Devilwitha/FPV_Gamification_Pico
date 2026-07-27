@@ -156,6 +156,7 @@ SOURCE2_FILES_TO_BUNDLE = [
     "hotspot_common.py",
     "boot_runtime.py",
     "ota_helpers.py",
+    "github_ota_helpers.py",
     "koth_mode.py",
     "race_mode.py",
     "index.html",

@@ -7,6 +7,13 @@ HOTSPOT_CONFIG_FILE = "hotspot.conf"
 DEFAULT_HOTSPOT_SSID = "FPV_Gamification_Pico"
 DEFAULT_HOTSPOT_PASSWORD = "drohnenspiel"
 
+# WLAN-Zielnetz fuer die GitHub-Update-Suche (siehe github_ota_helpers.py):
+# getrennt von hotspot.conf, weil es ein FREMDES Netz ist, mit dem sich der
+# Pico zeitweise verbindet - nicht der eigene Access Point. Bewusst NICHT
+# Teil von build_firmware.py's Bundle-Dateiliste, damit ein Firmware-Update
+# das gespeicherte WLAN nicht wieder loescht.
+WLAN_CONFIG_FILE = "wlan.conf"
+
 
 def load_hotspot_config(config_path=HOTSPOT_CONFIG_FILE):
     config = {
@@ -23,6 +30,24 @@ def load_hotspot_config(config_path=HOTSPOT_CONFIG_FILE):
                 config["ssid"] = ssid[:32]
             if len(password) >= 8:
                 config["password"] = password
+    except Exception:
+        pass
+    return config
+
+
+def load_wlan_config(config_path=WLAN_CONFIG_FILE):
+    """Liest das WLAN-Zielnetz fuer die GitHub-Update-Suche. Anders als bei
+    load_hotspot_config() ist ein leeres Passwort hier gueltig (offenes
+    Heimnetz) - nur eine leere SSID gilt als 'nicht konfiguriert'."""
+    config = {"ssid": "", "password": ""}
+    try:
+        with open(config_path, "r") as config_file:
+            values = json.loads(config_file.read())
+        if isinstance(values, dict):
+            ssid = str(values.get("ssid") or "").strip()
+            password = str(values.get("password") or "")
+            config["ssid"] = ssid[:32]
+            config["password"] = password
     except Exception:
         pass
     return config

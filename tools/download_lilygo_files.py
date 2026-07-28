@@ -136,9 +136,10 @@ def download_exports(port, output_dir):
 def main():
     print("=== SKRIPT START (VERSION SKRIPT-ORDNER) ===")
 
-    # Pfad des Ordners ermitteln, in dem DIESE .py Datei liegt
-    script_directory = Path(__file__).resolve().parent
-    default_dir = script_directory / "FPV_LilyGO"
+    # Dieses Skript liegt im tools/-Unterordner - FPV_LilyGO/ liegt aber im
+    # Projekt-Root (Elternordner von tools/), daher .parent.parent.
+    project_root = Path(__file__).resolve().parent.parent
+    default_dir = project_root / "FPV_LilyGO"
 
     parser = argparse.ArgumentParser(
         description="Laedt FPV-Session- und Debugdateien seriell vom LilyGO herunter."

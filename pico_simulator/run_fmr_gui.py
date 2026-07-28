@@ -29,6 +29,15 @@ class SimulatorGui(tk.Tk):
         self.after(400, self._poll_process)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _apply_firmware_selection(self):
+        # "source" -> source/ + data/ (Hauptfirmware), "source2" -> source2/ + data2/
+        # (eigenstaendige Tor/Huegel-Firmware). data2/ wird beim Start automatisch
+        # als Klon von source2/ angelegt, falls es noch nicht existiert (siehe
+        # clone_source_to_data in run_firmware.py).
+        suffix = "2" if self.firmware_var.get() == "source2" else ""
+        self.source_var.set(os.path.join(self.project_root, "source" + suffix))
+        self.data_var.set(os.path.join(self.project_root, "data" + suffix))
+
     def _build_ui(self):
         frame = ttk.Frame(self, padding=12)
         frame.pack(fill="both", expand=True)
@@ -63,6 +72,18 @@ class SimulatorGui(tk.Tk):
         ttk.Label(frame, text="Port").grid(row=row, column=0, sticky="w", pady=(8, 0))
         self.port_var = tk.StringVar(value="8080")
         ttk.Entry(frame, textvariable=self.port_var).grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+
+        row += 1
+        ttk.Label(frame, text="Firmware").grid(row=row, column=0, sticky="w", pady=(8, 0))
+        self.firmware_var = tk.StringVar(value="source")
+        firmware_cb = ttk.Combobox(
+            frame,
+            textvariable=self.firmware_var,
+            values=["source", "source2"],
+            state="readonly",
+        )
+        firmware_cb.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+        firmware_cb.bind("<<ComboboxSelected>>", lambda _e: self._apply_firmware_selection())
 
         row += 1
         ttk.Label(frame, text="Source Dir").grid(row=row, column=0, sticky="w", pady=(8, 0))

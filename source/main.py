@@ -26,11 +26,14 @@ from ota_helpers import (
 # EIN eigener, spaeterer Kompilierschritt, NACHDEM `import main` bereits
 # erfolgreich zurueckgekehrt ist.
 try:
-    from hotspot_common import configure_hotspot, load_hotspot_config
+    from hotspot_common import configure_hotspot, load_hotspot_config, load_wlan_config
 except Exception:
     # Kompakter Fallback fuer den Fall, dass hotspot_common.py fehlt.
     def load_hotspot_config():
         return {"ssid": "FPV_Gamification_Pico", "password": "drohnenspiel"}
+
+    def load_wlan_config():
+        return {"ssid": "", "password": ""}
 
     def configure_hotspot(ssid, password="", debug_log=None, serial_debug=False):
         ap = network.WLAN(network.AP_IF)
@@ -214,12 +217,14 @@ status_led_state = False
 status_led_last_toggle_ms = 0
 system_ready = False
 ota_led_cycle_start_ms = 0
+github_ota_led_cycle_start_ms = 0
 boot_health_marked = False
 _idcard_route_handler = None
 _misc_route_handler = None
 _challenge_route_handler = None
 _infection_route_handler = None
 _upload_helpers_module = None
+_github_ota_helpers_module = None
 infection_manager = None
 infection_task = None
 # Developer-Modus (Schiebeschalter auf der System-Seite): standardmaessig AUS,
@@ -243,8 +248,9 @@ FIRMWARE_VERSION_FILE = "firmware_version.txt"
 # Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
 # keine beliebigen Dateinamen vom Client).
 OTA_ALLOWED_TARGETS = (
-    "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "boot_runtime.py",
+    "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "wlan.conf", "boot_runtime.py",
     "ota_helpers.py",
+    "github_ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
     "upload_helpers.py",
@@ -265,6 +271,27 @@ OTA_ALLOWED_TARGETS = (
 OTA_BUNDLE_TARGET = "firmware.nbo"
 OTA_LANG_BUNDLE_TARGET = "lang.pak"
 OTA_BUNDLE_MAGIC = b"FPVBNDL1"
+
+# ==================== GITHUB-OTA ("Nach Updates suchen") ====================
+# Siehe github_ota_helpers.py: verbindet sich kurzzeitig mit wlan.conf,
+# prueft die neueste GitHub-Release und installiert firmware.nbo bei Bedarf.
+GITHUB_REPO_OWNER = "Devilwitha"
+GITHUB_REPO_NAME = "FPV_Gamification_Pico"
+GITHUB_OTA_ASSET_NAME = "firmware.nbo"
+GITHUB_OTA_STAGING_PATH = "github_update.nbo"
+GITHUB_OTA_LED_BLINK_INTERVAL_MS = 2000
+# Als Dict statt Einzel-Globals gehalten, damit es unveraendert (by
+# reference) an github_ota_helpers.run_update_check() durchgereicht werden
+# kann (gleiches Muster wie main.py's ota_state fuer upload_helpers.py).
+github_ota_state = {
+    "active": False,
+    "phase": "idle",
+    "ok": None,
+    "error": "",
+    "progress": 0,
+    "remote_version": "",
+    "restart_pending": False,
+}
 
 # Versionsnummer der Firmware (Format X.Y.Z), wird von build_firmware.py bei
 # jedem Bundle-Build automatisch um 1 erhoeht und in firmware_version.txt
@@ -602,13 +629,32 @@ def _set_status_led(on):
 
 
 def update_status_led():
-    global status_led_last_toggle_ms, ota_led_cycle_start_ms
+    global status_led_last_toggle_ms, ota_led_cycle_start_ms, github_ota_led_cycle_start_ms
     if not status_led_available:
         return
 
     if not system_ready:
         _set_status_led(False)
         return
+
+    # Hoechste Prioritaet: GitHub-Update-Suche laeuft (2s an/2s aus). Dient
+    # nur als Fallback/Cosmetic fuer die kurzen Momente, in denen
+    # telemetry_loop() ueberhaupt zum Zug kommt - die eigentliche Garantie
+    # fuer den Rhythmus liefert der led_tick()-Callback direkt in
+    # github_ota_helpers.py's blockierenden Schleifen (siehe dortiger
+    # Docstring: waehrend WLAN-Verbindungsaufbau/Download laeuft
+    # telemetry_loop() gar nicht).
+    if github_ota_state["active"]:
+        now = time.ticks_ms()
+        if github_ota_led_cycle_start_ms == 0:
+            github_ota_led_cycle_start_ms = now
+            _set_status_led(True)
+        elif time.ticks_diff(now, github_ota_led_cycle_start_ms) >= GITHUB_OTA_LED_BLINK_INTERVAL_MS:
+            _set_status_led(not status_led_state)
+            github_ota_led_cycle_start_ms = now
+        return
+    else:
+        github_ota_led_cycle_start_ms = 0
 
     if ota_state["update_active"]:
         now = time.ticks_ms()
@@ -859,6 +905,87 @@ async def _perform_emergency_delete_boot(writer):
     await _get_upload_helpers().handle_emergency_delete_boot(writer, _build_upload_deps())
 
 
+def _get_github_ota_helpers():
+    """Lazy-Import fuer github_ota_helpers.py ("Nach Updates suchen") -
+    gleiches Muster/gleicher Grund wie _get_upload_helpers(). Wird erst beim
+    ersten tatsaechlichen /start-github-update-Request importiert."""
+    global _github_ota_helpers_module
+    if _github_ota_helpers_module is None:
+        import github_ota_helpers as _lazy_github_ota_helpers
+        _github_ota_helpers_module = _lazy_github_ota_helpers
+    return _github_ota_helpers_module
+
+
+def _github_ota_led_tick():
+    """Schaltet die LED direkt um (2s-Rhythmus), OHNE ueber
+    update_status_led()/telemetry_loop() zu gehen - waehrend
+    github_ota_helpers.py's blockierenden WLAN-/HTTPS-Schleifen laeuft die
+    normale Task sowieso nicht (siehe dortiger Docstring)."""
+    global github_ota_led_cycle_start_ms
+    now = time.ticks_ms()
+    if github_ota_led_cycle_start_ms == 0:
+        github_ota_led_cycle_start_ms = now
+        _set_status_led(True)
+    elif time.ticks_diff(now, github_ota_led_cycle_start_ms) >= GITHUB_OTA_LED_BLINK_INTERVAL_MS:
+        _set_status_led(not status_led_state)
+        github_ota_led_cycle_start_ms = now
+
+
+def _build_github_ota_deps():
+    """Baut das deps-Dict fuer github_ota_helpers.run_update_check() -
+    siehe dortige Signatur/Docstring."""
+    return {
+        "log": debug_log,
+        "feed_wdt": _boot_feed_watchdog,
+        "led_tick": _github_ota_led_tick,
+        "load_wlan_config": load_wlan_config,
+        "configure_hotspot": configure_hotspot,
+        "ap_ssid": AP_SSID,
+        "ap_password": AP_PASSWORD,
+        "firmware_version": FIRMWARE_VERSION,
+        "apply_firmware_bundle": apply_firmware_bundle,
+        "repo_owner": GITHUB_REPO_OWNER,
+        "repo_name": GITHUB_REPO_NAME,
+        "asset_name": GITHUB_OTA_ASSET_NAME,
+        "staging_path": GITHUB_OTA_STAGING_PATH,
+        "state": github_ota_state,
+    }
+
+
+async def _run_github_ota_update():
+    """Wird per asyncio.create_task() aus der /start-github-update Route
+    gestartet, NACHDEM deren HTTP-Antwort bereits verschickt wurde (siehe
+    dortiger sleep_ms-Kommentar). github_ota_helpers.run_update_check() ist
+    komplett synchron/blockierend (siehe dessen Docstring) - der Aufruf
+    hier blockiert daher den kompletten Event-Loop (Webserver, Telemetrie)
+    fuer die Dauer der WLAN-Verbindung/des Downloads. Das ist beabsichtigt:
+    waehrenddessen ist der eigene Access Point ohnehin deaktiviert, es gibt
+    also niemanden, der bedient werden muesste."""
+    global github_ota_led_cycle_start_ms
+    github_ota_state["active"] = True
+    github_ota_state["phase"] = "connecting_wifi"
+    github_ota_state["ok"] = None
+    github_ota_state["error"] = ""
+    github_ota_state["progress"] = 0
+    github_ota_state["restart_pending"] = False
+    github_ota_led_cycle_start_ms = 0
+    try:
+        _get_github_ota_helpers().run_update_check(_build_github_ota_deps())
+    except Exception as e:
+        debug_log(f"[GH-OTA] Unerwarteter Fehler: {e}")
+        github_ota_state["phase"] = "error"
+        github_ota_state["ok"] = False
+        github_ota_state["error"] = str(e)[:120]
+    finally:
+        github_ota_state["active"] = False
+        _set_status_led(True)
+
+    if github_ota_state.get("restart_pending"):
+        await asyncio.sleep_ms(1500)
+        debug_log("[GH-OTA] Update erfolgreich, starte machine.reset()...")
+        machine.reset()
+
+
 def build_session_txt_content():
     strings = {}
     fallback = 'en'
@@ -1010,8 +1137,70 @@ def save_highscore():
             return False, f"{e} | fallback={e2}"
 
 
+# Dauerhafter Verlauf ERREICHTER Trick-Highscores (im Gegensatz zu
+# highscore_data, das nur den AKTUELLEN Rekord haelt und bei jedem neuen
+# Rekord ueberschrieben wird) - gleiches Atomic-Write-Muster wie
+# save_highscore()/challenge_helpers.py's save_challenge_log(), fuer die
+# neue Statistik-/Verlaufs-Ansicht im Dashboard (admin_dashboard.html).
+TRICK_HIGHSCORE_LOG_FILE = "fpv_trick_highscore_log.json"
+TRICK_HIGHSCORE_LOG_MAX_ENTRIES = 50
+trick_highscore_log_entries = []
+
+
+def load_trick_highscore_log():
+    try:
+        with open(TRICK_HIGHSCORE_LOG_FILE, 'r') as f:
+            data = json.loads(f.read())
+        if isinstance(data, list):
+            return data[-TRICK_HIGHSCORE_LOG_MAX_ENTRIES:]
+    except Exception:
+        pass
+    return []
+
+
+def save_trick_highscore_log(entries):
+    trimmed = entries[-TRICK_HIGHSCORE_LOG_MAX_ENTRIES:]
+    payload = json.dumps(trimmed)
+    try:
+        tmp_path = TRICK_HIGHSCORE_LOG_FILE + ".tmp"
+        with open(tmp_path, 'w') as f:
+            f.write(payload)
+        try:
+            os.remove(TRICK_HIGHSCORE_LOG_FILE)
+        except Exception:
+            pass
+        os.rename(tmp_path, TRICK_HIGHSCORE_LOG_FILE)
+        return True, ""
+    except Exception as e:
+        try:
+            with open(TRICK_HIGHSCORE_LOG_FILE, 'w') as f:
+                f.write(payload)
+            return True, ""
+        except Exception as e2:
+            return False, f"{e} | fallback={e2}"
+
+
+def _record_trick_highscore_log_entry():
+    """Traegt den AKTUELLEN Inhalt von highscore_data dauerhaft in den
+    Verlauf ein - wird direkt nach jedem erfolgreichen save_highscore()
+    aufgerufen, das highscore_data tatsaechlich mit einem NEUEN Rekord
+    ueberschrieben hat (siehe die drei Aufrufstellen in
+    _send_highscore_name_response()/_send_confirm_highscore_response())."""
+    global trick_highscore_log_entries
+    trick_highscore_log_entries.append({
+        "ts_s": int(time.time()),
+        "timestamp": highscore_data.get("timestamp", "Unbekannt"),
+        "score": highscore_data.get("score", 0),
+        "player": highscore_data.get("player", DEFAULT_PILOT_NAME),
+    })
+    if len(trick_highscore_log_entries) > TRICK_HIGHSCORE_LOG_MAX_ENTRIES:
+        del trick_highscore_log_entries[0: len(trick_highscore_log_entries) - TRICK_HIGHSCORE_LOG_MAX_ENTRIES]
+    save_trick_highscore_log(trick_highscore_log_entries)
+
+
 init_debug_log_file()
 load_highscore()
+trick_highscore_log_entries = load_trick_highscore_log()
 init_status_led()
 load_trick_tuning_profile()
 apply_trick_tuning_profile()
@@ -1639,6 +1828,7 @@ async def _send_highscore_name_response(writer, query_params, body_params):
             debug_console_only(
                 f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
             )
+            _record_trick_highscore_log_entry()
         else:
             error = "Speichern fehlgeschlagen: " + str(save_error)
             debug_console_only("[HIGHSCORE ERROR] " + error)
@@ -1703,6 +1893,7 @@ async def _send_confirm_highscore_response(writer):
             debug_console_only(
                 f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
             )
+            _record_trick_highscore_log_entry()
         else:
             error = "Speichern fehlgeschlagen: " + str(save_error)
             debug_console_only("[HIGHSCORE ERROR] " + error)
@@ -1716,6 +1907,7 @@ async def _send_confirm_highscore_response(writer):
             debug_console_only(
                 f"[HIGHSCORE] Rekord gespeichert (Fallback): {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
             )
+            _record_trick_highscore_log_entry()
         else:
             error = "Speichern fehlgeschlagen: " + str(save_error)
             debug_console_only("[HIGHSCORE ERROR] " + error)
@@ -1819,7 +2011,7 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
         await send_html_file(writer, ADMIN_INFECTION_HTML_PATH)
         return True
 
-    if request_path.startswith('/infection-'):
+    if request_path.startswith('/infection-') or request_path.startswith('/lobby-'):
         if _infection_route_handler is None:
             from infection_mode import handle_infection_route as _lazy_infection_route_handler
             _infection_route_handler = _lazy_infection_route_handler
@@ -1832,6 +2024,9 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             _ensure_infection_manager(),
         ):
             return True
+
+    import gmr
+    if await gmr.handle_admin_and_routes(writer, request_path, request_method, query_params, body_params): return True
 
     if request_path == '/challenges-view':
         await send_html_file(writer, CHALLENGES_VIEW_HTML_PATH)
@@ -1974,6 +2169,8 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "perform_emergency_delete_main": _perform_emergency_delete_main,
             "perform_emergency_delete_boot": _perform_emergency_delete_boot,
             "infection_status": _ensure_infection_manager().status,
+            "trick_highscore_log_entries": trick_highscore_log_entries,
+            "save_trick_highscore_log": save_trick_highscore_log,
         },
     )
 
@@ -2075,7 +2272,51 @@ async def handle_client(reader, writer):
 
         elif request_path == '/restart-pico':
             await _get_upload_helpers().handle_restart_pico(writer, _build_upload_deps())
-        
+
+        elif request_path == '/start-github-update':
+            if github_ota_state["active"]:
+                payload = json.dumps({"ok": False, "error": "Update-Suche laeuft bereits"}).encode('utf-8')
+                writer.write(b'HTTP/1.1 409 Conflict\r\n')
+                writer.write(b'Content-Type: application/json\r\n')
+                writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+                writer.write(b'Connection: close\r\n\r\n')
+                writer.write(payload)
+            else:
+                wlan_cfg = load_wlan_config()
+                if not wlan_cfg.get('ssid'):
+                    payload = json.dumps({"ok": False, "error": "Kein WLAN konfiguriert (siehe System-Seite)"}).encode('utf-8')
+                    writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+                    writer.write(b'Content-Type: application/json\r\n')
+                    writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(payload)
+                else:
+                    payload = json.dumps({"ok": True, "message": "Update-Suche gestartet"}).encode('utf-8')
+                    writer.write(b'HTTP/1.1 200 OK\r\n')
+                    writer.write(b'Content-Type: application/json\r\n')
+                    writer.write(b'Cache-Control: no-store\r\n')
+                    writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+                    writer.write(b'Connection: close\r\n\r\n')
+                    writer.write(payload)
+                    # Antwort MUSS den Client erreichen, bevor der Access
+                    # Point gleich deaktiviert wird (gleiche Begruendung wie
+                    # der sleep_ms() vor machine.reset() in upload_helpers.py).
+                    await writer.drain()
+                    await asyncio.sleep_ms(300)
+                    asyncio.create_task(_run_github_ota_update())
+
+        elif request_path == '/github-update-status':
+            status_payload = dict(github_ota_state)
+            status_payload["firmware_version"] = FIRMWARE_VERSION
+            payload = json.dumps(status_payload).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+            writer.write(b'Pragma: no-cache\r\n')
+            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(payload)
+
         elif await _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
             pass
 
@@ -2128,6 +2369,8 @@ async def main_async():
 
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
     infection_task = asyncio.create_task(_ensure_infection_manager().run())
+    import gmr
+    gmr.start_tasks()
     _boot_mark_healthy_once()
     system_ready = True
     status_led_last_toggle_ms = time.ticks_ms()

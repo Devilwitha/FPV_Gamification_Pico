@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FPV GateHill - Tor / Huegel Konfiguration</title>
+<style>
+:root{--bg:#0a0c12;--panel:#141b25;--section:#1a2637;--line:#335174;--text:#e8f0f8;--muted:#9fb4cb;--koth:#e6a23c;--race:#2980b9;--green:#2cb67d;--red:#e74c3c}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--text);margin:0;padding:12px;font-family:monospace}
+.c{max-width:760px;margin:0 auto;background:var(--panel);padding:20px;border:2px solid var(--line);border-radius:8px}
+h1{color:var(--text);font-size:1.3em;margin:0 0 4px}
+.sub{color:var(--muted);font-size:.82em;margin:0 0 16px}
+.s{background:var(--section);padding:15px;border:1px solid var(--line);border-radius:8px;margin:10px 0}
+.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}
+.s.koth{border-left:4px solid var(--koth)}
+.s.race{border-left:4px solid var(--race)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}
+.st{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.88em}
+.st b{text-align:right;overflow-wrap:anywhere}
+.role{display:flex;align-items:center;gap:9px;font-weight:bold}
+.dot{width:10px;height:10px;border-radius:50%;background:#677}
+.dot.hill,.dot.gate_a,.dot.gate_b{background:var(--koth);box-shadow:0 0 10px var(--koth)}
+.dot.player,.dot.racer{background:var(--green);box-shadow:0 0 10px var(--green)}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.field{display:flex;flex-direction:column;gap:5px;font-size:.8em;color:var(--muted)}
+input,select{width:100%;background:#0b1320;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:9px;font-family:monospace}
+.toggleline{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.toggle{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:var(--line);transition:.2s;border-radius:24px}
+.slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:var(--text);transition:.2s;border-radius:50%}
+input:checked+.slider{background:var(--koth)}
+input:checked+.slider:before{transform:translateX(20px)}
+.hint{color:var(--muted);font-size:.76em;margin-top:10px;line-height:1.4}
+.buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.b{background:var(--koth);color:#fff;padding:9px 14px;border:0;border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace}
+.b.race{background:var(--race)}
+.b.stop{background:#555}
+.b.grey{background:#555}
+.b:hover{filter:brightness(1.1)}
+.msg{margin-top:8px;font-size:.82em;color:var(--muted)}
+.lb,.lap{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:.85em}
+input[type=file]{padding:8px}
+.pbwrap{display:none;margin:10px 0;height:20px;background:#0b1320;border:1px solid var(--line);border-radius:4px;overflow:hidden;position:relative}
+.pbbar{height:100%;width:0%;background:var(--race);transition:width .15s ease}
+.pbtxt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.72em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
+.st2{margin-top:8px;padding:10px;border-radius:4px;display:none;font-size:.85em}
+.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}
+.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}
+</style>
+</head>
+<body>
+<div class="c">
+<h1>FPV GateHill</h1>
+<p class="sub">Eigenstaendige Tor-/Huegel-Firmware (source2) - konfiguriere hier King of the Hill und/oder Race fuer diesen Pico.</p>
+
+<div class="s koth">
+<h2>King of the Hill - Live-Status</h2>
+<div class="grid">
+<div class="st"><span>Zustand</span><b class="role"><i id="k_dot" class="dot"></i><span id="k_role">-</span></b></div>
+<div class="st"><span>Restzeit</span><b id="k_remaining">-</b></div>
+<div class="st"><span>Letztes Ereignis</span><b id="k_event">-</b></div>
+<div class="st"><span>Signalstaerke</span><b id="k_rssi">-</b></div>
+<div class="st"><span>Empfang zum Huegel</span><b id="k_inrange">-</b></div>
+<div class="st"><span>Punktestand</span><b id="k_score">0</b></div>
+<div class="st"><span>Node ID</span><b id="k_node">-</b></div>
+</div>
+</div>
+<form id="k_config" class="s koth">
+<h2>King of the Hill - Einstellungen</h2>
+<div class="toggleline"><span>Modus aktivieren</span><label class="toggle"><input id="k_enabled" type="checkbox"><span class="slider"></span></label></div>
+<div class="fields" style="margin-top:12px">
+<label class="field"><span>Rolle</span><select id="k_role_select"><option value="player">Spieler</option><option value="hill">Huegel</option></select></label>
+<label class="field"><span>Rundendauer (Sek.)</span><input id="k_round_seconds" type="number" min="30" max="3600"></label>
+<label class="field"><span>Naeheschwelle RSSI (dBm)</span><input id="k_rssi_threshold" type="number" min="-95" max="-20"></label>
+<label class="field"><span>Punkte pro Sekunde</span><input id="k_points_per_second" type="number" min="0.1" max="100" step="0.1"></label>
+</div>
+<div class="hint">Ein Pico ist der Huegel und sendet einen BLE-Beacon. Alle Spieler-Picos sammeln Punkte, solange sie Empfang zum Huegel haben. Auf allen Picos dieselbe Rundendauer/Naeheschwelle einstellen.</div>
+<div class="buttons"><button class="b" type="submit">Speichern &amp; Runde starten</button><button class="b stop" type="button" onclick="stopKoth()">Runde stoppen</button></div>
+<div id="k_msg" class="msg"></div>
+</form>
+<section class="s koth">
+<h2>Bestenliste</h2>
+<div id="k_leaderboard"></div>
+</section>
+
+<div class="s race">
+<h2>Race - Live-Status</h2>
+<div class="grid">
+<div class="st"><span>Zustand</span><b class="role"><i id="r_dot" class="dot"></i><span id="r_role">-</span></b></div>
+<div class="st"><span>Letztes Ereignis</span><b id="r_event">-</b></div>
+<div class="st"><span>Wartet auf</span><b id="r_waiting">-</b></div>
+<div class="st"><span>Runde</span><b id="r_lapprogress">-</b></div>
+<div class="st"><span>Tor A</span><b id="r_gatea">-</b></div>
+<div class="st"><span>Tor B</span><b id="r_gateb">-</b></div>
+<div class="st"><span>Letzte Runde</span><b id="r_lastlap">-</b></div>
+<div class="st"><span>Beste Runde</span><b id="r_bestlap">-</b></div>
+<div class="st"><span>Gesamtzeit</span><b id="r_total">-</b></div>
+<div class="st"><span>Node ID</span><b id="r_node">-</b></div>
+</div>
+</div>
+<form id="r_config" class="s race">
+<h2>Race - Einstellungen</h2>
+<div class="toggleline"><span>Modus aktivieren</span><label class="toggle"><input id="r_enabled" type="checkbox"><span class="slider"></span></label></div>
+<div class="fields" style="margin-top:12px">
+<label class="field"><span>Rolle</span><select id="r_role_select"><option value="racer">Rennfahrer</option><option value="gate_a">Tor A</option><option value="gate_b">Tor B</option></select></label>
+<label class="field"><span>Rundenzahl</span><input id="r_laps" type="number" min="1" max="99"></label>
+<label class="field"><span>Naeheschwelle RSSI (dBm)</span><input id="r_rssi_threshold" type="number" min="-95" max="-20"></label>
+<label class="field"><span>Sperrzeit (Sek.)</span><input id="r_cooldown_seconds" type="number" min="1" max="30"></label>
+</div>
+<div class="hint">Zwei Picos werden als Tor A und Tor B aufgestellt und senden nur einen BLE-Beacon. Ein dritter Pico (Rennfahrer) misst die Zeit zwischen dem Passieren von Tor A und Tor B, fuer die eingestellte Rundenzahl.</div>
+<div class="buttons"><button class="b race" type="submit">Speichern &amp; Starten</button><button class="b stop" type="button" onclick="stopRace()">Stoppen</button></div>
+<div id="r_msg" class="msg"></div>
+</form>
+<section class="s race">
+<h2>Rundenzeiten</h2>
+<div id="r_laphistory"></div>
+</section>
+
+<div class="s">
+<h2>System / Firmware-Update</h2>
+<div class="grid">
+<div class="st"><span>SSID</span><b id="sys_ssid">-</b></div>
+<div class="st"><span>IP-Adresse</span><b id="sys_ip">-</b></div>
+<div class="st"><span>Freier Speicher</span><b id="sys_mem">-</b></div>
+<div class="st"><span>Firmware-Version</span><b id="sys_version">-</b></div>
+</div>
+<div style="color:var(--muted);font-size:.78em;margin:10px 0 6px">Erlaubt: main.py, index.html, koth_mode.py, race_mode.py - oder ein komplettes <b>gatehill.nbo</b> Bundle (siehe build_firmware.py).</div>
+<input type="file" id="f" accept=".py,.html,.nbo">
+<div id="fi" style="color:var(--muted);font-size:0.85em">Datei waehlen...</div>
+<div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
+<div id="upmsg" class="st2"></div>
+<div class="buttons"><button class="b grey" onclick="doUpload()">Hochladen</button><button class="b grey" onclick="doRestart()">Neustart</button></div>
+<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+<h2 style="margin-top:0">WLAN fuer Update-Suche</h2>
+<div class="fields">
+<label class="field"><span>SSID</span><input id="wlanSsid" maxlength="32" autocomplete="off"></label>
+<label class="field"><span>Passwort</span><input id="wlanPassword" type="password" maxlength="63" autocomplete="new-password"></label>
+</div>
+<div class="buttons"><button class="b grey" onclick="saveWlan()">WLAN speichern</button></div>
+<div id="wlanMsg" class="msg"></div>
+<div class="hint">Wird nur fuer "Nach Updates suchen" genutzt. Der Pico verbindet sich damit kurzzeitig, um bei GitHub nach einer neuen gatehill.nbo-Firmware zu suchen.</div>
+<div class="buttons" style="margin-top:14px"><button class="b" id="ghBtn" onclick="startUpdateSearch()">&#128269; Nach Updates suchen</button></div>
+<div id="ghStatus" class="msg"></div>
+</div>
+</div>
+</div>
+<script>
+function fmt(sec){sec=Math.max(0,Number(sec)||0);const m=Math.floor(sec/60),s=sec%60;return m+':'+String(s).padStart(2,'0')}
+function fmtMs(ms){if(ms===null||ms===undefined)return '-';return (Number(ms)/1000).toFixed(2)+'s'}
+
+let kLoaded=false;
+function showKothLeaderboard(d){const list=document.getElementById('k_leaderboard'),entries=Array.isArray(d.leaderboard)?d.leaderboard:[];list.replaceChildren();if(!entries.length){const row=document.createElement('div');row.className='hint';row.innerText='Noch keine Spieler erkannt.';list.appendChild(row);return}entries.forEach((e,i)=>{const row=document.createElement('div');row.className='lb';const label=document.createElement('span');label.innerText=(i+1)+'. '+(e.name||('node-'+e.id));const score=document.createElement('b');score.innerText=e.score;row.append(label,score);list.appendChild(row)})}
+function showKoth(d){const role=d.running?d.role:'inactive',dot=document.getElementById('k_dot');const labels={hill:'Huegel',player:'Spieler',inactive:'Inaktiv'};document.getElementById('k_role').innerText=labels[role]||role;dot.className='dot '+role;document.getElementById('k_remaining').innerText=fmt(d.remaining_seconds);document.getElementById('k_event').innerText=d.last_event||'-';document.getElementById('k_rssi').innerText=d.last_rssi===null||d.last_rssi===undefined?'-':d.last_rssi+' dBm';document.getElementById('k_inrange').innerText=d.in_range?'Ja':'Nein';document.getElementById('k_score').innerText=d.score||0;document.getElementById('k_node').innerText=d.node_id||'-';showKothLeaderboard(d);if(!kLoaded&&d.config){document.getElementById('k_enabled').checked=!!d.config.enabled;document.getElementById('k_role_select').value=d.config.role;document.getElementById('k_round_seconds').value=d.config.round_seconds;document.getElementById('k_rssi_threshold').value=d.config.rssi_threshold;document.getElementById('k_points_per_second').value=d.config.points_per_second;kLoaded=true}}
+function pollKoth(){fetch('/koth-data',{cache:'no-store'}).then(r=>r.json()).then(showKoth).catch(()=>{}).finally(()=>setTimeout(pollKoth,1000))}
+function kothBody(){const p=new URLSearchParams();p.set('role',document.getElementById('k_role_select').value);p.set('round_seconds',document.getElementById('k_round_seconds').value);p.set('rssi_threshold',document.getElementById('k_rssi_threshold').value);p.set('points_per_second',document.getElementById('k_points_per_second').value);p.set('enabled',document.getElementById('k_enabled').checked?'1':'0');return p}
+document.getElementById('k_config').onsubmit=e=>{e.preventDefault();document.getElementById('k_msg').innerText='Speichere...';fetch('/koth-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:kothBody()}).then(r=>r.json()).then(d=>{if(!d.ok)throw new Error(d.error||'Fehler');showKoth(d);document.getElementById('k_msg').innerText='Gespeichert.'}).catch(e=>document.getElementById('k_msg').innerText=e.message)};
+function stopKoth(){fetch('/koth-stop',{method:'POST'}).then(r=>r.json()).then(showKoth).catch(()=>{});document.getElementById('k_enabled').checked=false;document.getElementById('k_msg').innerText='Runde beendet.'}
+
+let rLoaded=false;
+function showRaceLapHistory(d){const list=document.getElementById('r_laphistory'),laps=Array.isArray(d.lap_times_ms)?d.lap_times_ms:[];list.replaceChildren();if(!laps.length){const row=document.createElement('div');row.className='hint';row.innerText='Noch keine Runde abgeschlossen.';list.appendChild(row);return}laps.forEach((ms,i)=>{const row=document.createElement('div');row.className='lap';const label=document.createElement('span');label.innerText='Runde '+(i+1);const val=document.createElement('b');val.innerText=fmtMs(ms);row.append(label,val);list.appendChild(row)})}
+function showRace(d){const role=d.running?d.role:'inactive',dot=document.getElementById('r_dot');const labels={racer:'Rennfahrer',gate_a:'Tor A',gate_b:'Tor B',inactive:'Inaktiv'};document.getElementById('r_role').innerText=labels[role]||role;dot.className='dot '+role;document.getElementById('r_event').innerText=d.last_event||'-';document.getElementById('r_waiting').innerText=d.waiting_for?('Tor '+d.waiting_for):'-';document.getElementById('r_lapprogress').innerText=d.finished?'Fertig':(d.lap_index+1)+' / '+d.laps_total;document.getElementById('r_gatea').innerText=d.gate_a_in_range?'In Reichweite':'Ausser Reichweite';document.getElementById('r_gateb').innerText=d.gate_b_in_range?'In Reichweite':'Ausser Reichweite';document.getElementById('r_lastlap').innerText=fmtMs(d.last_lap_ms);document.getElementById('r_bestlap').innerText=fmtMs(d.best_lap_ms);document.getElementById('r_total').innerText=fmtMs(d.total_ms);document.getElementById('r_node').innerText=d.node_id||'-';showRaceLapHistory(d);if(!rLoaded&&d.config){document.getElementById('r_enabled').checked=!!d.config.enabled;document.getElementById('r_role_select').value=d.config.role;document.getElementById('r_laps').value=d.config.laps;document.getElementById('r_rssi_threshold').value=d.config.rssi_threshold;document.getElementById('r_cooldown_seconds').value=d.config.cooldown_seconds;rLoaded=true}}
+function pollRace(){fetch('/race-data',{cache:'no-store'}).then(r=>r.json()).then(showRace).catch(()=>{}).finally(()=>setTimeout(pollRace,500))}
+function raceBody(){const p=new URLSearchParams();p.set('role',document.getElementById('r_role_select').value);p.set('laps',document.getElementById('r_laps').value);p.set('rssi_threshold',document.getElementById('r_rssi_threshold').value);p.set('cooldown_seconds',document.getElementById('r_cooldown_seconds').value);p.set('enabled',document.getElementById('r_enabled').checked?'1':'0');return p}
+document.getElementById('r_config').onsubmit=e=>{e.preventDefault();document.getElementById('r_msg').innerText='Speichere...';fetch('/race-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:raceBody()}).then(r=>r.json()).then(d=>{if(!d.ok)throw new Error(d.error||'Fehler');showRace(d);document.getElementById('r_msg').innerText='Gespeichert.'}).catch(e=>document.getElementById('r_msg').innerText=e.message)};
+function stopRace(){fetch('/race-stop',{method:'POST'}).then(r=>r.json()).then(showRace).catch(()=>{});document.getElementById('r_enabled').checked=false;document.getElementById('r_msg').innerText='Beendet.'}
+
+function refreshSystemInfo(){fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{document.getElementById('sys_ssid').innerText=d.ssid||'-';document.getElementById('sys_ip').innerText=d.ip||'-';document.getElementById('sys_mem').innerText=(d.mem_free>=0?(d.mem_free/1024).toFixed(1)+' KB':'-');document.getElementById('sys_version').innerText=d.firmware_version||'-'}).catch(()=>{})}
+
+document.getElementById('f').addEventListener('change',()=>{const f=document.getElementById('f').files[0];document.getElementById('fi').innerText=f?f.name:'Datei waehlen...'});
+
+function doRestart(){fetch('/restart-pico',{method:'POST'}).then(r=>r.json()).then(d=>{const el=document.getElementById('upmsg');el.className='st2 ok';el.innerText=d.message;el.style.display='block'}).catch(()=>{})}
+
+function doUpload(){
+const f=document.getElementById('f').files[0],el=document.getElementById('upmsg');
+if(!f){el.className='st2 err';el.innerText='Keine Datei ausgewaehlt!';el.style.display='block';return}
+const nl=f.name.toLowerCase();
+if(!nl.endsWith('.py')&&!nl.endsWith('.html')&&!nl.endsWith('.nbo')){el.className='st2 err';el.innerText='Nur .py, .html oder .nbo Dateien erlaubt!';el.style.display='block';return}
+const isBinary=nl.endsWith('.nbo');
+const target=isBinary?'gatehill.nbo':f.name;
+const rd=new FileReader();
+rd.onload=function(e){
+try{
+let b;
+if(isBinary){b=new Uint8Array(e.target.result)}else{b=new TextEncoder().encode(e.target.result)}
+let bn='';
+for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j])}
+const b64=btoa(bn),tc=Math.ceil(b64.length/1024);
+let idx=0;
+const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
+function setProgress(p){pbbar.style.width=p+'%';pbtxt.innerText=p+'%'}
+pbwrap.style.display='block';setProgress(0);
+el.className='st2';el.innerText='Ziel: '+target+' | Upload laeuft...';el.style.display='block';
+function nc(){
+if(idx>=tc){
+setProgress(100);
+fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){el.className='st2 ok';el.innerText='Fertig: '+d.message+(d.restart?' Neustart laeuft...':' Seite neu laden, um Aenderung zu sehen.')}
+else{el.className='st2 err';el.innerText='Fehler: '+d.error}
+}).catch(er=>{el.className='st2 err';el.innerText='Fehler: '+er});
+return}
+const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);
+fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&target='+encodeURIComponent(target)+'&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){idx++;setProgress(Math.round((idx/tc)*100));nc()}
+else{el.className='st2 err';el.innerText='Fehler: '+d.error}
+}).catch(er=>{el.className='st2 err';el.innerText='Fehler: '+er});
+}
+nc();
+}catch(er){el.className='st2 err';el.innerText='Fehler: '+er;el.style.display='block'}
+};
+if(isBinary){rd.readAsArrayBuffer(f)}else{rd.readAsText(f)}
+}
+
+function loadWlan(){fetch('/wlan-config',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.ok)return;document.getElementById('wlanSsid').value=d.ssid||'';document.getElementById('wlanPassword').value=d.password||''}).catch(()=>{})}
+function saveWlan(){
+const ssid=document.getElementById('wlanSsid').value.trim(),password=document.getElementById('wlanPassword').value,msg=document.getElementById('wlanMsg');
+if(!ssid||ssid.length>32){msg.innerText='SSID muss 1 bis 32 Zeichen lang sein.';return}
+if(password.length>0&&(password.length<8||password.length>63)){msg.innerText='Passwort muss leer (offenes WLAN) oder 8 bis 63 Zeichen lang sein.';return}
+msg.innerText='Speichere...';
+const body='ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(password);
+fetch('/set-wlan-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body}).then(r=>r.json()).then(d=>{if(!d.ok)throw new Error(d.error||'Fehler');msg.innerText='Gespeichert.'}).catch(e=>msg.innerText=e.message)
+}
+
+const GH_TERMINAL_PHASES=['up_to_date','wifi_failed','check_failed','download_failed','no_wlan','error','success'];
+function ghPhaseText(phase){
+const map={
+connecting_wifi:'Verbinde mit gespeichertem WLAN...',
+checking_release:'Suche nach neuer Firmware auf GitHub...',
+downloading:'Lade neue Firmware herunter...',
+applying:'Installiere Update...',
+up_to_date:'Firmware ist bereits aktuell.',
+wifi_failed:'WLAN-Verbindung fehlgeschlagen. Hotspot wurde wiederhergestellt.',
+check_failed:'Konnte GitHub-Release nicht pruefen. Hotspot wurde wiederhergestellt.',
+download_failed:'Download/Installation fehlgeschlagen. Hotspot wurde wiederhergestellt.',
+no_wlan:'Kein WLAN hinterlegt.',
+error:'Fehler bei der Update-Suche.',
+success:'Update erfolgreich! Pico startet neu...',
+};
+return map[phase]||''
+}
+let ghPollTimer=null;
+function setGhStatus(text,cls){const el=document.getElementById('ghStatus');el.innerText=text||'';el.className='msg'+(cls?(' '+cls):'')}
+function startGhPolling(){if(ghPollTimer)clearInterval(ghPollTimer);pollGhStatus();ghPollTimer=setInterval(pollGhStatus,1500)}
+function stopGhPolling(){if(ghPollTimer){clearInterval(ghPollTimer);ghPollTimer=null}}
+function pollGhStatus(){
+fetch('/github-update-status',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(GH_TERMINAL_PHASES.indexOf(d.phase)>=0&&!d.active){
+document.getElementById('ghBtn').disabled=false;
+let text=ghPhaseText(d.phase);
+if(!d.ok&&d.error)text+=' ('+d.error+')';
+setGhStatus(text,d.ok?'ok':'err');
+stopGhPolling();
+return
+}
+document.getElementById('ghBtn').disabled=true;
+setGhStatus(ghPhaseText(d.phase)||'Update-Suche laeuft...','')
+}).catch(()=>{
+document.getElementById('ghBtn').disabled=true;
+setGhStatus('Verbindung getrennt - Pico sucht/installiert. Bitte warten und ggf. erneut mit dem Hotspot verbinden.','')
+})
+}
+function startUpdateSearch(){
+if(!confirm('Der Pico trennt sich jetzt kurz vom eigenen Hotspot und versucht, sich mit dem oben hinterlegten WLAN zu verbinden, um bei GitHub nach einer neueren gatehill.nbo-Firmware zu suchen.\n\n- Bis zu 3 Verbindungsversuche.\n- Klappt die Verbindung nicht, wird der Hotspot automatisch wiederhergestellt.\n- Wird eine neuere Version gefunden, wird sie automatisch installiert (Neustart).\n- Die LED blinkt (2s an/2s aus), solange der Vorgang laeuft.\n\nDu verlierst dabei kurzzeitig die Verbindung zu diesem Hotspot. Jetzt fortfahren?'))return;
+const btn=document.getElementById('ghBtn');
+btn.disabled=true;
+setGhStatus('Verbinde mit gespeichertem WLAN...','');
+fetch('/start-github-update',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok){btn.disabled=false;setGhStatus(d.error||'Fehler bei der Update-Suche.','err');return}
+startGhPolling()
+}).catch(()=>{startGhPolling()})
+}
+
+pollKoth();
+pollRace();
+refreshSystemInfo();
+loadWlan();
+setInterval(refreshSystemInfo,5000);
+</script>
+</body>
+</html>

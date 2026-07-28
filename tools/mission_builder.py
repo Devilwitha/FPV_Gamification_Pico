@@ -48,10 +48,12 @@ import build_firmware as fw
 
 APP_TITLE = "Mission Builder"
 MISSION_EXTENSION = ".mission"
-# Lokale Missionen werden nicht mehr im Projekt-Root, sondern in einem
-# eigenen Unterordner "missionen" (neben diesem Skript) gespeichert und
-# gesucht - wird beim Start automatisch angelegt, falls er fehlt.
-MISSIONS_DIR = Path(__file__).resolve().parent / "missionen"
+# Lokale Missionen werden nicht im Projekt-Root, sondern in einem eigenen
+# Unterordner "missionen" gespeichert und gesucht - wird beim Start
+# automatisch angelegt, falls er fehlt. Dieses Skript liegt im
+# tools/-Unterordner, missionen/ liegt aber im Projekt-Root (Elternordner
+# von tools/), daher .parent.parent statt nur .parent.
+MISSIONS_DIR = Path(__file__).resolve().parent.parent / "missionen"
 MISSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 CHALLENGE_TYPE_LABELS = {

@@ -863,6 +863,7 @@ class ChallengeManager:
         if points <= 0:
             return
         self.log_entries.append({
+            "ts_s": int(time.time()),
             "timestamp": timestamp,
             "description": description,
             "points": points,

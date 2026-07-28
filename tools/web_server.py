@@ -6,7 +6,9 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+# Dieses Skript liegt im tools/-Unterordner - PROJECT_ROOT ist daher das
+# Elternverzeichnis von tools/, nicht der Ordner dieser Datei selbst.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 
@@ -19,8 +21,11 @@ ROUTE_TO_FILE = {
     "/admin-system": "admin_system.html",
     "/admin-challenges": "admin_challenges.html",
     "/admin-infection": "admin_infection.html",
+    "/admin-koth": "admin_koth.html",
+    "/admin-race": "admin_race.html",
     "/challenges-view": "challenges_view.html",
     "/infection-view": "infection_view.html",
+    "/gamemodes-view": "gamemodes_view.html",
 }
 
 
@@ -100,6 +105,74 @@ class FpvDevHandler(SimpleHTTPRequestHandler):
                     "trick_tuning_profile": "freestyle",
                     "developer_mode": True,
                     "firmware_version": "dev-local",
+                }
+            )
+
+        if path == "/koth-data":
+            return self._send_json(
+                {
+                    "ok": True,
+                    "enabled": True,
+                    "running": True,
+                    "role": "player",
+                    "remaining_seconds": 180,
+                    "node_id": "pico-simulator",
+                    "last_event": "Punkte gesammelt",
+                    "last_rssi": -50,
+                    "in_range": True,
+                    "score": 42,
+                    "player_name": "pico-simulator",
+                    "leaderboard": [
+                        {"name": "pico-simulator", "score": 42},
+                        {"name": "node-ab12", "score": 17},
+                    ],
+                    "config": {
+                        "enabled": True,
+                        "role": "player",
+                        "round_seconds": 300,
+                        "rssi_threshold": -55,
+                        "points_per_second": 1,
+                    },
+                }
+            )
+
+        if path == "/race-data":
+            return self._send_json(
+                {
+                    "ok": True,
+                    "enabled": True,
+                    "running": True,
+                    "finished": False,
+                    "role": "racer",
+                    "node_id": "pico-simulator",
+                    "last_event": "Tor A passiert",
+                    "waiting_for": "B",
+                    "lap_index": 1,
+                    "laps_total": 3,
+                    "lap_times_ms": [8123],
+                    "last_lap_ms": 8123,
+                    "best_lap_ms": 8123,
+                    "total_ms": 15420,
+                    "gate_a_in_range": False,
+                    "gate_b_in_range": True,
+                    "config": {
+                        "enabled": True,
+                        "role": "racer",
+                        "laps": 3,
+                        "rssi_threshold": -55,
+                        "cooldown_seconds": 3,
+                    },
+                }
+            )
+
+        if path == "/challenges-data":
+            return self._send_json(
+                {
+                    "challenges": {
+                        "touch_and_go": {"active": False},
+                        "altitude_challenge": {"active": False},
+                        "eco": {"active": False},
+                    }
                 }
             )
 

@@ -30,7 +30,24 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 .card.sys{border-left-color:#8e44ad}
 .card.idc{border-left-color:#f1c40f}
 .card.chl{border-left-color:#ff7f27}
-@media(max-width:480px){.grid,.cards{grid-template-columns:1fr}}
+.card.koth{border-left-color:#e6a23c}
+.card.race{border-left-color:#2980b9}
+.stattiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stile{display:flex;align-items:center;gap:10px;background:#161e2e;border-left:3px solid var(--sc,#2980b9);border-radius:8px;padding:11px 13px;transition:transform .15s ease,background .15s ease}
+.stile:hover{transform:translateY(-2px);background:#1b2536}
+.sticon{font-size:1.6em;line-height:1;flex-shrink:0}
+.stbody{min-width:0}
+.stlabel{font-size:.7em;color:#9fb4cb;text-transform:uppercase;letter-spacing:.03em}
+.stval{font-size:1.1em;font-weight:bold;color:#fff;overflow-wrap:anywhere}
+.stsub{font-size:.72em;color:#6f8299;margin-top:1px}
+.activity{display:flex;flex-direction:column;gap:0}
+.arow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:.85em}
+.arow:last-child{border-bottom:0}
+.adot{width:9px;height:9px;border-radius:50%;flex-shrink:0;background:var(--sc,#2980b9);box-shadow:0 0 6px var(--sc,#2980b9)}
+.atext{flex:1;min-width:0;overflow-wrap:anywhere}
+.atime{font-size:.72em;color:#6f8299;white-space:nowrap}
+.aempty{color:#6f8299;font-size:.85em}
+@media(max-width:480px){.grid,.cards{grid-template-columns:1fr}.stattiles{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -45,6 +62,8 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 <a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
 <a href="/admin-challenges" data-i18n="nav.challenges">Challenges</a>
 <a href="/admin-infection" data-i18n="nav.infection">Infection</a>
+<a href="/admin-koth" data-i18n="nav.koth">King of the Hill</a>
+<a href="/admin-race" data-i18n="nav.race">Race</a>
 <a href="/" data-i18n="nav.home">Home</a>
 </div>
 
@@ -61,6 +80,22 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 </div>
 </div>
 
+<div class="s">
+<h2 data-i18n="dashboard.statsTitle">&#128202; Statistik</h2>
+<div class="stattiles" id="stattiles">
+<div class="stile" style="--sc:#e74c3c"><div class="sticon">&#127942;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statTrickLabel">Trick-Highscore</div><div class="stval" id="st_trick_val">-</div><div class="stsub" id="st_trick_sub"></div></div></div>
+<div class="stile" style="--sc:#8e44ad"><div class="sticon">&#127919;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statChallengesLabel">Challenges</div><div class="stval" id="st_challenges_val">-</div><div class="stsub" id="st_challenges_sub"></div></div></div>
+<div class="stile" style="--sc:#e6a23c"><div class="sticon">&#128081;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statKothLabel">King of the Hill</div><div class="stval" id="st_koth_val">-</div><div class="stsub" id="st_koth_sub"></div></div></div>
+<div class="stile" style="--sc:#2980b9"><div class="sticon">&#127937;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statRaceLabel">Race</div><div class="stval" id="st_race_val">-</div><div class="stsub" id="st_race_sub"></div></div></div>
+<div class="stile" style="--sc:#d4473f"><div class="sticon">&#9763;&#65039;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statInfectionLabel">Infection</div><div class="stval" id="st_infection_val">-</div><div class="stsub" id="st_infection_sub"></div></div></div>
+</div>
+</div>
+
+<div class="s">
+<h2 data-i18n="dashboard.activityTitle">&#128336; Letzte Aktivitaet</h2>
+<div id="activityList" class="activity"></div>
+</div>
+
 <div class="cards">
 <a class="card idc" href="/admin-idcard"><h3 data-i18n="dashboard.card.idcardTitle">&#128247; FPV-Ausweis</h3><p data-i18n="dashboard.card.idcardText">JPG/PNG/PDF hochladen, streamen und bei Bedarf wieder loeschen</p></a>
 <a class="card upd" href="/admin-update"><h3 data-i18n="dashboard.card.updateTitle">&#128228; Update</h3><p data-i18n="dashboard.card.updateText">main.py oder HTML-Dateien per Browser aktualisieren (OTA)</p></a>
@@ -69,6 +104,8 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 <a class="card sys" href="/admin-system"><h3 data-i18n="dashboard.card.systemTitle">&#128295; System</h3><p data-i18n="dashboard.card.systemText">Speicher/Netzwerk-Info, manueller Restart</p></a>
 <a class="card chl" href="/admin-challenges"><h3 data-i18n="dashboard.card.challengesTitle">&#127942; Challenges</h3><p data-i18n="dashboard.card.challengesText">Touch &amp; Go, Altitude-Hold/Limbo und Eco-Challenge starten</p></a>
 <a class="card" href="/admin-infection"><h3 data-i18n="dashboard.card.infectionTitle">Infection Modus</h3><p data-i18n="dashboard.card.infectionText">Zwei Picos als Infizierter und Sucher spielen</p></a>
+<a class="card koth" href="/admin-koth"><h3 data-i18n="dashboard.card.kothTitle">&#128081; King of the Hill</h3><p data-i18n="dashboard.card.kothText">Punkte sammeln, solange Empfang zum Huegel-Pico besteht</p></a>
+<a class="card race" href="/admin-race"><h3 data-i18n="dashboard.card.raceTitle">&#127937; Race Modus</h3><p data-i18n="dashboard.card.raceText">Rundenzeit zwischen 2 Toren mit einstellbarer Rundenzahl messen</p></a>
 </div>
 </div>
 <script>
@@ -87,7 +124,75 @@ document.getElementById('v_mem').innerText=(d.mem_free>=0)?(d.mem_free/1024).toF
 }).catch(e=>0);
 }
 function rhs(){if(confirm(t('index.resetConfirm','Highscore loeschen?'))){fetch('/reset-highscore?web=1').then(()=>upd()).catch(e=>0)}}
-loadI18n().then(()=>{upd();setInterval(upd,3000);setInterval(loadI18n,5000);});
+const GAME_COLORS={trick:'#e74c3c',challenges:'#8e44ad',koth:'#e6a23c',race:'#2980b9',infection:'#d4473f'};
+function fmtMs(ms){
+if(ms===null||ms===undefined)return '-';
+const total=Math.round(ms),m=Math.floor(total/60000),s=Math.floor((total%60000)/1000),r=total%1000;
+return (m>0?m+':'+String(s).padStart(2,'0'):String(s))+'.'+String(r).padStart(3,'0')+'s';
+}
+function resultLabel(r){
+if(r==='won')return t('dashboard.resultWon','Sieg');
+if(r==='lost')return t('dashboard.resultLost','Niederlage');
+if(r==='stopped')return t('dashboard.resultStopped','Abgebrochen');
+return r||'';
+}
+function fetchLog(url){return fetch(url,{cache:'no-store'}).then(r=>r.json()).then(d=>d.log||[]).catch(()=>[]);}
+function loadStats(){
+Promise.all([
+fetchLog('/trick-highscore-log'),
+fetchLog('/challenge-log'),
+fetchLog('/koth-log'),
+fetchLog('/race-log'),
+fetchLog('/infection-log'),
+]).then(([trick,challenges,koth,race,infection])=>{
+renderStats(trick,challenges,koth,race,infection);
+renderActivity(trick,challenges,koth,race,infection);
+});
+}
+function renderStats(trick,challenges,koth,race,infection){
+const noRounds=t('dashboard.noRounds','Noch keine Runde');
+if(trick.length){
+const best=trick.reduce((a,b)=>(b.score||0)>(a.score||0)?b:a,trick[0]);
+document.getElementById('st_trick_val').innerText=(best.score||0)+' Pkt';
+document.getElementById('st_trick_sub').innerText=trick.length+' '+t('dashboard.records','Rekorde');
+}else{document.getElementById('st_trick_val').innerText=noRounds;document.getElementById('st_trick_sub').innerText='';}
+if(challenges.length){
+const sum=challenges.reduce((a,c)=>a+(c.points||0),0);
+document.getElementById('st_challenges_val').innerText=sum+' Pkt';
+document.getElementById('st_challenges_sub').innerText=challenges.length+' '+t('dashboard.passed','bestanden');
+}else{document.getElementById('st_challenges_val').innerText=noRounds;document.getElementById('st_challenges_sub').innerText='';}
+if(koth.length){
+const best=koth.reduce((a,b)=>(b.score||0)>(a.score||0)?b:a,koth[0]);
+document.getElementById('st_koth_val').innerText=(best.score||0)+' Pkt';
+document.getElementById('st_koth_sub').innerText=koth.length+' '+t('dashboard.rounds','Runden');
+}else{document.getElementById('st_koth_val').innerText=noRounds;document.getElementById('st_koth_sub').innerText='';}
+if(race.length){
+const best=race.reduce((a,b)=>(b.total_ms||Infinity)<(a.total_ms||Infinity)?b:a,race[0]);
+document.getElementById('st_race_val').innerText=fmtMs(best.total_ms);
+document.getElementById('st_race_sub').innerText=race.length+' '+t('dashboard.rounds','Runden');
+}else{document.getElementById('st_race_val').innerText=noRounds;document.getElementById('st_race_sub').innerText='';}
+if(infection.length){
+const wins=infection.filter(e=>e.result==='won').length;
+document.getElementById('st_infection_val').innerText=wins+'/'+infection.length;
+document.getElementById('st_infection_sub').innerText=t('dashboard.wins','Siege');
+}else{document.getElementById('st_infection_val').innerText=noRounds;document.getElementById('st_infection_sub').innerText='';}
+}
+function renderActivity(trick,challenges,koth,race,infection){
+let items=[];
+trick.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.trick,text:'&#127942; '+t('dashboard.actTrick','Neuer Highscore')+': '+(e.score||0)+' Pkt ('+(e.player||'')+')'}));
+challenges.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.challenges,text:'&#127919; '+(e.description||'')+' (+'+(e.points||0)+')'}));
+koth.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.koth,text:'&#128081; '+t('dashboard.actKoth','KOTH-Runde beendet')+': '+(e.score||0)+' Pkt'}));
+race.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.race,text:'&#127937; '+t('dashboard.actRace','Rennen beendet')+': '+fmtMs(e.total_ms)}));
+infection.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.infection,text:'&#9763;&#65039; '+t('dashboard.actInfection','Infection-Runde')+': '+resultLabel(e.result)}));
+items.sort((a,b)=>b.ts-a.ts);
+items=items.slice(0,20);
+const box=document.getElementById('activityList');
+if(!items.length){box.innerHTML='<div class="aempty">'+t('dashboard.activityEmpty','Noch keine Aktivitaet.')+'</div>';return;}
+let html='';
+items.forEach(it=>{html+='<div class="arow"><span class="adot" style="--sc:'+it.color+'"></span><span class="atext">'+it.text+'</span><span class="atime">'+it.time+'</span></div>';});
+box.innerHTML=html;
+}
+loadI18n().then(()=>{upd();loadStats();setInterval(upd,3000);setInterval(loadStats,8000);setInterval(loadI18n,5000);});
 </script>
 </body>
 </html>

@@ -20,6 +20,27 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 .pbwrap{display:none;margin:10px 0;height:20px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
 .pbbar{height:100%;width:0%;background:#e74c3c;transition:width .15s ease}
 .pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.72em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
+.gh{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:0 0 16px}
+.gh h2{color:#d8e5f4;margin:0 0 8px;font-size:1em}
+.gh p{color:#9fb4cb;font-size:.8em;margin:0 0 12px}
+.ghrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ghicon{font-size:1.6em;line-height:1;display:inline-block;transition:transform .2s ease}
+.ghicon.spin{animation:ghspin 1.1s linear infinite}
+@keyframes ghspin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.b.gh-btn{background:#2e86de}
+.b.gh-btn:disabled{background:#555;cursor:not-allowed;opacity:.7;filter:none}
+.ghstatus{color:#9fb4cb;font-size:.82em;min-height:1.3em;flex:1 1 200px}
+.ghstatus.pulse{color:#5dade2;animation:ghpulse 1.6s ease-in-out infinite}
+@keyframes ghpulse{0%,100%{opacity:1}50%{opacity:.45}}
+.ghstatus.ok{color:#2ecc71}
+.ghstatus.err{color:#ff6b6b}
+.modalbg{display:none;position:fixed;inset:0;background:rgba(4,6,10,.72);z-index:50;align-items:center;justify-content:center;padding:16px}
+.modalbg.show{display:flex}
+.modal{background:#141b25;border:2px solid #2e86de;border-radius:8px;max-width:440px;width:100%;padding:20px;box-sizing:border-box}
+.modal h3{margin:0 0 10px;color:#5dade2;font-size:1.05em}
+.modal .mbody{color:#c7d6e6;font-size:.86em;line-height:1.5;margin-bottom:16px}
+.modal .mbtns{display:flex;gap:8px;justify-content:flex-end}
+.b.secondary2{background:#53657a}
 </style>
 </head>
 <body>
@@ -34,8 +55,21 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 <a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
 <a href="/admin-challenges" data-i18n="nav.challenges">Challenges</a>
 <a href="/admin-infection" data-i18n="nav.infection">Infection</a>
+<a href="/admin-koth" data-i18n="nav.koth">King of the Hill</a>
+<a href="/admin-race" data-i18n="nav.race">Race</a>
 <a href="/" data-i18n="nav.home">Home</a>
 </div>
+
+<div class="gh">
+<h2 data-i18n="update.checkSectionTitle">&#128225; GitHub-Update</h2>
+<p data-i18n="update.checkHint">Sucht automatisch bei GitHub nach einer neueren Firmware und installiert sie ueber das unter System hinterlegte WLAN.</p>
+<div class="ghrow">
+<button class="b gh-btn" id="ghBtn" onclick="openUpdateSearchModal()"><span class="ghicon" id="ghIcon">&#128269;</span> <span data-i18n="update.checkButton">Nach Updates suchen</span></button>
+<div class="ghstatus" id="ghStatus"></div>
+</div>
+</div>
+
+<div id="devUploadSection">
 <div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px" data-i18n="update.allowedHint">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html, admin_idcard.html - oder ein komplettes <b>firmware.nbo</b> Bundle (alle Dateien auf einmal, siehe build_firmware.py)</div>
 <div id="devhint" style="color:#9fb4cb;font-size:.78em;margin-bottom:6px"></div>
 <input type="file" id="f" accept=".py,.html,.nbo,.pak">
@@ -43,6 +77,18 @@ input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;colo
 <div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
 <div id="s" class="s"></div>
 <button class="b" onclick="u()" data-i18n="update.uploadButton">Upload</button>
+</div>
+</div>
+
+<div class="modalbg" id="ghModalBg">
+<div class="modal">
+<h3 data-i18n="update.confirmTitle">Update-Suche starten?</h3>
+<div class="mbody" data-i18n="update.confirmBody">Der Pico trennt sich jetzt kurz vom eigenen Hotspot und versucht, sich mit dem unter System hinterlegten WLAN zu verbinden.</div>
+<div class="mbtns">
+<button class="b secondary2" onclick="closeUpdateSearchModal()" data-i18n="update.confirmNo">Abbrechen</button>
+<button class="b gh-btn" onclick="confirmStartUpdateSearch()" data-i18n="update.confirmYes">Ja, Update suchen</button>
+</div>
+</div>
 </div>
 <script>
 let I18N={strings:{}};
@@ -105,6 +151,7 @@ function refreshDevMode(){
 fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
 devMode=!!d.developer_mode;
 const fEl=document.getElementById('f'),hint=document.getElementById('devhint');
+document.getElementById('devUploadSection').style.display=devMode?'block':'none';
 if(devMode){
 fEl.setAttribute('accept','.py,.html,.nbo,.pak');
 hint.innerText=t('update.devOnHint','Developer-Modus AN: Einzeldateien (.py/.html) und .nbo Bundles erlaubt.');
@@ -177,6 +224,71 @@ nc();
 }catch(er){s.className='s err';s.innerText='Fehler: '+er;s.style.display='block';}
 };
 if(isBinary){rd.readAsArrayBuffer(f);}else{rd.readAsText(f);}
+}
+function openUpdateSearchModal(){document.getElementById('ghModalBg').classList.add('show');}
+function closeUpdateSearchModal(){document.getElementById('ghModalBg').classList.remove('show');}
+function setGhStatus(text,cls){const el=document.getElementById('ghStatus');el.innerText=text||'';el.className='ghstatus'+(cls?(' '+cls):'');}
+function setGhIcon(spinning){document.getElementById('ghIcon').classList.toggle('spin',!!spinning);}
+const GH_TERMINAL_PHASES=['up_to_date','wifi_failed','check_failed','download_failed','no_wlan','error','success'];
+function ghPhaseText(phase){
+const map={
+'connecting_wifi':t('update.statusConnectingWifi','Verbinde mit gespeichertem WLAN...'),
+'checking_release':t('update.statusCheckingRelease','Suche nach neuer Firmware auf GitHub...'),
+'downloading':t('update.statusDownloading','Lade neue Firmware herunter...'),
+'applying':t('update.statusApplying','Installiere Update...'),
+'up_to_date':t('update.statusUpToDate','Firmware ist bereits aktuell.'),
+'wifi_failed':t('update.statusWifiFailed','WLAN-Verbindung fehlgeschlagen. Hotspot wurde wiederhergestellt.'),
+'check_failed':t('update.statusCheckFailed','Konnte GitHub-Release nicht pruefen. Hotspot wurde wiederhergestellt.'),
+'download_failed':t('update.statusDownloadFailed','Download/Installation fehlgeschlagen. Hotspot wurde wiederhergestellt.'),
+'no_wlan':t('update.statusNoWlan','Kein WLAN hinterlegt (siehe System-Seite).'),
+'error':t('update.statusError','Fehler bei der Update-Suche.'),
+'success':t('update.statusSuccess','Update erfolgreich! Pico startet neu...'),
+};
+return map[phase]||'';
+}
+let ghPollTimer=null;
+function startGhPolling(){
+if(ghPollTimer)clearInterval(ghPollTimer);
+pollGhStatus();
+ghPollTimer=setInterval(pollGhStatus,1500);
+}
+function stopGhPolling(){
+if(ghPollTimer){clearInterval(ghPollTimer);ghPollTimer=null;}
+}
+function pollGhStatus(){
+fetch('/github-update-status',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(GH_TERMINAL_PHASES.indexOf(d.phase)>=0&&!d.active){
+document.getElementById('ghBtn').disabled=false;
+setGhIcon(false);
+let text=ghPhaseText(d.phase);
+if(!d.ok&&d.error)text+=' ('+d.error+')';
+setGhStatus(text,d.ok?'ok':'err');
+stopGhPolling();
+return;
+}
+document.getElementById('ghBtn').disabled=true;
+setGhIcon(true);
+setGhStatus(ghPhaseText(d.phase)||t('update.statusBusy','Update-Suche laeuft...'),'pulse');
+}).catch(()=>{
+document.getElementById('ghBtn').disabled=true;
+setGhIcon(true);
+setGhStatus(t('update.statusDisconnected','Verbindung getrennt - Pico sucht/installiert. Bitte warten und ggf. erneut mit dem Hotspot verbinden.'),'pulse');
+});
+}
+function confirmStartUpdateSearch(){
+closeUpdateSearchModal();
+const btn=document.getElementById('ghBtn');
+btn.disabled=true;
+setGhIcon(true);
+setGhStatus(t('update.statusConnectingWifi','Verbinde mit gespeichertem WLAN...'),'pulse');
+fetch('/start-github-update',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok){
+btn.disabled=false;setGhIcon(false);
+setGhStatus(d.error||t('update.statusError','Fehler bei der Update-Suche.'),'err');
+return;
+}
+startGhPolling();
+}).catch(()=>{startGhPolling();});
 }
 loadI18n().then(()=>{refreshDevMode();setInterval(loadI18n,5000);});
 </script>

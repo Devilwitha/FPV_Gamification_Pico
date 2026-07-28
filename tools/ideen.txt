@@ -1,0 +1,117 @@
+schreibe als idee auf was man machen könnte um eine lobby zu erstellen wo der host alles einstellen kann
+ und zwischen infect modus wo der infizirte andere infiziert 
+ und der status wird weitergegeben aber nicht zu sucher zurück gewechselt bis alle gefunden 
+ und der andere ist so wie jetzt der bomben modus wio man quasi den infect mod an einen anderen spieler gibt 
+ und selber wieder zum sucher wird
+
+============================================================
+IDEE: Lobby-System + zwei Infektions-Spielmodi (Bomben- vs. Infect-Modus)
+============================================================
+UMGESETZT (spaeter, im echten source/infection_mode.py - BLE-Version, nicht die
+alte WLAN-Version): neues config["game_mode"] = "bomb" (Default, unveraendert) |
+"infect". In "infect" bleibt der Infizierer beim Weitergeben der Rolle (Grant)
+selbst "host" (kein automatischer Rollentausch zurueck zu Sucher), der neu
+Infizierte wird trotzdem ganz normal Host. Dadurch koennen mit der Zeit mehrere
+Picos gleichzeitig infiziert sein. UI: neues Dropdown "Spielmodus" in
+admin_infection.html (Bomben-/Infect-Modus), Anzeige des aktuellen Modus in
+infection_view.html. i18n-Keys in allen 7 Sprachpaketen ergaenzt.
+NICHT umgesetzt (bewusst, siehe Begruendung unten unter Punkt 3): eine echte
+zentrale Lobby mit Spielerliste/Beitritts-Screen VOR Rundenstart, sowie ein
+automatisches Rundenende "wenn alle gefunden" - dafuer gibt es in der aktuellen
+dezentralen BLE-Architektur (jedes Pico kennt nur, was es selbst per Advertising
+empfangen hat, keine zentrale Instanz) keine zuverlaessige Datenquelle, ohne ein
+komplett neues, ungetestetes Sync-Protokoll zu entwerfen. Rundenende bleibt daher
+ueber round_seconds (Timer) oder manuelles "Runde stoppen".
+============================================================
+
+AUSGANGSLAGE (aktueller Code, data/infection_mode.py):
+- Es gibt schon ein Rollensystem "host" (=infiziert) / "seeker" (=sucht Infizierten),
+  siehe start_round(), _become_host(), _become_seeker().
+- register_touch() wird auf dem infizierten Geraet ("host") aufgerufen, wenn es per
+  WLAN-Scan/RSSI (rssi_threshold) einen anderen Piloten trifft:
+    -> der Treffer wird als "infiziert" gezaehlt (infection_count += 1)
+    -> ABER: self._schedule_role("seeker") setzt danach den EIGENEN Knoten zurueck
+       auf "seeker" (nach HANDOFF_DELAY_MS). D.h. die Infektion "wandert" nur weiter
+       wie eine heisse Kartoffel/Bombe: IMMER genau 1 Geraet ist "infiziert", der Rest
+       sucht. Das ist exakt der heutige "Bomben-Modus".
+- Konfiguration liegt in config (ssid, password, round_seconds, rssi_threshold,
+  cooldown_seconds, initial_role) - aktuell schon pro Geraet einstellbar, aber es
+  gibt noch keine echte "Lobby" (gemeinsame Vor-Runden-Ansicht, an der ein Host alle
+  Spieler + Einstellungen sieht, bevor die Runde startet).
+
+ZIEL: Lobby-Screen, in dem EIN Host (Gastgeber-Geraet/Handy im Browser ueber die
+normale AP-Weboberflaeche) die komplette Runde konfiguriert, bevor sie startet -
+inkl. Auswahl zwischen zwei Spielmodi:
+
+--------------------------------------------------------------
+1) LOBBY (neuer Screen/Zustand, VOR start_round())
+--------------------------------------------------------------
+- Neue Server-Route(n), aehnlich admin_infection.html: /infection-lobby als eigene
+  Seite oder neuer Zustand "lobby" in infection_mode.py (State-Machine: lobby ->
+  running -> finished statt nur enabled/running wie jetzt).
+- Host sieht/bearbeitet in der Lobby:
+  - Spielmodus-Auswahl: "Bomben-Modus" (bestehend) vs. "Infect-Modus" (neu, siehe
+    unten) - z.B. neues Config-Feld config["game_mode"] = "bomb" | "infect".
+  - Alle bisherigen Einstellungen (round_seconds, rssi_threshold, cooldown_seconds,
+    ssid/password fuer die Infektions-AP).
+  - Liste der aktuell verbundenen/bekannten Piloten (Geraete, die sich schon mal
+    gemeldet haben - z.B. per Heartbeat-Route /lobby-join mit Spielername, IP/node_id,
+    aehnlich wie idcard_helpers Spieler-Registrierung).
+  - Zuweisung, wer zu Rundenbeginn "infiziert" startet (initial_role), im Infect-Modus
+    ggf. auch MEHRERE Start-Infizierte waehlbar (Liste statt nur 1 Rolle).
+  - "Runde starten"-Button, erst aktiv wenn >= 2 Spieler in der Lobby sind.
+- Technisch einfachste Umsetzung: Host-Geraet bleibt im normalen Haupt-Hotspot (nicht
+  die Infektions-SSID), alle anderen Piloten verbinden sich zur Lobby-Seite genauso wie
+  zur normalen index.html. Erst bei "Runde starten" schaltet das/die Start-Infizierten-
+  Geraet(e) auf die Infektions-SSID um (_start_ap(config["ssid"], config["password"])).
+
+--------------------------------------------------------------
+2) BOMBEN-MODUS (unveraendert, nur als "game_mode":"bomb" benennen)
+--------------------------------------------------------------
+- Exakt der heutige Ablauf: genau 1 Geraet ist zur gleichen Zeit "infiziert"/Host,
+  gibt bei Kontakt die Rolle komplett an das getroffene Geraet weiter und wird selbst
+  wieder zum Sucher (register_touch() -> _schedule_role("seeker") wie jetzt).
+- Rundenende wie gehabt ueber round_end_ms / Timer (round_seconds).
+
+--------------------------------------------------------------
+3) INFECT-MODUS (neu)
+--------------------------------------------------------------
+- Unterschied zu bomb: Wer infiziert wird, bleibt infiziert (wird selbst dauerhaft
+  "host"/Infizierer) UND der urspruengliche Infizierer bleibt EBENFALLS infiziert -
+  kein Rollentausch zurueck zu "seeker".
+- Codeaenderung in register_touch(): im Infect-Modus einfach den Aufruf von
+  self._schedule_role("seeker") weglassen (host bleibt host), nur der getroffene
+  Kontakt wechselt seinerseits (auf SEINEM eigenen Geraet, via die Server-Antwort auf
+  register_touch) von seeker auf host.
+- Dadurch koennen im Verlauf der Runde MEHRERE Geraete gleichzeitig "infiziert" sein
+  und gleichzeitig als Infektions-AP senden (alle mit der gleichen config["ssid"]) -
+  Sucher verbinden sich einfach mit dem staerksten Signal, egal von welchem Infizierten.
+- Rundenende: nicht (nur) ueber Timer, sondern "alle gefunden" = alle bekannten
+  Spieler-IDs sind infiziert. Dafuer braucht es:
+  - Eine Liste ALLER Spieler, die zu Rundenbeginn in der Lobby waren (bekannt aus
+    Punkt 1), plus je Spieler ein Status-Flag "infected: bool".
+  - Ein einfacher Zaehler "infected_count" vs. "total_players" - Runde endet
+    automatisch (round_result = "all_infected"), sobald infected_count ==
+    total_players, zusaetzlich zum bestehenden Zeitlimit als Fallback/Obergrenze.
+  - Fuer die Statusverteilung: entweder der Host (Lobby-Geraet) fungiert als kleiner
+    "Scoreboard-Server", an den jedes infizierte Geraet per HTTP-Call (im gleichen
+    Haupt-WLAN, nicht der Infektions-SSID) meldet "ich habe X infiziert", ODER jedes
+    Geraet fuehrt selbst Buch und der Host pollt periodisch /infection-status von
+    allen bekannten Geraeten (aehnlich wie /system-info Polling bei OTA).
+- Optional: Sucher-Anzeige "noch N von M nicht infiziert" auf der normalen
+  infection_view.html, damit alle den Fortschritt live sehen.
+
+--------------------------------------------------------------
+4) GEMEINSAME UMSETZUNGSSCHRITTE
+--------------------------------------------------------------
+- config["game_mode"] neu einfuehren (Default "bomb", damit bestehendes Verhalten
+  nicht bricht, falls jemand eine alte infection.conf hat -> Migration in
+  _normalize_config() wie bei den anderen Feldern).
+- start_round()/register_touch() um eine if self.config["game_mode"] == "infect":
+  Verzweigung erweitern statt alles zu duplizieren (kleine, gezielte Aenderung,
+  kein Parallel-Modul noetig).
+- admin_infection.html (bzw. neue admin/lobby-Seite) um Mode-Auswahl (Radio-Buttons
+  "Bomben-Modus" / "Infect-Modus") und Spieler-/Lobby-Liste erweitern.
+- Ruecksichtnahme auf RAM-Limit (Pico W): keine grossen neuen HTML-Templates in
+  main.py/infection_mode.py einbetten, sondern wie ueblich als eigene .html-Datei
+  bzw. schlanke JSON-Routen umsetzen (Muster wie bei admin_*.html beibehalten).

@@ -1,0 +1,79 @@
+name: Gatehill (source2) bauen & releasen
+
+# Baut gatehill.nbo mit build_firmware.py --mode source2 (eigenstaendige
+# Tor-/Huegel-Firmware, siehe source2/) und veroeffentlicht das Ergebnis als:
+#   1. Download-Artefakt des Workflow-Laufs (Actions-Tab, ~90 Tage gueltig)
+#   2. Anhang einer neuen GitHub Release mit eigenem, von der Haupt-Firmware
+#      UNABHAENGIGEN Tag-Praefix ("gatehill-vX.Y.Z" statt "vX.Y.Z") - source2
+#      hat einen eigenstaendigen Versionsstand (source2/version.json), ein
+#      Build hier soll die Versionsnummer der Haupt-Firmware NICHT anfassen
+#      (und umgekehrt, siehe build-and-release-firmware.yml).
+#
+# WICHTIG fuer source2/github_ota_helpers.py's "Nach Updates suchen": diese
+# separate Release-Reihe ist der Grund, warum dort NICHT einfach
+# /repos/{owner}/{repo}/releases/latest abgefragt wird (das waere je nach
+# Reihenfolge auch mal ein reines Haupt-Firmware-Release ohne gatehill.nbo
+# Asset), sondern die Release-Liste nach dem neuesten Release mit einem
+# gatehill.nbo Asset durchsucht wird.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "source2/**"
+      - "tools/build_firmware.py"
+  workflow_dispatch: {}
+    # Manuelles Ausloesen ueber den "Run workflow"-Button im Actions-Tab.
+
+permissions:
+  contents: write
+    # Noetig, damit der Workflow eine GitHub Release erstellen darf.
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Gatehill-Bundle bauen
+        run: |
+          python tools/build_firmware.py build/gatehill.nbo --mode source2
+        # Erhoeht dabei automatisch source2's eigene Versionsnummer
+        # (source2/version.json / source2/firmware_version.txt).
+
+      - name: Versionsnummer bestimmen
+        id: version
+        run: |
+          S2_VERSION=$(python -c "import json; print(json.load(open('source2/version.json'))['version'])")
+          echo "tag=gatehill-v${S2_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Neue Versionsnummer ins Repo zurueckschreiben
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add source2/version.json source2/firmware_version.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Gatehill-Firmware-Version auf ${{ steps.version.outputs.tag }} erhoeht [skip ci]"
+            git push
+          fi
+
+      - name: Gatehill-Bundle als Download-Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: gatehill-bundle
+          path: build/gatehill.nbo
+          retention-days: 90
+
+      - name: GitHub Release erstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Gatehill Firmware ${{ steps.version.outputs.tag }}
+          files: build/gatehill.nbo
+          generate_release_notes: true

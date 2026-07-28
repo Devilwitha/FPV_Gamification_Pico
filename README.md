@@ -32,17 +32,18 @@ Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen (nicht
 
 | Datei | Zweck |
 |---|---|
-| `main.py` | 🚀 Hauptskript (Bootdatei, startet automatisch beim Einschalten). |
-| `ota_helpers.py` | 🛠️ OTA- & Kodier-Hilfsfunktionen. (**Pflicht**, `main.py` startet ohne diese Datei nicht! `ImportError`) |
+| `boot.py` & `boot_runtime.py` | 🥾 Boot-Stack: Entscheidet u.a., ob in den normalen oder Recovery-Modus gestartet wird. |
+| `recovery.py` | 🚑 Das Notfall-Skript für den Fall, dass die Haupt-Firmware crasht. |
+| `main.py` (oder `main_LilyGo.py`) | 🚀 Hauptskript (Bootdatei für die eigentliche App, startet nach `boot.py`). |
+| `hotspot_common.py` & `hotspot.conf` | 📡 WLAN-Konfiguration und Access Point Routinen. |
+| `ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py` | 🛠️ OTA- & Hilfsfunktionen für den Webserver und Dateiuploads. |
+| `challenge_helpers.py` | 🎮 Logik für die Real-Time Mini-Games (Touch & Go, Limbo, Eco). |
+| `infection_mode.py` & `idcard_helpers.py` | ☣️ Logik für den Bluetooth-Infection-Modus und Spieler-Verwaltung. |
+| `*.pak` Dateien (z.B. `en.pak`, `de.pak`) | 🌍 Sprachpakete für die Internationalisierung des Webinterfaces. |
 | `index.html` | 📱 Hauptseite (Scoreboard, Live-Feed, Historie, Downloads für Session/Debug). |
-| `admin_dashboard.html` | 🎛️ Admin-Startseite & Navigation zu allen Settings (Speicher, Uptime, IP). |
-| `admin_update.html` | 🔄 Browser OTA-Update Interface (Datei-Upload für Python/HTML). |
-| `admin_simulate.html` | 🕹️ Virtuelle Trick-Simulation. |
-| `admin_profiles.html` | 🎚️ Trick-Profile verwalten (anlegen, hoch-/runterladen, anwenden). |
-| `admin_system.html` | 💻 System-Info & manueller Restart. |
-| `admin_challenges.html` | 🎮 Mini-Games/Challenges Regie (technische Steuerung). |
-| `challenges_view.html` | 📺 Öffentliche Live-Visualisierung für Zuschauer/Piloten (Pulsierende Punkte, große Zahlen). |
-| `firmware_version.txt` | 🏷️ Versionstag (z.B. `1.0.1`). Wird vom GitHub-Workflow bei jedem Release **automatisch** hochgezählt und erzeugt. Nicht manuell bearbeiten! |
+| `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html` | 🎛️ Alle Admin-Unterseiten (Update, Simulation, System-Info, Challenges, etc.). |
+| `challenges_view.html` & `infection_view.html` | 📺 Öffentliche Live-Visualisierungen für Zuschauer. |
+| `firmware_version.txt` | 🏷️ Versionstag (z.B. `1.0.1`). Wird bei jedem Release **automatisch** hochgezählt. Nicht manuell bearbeiten! |
 
 *Zusätzliche Laufzeit-/Datendateien (legt das System selbst an):* `fpv_highscore.json`, `fpv_trick_settings.json`, Log-Dateien (`fpv_debug_session.txt`), Custom-Trick-Profile (`<name>.pro`), etc.
 
@@ -228,15 +229,18 @@ Hier ein kleiner Auszug, was unter der Haube schlummert:
 Damit du dich in diesem Projekt-Dschungel zurechtfindest, hier ein kleiner Wegweiser, was die einzelnen Skripte und Ordner eigentlich machen:
 
 ### 🏠 Root-Verzeichnis (Das Hauptverzeichnis des Repos)
-* `build_firmware.py` 📦: Das ist dein Helfer-Tool auf dem PC! Es verpackt alle Dateien aus dem `source`-Ordner in eine einzige `firmware.nbo`-Datei für bequeme OTA-Updates.
-* `check_pico_storage.py` 💾: Ein Tool, um den Speicherplatz auf deinem Pico zu checken.
-* `download_lilygo_files.py` ⬇️: Lädt spezifische Dateien herunter, die für das LilyGO T-Display Setup (mit Display) gebraucht werden.
-* `LilyGo.py` 📺: Eine spezielle Hauptdatei, wenn du das Projekt nicht auf einem normalen Pico, sondern auf einem LilyGO T-Display Board mit schickem Display laufen lässt.
-* `mission_builder.py` 🗺️: Baut und kompiliert Flug-Missionen.
-* `ota_checker.py` 🕵️‍♂️: Prüft den OTA-Status.
-* `profilemanager.py` 🎚️: Verwalte und erstelle deine Trick-Profile lokal.
-* `web_server.py` 🌐: Ein lokales Mockup des Webservers zum Testen am PC.
-* `ideen.txt` 💡: Die Schmiede! Hier werden neue Features und irre Ideen gesammelt.
+Die eigentlichen PC-Helfer-Skripte liegen im `tools`-Unterordner (siehe unten) - im Root-Verzeichnis selbst liegen nur noch diese `README.md` und die Projektordner (`source`, `source2`, `tools`, `data`, `build`, ...).
+
+### 🛠️ Der `tools`-Ordner (Helfer-Skripte fuer den PC)
+* `tools/build_firmware.py` 📦: Das ist dein Helfer-Tool auf dem PC! Es verpackt alle Dateien aus dem `source`-Ordner in eine einzige `firmware.nbo`-Datei für bequeme OTA-Updates (kann zusaetzlich auch die eigenstaendige `source2`-Firmware als `gatehill.nbo` bauen).
+* `tools/check_pico_storage.py` 💾: Ein Tool, um den Speicherplatz auf deinem Pico zu checken.
+* `tools/download_lilygo_files.py` ⬇️: Lädt spezifische Dateien herunter, die für das LilyGO T-Display Setup (mit Display) gebraucht werden.
+* `tools/LilyGo.py` 📺: Eine spezielle Hauptdatei, wenn du das Projekt nicht auf einem normalen Pico, sondern auf einem LilyGO T-Display Board mit schickem Display laufen lässt.
+* `tools/mission_builder.py` 🗺️: Baut und kompiliert Flug-Missionen.
+* `tools/ota_checker.py` 🕵️‍♂️: Prüft den OTA-Status.
+* `tools/profilemanager.py` 🎚️: Verwalte und erstelle deine Trick-Profile lokal.
+* `tools/web_server.py` 🌐: Ein lokales Mockup des Webservers zum Testen am PC.
+* `tools/ideen.txt` 💡: Die Schmiede! Hier werden neue Features und irre Ideen gesammelt.
 
 ### 📁 Der `source`-Ordner (Das Herzstück für den Pico)
 Hier liegen alle Dateien, die tatsächlich *auf* deinen Pico müssen (oder vom Build-Skript eingepackt werden):

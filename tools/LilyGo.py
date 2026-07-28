@@ -316,7 +316,10 @@ class LilyGoInstallerGUI:
         time.sleep(4)
         active_port = find_current_lilygo_port(active_port)
 
-        source_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "source")
+        # Dieses Skript liegt im tools/-Unterordner - source/ liegt aber im
+        # Projekt-Root (Elternordner von tools/), daher der zusaetzliche
+        # os.path.dirname()-Aufruf.
+        source_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "source")
         files = [
             "boot_runtime.py",
             "hotspot_common.py",

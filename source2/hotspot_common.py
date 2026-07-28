@@ -10,8 +10,8 @@ DEFAULT_HOTSPOT_PASSWORD = "drohnenspiel"
 # WLAN-Zielnetz fuer die GitHub-Update-Suche (siehe github_ota_helpers.py):
 # getrennt von hotspot.conf, weil es ein FREMDES Netz ist, mit dem sich der
 # Pico zeitweise verbindet - nicht der eigene Access Point. Bewusst NICHT
-# Teil von build_firmware.py's Bundle-Dateiliste (siehe dortiger Kommentar),
-# damit ein Firmware-Update das gespeicherte WLAN nicht wieder loescht.
+# Teil von build_firmware.py's Bundle-Dateiliste, damit ein Firmware-Update
+# das gespeicherte WLAN nicht wieder loescht.
 WLAN_CONFIG_FILE = "wlan.conf"
 
 

@@ -63,8 +63,16 @@ jobs:
           git add source/version.json source/firmware_version.txt
           if ! git diff --cached --quiet; then
             git commit -m "Firmware-Version auf ${{ steps.version.outputs.tag }} erhoeht [skip ci]"
-            git push
+            for i in 1 2 3 4 5; do
+              git push && break
+              git fetch origin main
+              git rebase origin/main
+              sleep $((RANDOM % 5 + 1))
+            done
           fi
+        # Retry-Schleife noetig, weil build-and-release-gatehill.yml beim
+        # selben Push parallel laufen und zuerst pushen kann (non-fast-forward
+        # Fehler); fetch+rebase holt den fremden Commit und versucht erneut.
 
       - name: Firmware-Bundles als Download-Artefakt hochladen
         uses: actions/upload-artifact@v4

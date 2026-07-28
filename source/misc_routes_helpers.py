@@ -59,6 +59,8 @@ async def handle_misc_routes(
     perform_emergency_delete_main = deps["perform_emergency_delete_main"]
     perform_emergency_delete_boot = deps["perform_emergency_delete_boot"]
     infection_status = deps.get("infection_status")
+    trick_highscore_log_entries = deps["trick_highscore_log_entries"]
+    save_trick_highscore_log = deps["save_trick_highscore_log"]
 
     if request_path == '/admin-profiles':
         await send_html_file(writer, admin_profiles_html_path)
@@ -177,6 +179,87 @@ async def handle_misc_routes(
             except Exception as error_value:
                 response_data = json.dumps({"ok": False, "error": str(error_value)}).encode('utf-8')
                 writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/wlan-config':
+        try:
+            with open('wlan.conf', 'r') as config_file:
+                config = json.loads(config_file.read())
+            ssid = str(config.get('ssid', ''))
+            password = str(config.get('password', ''))
+        except Exception:
+            ssid = ''
+            password = ''
+        response_data = json.dumps({
+            "ok": True,
+            "ssid": ssid,
+            "password": password,
+        }).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/set-wlan-config' and request_method == 'POST':
+        ssid = body_params.get('ssid', '').strip()
+        password = body_params.get('password', '')
+        error = ''
+        if not ssid or len(ssid) > 32:
+            error = 'SSID muss 1 bis 32 Zeichen lang sein'
+        elif password and (len(password) < 8 or len(password) > 63):
+            error = 'Passwort muss leer (offenes WLAN) oder 8 bis 63 Zeichen lang sein'
+        if error:
+            response_data = json.dumps({"ok": False, "error": error}).encode('utf-8')
+            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+        else:
+            try:
+                temp_path = 'wlan.conf.tmp'
+                with open(temp_path, 'w') as config_file:
+                    config_file.write(json.dumps({"ssid": ssid, "password": password}))
+                try:
+                    os.remove('wlan.conf')
+                except Exception:
+                    pass
+                os.rename(temp_path, 'wlan.conf')
+                response_data = json.dumps({
+                    "ok": True,
+                    "message": "WLAN gespeichert.",
+                }).encode('utf-8')
+                writer.write(b'HTTP/1.1 200 OK\r\n')
+            except Exception as error_value:
+                response_data = json.dumps({"ok": False, "error": str(error_value)}).encode('utf-8')
+                writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/trick-highscore-log':
+        response_data = json.dumps({"ok": True, "log": trick_highscore_log_entries}).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/trick-highscore-log-clear':
+        del trick_highscore_log_entries[:]
+        ok, err = save_trick_highscore_log(trick_highscore_log_entries)
+        response_data = json.dumps({"ok": ok, "error": None if ok else err}).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
         writer.write(b'Content-Type: application/json\r\n')
         writer.write(b'Cache-Control: no-store\r\n')
         writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')

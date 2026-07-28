@@ -132,6 +132,18 @@ input[type=file]{padding:8px}
 <div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
 <div id="upmsg" class="st2"></div>
 <div class="buttons"><button class="b grey" onclick="doUpload()">Hochladen</button><button class="b grey" onclick="doRestart()">Neustart</button></div>
+<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px">
+<h2 style="margin-top:0">WLAN fuer Update-Suche</h2>
+<div class="fields">
+<label class="field"><span>SSID</span><input id="wlanSsid" maxlength="32" autocomplete="off"></label>
+<label class="field"><span>Passwort</span><input id="wlanPassword" type="password" maxlength="63" autocomplete="new-password"></label>
+</div>
+<div class="buttons"><button class="b grey" onclick="saveWlan()">WLAN speichern</button></div>
+<div id="wlanMsg" class="msg"></div>
+<div class="hint">Wird nur fuer "Nach Updates suchen" genutzt. Der Pico verbindet sich damit kurzzeitig, um bei GitHub nach einer neuen gatehill.nbo-Firmware zu suchen.</div>
+<div class="buttons" style="margin-top:14px"><button class="b" id="ghBtn" onclick="startUpdateSearch()">&#128269; Nach Updates suchen</button></div>
+<div id="ghStatus" class="msg"></div>
+</div>
 </div>
 </div>
 <script>
@@ -200,9 +212,69 @@ nc();
 if(isBinary){rd.readAsArrayBuffer(f)}else{rd.readAsText(f)}
 }
 
+function loadWlan(){fetch('/wlan-config',{cache:'no-store'}).then(r=>r.json()).then(d=>{if(!d.ok)return;document.getElementById('wlanSsid').value=d.ssid||'';document.getElementById('wlanPassword').value=d.password||''}).catch(()=>{})}
+function saveWlan(){
+const ssid=document.getElementById('wlanSsid').value.trim(),password=document.getElementById('wlanPassword').value,msg=document.getElementById('wlanMsg');
+if(!ssid||ssid.length>32){msg.innerText='SSID muss 1 bis 32 Zeichen lang sein.';return}
+if(password.length>0&&(password.length<8||password.length>63)){msg.innerText='Passwort muss leer (offenes WLAN) oder 8 bis 63 Zeichen lang sein.';return}
+msg.innerText='Speichere...';
+const body='ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(password);
+fetch('/set-wlan-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body}).then(r=>r.json()).then(d=>{if(!d.ok)throw new Error(d.error||'Fehler');msg.innerText='Gespeichert.'}).catch(e=>msg.innerText=e.message)
+}
+
+const GH_TERMINAL_PHASES=['up_to_date','wifi_failed','check_failed','download_failed','no_wlan','error','success'];
+function ghPhaseText(phase){
+const map={
+connecting_wifi:'Verbinde mit gespeichertem WLAN...',
+checking_release:'Suche nach neuer Firmware auf GitHub...',
+downloading:'Lade neue Firmware herunter...',
+applying:'Installiere Update...',
+up_to_date:'Firmware ist bereits aktuell.',
+wifi_failed:'WLAN-Verbindung fehlgeschlagen. Hotspot wurde wiederhergestellt.',
+check_failed:'Konnte GitHub-Release nicht pruefen. Hotspot wurde wiederhergestellt.',
+download_failed:'Download/Installation fehlgeschlagen. Hotspot wurde wiederhergestellt.',
+no_wlan:'Kein WLAN hinterlegt.',
+error:'Fehler bei der Update-Suche.',
+success:'Update erfolgreich! Pico startet neu...',
+};
+return map[phase]||''
+}
+let ghPollTimer=null;
+function setGhStatus(text,cls){const el=document.getElementById('ghStatus');el.innerText=text||'';el.className='msg'+(cls?(' '+cls):'')}
+function startGhPolling(){if(ghPollTimer)clearInterval(ghPollTimer);pollGhStatus();ghPollTimer=setInterval(pollGhStatus,1500)}
+function stopGhPolling(){if(ghPollTimer){clearInterval(ghPollTimer);ghPollTimer=null}}
+function pollGhStatus(){
+fetch('/github-update-status',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(GH_TERMINAL_PHASES.indexOf(d.phase)>=0&&!d.active){
+document.getElementById('ghBtn').disabled=false;
+let text=ghPhaseText(d.phase);
+if(!d.ok&&d.error)text+=' ('+d.error+')';
+setGhStatus(text,d.ok?'ok':'err');
+stopGhPolling();
+return
+}
+document.getElementById('ghBtn').disabled=true;
+setGhStatus(ghPhaseText(d.phase)||'Update-Suche laeuft...','')
+}).catch(()=>{
+document.getElementById('ghBtn').disabled=true;
+setGhStatus('Verbindung getrennt - Pico sucht/installiert. Bitte warten und ggf. erneut mit dem Hotspot verbinden.','')
+})
+}
+function startUpdateSearch(){
+if(!confirm('Der Pico trennt sich jetzt kurz vom eigenen Hotspot und versucht, sich mit dem oben hinterlegten WLAN zu verbinden, um bei GitHub nach einer neueren gatehill.nbo-Firmware zu suchen.\n\n- Bis zu 3 Verbindungsversuche.\n- Klappt die Verbindung nicht, wird der Hotspot automatisch wiederhergestellt.\n- Wird eine neuere Version gefunden, wird sie automatisch installiert (Neustart).\n- Die LED blinkt (2s an/2s aus), solange der Vorgang laeuft.\n\nDu verlierst dabei kurzzeitig die Verbindung zu diesem Hotspot. Jetzt fortfahren?'))return;
+const btn=document.getElementById('ghBtn');
+btn.disabled=true;
+setGhStatus('Verbinde mit gespeichertem WLAN...','');
+fetch('/start-github-update',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok){btn.disabled=false;setGhStatus(d.error||'Fehler bei der Update-Suche.','err');return}
+startGhPolling()
+}).catch(()=>{startGhPolling()})
+}
+
 pollKoth();
 pollRace();
 refreshSystemInfo();
+loadWlan();
 setInterval(refreshSystemInfo,5000);
 </script>
 </body>

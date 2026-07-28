@@ -82,6 +82,51 @@ def _ascii_text(raw):
     return "".join(chars)
 
 
+def _datetime_string():
+    now = time.localtime()
+    return "%02d.%02d.%04d %02d:%02d:%02d" % (now[2], now[1], now[0], now[3], now[4], now[5])
+
+
+# Dauerhafter Verlauf abgeschlossener KOTH-Runden (gleiches Muster wie
+# challenge_helpers.py's fpv_challenge_log.json) - fuer die Statistik-/
+# Verlaufs-Ansicht im Dashboard (admin_dashboard.html).
+KOTH_LOG_FILE = "koth_log.json"
+KOTH_LOG_MAX_ENTRIES = 50
+
+
+def load_koth_log():
+    try:
+        with open(KOTH_LOG_FILE, "r") as f:
+            data = json.loads(f.read())
+        if isinstance(data, list):
+            return data[-KOTH_LOG_MAX_ENTRIES:]
+    except Exception:
+        pass
+    return []
+
+
+def save_koth_log(entries):
+    trimmed = entries[-KOTH_LOG_MAX_ENTRIES:]
+    payload = json.dumps(trimmed)
+    try:
+        tmp_path = KOTH_LOG_FILE + ".tmp"
+        with open(tmp_path, "w") as f:
+            f.write(payload)
+        try:
+            os.remove(KOTH_LOG_FILE)
+        except Exception:
+            pass
+        os.rename(tmp_path, KOTH_LOG_FILE)
+        return True, ""
+    except Exception as e:
+        try:
+            with open(KOTH_LOG_FILE, "w") as f:
+                f.write(payload)
+            return True, ""
+        except Exception as e2:
+            return False, f"{e} | fallback={e2}"
+
+
 class KothMode:
     def __init__(self, player_name="", log=None):
         self.player_name = str(player_name or "").strip()[:32]
@@ -102,6 +147,7 @@ class KothMode:
         self.last_event = "Bereit"
         self.last_rssi = None
         self.in_range = False
+        self.log_entries = load_koth_log()
         self.score = 0.0
         self.hill_last_seen_ms = 0
         self.last_score_tick_ms = 0
@@ -279,6 +325,16 @@ class KothMode:
         return self.status()
 
     def stop_round(self, reason="Runde beendet"):
+        if self.running and self.role == "player" and self.score > 0:
+            self.log_entries.append({
+                "ts_s": int(time.time()),
+                "timestamp": _datetime_string(),
+                "score": int(self.score),
+                "reason": reason,
+            })
+            if len(self.log_entries) > KOTH_LOG_MAX_ENTRIES:
+                del self.log_entries[0: len(self.log_entries) - KOTH_LOG_MAX_ENTRIES]
+            save_koth_log(self.log_entries)
         self.running = False
         self.last_event = reason
         self.in_range = False
@@ -398,6 +454,16 @@ async def send_json(writer, payload, status="200 OK"):
 async def handle_koth_route(writer, request_path, request_method, query_params, body_params, manager):
     if request_path == "/koth-data":
         await send_json(writer, manager.status())
+        return True
+
+    if request_path == "/koth-log":
+        await send_json(writer, {"ok": True, "log": manager.log_entries})
+        return True
+
+    if request_path == "/koth-log-clear":
+        manager.log_entries = []
+        ok, err = save_koth_log(manager.log_entries)
+        await send_json(writer, {"ok": ok, "error": None if ok else err})
         return True
 
     if request_path == "/koth-config" and request_method == "POST":

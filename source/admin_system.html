@@ -81,6 +81,15 @@ input:checked+.slider:before{transform:translateX(20px)}
 <div id="hotspotMsg" class="msg"></div>
 </div>
 <div class="s">
+<h2 data-i18n="system.wlan">WLAN-Verbindung (fuer Update-Suche)</h2>
+<div style="color:#9fb4cb;font-size:.78em;margin-bottom:6px" data-i18n="system.wlanHint">Wird nur fuer "Nach Updates suchen" auf der Update-Seite genutzt. Der Pico verbindet sich damit kurzzeitig, um bei GitHub nach einer neuen Firmware zu suchen.</div>
+<label class="field"><span data-i18n="system.wlanSsid">SSID</span><input id="wlanSsid" maxlength="32" autocomplete="off"></label>
+<label class="field"><span data-i18n="system.wlanPassword">Passwort</span><input id="wlanPassword" type="password" maxlength="63" autocomplete="new-password"></label>
+<label class="inline-check"><input id="showWlanPassword" type="checkbox" onchange="toggleWlanPassword()"><span data-i18n="system.wlanShowPassword">Passwort anzeigen</span></label>
+<button class="b secondary" onclick="saveWlan()" data-i18n="system.wlanSave">Speichern</button>
+<div id="wlanMsg" class="msg"></div>
+</div>
+<div class="s">
 <h2 data-i18n="system.developerMode">Developer-Modus</h2>
 <div class="st2">
 <span data-i18n="system.developerModeLabel">Einzeldatei-Uploads (.py/.html) per OTA erlauben</span>
@@ -144,6 +153,22 @@ function loadHotspot(){
 fetch('/hotspot-config',{cache:'no-store'}).then(r=>r.json()).then(d=>{
 if(!d.ok)return;document.getElementById('hotspotSsid').value=d.ssid||'';document.getElementById('hotspotPassword').value=d.password||'';
 }).catch(()=>{});
+}
+function toggleWlanPassword(){document.getElementById('wlanPassword').type=document.getElementById('showWlanPassword').checked?'text':'password';}
+function loadWlan(){
+fetch('/wlan-config',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok)return;document.getElementById('wlanSsid').value=d.ssid||'';document.getElementById('wlanPassword').value=d.password||'';
+}).catch(()=>{});
+}
+function saveWlan(){
+const ssid=document.getElementById('wlanSsid').value.trim(),password=document.getElementById('wlanPassword').value,msg=document.getElementById('wlanMsg');
+if(!ssid||ssid.length>32){msg.innerText=t('system.wlanSsidError','SSID muss 1 bis 32 Zeichen lang sein.');return;}
+if(password.length>0&&(password.length<8||password.length>63)){msg.innerText=t('system.wlanPasswordError','Passwort muss leer (offenes WLAN) oder 8 bis 63 Zeichen lang sein.');return;}
+msg.innerText=t('system.wlanSaving','Speichere...');
+const body='ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(password);
+fetch('/set-wlan-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body}).then(r=>r.json()).then(d=>{
+if(!d.ok)throw new Error(d.error||'Fehler');msg.innerText=t('system.wlanSaved','Gespeichert.');
+}).catch(e=>msg.innerText=e.message);
 }
 function saveHotspot(restart){
 const ssid=document.getElementById('hotspotSsid').value.trim(),password=document.getElementById('hotspotPassword').value,msg=document.getElementById('hotspotMsg');
@@ -254,7 +279,7 @@ msg.innerText=t('system.languageSaveError','Speichern fehlgeschlagen.');
 }
 }).catch(()=>{});
 }
-loadI18n().then(()=>{upd();loadLanguages();loadHotspot();setInterval(upd,3000);setInterval(loadI18n,5000);});
+loadI18n().then(()=>{upd();loadLanguages();loadHotspot();loadWlan();setInterval(upd,3000);setInterval(loadI18n,5000);});
 </script>
 </body>
 </html>

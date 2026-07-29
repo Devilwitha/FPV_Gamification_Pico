@@ -67,6 +67,22 @@ try:
 except Exception:
     boot_runtime = None
 
+# Trick-Tuning-Profile-Verwaltung (Datei-I/O + eingebaute Profile) ist nach
+# trick_profile_helpers.py ausgelagert (siehe dortiger Modul-Docstring) - hier
+# bewusst weiterhin EAGER importiert (main.py's apply_trick_tuning_profile()
+# unten braucht die Profile schon vor dem ersten HTTP-Request), aber als
+# eigener, kleinerer Kompilierschritt statt Teil von main.py's grosser Datei.
+from trick_profile_helpers import (
+    TRICK_TUNING_PROFILES,
+    normalize_trick_tuning_profile,
+    load_trick_tuning_profile_name,
+    save_trick_tuning_profile_name,
+    list_profile_files,
+    get_profile_data as _tph_get_profile_data,
+    save_custom_profile as _tph_save_custom_profile,
+    delete_custom_profile as _tph_delete_custom_profile,
+)
+
 # ==================== CONFIGURATION ====================
 ENABLE_HOTSPOT = True        
 ENABLE_SERIAL_DEBUG = True   
@@ -129,7 +145,6 @@ DEBUG_LOG_BOOT_MARKER     = "=== FPV DEBUG SESSION START ===\n"
 SESSION_EXPORT_FILE_PATH  = "fpv_arcade_session_export.txt"
 DEBUG_EXPORT_FILE_PATH    = "fpv_debug_export.txt"
 HIGHSCORE_FILE_PATH       = "fpv_highscore.json"
-TRICK_SETTINGS_FILE_PATH  = "fpv_trick_settings.json"
 SYSTEM_SETTINGS_FILE_PATH = "fpv_system_settings.json"
 LED_BLINK_INTERVAL_MS     = 220
 OTA_LED_BLINK_INTERVAL_MS = 90
@@ -225,6 +240,12 @@ _challenge_route_handler = None
 _infection_route_handler = None
 _upload_helpers_module = None
 _github_ota_helpers_module = None
+_license_verifier_module = None
+# None = noch nicht geprueft (wird beim ersten Request lazy berechnet und
+# danach gecacht, da eine RSA-Signaturpruefung zu teuer fuer jeden Request
+# waere). Nach einem Lizenz-Upload wird der Cache explizit invalidiert
+# (siehe _refresh_license_status()), damit die Sperre ohne Neustart faellt.
+_LICENSE_STATUS = None
 infection_manager = None
 infection_task = None
 # Developer-Modus (Schiebeschalter auf der System-Seite): standardmaessig AUS,
@@ -250,6 +271,8 @@ FIRMWARE_VERSION_FILE = "firmware_version.txt"
 OTA_ALLOWED_TARGETS = (
     "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "wlan.conf", "boot_runtime.py",
     "ota_helpers.py",
+    "update_manager.py",
+    "license_verifier.py",
     "github_ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
@@ -260,7 +283,7 @@ OTA_ALLOWED_TARGETS = (
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html", "admin_idcard.html", "admin_challenges.html",
-    "admin_infection.html",
+    "admin_infection.html", "admin_credits.html",
     "challenges_view.html", "infection_view.html",
     "de.pak", "en.pak", "es.pak", "fr.pak", "it.pak", "pt.pak", "tr.pak",
     FIRMWARE_VERSION_FILE,
@@ -271,6 +294,9 @@ OTA_ALLOWED_TARGETS = (
 OTA_BUNDLE_TARGET = "firmware.nbo"
 OTA_LANG_BUNDLE_TARGET = "lang.pak"
 OTA_BUNDLE_MAGIC = b"FPVBNDL1"
+# license.lic wird wie die Bundle-Ziele behandelt (immer erlaubt, unabhaengig
+# vom Developer-Modus) - siehe upload_helpers.py und update_manager.py.
+LICENSE_UPLOAD_TARGET = "license.lic"
 
 # ==================== GITHUB-OTA ("Nach Updates suchen") ====================
 # Siehe github_ota_helpers.py: verbindet sich kurzzeitig mit wlan.conf,
@@ -307,60 +333,6 @@ def _load_firmware_version():
 
 FIRMWARE_VERSION = _load_firmware_version()
 
-def _build_trick_tuning_profiles():
-    # Schrittweiser Aufbau reduziert Peak-Allocation gegen MemoryError auf Pico.
-    profiles = {}
-
-    p = {}
-    p["gyro_trick_threshold"] = 160
-    p["stable_threshold"] = 58
-    p["trick_start_hold_ms"] = 28
-    p["stable_hold_ms"] = 120
-    p["gyro_deadband"] = 10
-    p["gyro_lowpass_alpha"] = 0.24
-    p["min_trick_duration"] = 0.10
-    p["trick_min_accum_deg"] = 65
-    p["trick_spin_min_accum_deg"] = 100
-    p["trick_axis_dominance_ratio"] = 1.10
-    p["trick_start_type_weight"] = 0.88
-    profiles["beginner"] = p
-
-    p = {}
-    p["gyro_trick_threshold"] = 205
-    p["stable_threshold"] = 70
-    p["trick_start_hold_ms"] = 45
-    p["stable_hold_ms"] = 150
-    p["gyro_deadband"] = 14
-    p["gyro_lowpass_alpha"] = 0.28
-    p["min_trick_duration"] = 0.14
-    p["trick_min_accum_deg"] = 95
-    p["trick_spin_min_accum_deg"] = 135
-    p["trick_axis_dominance_ratio"] = 1.32
-    p["trick_start_type_weight"] = 0.85
-    profiles["freestyle"] = p
-
-    p = {}
-    p["gyro_trick_threshold"] = 230
-    p["stable_threshold"] = 72
-    p["trick_start_hold_ms"] = 45
-    p["stable_hold_ms"] = 155
-    p["gyro_deadband"] = 14
-    p["gyro_lowpass_alpha"] = 0.36
-    p["min_trick_duration"] = 0.14
-    p["trick_min_accum_deg"] = 95
-    p["trick_spin_min_accum_deg"] = 145
-    p["trick_axis_dominance_ratio"] = 1.26
-    p["trick_start_type_weight"] = 0.95
-    profiles["aggressive"] = p
-
-    return profiles
-
-
-TRICK_TUNING_PROFILES = _build_trick_tuning_profiles()
-try:
-    del _build_trick_tuning_profiles
-except Exception:
-    pass
 gc.collect()
 
 
@@ -408,64 +380,13 @@ def apply_trick_tuning_profile():
     debug_log(f"[TRICK PROFILE] Aktiv: {profile_name}")
 
 
-def normalize_trick_tuning_profile(profile_name):
-    original = str(profile_name).strip()
-    normalized = original.lower()
-    if normalized == "soft":
-        normalized = "beginner"
-    elif normalized == "medium":
-        normalized = "freestyle"
-    if normalized in TRICK_TUNING_PROFILES:
-        return normalized
-
-    # Custom .pro Dateien behalten die Original-Gross-/Kleinschreibung.
-    # Zuerst Original-Schreibweise pruefen, dann als Fallback lowercase.
-    if original:
-        try:
-            os.stat(original + ".pro")
-            return original
-        except Exception:
-            pass
-    if normalized and normalized != original:
-        try:
-            os.stat(normalized + ".pro")
-            return normalized
-        except Exception:
-            pass
-    return "aggressive"
-
-
 def load_trick_tuning_profile():
     global TRICK_TUNING_PROFILE
-    try:
-        with open(TRICK_SETTINGS_FILE_PATH, 'r') as f:
-            data = json.loads(f.read())
-        TRICK_TUNING_PROFILE = normalize_trick_tuning_profile(data.get("profile", "aggressive"))
-    except Exception:
-        TRICK_TUNING_PROFILE = "aggressive"
+    TRICK_TUNING_PROFILE = load_trick_tuning_profile_name()
 
 
 def save_trick_tuning_profile():
-    payload = json.dumps({"profile": normalize_trick_tuning_profile(TRICK_TUNING_PROFILE)})
-    try:
-        tmp_path = TRICK_SETTINGS_FILE_PATH + ".tmp"
-        with open(tmp_path, 'w') as f:
-            f.write(payload)
-
-        try:
-            os.remove(TRICK_SETTINGS_FILE_PATH)
-        except Exception:
-            pass
-
-        os.rename(tmp_path, TRICK_SETTINGS_FILE_PATH)
-        return True, ""
-    except Exception as e:
-        try:
-            with open(TRICK_SETTINGS_FILE_PATH, 'w') as f:
-                f.write(payload)
-            return True, ""
-        except Exception as e2:
-            return False, f"{e} | fallback={e2}"
+    return save_trick_tuning_profile_name(TRICK_TUNING_PROFILE)
 
 
 def load_system_settings():
@@ -507,100 +428,20 @@ def save_system_settings():
             return False, f"{e} | fallback={e2}"
 
 
-def list_profile_files():
-    """Liefert Liste aller Profile: eingebaut + custom .pro Dateien"""
-    profiles = list(TRICK_TUNING_PROFILES.keys())
-    try:
-        for filename in os.listdir():
-            if filename.endswith(".pro") and filename != "fpv_trick_settings.json":
-                profile_name = filename[:-4]  # Entferne .pro
-                if profile_name not in profiles:
-                    profiles.append(profile_name)
-    except Exception:
-        pass
-    return profiles
-
-
+# Duenne Wrapper um trick_profile_helpers.py's gleichnamige Funktionen, die
+# main.py's eigenes debug_log() als optionalen Log-Callback durchreichen -
+# list_profile_files() braucht keinen Wrapper (kein Logging noetig) und wird
+# oben direkt importiert.
 def get_profile_data(profile_name):
-    """Hole Profil-Daten: entweder eingebaut oder aus .pro Datei"""
-    if profile_name in TRICK_TUNING_PROFILES:
-        return TRICK_TUNING_PROFILES[profile_name]
-    original = str(profile_name).strip()
-    normalized = original.lower()
-    if normalized in TRICK_TUNING_PROFILES:
-        return TRICK_TUNING_PROFILES[normalized]
-
-    # Custom .pro Dateien behalten die Original-Gross-/Kleinschreibung.
-    # Zuerst Original-Schreibweise pruefen, dann als Fallback lowercase.
-    candidates = []
-    if original:
-        candidates.append(original)
-    if normalized and normalized != original:
-        candidates.append(normalized)
-
-    required = ["gyro_trick_threshold", "stable_threshold", "trick_start_hold_ms",
-                "stable_hold_ms", "gyro_deadband", "gyro_lowpass_alpha",
-                "min_trick_duration", "trick_min_accum_deg", "trick_spin_min_accum_deg",
-                "trick_axis_dominance_ratio", "trick_start_type_weight"]
-
-    for candidate in candidates:
-        try:
-            file_path = candidate + ".pro"
-            with open(file_path, 'r') as f:
-                data = json.loads(f.read())
-            if "settings" in data and isinstance(data["settings"], dict):
-                data = data["settings"]
-
-            missing_key = False
-            for key in required:
-                if key not in data:
-                    debug_log(f"[PROFILE] Schluessel fehlt in {candidate}.pro: {key}")
-                    missing_key = True
-                    break
-            if not missing_key:
-                return data
-        except Exception:
-            continue
-    return None
+    return _tph_get_profile_data(profile_name, debug_log)
 
 
 def save_custom_profile(profile_name, profile_data):
-    """Speichere ein Custom-Profil als .pro Datei"""
-    if profile_name.lower() in ["beginner", "freestyle", "aggressive"]:
-        return False, "Kann nicht ueber eingebaute Profile schreiben"
-    
-    try:
-        payload = json.dumps(profile_data)
-        file_path = profile_name + ".pro"
-        tmp_path = file_path + ".tmp"
-        
-        with open(tmp_path, 'w') as f:
-            f.write(payload)
-        
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
-        
-        os.rename(tmp_path, file_path)
-        debug_log(f"[PROFILE] Custom-Profil gespeichert: {profile_name}")
-        return True, ""
-    except Exception as e:
-        return False, str(e)
+    return _tph_save_custom_profile(profile_name, profile_data, debug_log)
 
 
 def delete_custom_profile(profile_name):
-    """Loesche ein Custom-Profil"""
-    if profile_name.lower() in ["beginner", "freestyle", "aggressive"]:
-        return False, "Kann nicht ueber eingebaute Profile loeschen"
-    
-    try:
-        file_path = profile_name + ".pro"
-        os.remove(file_path)
-        debug_log(f"[PROFILE] Custom-Profil geloescht: {profile_name}")
-        return True, ""
-    except Exception as e:
-        return False, str(e)
+    return _tph_delete_custom_profile(profile_name, debug_log)
 
 
 def init_status_led():
@@ -866,6 +707,65 @@ def apply_firmware_bundle_from_base64(base64_path):
     return _ota_apply_firmware_bundle_from_base64(base64_path, OTA_ALLOWED_TARGETS, OTA_BUNDLE_MAGIC, log=debug_log, feed_wdt=_boot_feed_watchdog)
 
 
+def _get_license_verifier():
+    """Lazy-Import wie _get_upload_helpers() - haelt license_verifier.py's
+    (kleinen, aber RSA-Modexp-haltigen) Code aus dem `import main`-Pfad
+    heraus, bis er tatsaechlich fuer eine Lizenzpruefung gebraucht wird."""
+    global _license_verifier_module
+    if _license_verifier_module is None:
+        import license_verifier as _lazy_license_verifier
+        _license_verifier_module = _lazy_license_verifier
+    return _license_verifier_module
+
+
+def _refresh_license_status():
+    """Erzwingt eine erneute Signaturpruefung (nach Lizenz-Upload aufgerufen,
+    damit die Sperre ohne Neustart faellt)."""
+    global _LICENSE_STATUS
+    try:
+        _LICENSE_STATUS = _get_license_verifier().verify()
+    except Exception:
+        _LICENSE_STATUS = "INVALID"
+    return _LICENSE_STATUS
+
+
+def _get_license_status():
+    """Gecachter Lizenzstatus (VALID/INVALID/MISSING) - eine RSA-2048-
+    Signaturpruefung pro Request waere spuerbar langsam, daher nur einmal
+    (oder nach Upload) neu berechnet."""
+    global _LICENSE_STATUS
+    if _LICENSE_STATUS is None:
+        _refresh_license_status()
+    return _LICENSE_STATUS
+
+
+# Wird ohne gueltige Lizenz weiterhin bedient - die System-Seite selbst und
+# alles, was sie zum Anzeigen/Hochladen/Zuruecksetzen braucht. Alles andere
+# wird stattdessen auf die System-Seite umgeleitet (siehe handle_client()).
+_LICENSE_GATE_ALLOWED_PATHS = frozenset((
+    "/admin-system",
+    "/admin-credits",
+    "/system-info",
+    "/i18n-data",
+    "/language-packs",
+    "/set-language",
+    "/hotspot-config",
+    "/set-hotspot-config",
+    "/wlan-config",
+    "/set-wlan-config",
+    "/restart-pico",
+    "/reset-device-role",
+    "/clear-debug-log",
+    "/clear-session-log",
+    "/set-developer-mode",
+    "/prepare-upload",
+    "/upload-chunk",
+    "/finalize-upload",
+    "/emergency-delete-main",
+    "/emergency-delete-boot",
+))
+
+
 def _get_upload_helpers():
     """Lazy-Import fuer upload_helpers.py (Chunk-Upload/Finalize/Restart/
     Notaus-Loeschen) - dieser ~350-Zeilen-Codeblock wurde aus main.py
@@ -890,6 +790,8 @@ def _build_upload_deps():
         "ota_bundle_target": OTA_BUNDLE_TARGET,
         "ota_lang_bundle_target": OTA_LANG_BUNDLE_TARGET,
         "ota_allowed_targets": OTA_ALLOWED_TARGETS,
+        "license_upload_target": LICENSE_UPLOAD_TARGET,
+        "refresh_license_status": _refresh_license_status,
         "ota_staging_path": OTA_STAGING_PATH,
         "firmware_version_file": FIRMWARE_VERSION_FILE,
         "apply_firmware_bundle_from_base64": apply_firmware_bundle_from_base64,
@@ -1139,53 +1041,34 @@ def save_highscore():
 
 # Dauerhafter Verlauf ERREICHTER Trick-Highscores (im Gegensatz zu
 # highscore_data, das nur den AKTUELLEN Rekord haelt und bei jedem neuen
-# Rekord ueberschrieben wird) - gleiches Atomic-Write-Muster wie
-# save_highscore()/challenge_helpers.py's save_challenge_log(), fuer die
-# neue Statistik-/Verlaufs-Ansicht im Dashboard (admin_dashboard.html).
-TRICK_HIGHSCORE_LOG_FILE = "fpv_trick_highscore_log.json"
+# Rekord ueberschrieben wird) - fuer die Statistik-/Verlaufs-Ansicht im
+# Dashboard (admin_dashboard.html). load_trick_highscore_log()/
+# save_trick_highscore_log() leben bewusst in misc_routes_helpers.py statt
+# hier (lazy importiert, siehe unten) - main.py's eigene Kompiliergroesse
+# beim riskanten `import main` in boot.py ist der limitierende Faktor auf
+# schwaecheren Pico-Boards, nicht die Laufzeit-Leistung (siehe echte
+# "memory allocation failed"-Abstuerze, die genau deswegen in den
+# Projektnotizen dokumentiert sind).
 TRICK_HIGHSCORE_LOG_MAX_ENTRIES = 50
 trick_highscore_log_entries = []
 
 
-def load_trick_highscore_log():
+def _load_trick_highscore_log_lazy():
+    global trick_highscore_log_entries
     try:
-        with open(TRICK_HIGHSCORE_LOG_FILE, 'r') as f:
-            data = json.loads(f.read())
-        if isinstance(data, list):
-            return data[-TRICK_HIGHSCORE_LOG_MAX_ENTRIES:]
+        from misc_routes_helpers import load_trick_highscore_log as _lazy_load
+        trick_highscore_log_entries = _lazy_load()
     except Exception:
-        pass
-    return []
-
-
-def save_trick_highscore_log(entries):
-    trimmed = entries[-TRICK_HIGHSCORE_LOG_MAX_ENTRIES:]
-    payload = json.dumps(trimmed)
-    try:
-        tmp_path = TRICK_HIGHSCORE_LOG_FILE + ".tmp"
-        with open(tmp_path, 'w') as f:
-            f.write(payload)
-        try:
-            os.remove(TRICK_HIGHSCORE_LOG_FILE)
-        except Exception:
-            pass
-        os.rename(tmp_path, TRICK_HIGHSCORE_LOG_FILE)
-        return True, ""
-    except Exception as e:
-        try:
-            with open(TRICK_HIGHSCORE_LOG_FILE, 'w') as f:
-                f.write(payload)
-            return True, ""
-        except Exception as e2:
-            return False, f"{e} | fallback={e2}"
+        trick_highscore_log_entries = []
 
 
 def _record_trick_highscore_log_entry():
     """Traegt den AKTUELLEN Inhalt von highscore_data dauerhaft in den
     Verlauf ein - wird direkt nach jedem erfolgreichen save_highscore()
     aufgerufen, das highscore_data tatsaechlich mit einem NEUEN Rekord
-    ueberschrieben hat (siehe die drei Aufrufstellen in
-    _send_highscore_name_response()/_send_confirm_highscore_response())."""
+    ueberschrieben hat (siehe die Aufrufstellen in misc_routes_helpers.py's
+    _send_highscore_name_response()/_send_confirm_highscore_response(), als
+    "record_trick_highscore_log_entry" per deps-Dict durchgereicht)."""
     global trick_highscore_log_entries
     trick_highscore_log_entries.append({
         "ts_s": int(time.time()),
@@ -1195,12 +1078,16 @@ def _record_trick_highscore_log_entry():
     })
     if len(trick_highscore_log_entries) > TRICK_HIGHSCORE_LOG_MAX_ENTRIES:
         del trick_highscore_log_entries[0: len(trick_highscore_log_entries) - TRICK_HIGHSCORE_LOG_MAX_ENTRIES]
-    save_trick_highscore_log(trick_highscore_log_entries)
+    try:
+        from misc_routes_helpers import save_trick_highscore_log as _lazy_save
+        _lazy_save(trick_highscore_log_entries)
+    except Exception:
+        pass
 
 
 init_debug_log_file()
 load_highscore()
-trick_highscore_log_entries = load_trick_highscore_log()
+_load_trick_highscore_log_lazy()
 init_status_led()
 load_trick_tuning_profile()
 apply_trick_tuning_profile()
@@ -1285,8 +1172,12 @@ class LiveGyroTrickDetector:
         if MIN_TRICK_DURATION <= duration <= MAX_TRICK_DURATION:
             self.evaluate_trick(duration)
             if ENABLE_SERIAL_DEBUG:
+                # Bewusst mit "+" statt impliziter Literal-Aneinanderreihung:
+                # MicroPython (mpy-cross) unterstuetzt keine direkt
+                # aneinandergereihten f-Strings (zwei f-String-Literale ohne
+                # "+" dazwischen ergeben einen SyntaxError beim Kompilieren).
                 debug_log(
-                    f"Trick beendet: {self.trick_type} | Dauer={duration:.2f}s | "
+                    f"Trick beendet: {self.trick_type} | Dauer={duration:.2f}s | " +
                     f"R={self.accumulated_roll:.0f} P={self.accumulated_pitch:.0f} Y={self.accumulated_yaw:.0f}"
                 )
         elif force and duration > MAX_TRICK_DURATION and ENABLE_SERIAL_DEBUG:
@@ -1466,7 +1357,7 @@ class LiveGyroTrickDetector:
                     )
         elif ENABLE_SERIAL_DEBUG:
             debug_log(
-                f"Trick verworfen: Typ={eff_type} | dom={dominant_value:.0f} ratio={dominant_ratio:.2f} | "
+                f"Trick verworfen: Typ={eff_type} | dom={dominant_value:.0f} ratio={dominant_ratio:.2f} | " +
                 f"R={self.accumulated_roll:.0f} P={self.accumulated_pitch:.0f} Y={self.accumulated_yaw:.0f}"
             )
 
@@ -1669,7 +1560,7 @@ async def telemetry_loop():
 
                                 if ENABLE_SERIAL_DEBUG and detector.in_trick:
                                     debug_live_gyro_trick(
-                                        f"[LIVE GYRO TRICK] Roll: {roll_deg:6.1f} Grad | "
+                                        f"[LIVE GYRO TRICK] Roll: {roll_deg:6.1f} Grad | " +
                                         f"Pitch: {pitch_deg:6.1f} Grad | Yaw: {yaw_deg:6.1f} Grad"
                                     )
 
@@ -1741,6 +1632,7 @@ ADMIN_SYSTEM_HTML_PATH = "admin_system.html"
 ADMIN_IDCARD_HTML_PATH = "admin_idcard.html"
 ADMIN_CHALLENGES_HTML_PATH = "admin_challenges.html"
 ADMIN_INFECTION_HTML_PATH = "admin_infection.html"
+ADMIN_CREDITS_HTML_PATH = "admin_credits.html"
 # Oeffentliche, huebsch gestaltete Live-Visualisierung der Challenges (kein
 # Login noetig, gleiche Zielgruppe wie index.html - im Gegensatz zu
 # admin_challenges.html, das die technischen Start/Stopp-Controls enthaelt).
@@ -1773,225 +1665,11 @@ async def send_html_file(writer, file_path):
     gc.collect()
 
 
-def _build_redirect_html(title, heading, message, refresh_seconds=1):
-    return (
-        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-        f"<meta http-equiv='refresh' content='{int(refresh_seconds)}; url=/'>"
-        f"<title>{title}</title></head>"
-        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>"
-        f"<h2>{heading}</h2>"
-        f"<p>{message}</p>"
-        "<p>Du wirst zur Hauptseite zurueckgeleitet...</p>"
-        "</body></html>"
-    ).encode('utf-8')
-
-
-async def _send_highscore_name_response(writer, query_params, body_params):
-    global highscore_data, pending_highscore
-
-    name = query_params.get('name', '').strip()
-    if not name:
-        name = body_params.get('name', '').strip()
-    is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
-    success = False
-    error = ""
-    score_to_save = None
-    timestamp_to_save = None
-
-    if not name:
-        error = "Name darf nicht leer sein."
-    else:
-        if pending_highscore["active"]:
-            score_to_save = pending_highscore["score"]
-            timestamp_to_save = pending_highscore["timestamp"]
-        elif detector.score > highscore_data["score"]:
-            score_to_save = detector.score
-            timestamp_to_save = get_datetime_string()
-            debug_console_only("[HIGHSCORE] Fallback: Score hoeher als Highscore.")
-        elif highscore_data["score"] > 0:
-            score_to_save = highscore_data["score"]
-            timestamp_to_save = highscore_data.get("timestamp", "Unbekannt")
-            debug_console_only("[HIGHSCORE] Name fuer bestehenden Highscore wird aktualisiert.")
-        else:
-            error = "Kein neuer Highscore zum Speichern vorhanden."
-
-    if error == "" and score_to_save is not None:
-        highscore_data["score"] = int(score_to_save)
-        highscore_data["timestamp"] = timestamp_to_save or get_datetime_string()
-        highscore_data["player"] = name
-        saved_ok, save_error = save_highscore()
-        if saved_ok:
-            pending_highscore["active"] = False
-            pending_highscore["score"] = 0
-            pending_highscore["timestamp"] = "Unbekannt"
-            success = True
-            debug_console_only(
-                f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
-            )
-            _record_trick_highscore_log_entry()
-        else:
-            error = "Speichern fehlgeschlagen: " + str(save_error)
-            debug_console_only("[HIGHSCORE ERROR] " + error)
-
-    if is_web_submit:
-        if success:
-            response_html = _build_redirect_html(
-                "Highscore gespeichert",
-                "Highscore gespeichert",
-                f"{html_escape(highscore_data.get('player', DEFAULT_PILOT_NAME))} steht jetzt mit {highscore_data['score']} Punkten im Highscore.",
-                refresh_seconds=1,
-            )
-        else:
-            response_html = _build_redirect_html(
-                "Speichern fehlgeschlagen",
-                "Speichern fehlgeschlagen",
-                html_escape(error or 'Unbekannter Fehler'),
-                refresh_seconds=2,
-            )
-
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: text/html\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(response_html)).encode('utf-8') + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response_html)
-    else:
-        payload = json.dumps({
-            "ok": success,
-            "error": error,
-            "highscore": highscore_data["score"],
-            "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
-            "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
-        }).encode('utf-8')
-
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(payload)).encode('utf-8') + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(payload)
-
-
-async def _send_confirm_highscore_response(writer):
-    global highscore_data, pending_highscore
-
-    success = False
-    error = ""
-
-    if pending_highscore["active"]:
-        highscore_data["score"] = int(pending_highscore["score"])
-        highscore_data["timestamp"] = pending_highscore["timestamp"] or get_datetime_string()
-        highscore_data["player"] = DEFAULT_PILOT_NAME
-        saved_ok, save_error = save_highscore()
-        if saved_ok:
-            pending_highscore["active"] = False
-            pending_highscore["score"] = 0
-            pending_highscore["timestamp"] = "Unbekannt"
-            success = True
-            debug_console_only(
-                f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
-            )
-            _record_trick_highscore_log_entry()
-        else:
-            error = "Speichern fehlgeschlagen: " + str(save_error)
-            debug_console_only("[HIGHSCORE ERROR] " + error)
-    elif detector.score > highscore_data["score"]:
-        highscore_data["score"] = int(detector.score)
-        highscore_data["timestamp"] = get_datetime_string()
-        highscore_data["player"] = DEFAULT_PILOT_NAME
-        saved_ok, save_error = save_highscore()
-        if saved_ok:
-            success = True
-            debug_console_only(
-                f"[HIGHSCORE] Rekord gespeichert (Fallback): {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
-            )
-            _record_trick_highscore_log_entry()
-        else:
-            error = "Speichern fehlgeschlagen: " + str(save_error)
-            debug_console_only("[HIGHSCORE ERROR] " + error)
-    else:
-        success = True
-
-    payload = json.dumps({
-        "ok": success,
-        "error": error,
-        "highscore": highscore_data["score"],
-        "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
-        "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
-    }).encode('utf-8')
-
-    writer.write(b'HTTP/1.1 200 OK\r\n')
-    writer.write(b'Content-Type: application/json\r\n')
-    writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-    writer.write(b'Pragma: no-cache\r\n')
-    writer.write(b'Content-Length: ' + str(len(payload)).encode('utf-8') + b'\r\n')
-    writer.write(b'Connection: close\r\n\r\n')
-    writer.write(payload)
-
-
-async def _send_reset_highscore_response(writer, query_params, body_params):
-    global highscore_data, pending_highscore
-
-    is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
-    debug_console_only(f"[HIGHSCORE] Reset-Route aufgerufen (web={is_web_submit}).")
-
-    highscore_data["score"] = 0
-    highscore_data["timestamp"] = "Unbekannt"
-    highscore_data["player"] = DEFAULT_PILOT_NAME
-    pending_highscore["active"] = False
-    pending_highscore["score"] = 0
-    pending_highscore["timestamp"] = "Unbekannt"
-    detector.score = 0
-    detector.trick_history = []
-    detector.last_trick_name = "Keiner"
-
-    saved_ok, save_error = save_highscore()
-    if saved_ok:
-        debug_console_only("[HIGHSCORE] Highscore wurde manuell zurueckgesetzt.")
-    else:
-        debug_console_only("[HIGHSCORE ERROR] Reset-Speichern fehlgeschlagen: " + str(save_error))
-
-    if is_web_submit:
-        if saved_ok:
-            response_html = _build_redirect_html(
-                "Reset erfolgreich",
-                "Highscore wurde zurueckgesetzt",
-                "Highscore und Session-Score stehen jetzt auf 0.",
-                refresh_seconds=1,
-            )
-        else:
-            response_html = _build_redirect_html(
-                "Reset fehlgeschlagen",
-                "Reset fehlgeschlagen",
-                html_escape(str(save_error)),
-                refresh_seconds=2,
-            )
-
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: text/html\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(response_html)).encode('utf-8') + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(response_html)
-    else:
-        payload = json.dumps({
-            "ok": saved_ok,
-            "error": "" if saved_ok else ("Reset fehlgeschlagen: " + str(save_error)),
-            "highscore": highscore_data["score"],
-            "highscore_player": highscore_data.get("player", DEFAULT_PILOT_NAME),
-            "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
-        }).encode('utf-8')
-
-        writer.write(b'HTTP/1.1 200 OK\r\n')
-        writer.write(b'Content-Type: application/json\r\n')
-        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
-        writer.write(b'Pragma: no-cache\r\n')
-        writer.write(b'Content-Length: ' + str(len(payload)).encode('utf-8') + b'\r\n')
-        writer.write(b'Connection: close\r\n\r\n')
-        writer.write(payload)
+# _build_redirect_html() und die drei Highscore-HTTP-Antwort-Builder
+# (set-highscore-name / confirm-highscore / reset-highscore) leben jetzt in
+# misc_routes_helpers.py - sie wurden ohnehin nur von dort (per deps-
+# Callback) aufgerufen, siehe Kommentar dort. Verringert main.py's eigene
+# Kompiliergroesse beim riskanten `import main` in boot.py um ~200 Zeilen.
 
 
 async def _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
@@ -2009,6 +1687,10 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
 
     if request_path == '/admin-infection':
         await send_html_file(writer, ADMIN_INFECTION_HTML_PATH)
+        return True
+
+    if request_path == '/admin-credits':
+        await send_html_file(writer, ADMIN_CREDITS_HTML_PATH)
         return True
 
     if request_path.startswith('/infection-') or request_path.startswith('/lobby-'):
@@ -2154,9 +1836,10 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "set_language_code": _set_language_code,
             "is_allowed_language": _is_allowed_language,
             "list_language_codes": _list_language_codes,
-            "send_highscore_name_response": _send_highscore_name_response,
-            "send_confirm_highscore_response": _send_confirm_highscore_response,
-            "send_reset_highscore_response": _send_reset_highscore_response,
+            "get_datetime_string": get_datetime_string,
+            "html_escape": html_escape,
+            "save_highscore": save_highscore,
+            "record_trick_highscore_log_entry": _record_trick_highscore_log_entry,
             "enable_serial_debug": ENABLE_SERIAL_DEBUG,
             "write_text_file": write_text_file,
             "session_export_file_path": SESSION_EXPORT_FILE_PATH,
@@ -2170,7 +1853,9 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "perform_emergency_delete_boot": _perform_emergency_delete_boot,
             "infection_status": _ensure_infection_manager().status,
             "trick_highscore_log_entries": trick_highscore_log_entries,
-            "save_trick_highscore_log": save_trick_highscore_log,
+            "device_role": "gamification",
+            "boot_runtime": boot_runtime,
+            "license_status": _get_license_status(),
         },
     )
 
@@ -2203,7 +1888,16 @@ async def handle_client(reader, writer):
             request_path, query_string = request_target.split('?', 1)
         else:
             request_path, query_string = request_target, ''
-            
+
+        # Lizenzsperre (nur Geraete-Rolle "gamification" - main_gatehill.py hat
+        # diese Pruefung bewusst nicht): ohne gueltige Lizenz wird ausschliesslich
+        # die System-Seite (samt ihrer eigenen Endpunkte, u.a. fuer den Lizenz-
+        # Upload selbst) bedient, alles andere bekommt ebenfalls die System-Seite
+        # statt der eigentlich angefragten Seite/Route.
+        if request_path not in _LICENSE_GATE_ALLOWED_PATHS and _get_license_status() != "VALID":
+            await send_html_file(writer, ADMIN_SYSTEM_HTML_PATH)
+            return
+
         query_params = parse_query(query_string)
         content_length = 0
         
@@ -2353,12 +2047,20 @@ async def main_async():
     # HTTP-Servers/Telemetrie-Loops abgeschlossen ist, aber unabhaengig von
     # main.py's eigenem `import main`-Schritt in boot.py laeuft.
     _ensure_challenges()
+    # infection_mode.py/gmr.py hier lazy importieren, SOLANGE der Heap noch
+    # sauber ist - AP-Start und asyncio.start_server() unten belegen danach
+    # WLAN-Treiber-/Socket-Puffer, die den Heap fragmentieren. Wurde dieser
+    # Import erst NACH AP+HTTP-Server ausgefuehrt, schlug das Kompilieren von
+    # infection_mode.py auf dem Pico W schon bei einer kleinen Allokation
+    # (2344 Bytes) mit "memory allocation failed" fehl.
+    _ensure_infection_manager()
+    import gmr
     if ENABLE_HOTSPOT:
         boot_present = False
         try:
             os.stat("boot.py")
             boot_present = True
-        except Exception:
+        except OSError:
             boot_present = False
 
         if boot_present:
@@ -2369,7 +2071,6 @@ async def main_async():
 
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
     infection_task = asyncio.create_task(_ensure_infection_manager().run())
-    import gmr
     gmr.start_tasks()
     _boot_mark_healthy_once()
     system_ready = True

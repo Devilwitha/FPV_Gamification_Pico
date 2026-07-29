@@ -2,3 +2,10 @@
 # Example:
 # requests==2.32.3
 mpremote>=1.26.1
+# Fuer tools/license_generator.py (RSA-Schluesselerzeugung/Signierung).
+cryptography>=42.0.0
+# Fuer tools/build_firmware.py's MPY-Kompilierschritt (Quellcode-Schutz, Knopf
+# "Komplette Firmware inkl. Lizenz bauen & installieren"). Die mitgelieferte
+# Cross-Compiler-Version muss halbwegs zur MicroPython-Version auf dem Pico
+# passen - das Tool warnt (nicht blockierend), falls das nicht der Fall ist.
+mpy-cross>=1.22.0

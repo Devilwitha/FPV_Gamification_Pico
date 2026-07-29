@@ -67,17 +67,26 @@ AP_PASSWORD = _HOTSPOT_CONFIG["password"]
 
 OTA_STAGING_PATH = "ota_staging.tmp"
 # Nur diese Dateien duerfen per OTA ueberschrieben werden (kein Path-Traversal,
-# keine beliebigen Dateinamen vom Client) - identische Whitelist wie in main.py.
+# keine beliebigen Dateinamen vom Client). Vereinigte Liste ueber BEIDE
+# Geraete-Rollen (Gamification UND Gate/Hill, siehe boot_runtime.py/
+# role_setup.py) - recovery.py muss auch funktionieren, wenn die Rolle noch
+# gar nicht gewaehlt wurde, darf sich also nicht auf den Rollen-Zustand
+# verlassen.
 OTA_ALLOWED_TARGETS = (
-    "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "boot_runtime.py",
-    "ota_helpers.py", "infection_mode.py",
+    "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "wlan.conf", "boot_runtime.py",
+    "ota_helpers.py", "github_ota_helpers.py", "infection_mode.py",
+    "koth_mode.py", "race_mode.py",
     "main.py", "index.html",
+    "main_gatehill.py", "index_gatehill.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html", "admin_infection.html", "infection_view.html",
     "firmware_version.txt",
 )
 # Spezial-Ziel: komplettes Firmware-Bundle (siehe build_firmware.py), das
-# mehrere der obigen Dateien in einem Rutsch aktualisiert.
+# mehrere der obigen Dateien in einem Rutsch aktualisiert - bewusst das
+# UNIVERSELLE Bundle (enthaelt main.py UND main_gatehill.py), damit
+# Recovery unabhaengig von der (moeglicherweise noch nicht gewaehlten)
+# Geraete-Rolle funktioniert.
 OTA_BUNDLE_TARGET = "firmware.nbo"
 OTA_BUNDLE_MAGIC = b"FPVBNDL1"
 
@@ -705,6 +714,7 @@ async def handle_client(reader, writer):
                 "ip": ip_addr,
                 "recovery_mode": True,
                 "ota_active": ota_update_active,
+                "board_type": boot_runtime.detect_board_type() if boot_runtime else "Unbekannt",
             }
             response_data = json.dumps(info_data).encode('utf-8')
             writer.write(b'HTTP/1.1 200 OK\r\n')

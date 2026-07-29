@@ -172,6 +172,14 @@ def _machine_freq(new_freq_hz=None):
     return _SimState.cpu_freq_hz
 
 
+def _machine_unique_id():
+    # Feste, erkennbare Fake-ID fuer den Simulator (echte Picos liefern hier
+    # 8 zufaellige Bytes aus dem Flash) - stabil ueber Laeufe hinweg, damit
+    # eine im Simulator signierte license.lic (siehe license_verifier.py)
+    # reproduzierbar getestet werden kann.
+    return b"SIM0\x00\x00\x00\x01"
+
+
 def _install_machine_module():
     machine_mod = types.ModuleType("machine")
     machine_mod.Pin = _Pin
@@ -179,6 +187,7 @@ def _install_machine_module():
     machine_mod.WDT = _WDT
     machine_mod.reset = _machine_reset
     machine_mod.freq = _machine_freq
+    machine_mod.unique_id = _machine_unique_id
     sys.modules["machine"] = machine_mod
 
 

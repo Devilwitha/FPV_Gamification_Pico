@@ -13,7 +13,9 @@ WIFI_SSID = _HOTSPOT_CONFIG["ssid"]
 WIFI_PASSWORD = _HOTSPOT_CONFIG["password"]
 PICO_HOST = "192.168.4.1"
 POLL_INTERVAL_MS = 2000
+OTA_ACTIVE_POLL_INTERVAL_MS = 800
 RECONNECT_DELAY_MS = 1500
+LONG_PRESS_MS = 550
 SESSION_DOWNLOAD_FILE = "fpv_arcade_session.txt"
 DEBUG_DOWNLOAD_FILE = "fpv_debug_log.txt"
 
@@ -37,6 +39,20 @@ YELLOW = rgb565(255, 196, 64)
 CYAN = rgb565(48, 190, 220)
 NAVY = rgb565(10, 24, 43)
 PANEL = rgb565(20, 43, 64)
+
+OTA_PHASE_LABELS = {
+    "idle": ("BEREIT", CYAN),
+    "connecting_wifi": ("VERBINDE WLAN", YELLOW),
+    "checking_release": ("PRUEFE RELEASE", YELLOW),
+    "up_to_date": ("AKTUELL", GREEN),
+    "downloading": ("LAEDT HERUNTER", YELLOW),
+    "applying": ("WENDE AN", YELLOW),
+    "success": ("ERFOLGREICH", GREEN),
+    "error": ("FEHLER", RED),
+    "wifi_failed": ("WLAN FEHLER", RED),
+    "check_failed": ("PRUEF-FEHLER", RED),
+    "no_wlan": ("KEIN WLAN", RED),
+}
 
 
 class TDisplayS3:
@@ -174,6 +190,8 @@ class TDisplayS3:
 
 
 class LilyGoApp:
+    PAGES = ("live", "system", "ota")
+
     def __init__(self):
         self.display = TDisplayS3()
         self.download_button = machine.Pin(0, machine.Pin.IN, machine.Pin.PULL_UP)
@@ -181,6 +199,8 @@ class LilyGoApp:
         self.wlan = network.WLAN(network.STA_IF)
         self.last_data_signature = None
         self.last_button_pressed = "KEINER"
+        self.current_page = 0
+        self.device_role = "gamification"
 
         self.wlan.active(True)
         try:
@@ -311,6 +331,15 @@ class LilyGoApp:
         print("[LILYGO] WLAN verbunden, IP", ip_address)
         self.draw_status("VERBUNDEN", ip_address, GREEN)
         time.sleep_ms(700)
+        self.detect_role()
+
+    def detect_role(self):
+        try:
+            info = self.fetch_json("/system-info")
+            self.device_role = info.get("device_role", "gamification")
+            print("[LILYGO] Pico-Rolle erkannt:", self.device_role)
+        except Exception as error:
+            print("[LILYGO] Konnte Pico-Rolle nicht ermitteln:", error)
 
     def http_get(self, path, output_path=None, progress_callback=None):
         address = socket.getaddrinfo(PICO_HOST, 80)[0][-1]
@@ -408,15 +437,15 @@ class LilyGoApp:
         finally:
             connection.close()
 
-    def fetch_data(self):
+    def fetch_json(self, path):
         last_error = None
         for attempt in range(3):
             self.check_reset_combo()
             try:
-                return json.loads(self.http_get("/data").decode())
+                return json.loads(self.http_get(path).decode())
             except Exception as error:
                 last_error = error
-                print("[LILYGO] Datenversuch", attempt + 1, "fehlgeschlagen:", error)
+                print("[LILYGO] Abfrage", path, "Versuch", attempt + 1, "fehlgeschlagen:", error)
                 time.sleep_ms(400)
         raise last_error
 
@@ -444,25 +473,62 @@ class LilyGoApp:
         self.draw_status("DOWNLOAD FEHLER", str(last_error), RED)
         time.sleep_ms(1000)
 
-    def wait_button_release(self, button):
+    def measure_press(self, button):
+        """Haelt bis Loslassen, liefert 'short', 'long' oder 'combo' (zweiter Button dazu)."""
+        press_start = time.ticks_ms()
+        is_long = False
         while button.value() == 0:
-            self.check_reset_combo()
-            time.sleep_ms(30)
+            if self.check_reset_combo():
+                return "combo"
+            if not is_long and time.ticks_diff(time.ticks_ms(), press_start) >= LONG_PRESS_MS:
+                is_long = True
+            time.sleep_ms(20)
+        return "long" if is_long else "short"
+
+    def next_page(self):
+        self.current_page = (self.current_page + 1) % len(self.PAGES)
+        self.draw_status("SEITE: " + self.PAGES[self.current_page].upper(), "", CYAN)
+        time.sleep_ms(350)
+
+    def trigger_github_update(self):
+        self.draw_status("OTA UPDATE", "Sende Befehl...", CYAN)
+        try:
+            result = self.fetch_json("/start-github-update")
+            if result.get("ok"):
+                self.draw_status("UPDATE GESTARTET", result.get("message", ""), GREEN)
+            else:
+                self.draw_status("UPDATE FEHLER", result.get("error", ""), RED)
+        except Exception as error:
+            self.draw_status("UPDATE FEHLER", str(error), RED)
+        time.sleep_ms(900)
+        self.current_page = self.PAGES.index("ota")
 
     def handle_buttons(self):
         if self.check_reset_combo():
             return True
 
         if self.download_button.value() == 0:
-            self.wait_button_release(self.download_button)
-            self.last_button_pressed = "BTN 1 (SESSION)"
-            self.download_file("/download", SESSION_DOWNLOAD_FILE, "SESSION DOWNLOAD")
+            press_kind = self.measure_press(self.download_button)
+            if press_kind == "combo":
+                return True
+            if press_kind == "long":
+                self.last_button_pressed = "BTN 1 (SEITE)"
+                self.next_page()
+            else:
+                self.last_button_pressed = "BTN 1 (SESSION)"
+                self.download_file("/download", SESSION_DOWNLOAD_FILE, "SESSION DOWNLOAD")
             return True
 
         if self.debug_button.value() == 0:
-            self.wait_button_release(self.debug_button)
-            self.last_button_pressed = "BTN 2 (DEBUG)"
-            self.download_file("/download-debug", DEBUG_DOWNLOAD_FILE, "DEBUG DOWNLOAD")
+            press_kind = self.measure_press(self.debug_button)
+            if press_kind == "combo":
+                return True
+            if press_kind == "long":
+                self.last_button_pressed = "BTN 2 (OTA)"
+                self.trigger_github_update()
+            else:
+                self.last_button_pressed = "BTN 2 (DEBUG)"
+                self.download_file("/download-debug", DEBUG_DOWNLOAD_FILE, "DEBUG DOWNLOAD")
             return True
 
         return False
@@ -496,8 +562,87 @@ class LilyGoApp:
         self.display.text("LETZTER BUTTON:", 8, 232, CYAN)
         self.display.text(self.last_button_pressed, 8, 250, YELLOW)
 
-        self.display.text("BTN1 DOWNLOAD", 8, 284, WHITE)
-        self.display.text("BTN2 DEBUG", 8, 300, WHITE)
+        self.display.text("BTN1=DL HALT=SEITE", 8, 284, WHITE)
+        self.display.text("BTN2=DBG HALT=OTA", 8, 300, WHITE)
+        self.display.show()
+
+    def draw_gatehill_status(self, data):
+        self.display.clear()
+        self.display.fill_rect(0, 0, DISPLAY_WIDTH, 38, PANEL)
+        self.display.text("GATEHILL", 46, 15, GREEN)
+        self.display.text("STATUS: AKTIV", 8, 60, CYAN)
+        self.display.text("IP: " + str(data.get("ip", "?")), 8, 85, WHITE)
+        self.display.text("FW: " + str(data.get("firmware_version", "?")), 8, 105, WHITE)
+
+        uptime = int(data.get("uptime_s", 0))
+        self.display.text(
+            "LAUFZEIT: %d:%02d:%02d" % (uptime // 3600, (uptime % 3600) // 60, uptime % 60),
+            8,
+            125,
+            WHITE,
+        )
+
+        self.display.fill_rect(8, 220, 154, 1, PANEL)
+        self.display.text("LETZTER BUTTON:", 8, 232, CYAN)
+        self.display.text(self.last_button_pressed, 8, 250, YELLOW)
+        self.display.text("BTN1=DL HALT=SEITE", 8, 284, WHITE)
+        self.display.text("BTN2=DBG HALT=OTA", 8, 300, WHITE)
+        self.display.show()
+
+    def draw_system_info(self, data):
+        self.display.clear()
+        self.display.fill_rect(0, 0, DISPLAY_WIDTH, 38, PANEL)
+        self.display.text("SYSTEM INFO", 30, 15, WHITE)
+
+        self.display.text("ROLLE: " + str(data.get("device_role", "?")).upper(), 8, 55, CYAN)
+        self.display.text("FW: " + str(data.get("firmware_version", "?")), 8, 75, WHITE)
+        self.display.text("IP: " + str(data.get("ip", "?")), 8, 95, WHITE)
+
+        uptime = int(data.get("uptime_s", 0))
+        self.display.text(
+            "LAUFZEIT: %d:%02d:%02d" % (uptime // 3600, (uptime % 3600) // 60, uptime % 60),
+            8,
+            115,
+            WHITE,
+        )
+        self.display.text("RAM FREI: " + str(data.get("mem_free", "?")) + " B", 8, 135, WHITE)
+
+        self.display.fill_rect(8, 220, 154, 1, PANEL)
+        self.display.text("LETZTER BUTTON:", 8, 232, CYAN)
+        self.display.text(self.last_button_pressed, 8, 250, YELLOW)
+        self.display.text("BTN1=DL HALT=SEITE", 8, 284, WHITE)
+        self.display.text("BTN2=DBG HALT=OTA", 8, 300, WHITE)
+        self.display.show()
+
+    def draw_ota_page(self, data):
+        self.display.clear()
+        self.display.fill_rect(0, 0, DISPLAY_WIDTH, 38, PANEL)
+        self.display.text("GITHUB UPDATE", 20, 15, WHITE)
+
+        phase = data.get("phase", "idle")
+        label, color = OTA_PHASE_LABELS.get(phase, (str(phase).upper(), WHITE))
+        self.display.text(label, 8, 58, color)
+
+        self.display.text("FW AKTUELL: " + str(data.get("firmware_version", "?")), 8, 82, WHITE)
+        self.display.text("FW NEU: " + str(data.get("remote_version") or "-"), 8, 100, WHITE)
+
+        bar_x, bar_y, bar_w, bar_h = 10, 122, 150, 18
+        self.display.rect(bar_x, bar_y, bar_w, bar_h, WHITE)
+        progress = data.get("progress", 0) or 0
+        if progress:
+            fill_w = int((bar_w - 4) * (min(100, progress) / 100))
+            if fill_w > 0:
+                self.display.fill_rect(bar_x + 2, bar_y + 2, fill_w, bar_h - 4, GREEN)
+        self.display.text(str(progress) + " %", 65, 148, GREEN)
+
+        error = data.get("error", "")
+        if error:
+            self.display.text(str(error)[:20], 8, 172, RED)
+
+        self.display.fill_rect(8, 220, 154, 1, PANEL)
+        self.display.text("BTN2 HALTEN:", 8, 232, CYAN)
+        self.display.text("UPDATE STARTEN", 8, 250, CYAN)
+        self.display.text("BTN1=DL HALT=SEITE", 8, 284, WHITE)
         self.display.show()
 
     def run(self):
@@ -505,6 +650,8 @@ class LilyGoApp:
         while True:
             if not self.wlan.isconnected():
                 self.connect()
+                next_poll = 0
+                self.last_data_signature = None
 
             if self.handle_buttons():
                 next_poll = 0
@@ -512,23 +659,48 @@ class LilyGoApp:
 
             now = time.ticks_ms()
             if time.ticks_diff(now, next_poll) >= 0:
+                page = self.PAGES[self.current_page]
+                data = None
                 try:
-                    data = self.fetch_data()
-                    signature = (
-                        data.get("score", 0),
-                        str(data.get("history", [])),
-                        self.last_button_pressed,
-                    )
-                    if signature != self.last_data_signature:
-                        self.draw_data(data)
-                        self.last_data_signature = signature
+                    if page == "live":
+                        if self.device_role == "gatehill":
+                            data = self.fetch_json("/system-info")
+                            signature = ("gatehill", data.get("ip"), data.get("firmware_version"))
+                            if signature != self.last_data_signature:
+                                self.draw_gatehill_status(data)
+                                self.last_data_signature = signature
+                        else:
+                            data = self.fetch_json("/data")
+                            signature = (
+                                data.get("score", 0),
+                                str(data.get("history", [])),
+                                self.last_button_pressed,
+                            )
+                            if signature != self.last_data_signature:
+                                self.draw_data(data)
+                                self.last_data_signature = signature
+                    elif page == "system":
+                        data = self.fetch_json("/system-info")
+                        signature = ("system", data.get("uptime_s"), data.get("mem_free"))
+                        if signature != self.last_data_signature:
+                            self.draw_system_info(data)
+                            self.last_data_signature = signature
+                    elif page == "ota":
+                        data = self.fetch_json("/github-update-status")
+                        signature = ("ota", data.get("phase"), data.get("progress"))
+                        if signature != self.last_data_signature:
+                            self.draw_ota_page(data)
+                            self.last_data_signature = signature
                 except Exception as error:
                     print("[LILYGO] Pico-Abfrage fehlgeschlagen:", error)
                     if not self.wlan.isconnected():
                         continue
                     self.draw_status("PICO OFFLINE", str(error), RED)
 
-                next_poll = time.ticks_add(time.ticks_ms(), POLL_INTERVAL_MS)
+                interval = POLL_INTERVAL_MS
+                if page == "ota" and isinstance(data, dict) and data.get("active"):
+                    interval = OTA_ACTIVE_POLL_INTERVAL_MS
+                next_poll = time.ticks_add(time.ticks_ms(), interval)
                 gc.collect()
 
             time.sleep_ms(50)

@@ -81,6 +81,7 @@ Du benötigst lediglich **3 Leitungen** vom Flight Controller (oder ELRS-Empfän
    * **SSID:** `FPV_Gamification_Pico` *(Standard)*
    * **Passwort:** `drohnenspiel` *(Standard)*
    * **URL im Browser:** `http://192.168.4.1`
+4. **Ersteinrichtung:** Ein frisch geflashter Pico kennt seine Rolle noch nicht - `role_setup.py` zeigt beim allerersten Start automatisch eine Auswahlseite: **🎮 Gamification Pico** (vom Piloten getragener Score-Tracker, startet `main.py`) oder **⛳ Gate/Hill Pico** (stationärer King-of-the-Hill-Hügel/Race-Tor, startet `main_gatehill.py`). Die Wahl wird dauerhaft in `device_role.json` gespeichert und der Pico startet danach automatisch neu - diese Seite erscheint ab dann nicht mehr. Über den Button **"Rolle zurücksetzen"** auf der jeweiligen System-Seite (`/admin-system` bzw. der System-Sektion von `index_gatehill.html`) lässt sich die Wahl jederzeit widerrufen; `device_role.json` wird von OTA-Updates nie angefasst.
 
 ### 2. Wichtige Konfigurationen im Code
 * **Hotspot-Einstellungen (`source/hotspot.conf`):**
@@ -229,10 +230,10 @@ Hier ein kleiner Auszug, was unter der Haube schlummert:
 Damit du dich in diesem Projekt-Dschungel zurechtfindest, hier ein kleiner Wegweiser, was die einzelnen Skripte und Ordner eigentlich machen:
 
 ### 🏠 Root-Verzeichnis (Das Hauptverzeichnis des Repos)
-Die eigentlichen PC-Helfer-Skripte liegen im `tools`-Unterordner (siehe unten) - im Root-Verzeichnis selbst liegen nur noch diese `README.md` und die Projektordner (`source`, `source2`, `tools`, `data`, `build`, ...).
+Die eigentlichen PC-Helfer-Skripte liegen im `tools`-Unterordner (siehe unten) - im Root-Verzeichnis selbst liegen nur noch diese `README.md` und die Projektordner (`source`, `tools`, `data`, `build`, ...).
 
 ### 🛠️ Der `tools`-Ordner (Helfer-Skripte fuer den PC)
-* `tools/build_firmware.py` 📦: Das ist dein Helfer-Tool auf dem PC! Es verpackt alle Dateien aus dem `source`-Ordner in eine einzige `firmware.nbo`-Datei für bequeme OTA-Updates (kann zusaetzlich auch die eigenstaendige `source2`-Firmware als `gatehill.nbo` bauen).
+* `tools/build_firmware.py` 📦: Das ist dein Helfer-Tool auf dem PC! Es verpackt alle Dateien aus dem `source`-Ordner in eine einzige `firmware.nbo`-Datei für bequeme OTA-Updates (kann zusaetzlich auch das schlanke `gatehill.nbo`-Zusatzbundle fuer die Geraete-Rolle "gatehill" bauen, siehe unten).
 * `tools/check_pico_storage.py` 💾: Ein Tool, um den Speicherplatz auf deinem Pico zu checken.
 * `tools/download_lilygo_files.py` ⬇️: Lädt spezifische Dateien herunter, die für das LilyGO T-Display Setup (mit Display) gebraucht werden.
 * `tools/LilyGo.py` 📺: Eine spezielle Hauptdatei, wenn du das Projekt nicht auf einem normalen Pico, sondern auf einem LilyGO T-Display Board mit schickem Display laufen lässt.
@@ -246,19 +247,22 @@ Die eigentlichen PC-Helfer-Skripte liegen im `tools`-Unterordner (siehe unten) -
 Hier liegen alle Dateien, die tatsächlich *auf* deinen Pico müssen (oder vom Build-Skript eingepackt werden):
 
 * **Python-Kernskripte:**
-  * `main.py` 🚀: Die absolute Boss-Datei. Startet den ganzen Zirkus (Webserver, Telemetrie, Tricks).
-  * `boot.py` & `boot_runtime.py` 🥾: MicroPython startet diese Dateien beim Booten. Sie entscheiden, ob z.B. der Notfall-Recovery-Modus geladen werden muss.
-  * `ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py` 🛠️: Wichtige Helferlein für OTA-Updates, Datei-Uploads und spezielle Web-Routen, ausgelagert um RAM zu sparen.
-  * `hotspot_common.py` & `hotspot.conf` 📡: Alles rund um den WLAN-Access-Point.
-  * `recovery.py` 🚑: Das Notfall-Skript. Startet einen minimalen OTA-Server, wenn alles andere brennt.
+  * `main.py` 🚀: Die absolute Boss-Datei fuer die Geraete-Rolle "gamification". Startet den ganzen Zirkus (Webserver, Telemetrie, Tricks).
+  * `main_gatehill.py` ⛳: Die Boss-Datei fuer die Geraete-Rolle "gatehill" (stationaerer King-of-the-Hill-Huegel/Race-Tor) - liegt neben `main.py` im selben Ordner, `boot.py` waehlt anhand der gespeicherten Rolle eines von beiden.
+  * `role_setup.py` 🧭: Die Ersteinrichtungs-Seite - laeuft NUR beim allerersten Start, solange noch keine Geraete-Rolle gewaehlt wurde (siehe Quick-Start-Abschnitt oben).
+  * `boot.py` & `boot_runtime.py` 🥾: MicroPython startet diese Dateien beim Booten. Sie entscheiden, ob die Ersteinrichtung, der Notfall-Recovery-Modus oder `main.py`/`main_gatehill.py` geladen wird.
+  * `ota_helpers.py`, `github_ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py` 🛠️: Wichtige Helferlein für OTA-Updates (lokal & per GitHub-Suche), Datei-Uploads und spezielle Web-Routen, ausgelagert um RAM zu sparen.
+  * `hotspot_common.py`, `hotspot.conf` & `wlan.conf` 📡: Alles rund um den WLAN-Access-Point (`hotspot.conf`) und das WLAN-Zielnetz fuer die GitHub-Update-Suche (`wlan.conf`).
+  * `recovery.py` 🚑: Das Notfall-Skript. Startet einen minimalen OTA-Server, wenn alles andere brennt - funktioniert unabhaengig von der Geraete-Rolle.
 * **Spielmodi & Challenges:**
   * `challenge_helpers.py` 🎮: Die Logik hinter den Real-Time Mini-Games (Limbo, Eco, Touch & Go).
   * `infection_mode.py` / `.mpy` ☣️: Der Code für den gnadenlosen Bluetooth Infection-Modus (das `.mpy` ist kompiliert für mehr Speed & RAM).
   * `idcard_helpers.py` 🪪: Helfer für die Verwaltung von Spieler-IDs im Infection-Modus.
 * **Web-Oberfläche (Die HTML-Seiten):**
-  * `index.html`: Das Main-Dashboard für Piloten.
-  * `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`: Alle Kontrollzentren im Backend.
-  * `challenges_view.html` & `infection_view.html` 📺: Die hübschen, öffentlichen Ansichten für Zuschauer.
+  * `index.html`: Das Main-Dashboard für Piloten (Geraete-Rolle "gamification").
+  * `index_gatehill.html`: Die kombinierte Konfigurationsseite für die Geraete-Rolle "gatehill" (King of the Hill & Race).
+  * `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_koth.html`, `admin_race.html`: Alle Kontrollzentren im Backend (Geraete-Rolle "gamification").
+  * `challenges_view.html`, `infection_view.html` & `gamemodes_view.html` 📺: Die hübschen, öffentlichen Ansichten für Zuschauer.
 * **Sprachpakete (.pak):**
   * `de.pak`, `en.pak`, `es.pak`, `fr.pak`, `it.pak`, `pt.pak`, `tr.pak` 🌍: Internationalisierung, Baby! Übersetzungsdateien für das Webinterface.
 * `firmware_version.txt` & `version.json` 🏷️: Hier merkt sich das System, auf welcher Version du fliegst.

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Webshop – Zahlung erfolgreich{% endblock %}
+
+{% block content %}
+  <section class="status-page status-success">
+    <div class="status-icon">&#10003;</div>
+    <h1>Vielen Dank für deinen Einkauf!</h1>
+    <p>Deine Zahlung wurde erfolgreich verarbeitet.</p>
+    {% if session_id %}
+      <p class="status-detail">Stripe-Vorgangsnummer: {{ session_id }}</p>
+    {% endif %}
+    {% if order_id %}
+      <p class="status-detail">Bestellnummer: {{ order_id }}</p>
+    {% endif %}
+    <a class="btn btn-primary btn-large" href="{{ url_for('shop') }}">Zurück zum Shop</a>
+  </section>
+{% endblock %}

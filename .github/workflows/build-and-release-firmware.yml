@@ -10,16 +10,7 @@ on:
     branches:
       - main
     paths:
-      - "source/main.py"
-      - "source/index.html"
-      - "source/admin_*.html"
-      - "source/boot.py"
-      - "source/boot_runtime.py"
-      - "source/recovery.py"
-      - "source/hotspot_common.py"
-      - "source/ota_helpers.py"
-      - "source/firmware_version.txt"
-      - "source/version.json"
+      - "source/**"
       - "tools/build_firmware.py"
   workflow_dispatch: {}
     # Manuelles Ausloesen ueber den "Run workflow"-Button im Actions-Tab.
@@ -40,6 +31,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Python-Abhaengigkeiten installieren
+        # mpy-cross wird seit der mpy-Kompilierung in build_bundle() (siehe
+        # tools/build_firmware.py) fuer JEDEN Bundle-Build gebraucht, nicht
+        # nur fuer den lizenzierten Seriell-Build.
+        run: pip install -r requirements/requirements.txt
+
       - name: Firmware-Bundles bauen (alle Modi)
         run: |
           python tools/build_firmware.py build/firmware.nbo --mode normal
@@ -48,7 +45,12 @@ jobs:
           python tools/build_firmware.py build/firmware-recovery.nbo --mode recovery --no-version-bump
           python tools/build_firmware.py build/emergency.nbo --mode bootmain --no-version-bump
         # Erhoeht dabei automatisch die Firmware-Versionsnummer (version.json /
-        # firmware_version.txt, Format X.Y.Z -> X.Y.Z+1, siehe build_firmware.py).
+        # firmware_version.txt, Format X.Y.Z -> X.Y.Z+1, siehe build_firmware.py) -
+        # nur beim ersten Aufruf (--mode normal), alle weiteren Modi nutzen
+        # bewusst --no-version-bump und teilen sich denselben Versionsstand/
+        # dasselbe Release. main_gatehill.py/role_setup.py/index_gatehill.html
+        # sind bereits Teil des normalen Bundles (APP_FILES_TO_BUNDLE), ein
+        # separates gatehill.nbo ist daher nicht mehr noetig.
 
       - name: Versionsnummer bestimmen
         id: version
@@ -63,16 +65,8 @@ jobs:
           git add source/version.json source/firmware_version.txt
           if ! git diff --cached --quiet; then
             git commit -m "Firmware-Version auf ${{ steps.version.outputs.tag }} erhoeht [skip ci]"
-            for i in 1 2 3 4 5; do
-              git push && break
-              git fetch origin main
-              git rebase origin/main
-              sleep $((RANDOM % 5 + 1))
-            done
+            git push
           fi
-        # Retry-Schleife noetig, weil build-and-release-gatehill.yml beim
-        # selben Push parallel laufen und zuerst pushen kann (non-fast-forward
-        # Fehler); fetch+rebase holt den fremden Commit und versucht erneut.
 
       - name: Firmware-Bundles als Download-Artefakt hochladen
         uses: actions/upload-artifact@v4

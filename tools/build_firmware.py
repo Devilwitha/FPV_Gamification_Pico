@@ -18,6 +18,14 @@ und per Knopfdruck ("Bundle erstellen") das firmware.nbo mit Fortschrittsbalken
 baut. Mit Argument laeuft das Skript wie bisher rein auf der Kommandozeile
 (z.B. fuer Automatisierung/Skripte).
 
+Die GUI enthaelt zusaetzlich das Offline-Lizenzsystem (RSA-Hardware-Kopplung,
+siehe source/license_verifier.py): der Knopf "Komplette Firmware inkl. Lizenz
+bauen & installieren (seriell)" liest machine.unique_id() vom verbundenen
+Pico, signiert eine passende license.lic (siehe license_generator.py),
+kompiliert den gesamten Quellcode per mpy-cross zu .mpy (Quellcode-Schutz -
+ausser boot.py/recovery.py, siehe MPY_EXCLUDED_FILES) und ueberspielt alles
+inkl. license.lic + public_key.pem direkt per USB-Seriell.
+
 Bundle-Format (einfach, ohne Abhaengigkeiten wie zipfile/tarfile, damit
 main.py es mit reinem MicroPython + struct wieder einlesen kann):
 
@@ -51,15 +59,68 @@ try:
 except Exception:
     list_ports = None
 
+# license_generator.py liegt im selben tools/-Ordner. Import optional/lazy
+# per try-except, damit build_firmware.py (Bundle bauen/OTA-Upload) auch
+# ohne installiertes 'cryptography'-Paket weiter funktioniert - nur die
+# lizenzbezogenen GUI-Funktionen (siehe build_and_flash_with_license())
+# brauchen es tatsaechlich.
+try:
+    import license_generator
+except Exception:
+    license_generator = None
+
 # Dieses Skript liegt im tools/-Unterordner - PROJECT_ROOT ist daher das
 # Elternverzeichnis von tools/, nicht der Ordner dieser Datei selbst.
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_DIR = os.path.join(PROJECT_ROOT, "source")
-# source2: eigenstaendige, schlanke Tor-/Huegel-Firmware (nur KOTH/Race-BLE-
-# Logik + eigener Hotspot + eine kombinierte Konfigseite) - komplett getrennter
-# Quellordner/Bundle/Versionsstand von der Haupt-Firmware in SOURCE_DIR.
-SOURCE2_DIR = os.path.join(PROJECT_ROOT, "source2")
 BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
+# RSA-Schluesselpaar fuer das Offline-Lizenzsystem (siehe license_generator.py/
+# source/license_verifier.py). private_key.pem verlaesst diesen Ordner NIE
+# (siehe .gitignore) - nur public_key.pem wird mit auf den Pico uebertragen.
+KEYS_DIR = os.path.join(PROJECT_ROOT, "keys")
+DEFAULT_PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "private_key.pem")
+DEFAULT_PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "public_key.pem")
+# Lokales Archiv aller ausgestellten Lizenzen (siehe save_license_record()) -
+# jede neu signierte license.lic landet hier zusammen mit den beim Ausstellen
+# abgefragten Geraete-Werten (Hardware-ID, MicroPython-Version, Port, ...),
+# damit spaeter nachvollziehbar ist, welches Geraet wann welche Lizenz bekam.
+LICENSES_DIR = os.path.join(PROJECT_ROOT, "lizenzen")
+# boot.py/recovery.py werden von MicroPython beim Start direkt ueber ihren
+# exakten Dateinamen geladen (nicht per 'import') - dafuer ist ein
+# .mpy-Ersatz nicht auf jeder Portversion zuverlaessig gleich behandelt, ein
+# Fehlgriff wuerde das Geraet bricken. Beide bleiben daher immer Klartext .py;
+# main.py/main_gatehill.py etc. werden dagegen per 'import' geladen, das
+# unterstuetzt .mpy transparent.
+MPY_EXCLUDED_FILES = {"boot.py", "recovery.py"}
+
+
+def _mpy_device_name(filename):
+    """Liefert den Ziel-Dateinamen auf dem Pico fuer eine Quelldatei: .py ->
+    .mpy (Quellcode-Schutz per mpy-cross), ausser MPY_EXCLUDED_FILES (siehe
+    oben) - alles andere (html/pak/conf/txt/mission) bleibt unveraendert."""
+    if filename.endswith(".py") and filename not in MPY_EXCLUDED_FILES:
+        return filename[:-3] + ".mpy"
+    return filename
+
+
+def _expand_with_mpy_variants(names):
+    """Ergaenzt eine Namensliste um das jeweilige .py/.mpy-Gegenstueck jeder
+    kompilierbaren Datei - noetig, weil Bundles seit der mpy-Kompilierung
+    (siehe build_bundle()) .mpy-Namen enthalten, waehrend Aufraeum-/Predelete-
+    Listen historisch die rohen .py-Namen fuehren. Ein Geraet, das noch auf
+    einer aelteren, unkompilierten Firmware laeuft, muss beim naechsten Update
+    sein altes main.py finden UND loeschen koennen, obwohl das neue Bundle nur
+    main.mpy enthaelt (sonst wuerden beide Dateien gleichzeitig existieren -
+    siehe ota_helpers.py's Gegenstueck-Aufraeumung fuer denselben Grund)."""
+    expanded = set(names)
+    for name in names:
+        if name.endswith(".py") and name not in MPY_EXCLUDED_FILES:
+            expanded.add(name[:-3] + ".mpy")
+        elif name.endswith(".mpy"):
+            expanded.add(name[:-4] + ".py")
+    return expanded
+
+
 # Missionen liegen NICHT in SOURCE_DIR, sondern in ihrem eigenen Ordner (siehe
 # mission_builder.py's MISSIONS_DIR) - werden aber trotzdem mit ins normale
 # Firmware-Bundle gepackt, damit sie automatisch mit auf den Pico gelangen.
@@ -101,6 +162,8 @@ APP_FILES_TO_BUNDLE = [
     "de.pak",
     "hotspot_common.py",
     "ota_helpers.py",
+    "update_manager.py",
+    "license_verifier.py",
     "github_ota_helpers.py",
     "idcard_helpers.py",
     "misc_routes_helpers.py",
@@ -110,9 +173,13 @@ APP_FILES_TO_BUNDLE = [
     "koth_mode.py",
     "race_mode.py",
     "gmr.py",
+    "trick_profile_helpers.py",
     "main.py",
     "main_LilyGo.py",
+    "main_gatehill.py",
+    "role_setup.py",
     "index.html",
+    "index_gatehill.html",
     "admin_dashboard.html",
     "admin_update.html",
     "admin_simulate.html",
@@ -123,6 +190,7 @@ APP_FILES_TO_BUNDLE = [
     "admin_infection.html",
     "admin_koth.html",
     "admin_race.html",
+    "admin_credits.html",
     "challenges_view.html",
     "infection_view.html",
     "gamemodes_view.html",
@@ -135,6 +203,7 @@ RECOVERY_FILES_TO_BUNDLE = [
     "hotspot.conf",
     "boot_runtime.py",
     "ota_helpers.py",
+    "update_manager.py",
     "firmware_version.txt",
 ]
 
@@ -144,27 +213,7 @@ DEFAULT_BUILD_LIGHT_FIRMWARE = False
 DEFAULT_BUILD_RECOVERY_FIRMWARE = False
 DEFAULT_BUILD_LANGUAGE_PACK = False
 DEFAULT_BUILD_BOOT_MAIN_ONLY = False
-DEFAULT_BUILD_SOURCE2 = False
 MANIFEST_FILE = os.path.join(BUILD_DIR, ".last_bundle_manifest.json")
-
-# source2 hat immer ein Vollbundle (kein Light-/Recovery-/Sprachpaket-Modus
-# noetig - die Firmware ist klein genug), daher feste Dateiliste statt der
-# modusabhaengigen _resolve_files_to_bundle()-Logik der Haupt-Firmware.
-SOURCE2_FILES_TO_BUNDLE = [
-    "firmware_version.txt",
-    "hotspot.conf",
-    "hotspot_common.py",
-    "boot_runtime.py",
-    "ota_helpers.py",
-    "github_ota_helpers.py",
-    "koth_mode.py",
-    "race_mode.py",
-    "index.html",
-    "recovery.py",
-    "main.py",
-    "boot.py",
-]
-SOURCE2_OUTPUT_NAME = "gatehill.nbo"
 
 
 def get_files_to_bundle(include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK):
@@ -174,7 +223,7 @@ def get_files_to_bundle(include_boot_stack=DEFAULT_INCLUDE_BOOT_STACK):
     return files
 
 OPTIONAL_FILES_TO_BUNDLE = []
-RECOVERY_MODE_FILES_SET = set(RECOVERY_FILES_TO_BUNDLE)
+RECOVERY_MODE_FILES_SET = _expand_with_mpy_variants(RECOVERY_FILES_TO_BUNDLE)
 
 
 def _bundle_source_path(source_dir, filename):
@@ -224,7 +273,8 @@ def _classify_bundle_mode(bundle_entries):
         return "language"
 
     name_set = set(names)
-    if "main.py" in name_set and "boot.py" in name_set:
+    has_main = "main.py" in name_set or "main.mpy" in name_set
+    if has_main and "boot.py" in name_set:
         return "complete"
 
     if name_set and name_set.issubset(RECOVERY_MODE_FILES_SET):
@@ -449,13 +499,44 @@ def build_bundle(
     included = []
     missing = []
 
+    # Quellcode-Schutz: .py-Dateien werden (ausser boot.py/recovery.py, siehe
+    # MPY_EXCLUDED_FILES) per mpy-cross zu .mpy kompiliert, BEVOR sie ins
+    # Bundle wandern - genau wie beim lizenzierten Build (siehe
+    # build_and_flash_with_license()/compile_sources_to_mpy()), nur jetzt fuer
+    # JEDES firmware.nbo (auch das ueber die CLI/GitHub Actions gebaute
+    # Release-Bundle). Ein reines Sprachpaket enthaelt ohnehin keinen Code,
+    # daher dort kein mpy-cross noetig/erzwungen.
+    needs_mpy = not language_pack_mode and any(
+        f.endswith(".py") and f not in MPY_EXCLUDED_FILES for f in files_to_bundle
+    )
+    mpy_cross_cmd = _resolve_mpy_cross_command() if needs_mpy else None
+
     bundle_entries = []
-    for filename in files_to_bundle:
-        content = _read_bundle_file_bytes(source_dir, filename)
-        if content is None:
-            missing.append(filename)
-            continue
-        bundle_entries.append((filename, content))
+    with tempfile.TemporaryDirectory() as tmp_compile_dir:
+        for filename in files_to_bundle:
+            src_path = _bundle_source_path(source_dir, filename)
+            if not os.path.isfile(src_path):
+                missing.append(filename)
+                continue
+
+            if mpy_cross_cmd and filename.endswith(".py") and filename not in MPY_EXCLUDED_FILES:
+                device_name = _mpy_device_name(filename)
+                dst_path = os.path.join(tmp_compile_dir, device_name)
+                if progress_callback:
+                    progress_callback(len(bundle_entries) + 1, len(files_to_bundle), f"Kompiliere {filename} -> {device_name}")
+                result = subprocess.run(
+                    mpy_cross_cmd + [src_path, "-o", dst_path],
+                    capture_output=True, text=True, timeout=60,
+                )
+                if result.returncode != 0:
+                    raise Exception(f"mpy-cross fehlgeschlagen fuer {filename}: {(result.stderr or result.stdout).strip()}")
+                with open(dst_path, "rb") as f:
+                    content = f.read()
+                bundle_entries.append((device_name, content))
+            else:
+                with open(src_path, "rb") as f:
+                    content = f.read()
+                bundle_entries.append((filename, content))
 
     if missing:
         print("WARNUNG: Folgende Dateien fehlen und werden NICHT ins Bundle aufgenommen:")
@@ -488,68 +569,6 @@ def build_bundle(
 
     _debug(f"build_bundle done: included={len(included)} total_bytes={sum(size for _, size in included)}")
     _save_manifest(source_dir)
-
-    return included, missing
-
-
-def build_source2_bundle(output_path=None, progress_callback=None, bump_version=True):
-    """Baut das eigenstaendige source2-Bundle (Tor-/Huegel-Firmware,
-    Standardname 'gatehill.nbo'). Immer ein Vollbundle (kein Light-/Recovery-/
-    Sprachpaket-Modus wie bei der Haupt-Firmware) - eigener Quellordner
-    (SOURCE2_DIR), eigene Dateiliste (SOURCE2_FILES_TO_BUNDLE) und eigener,
-    unabhaengiger Versionsstand (source2/version.json), damit ein Build der
-    Haupt-Firmware NICHT die Versionsnummer von source2 mit erhoeht (und
-    umgekehrt)."""
-    output_path = output_path or os.path.join(BUILD_DIR, SOURCE2_OUTPUT_NAME)
-    _debug(f"build_source2_bundle start: output_path={output_path}")
-    if bump_version:
-        new_version = bump_firmware_version(SOURCE2_DIR)
-        _debug(f"build_source2_bundle version bumped to {new_version}")
-    else:
-        _debug(f"build_source2_bundle version kept at {_read_version_state(SOURCE2_DIR)}")
-
-    files_to_bundle = _order_bundle_files_for_apply(list(SOURCE2_FILES_TO_BUNDLE))
-    included = []
-    missing = []
-
-    bundle_entries = []
-    for filename in files_to_bundle:
-        content = _read_bundle_file_bytes(SOURCE2_DIR, filename)
-        if content is None:
-            missing.append(filename)
-            continue
-        bundle_entries.append((filename, content))
-
-    if missing:
-        print("WARNUNG (source2): Folgende Dateien fehlen und werden NICHT ins Bundle aufgenommen:")
-        for name in missing:
-            print(f"  - {name}")
-        print()
-        _debug(f"build_source2_bundle missing files: {missing}")
-
-    total = len(bundle_entries)
-
-    output_dir = os.path.dirname(os.path.abspath(output_path))
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-
-    with open(output_path, "wb") as out:
-        out.write(BUNDLE_MAGIC)
-        out.write(struct.pack(">I", total))
-
-        for i, (filename, content) in enumerate(bundle_entries, start=1):
-            name_bytes = filename.encode("utf-8")
-            out.write(struct.pack(">I", len(name_bytes)))
-            out.write(name_bytes)
-            out.write(struct.pack(">I", len(content)))
-            out.write(content)
-
-            included.append((filename, len(content)))
-
-            if progress_callback:
-                progress_callback(i, total, filename)
-
-    _debug(f"build_source2_bundle done: included={len(included)} total_bytes={sum(size for _, size in included)}")
 
     return included, missing
 
@@ -757,10 +776,18 @@ def _cleanup_remote_bundle_artifacts(mpremote_cmd, port, managed_targets=None, r
 
 # Fehlermuster, die typischerweise transiente USB/Treiber-Haenger sind (kein
 # echter Hardwaredefekt) - ein erneuter Versuch loest das meistens.
+# "could not enter raw repl"/TransportError tritt v.a. dann auf, wenn der
+# Pico gerade seine volle Firmware ausfuehrt (Hardware-Watchdog aktiv, siehe
+# boot.py's BOOT_WDT_TIMEOUT_MS) und der Raw-REPL-Handshake laenger dauert
+# als der Watchdog erlaubt - der Watchdog resettet das Geraet dann MITTEN im
+# Handshake. Ein erneuter Versuch nach kurzer Pause klappt danach meist,
+# weil der Pico frisch gebootet und (noch) nicht beschaeftigt ist.
 _TRANSIENT_SERIAL_ERROR_MARKERS = (
     "SerialTimeoutException",
     "Write timeout",
     "ClearCommError failed",
+    "could not enter raw repl",
+    "TransportError",
 )
 
 
@@ -1004,10 +1031,13 @@ def _apply_bundle_entries_via_serial(mpremote_cmd, port, bundle_path, allowed_na
 
     # Alle Ziel-Dateien in EINEM Raw-REPL-Call entfernen, um maximal Platz
     # zu schaffen und instabile, wiederholte exec-Wechsel pro Datei zu
-    # vermeiden ("could not enter raw repl").
+    # vermeiden ("could not enter raw repl"). Um .py/.mpy-Gegenstuecke
+    # erweitert, damit ein Wechsel von/zu kompilierten Dateien keine Karteileiche
+    # (z.B. altes main.py neben neuem main.mpy) hinterlaesst.
+    delete_names = tuple(_expand_with_mpy_variants(names))
     delete_script = (
         "import os\n"
-        f"NAMES={repr(names)}\n"
+        f"NAMES={repr(delete_names)}\n"
         "for n in NAMES:\n"
         "  try:\n"
         "    os.remove(n)\n"
@@ -1078,6 +1108,8 @@ def _probe_micropython_port(mpremote_cmd, port):
             mpremote_cmd,
             ["connect", port, "exec", "print('PICO_OK')"],
             timeout=8,
+            retries=1,
+            retry_delay=2.0,
         )
         combined = (result.stdout or "") + "\n" + (result.stderr or "")
         ok = "PICO_OK" in combined
@@ -1086,6 +1118,639 @@ def _probe_micropython_port(mpremote_cmd, port):
     except Exception:
         _debug(f"probe port failed: {port}")
         return False
+
+
+# ==================== OFFLINE-LIZENZSYSTEM ====================
+# Baut auf denselben mpremote-Helfern wie der normale serielle Bundle-Upload
+# oben auf: Hardware-ID lesen, license.lic signieren, Quellcode per mpy-cross
+# schuetzen, alles direkt seriell uebertragen. Siehe source/license_verifier.py
+# fuer die Pruef-Gegenseite auf dem Pico.
+
+def ensure_keys_dir():
+    os.makedirs(KEYS_DIR, exist_ok=True)
+
+
+def keys_exist():
+    return os.path.isfile(DEFAULT_PRIVATE_KEY_PATH) and os.path.isfile(DEFAULT_PUBLIC_KEY_PATH)
+
+
+def generate_keypair_if_missing():
+    if license_generator is None:
+        raise Exception("Paket 'cryptography' nicht installiert (siehe requirements/requirements.txt).")
+    ensure_keys_dir()
+    if keys_exist():
+        return False
+    license_generator.generate_keypair(DEFAULT_PRIVATE_KEY_PATH, DEFAULT_PUBLIC_KEY_PATH)
+    return True
+
+
+def save_license_record(hardware_id, customer_id, license_content, device_info=None):
+    """Legt jede neu ausgestellte Lizenz dauerhaft unter LICENSES_DIR ab:
+    die signierte license.lic selbst PLUS eine .json-Datei mit den beim
+    Ausstellen abgefragten Geraete-Werten (Hardware-ID, MicroPython-Version
+    auf dem Geraet, mpy-cross-Version, seriellem Port, Kunden-ID, Zeitpunkt).
+    So bleibt nachvollziehbar, welches Geraet wann welche Lizenz bekam, auch
+    wenn das Geraet spaeter nicht mehr erreichbar ist. Liefert (lic_path, json_path)."""
+    os.makedirs(LICENSES_DIR, exist_ok=True)
+
+    issued_date = datetime.now().strftime("%Y%m%d")
+    safe_hardware_id = "".join(c for c in hardware_id if c.isalnum()) or "unknown"
+
+    # Reine Datums-Zeitstempel (keine Uhrzeit) sind nicht mehr zwingend
+    # eindeutig, wenn fuer dieselbe Hardware-ID am selben Tag mehrfach eine
+    # Lizenz ausgestellt wird - daher bei Bedarf einen laufenden Suffix
+    # anhaengen, statt eine bestehende Datei stumm zu ueberschreiben.
+    base_name = f"{safe_hardware_id}_{issued_date}"
+    suffix = 1
+    while os.path.exists(os.path.join(LICENSES_DIR, base_name + ".lic")):
+        suffix += 1
+        base_name = f"{safe_hardware_id}_{issued_date}_{suffix}"
+
+    lic_path = os.path.join(LICENSES_DIR, base_name + ".lic")
+    with open(lic_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(license_content)
+
+    record = {
+        "hardware_id": hardware_id,
+        "customer_id": customer_id,
+        "issued_at": issued_date,
+    }
+    record.update(device_info or {})
+
+    json_path = os.path.join(LICENSES_DIR, base_name + ".json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(record, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+    return lic_path, json_path
+
+
+def _resolve_mpy_cross_command():
+    candidates = []
+    seen = set()
+
+    def add(cmd):
+        key = tuple(cmd)
+        if key not in seen:
+            seen.add(key)
+            candidates.append(cmd)
+
+    venv_python = os.path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe")
+    if os.path.isfile(venv_python):
+        add([venv_python, "-m", "mpy_cross"])
+    add([sys.executable, "-m", "mpy_cross"])
+    mpy_cross_path = shutil.which("mpy-cross")
+    if mpy_cross_path:
+        add([mpy_cross_path])
+
+    for cmd in candidates:
+        try:
+            subprocess.run(cmd + ["--version"], capture_output=True, text=True, timeout=10, check=True)
+            return cmd
+        except Exception:
+            continue
+
+    raise Exception(
+        "mpy-cross nicht gefunden. Bitte installieren: "
+        f"'{sys.executable} -m pip install mpy-cross'"
+    )
+
+
+def _get_mpy_cross_version(mpy_cross_cmd):
+    try:
+        result = subprocess.run(mpy_cross_cmd + ["--version"], capture_output=True, text=True, timeout=10, check=True)
+        text = (result.stdout or "") + (result.stderr or "")
+        m = re.search(r"v(\d+\.\d+(?:\.\d+)?)", text)
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def ensure_device_raw_repl_ready(mpremote_cmd, port):
+    """Erzwingt einen sauberen, Raw-REPL-bereiten Zustand auf einem bereits
+    ausgewaehlten Port, BEVOR weitere exec-/cp-Aufrufe folgen (gleiches
+    Muster wie _push_and_unpack_bundle_on_device()). Wichtig, weil der Pico
+    normalerweise seine volle Firmware ausfuehrt (Hardware-Watchdog aktiv,
+    siehe boot.py) - ohne diesen Soft-Reset kann der erste exec-Aufruf mit
+    "could not enter raw repl" fehlschlagen, weil der Watchdog mitten im
+    Handshake feuert. Best effort: ein Fehlschlag hier ist nicht fatal, die
+    nachfolgenden Aufrufe haben eigene Retries."""
+    try:
+        _run_mpremote(mpremote_cmd, ["connect", port, "soft-reset"], timeout=20, retries=2, retry_delay=3.0)
+    except Exception as e:
+        _debug(f"ensure_device_raw_repl_ready soft-reset failed on {port} (best effort): {_shorten(e)}")
+
+
+def get_device_micropython_version(mpremote_cmd, port):
+    try:
+        result = _run_mpremote(
+            mpremote_cmd,
+            ["connect", port, "exec", "import sys; print('.'.join(str(x) for x in sys.implementation.version[:3]))"],
+            timeout=10,
+            retries=2,
+            retry_delay=3.0,
+        )
+        lines = [ln.strip() for ln in (result.stdout or "").splitlines() if ln.strip()]
+        return lines[-1] if lines else None
+    except Exception:
+        return None
+
+
+def read_hardware_id(mpremote_cmd, port):
+    script = "import machine, binascii; print(binascii.hexlify(machine.unique_id()).decode())"
+    result = _run_mpremote(mpremote_cmd, ["connect", port, "exec", script], timeout=15, retries=2, retry_delay=3.0)
+    lines = [ln.strip() for ln in (result.stdout or "").splitlines() if ln.strip()]
+    if not lines:
+        raise Exception("Konnte Hardware-ID nicht vom Pico lesen (keine Ausgabe)")
+    return lines[-1]
+
+
+def backup_existing_license(mpremote_cmd, port):
+    """Liest eine evtl. vorhandene license.lic vom Pico (Clean-Flash-Schutz -
+    siehe source/update_manager.py). Liefert None, falls keine vorhanden ist
+    oder sie nicht gelesen werden konnte."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".lic") as tf:
+        tmp_path = tf.name
+    try:
+        _run_mpremote(mpremote_cmd, ["connect", port, "cp", ":license.lic", tmp_path], timeout=20, retries=2, retry_delay=3.0)
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return content if content.strip() else None
+    except Exception:
+        return None
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+
+def restore_license(mpremote_cmd, port, content):
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".lic", newline="\n", encoding="utf-8") as tf:
+        tf.write(content)
+        tmp_path = tf.name
+    try:
+        _run_mpremote(mpremote_cmd, ["connect", port, "cp", tmp_path, ":license.lic"], timeout=20)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+
+def compile_sources_to_mpy(mpy_cross_cmd, source_dir, file_list, output_dir, progress_callback=None):
+    """Kompiliert alle .py-Dateien aus file_list (ausser MPY_EXCLUDED_FILES)
+    zu .mpy in output_dir; alle anderen Dateien (.html/.pak/.conf/.txt sowie
+    boot.py/recovery.py) werden unveraendert kopiert. Liefert eine Liste von
+    (Ziel-Dateiname-auf-dem-Pico, lokaler_Pfad)-Tupeln."""
+    os.makedirs(output_dir, exist_ok=True)
+    entries = []
+    total = len(file_list)
+
+    for i, filename in enumerate(file_list, start=1):
+        src_path = os.path.join(source_dir, filename)
+        if not os.path.isfile(src_path):
+            continue
+
+        if filename.endswith(".py") and filename not in MPY_EXCLUDED_FILES:
+            device_name = filename[:-3] + ".mpy"
+            dst_path = os.path.join(output_dir, device_name)
+            if progress_callback:
+                progress_callback(i, total, f"Kompiliere {filename} -> {device_name}")
+            result = subprocess.run(
+                mpy_cross_cmd + [src_path, "-o", dst_path],
+                capture_output=True, text=True, timeout=60,
+            )
+            if result.returncode != 0:
+                raise Exception(f"mpy-cross fehlgeschlagen fuer {filename}: {(result.stderr or result.stdout).strip()}")
+            entries.append((device_name, dst_path))
+        else:
+            device_name = filename
+            dst_path = os.path.join(output_dir, device_name)
+            if progress_callback:
+                progress_callback(i, total, f"Kopiere {filename} (unkompiliert)")
+            shutil.copyfile(src_path, dst_path)
+            entries.append((device_name, dst_path))
+
+    return entries
+
+
+def build_and_flash_with_license(customer_id, regenerate_license=True, progress_callback=None):
+    """Kompletter Ablauf des Haupt-Buttons "Komplette Firmware inkl. Lizenz
+    bauen & installieren": Hardware-ID lesen, license.lic signieren, Quellcode
+    per mpy-cross schuetzen, alles direkt seriell uebertragen, Soft-Reset.
+    progress_callback(done, total, message) fuer die GUI (gleiches Muster wie
+    build_bundle()/upload_bundle_via_serial())."""
+    if license_generator is None:
+        raise Exception("Paket 'cryptography' nicht installiert (siehe requirements/requirements.txt).")
+
+    def progress(step, total, message):
+        if progress_callback:
+            progress_callback(step, total, message)
+
+    total_steps = 8
+    mpremote_cmd = _resolve_mpremote_command()
+
+    progress(1, total_steps, "Suche Pico ueber USB-Seriell...")
+    ports = auto_detect_pico_ports(mpremote_cmd)
+    if not ports:
+        raise Exception("Kein Pico-COM-Port gefunden. Bitte USB neu verbinden und erneut versuchen.")
+    port = None
+    for p in ports:
+        if _probe_micropython_port(mpremote_cmd, p):
+            port = p
+            break
+    if not port:
+        port = ports[0]
+
+    # Pico in einen sauberen Raw-REPL-Zustand zwingen, BEVOR die folgenden
+    # exec-/cp-Aufrufe laufen - andernfalls kann der erste Aufruf mit
+    # "could not enter raw repl" fehlschlagen, wenn der Pico gerade seine
+    # volle Firmware ausfuehrt (Hardware-Watchdog aktiv, siehe boot.py).
+    progress(1, total_steps, f"Bereite Pico vor ({port})...")
+    ensure_device_raw_repl_ready(mpremote_cmd, port)
+
+    progress(2, total_steps, "Pruefe mpy-cross...")
+    mpy_cross_cmd = _resolve_mpy_cross_command()
+    cross_version = _get_mpy_cross_version(mpy_cross_cmd)
+
+    progress(3, total_steps, "Pruefe MicroPython-Version auf dem Pico...")
+    device_version = get_device_micropython_version(mpremote_cmd, port)
+    version_warning = None
+    if device_version and cross_version and device_version.split(".")[:2] != cross_version.split(".")[:2]:
+        version_warning = (
+            f"mpy-cross meldet MicroPython {cross_version}, das Geraet laeuft mit {device_version}. "
+            "Bei einer Minor-Versions-Abweichung kann eine .mpy-Datei als 'invalid .mpy file' abgelehnt "
+            "werden - im Zweifel mpy-cross auf die passende Version anpassen (siehe requirements.txt)."
+        )
+
+    progress(4, total_steps, f"Lese Hardware-ID vom Pico ({port})...")
+    hardware_id = read_hardware_id(mpremote_cmd, port)
+
+    progress(5, total_steps, "Sichere evtl. vorhandene license.lic (Clean-Flash-Schutz)...")
+    backed_up_license = backup_existing_license(mpremote_cmd, port)
+
+    license_content = None
+    license_record_path = None
+    if regenerate_license:
+        progress(6, total_steps, f"Signiere neue license.lic fuer Hardware-ID {hardware_id}...")
+        if not keys_exist():
+            raise Exception(
+                f"Kein RSA-Schluesselpaar unter {KEYS_DIR} gefunden. "
+                "Zuerst 'Schluesselpaar erzeugen' ausfuehren (siehe GUI)."
+            )
+        private_key = license_generator.load_private_key(DEFAULT_PRIVATE_KEY_PATH)
+        license_content = license_generator.sign_license(private_key, hardware_id, customer_id)
+
+        lic_path, _json_path = save_license_record(
+            hardware_id, customer_id, license_content,
+            device_info={
+                "port": port,
+                "device_micropython_version": device_version,
+                "mpy_cross_version": cross_version,
+            },
+        )
+        license_record_path = lic_path
+        progress(6, total_steps, f"Lizenz im Archiv abgelegt: {lic_path}")
+    else:
+        progress(6, total_steps, "Behalte vorhandene Lizenz (keine neue wird erzeugt)...")
+
+    with tempfile.TemporaryDirectory() as tmp_out:
+        progress(7, total_steps, "Kompiliere Quellcode (mpy-cross) und uebertrage auf den Pico...")
+        file_list = get_files_to_bundle(include_boot_stack=True)
+
+        def compile_progress(i, n, msg):
+            progress(7, total_steps, msg)
+
+        compiled_entries = compile_sources_to_mpy(mpy_cross_cmd, SOURCE_DIR, file_list, tmp_out,
+                                                   progress_callback=compile_progress)
+
+        bundle_entries = []
+        for device_name, local_path in compiled_entries:
+            with open(local_path, "rb") as f:
+                bundle_entries.append((device_name, f.read()))
+
+        if license_content is not None:
+            bundle_entries.append(("license.lic", license_content.encode("utf-8")))
+        with open(DEFAULT_PUBLIC_KEY_PATH, "rb") as f:
+            bundle_entries.append(("public_key.pem", f.read()))
+
+        # main.py/main.mpy und boot.py werden ABSICHTLICH als letztes installiert:
+        # main ist der von boot.py per 'import' geladene Einstiegspunkt, boot.py
+        # der von MicroPython direkt beim Start ausgefuehrte. Alle Abhaengigkeiten
+        # (ota_helpers.mpy, license_verifier.mpy, HTML-Seiten, ...) sollen bereits
+        # vollstaendig auf dem Geraet liegen, BEVOR diese beiden ersetzt werden.
+        def _entry_sort_key(entry):
+            name = entry[0]
+            if name in ("main.py", "main.mpy"):
+                return 1
+            if name == "boot.py":
+                return 2
+            return 0
+
+        bundle_entries.sort(key=_entry_sort_key)
+
+        bundle_path = os.path.join(tmp_out, "firmware.nbo")
+        with open(bundle_path, "wb") as out:
+            out.write(BUNDLE_MAGIC)
+            out.write(struct.pack(">I", len(bundle_entries)))
+            for name, content in bundle_entries:
+                name_bytes = name.encode("utf-8")
+                out.write(struct.pack(">I", len(name_bytes)))
+                out.write(name_bytes)
+                out.write(struct.pack(">I", len(content)))
+                out.write(content)
+
+        device_names = [name for name, _ in bundle_entries]
+
+        def serial_progress(_a, _b, msg):
+            progress(7, total_steps, msg)
+
+        # Immer zuerst versuchen, firmware.nbo auf den Pico zu kopieren und dort
+        # SELBST entpacken zu lassen (Datei-fuer-Datei, sicherer bei einer
+        # Unterbrechung) - fällt nur bei zu wenig Speicher auf den direkten
+        # PC-seitigen Datei-fuer-Datei-Copy zurueck. Der Soft-Reset am Ende
+        # dieser Funktion deckt bereits den Neustart ab, daher hier keinen
+        # zusaetzlichen machine.reset() ausloesen.
+        _push_and_unpack_bundle_on_device(
+            mpremote_cmd, port, bundle_path, device_names, "firmware.nbo",
+            predelete_targets=device_names,
+            progress_callback=serial_progress,
+            trigger_restart_if_needed=False,
+        )
+
+    if not regenerate_license and backed_up_license:
+        progress(8, total_steps, "Stelle vorherige license.lic wieder her...")
+        restore_license(mpremote_cmd, port, backed_up_license)
+
+    progress(8, total_steps, "Soft-Reset...")
+    try:
+        _run_mpremote(mpremote_cmd, ["connect", port, "soft-reset"], timeout=20, retries=2, retry_delay=3.0)
+    except Exception as e:
+        # Best effort: Lizenz + Firmware sind zu diesem Zeitpunkt bereits
+        # erfolgreich geschrieben (siehe _push_and_unpack_bundle_on_device()
+        # oben) - ein fehlgeschlagener Soft-Reset (z.B. Raw-REPL-Kontention
+        # kurz nach dem Neuschreiben vieler Dateien) darf das Gesamtergebnis
+        # nicht als Fehlschlag melden. Das Geraet startet auch ohne diesen
+        # Soft-Reset spaetestens beim naechsten Power-Cycle mit der neuen
+        # Firmware.
+        _debug(f"finaler Soft-Reset auf {port} fehlgeschlagen (best effort, Lizenz/Firmware bereits geschrieben): {_shorten(e)}")
+
+    return {
+        "port": port,
+        "hardware_id": hardware_id,
+        "license_issued": license_content is not None,
+        "license_record_path": license_record_path,
+        "version_warning": version_warning,
+    }
+
+
+def _build_device_unpack_script(allowed_names, remote_bundle_filename):
+    """Erzeugt das Python-Skript, das per 'mpremote run' AUF DEM PICO
+    ausgefuehrt wird, um ein Bundle (firmware.nbo/lang.pak) selbst zu
+    entpacken - Datei fuer Datei: alte Version geloescht, dann neue
+    geschrieben, eine nach der anderen. Das ist sicherer bei einer
+    Unterbrechung mitten in der Uebertragung als ein Massen-Vorab-Loeschen
+    ALLER Zieldateien auf einmal (wie es der Direct-Serial-Copy-Fallback via
+    _apply_bundle_entries_via_serial() macht)."""
+    allowed_tuple_literal = repr(tuple(allowed_names))
+    bundle_file_literal = repr(remote_bundle_filename)
+    return f"""import os
+import struct
+import machine
+
+MAGIC = b"FPVBNDL1"
+ALLOWED = {allowed_tuple_literal}
+BUNDLE_FILE = {bundle_file_literal}
+
+
+def read_exact(f, n):
+    data = bytearray()
+    while len(data) < n:
+        chunk = f.read(n - len(data))
+        if not chunk:
+            break
+        data.extend(chunk)
+    return bytes(data)
+
+
+extracted = []
+with open(BUNDLE_FILE, "rb") as f:
+    if read_exact(f, len(MAGIC)) != MAGIC:
+        raise Exception("Ungueltiges Bundle (Magic)")
+
+    count_bytes = read_exact(f, 4)
+    if len(count_bytes) < 4:
+        raise Exception("Bundle beschaedigt (count)")
+    (count,) = struct.unpack(">I", count_bytes)
+
+    for _ in range(count):
+        name_len_bytes = read_exact(f, 4)
+        if len(name_len_bytes) < 4:
+            raise Exception("Bundle beschaedigt (name len)")
+        (name_len,) = struct.unpack(">I", name_len_bytes)
+
+        name_bytes = read_exact(f, name_len)
+        if len(name_bytes) < name_len:
+            raise Exception("Bundle beschaedigt (name)")
+        name = name_bytes.decode("utf-8")
+
+        content_len_bytes = read_exact(f, 4)
+        if len(content_len_bytes) < 4:
+            raise Exception("Bundle beschaedigt (content len)")
+        (content_len,) = struct.unpack(">I", content_len_bytes)
+
+        if not name or "/" in name or "\\\\" in name or ".." in name or name.startswith("."):
+            raise Exception("Datei im Bundle nicht erlaubt: " + name)
+
+        # Low-space-Modus: direkt in die Zieldatei schreiben.
+        try:
+            os.remove(name + ".bndl_tmp")
+        except Exception:
+            pass
+        # Wichtig bei wenig Flash: alte Zieldatei vor dem Schreiben entfernen,
+        # damit nicht parallel alter+neuer Inhalt Platz belegen.
+        try:
+            os.remove(name)
+        except Exception:
+            pass
+        # Stale Gegenstueck aus einer frueheren Firmware-Generation entfernen
+        # (main.py <-> main.mpy) - sonst koennten beide gleichzeitig
+        # existieren und MicroPythons Import-Reihenfolge waere ungewiss.
+        if name.endswith(".mpy"):
+            try:
+                os.remove(name[:-4] + ".py")
+            except Exception:
+                pass
+        elif name.endswith(".py"):
+            try:
+                os.remove(name[:-3] + ".mpy")
+            except Exception:
+                pass
+
+        remaining = content_len
+        try:
+            with open(name, "wb") as out:
+                while remaining > 0:
+                    chunk = f.read(min(512, remaining))
+                    if not chunk:
+                        raise Exception("Bundle beschaedigt (content)")
+                    out.write(chunk)
+                    remaining -= len(chunk)
+        except OSError as e:
+            raise Exception("Zu wenig Speicher beim Schreiben von " + name + ": " + str(e))
+        extracted.append(name)
+
+try:
+    os.remove(BUNDLE_FILE)
+except Exception:
+    pass
+
+# Nur Update-Artefakte entfernen, keine Benutzerdaten.
+for fixed_name in ("update.pbp", "ota_staging.tmp"):
+    try:
+        os.remove(fixed_name)
+    except Exception:
+        pass
+
+for name in os.listdir():
+    remove = False
+    if name == "main_backup.py" and "main.py" in ALLOWED:
+        remove = True
+    elif name.endswith(".bak"):
+        base = name[:-4]
+        if base in ALLOWED:
+            remove = True
+    elif name.endswith(".bndl_tmp"):
+        base = name[:-9]
+        if base in ALLOWED:
+            remove = True
+    if remove:
+        try:
+            os.remove(name)
+        except Exception:
+            pass
+
+needs_restart = ("main.py" in extracted) or ("main.mpy" in extracted)
+print("SERIAL_APPLY_OK:" + ",".join(extracted))
+print("SERIAL_NEEDS_RESTART:" + ("1" if needs_restart else "0"))
+"""
+
+
+def _push_and_unpack_bundle_on_device(
+    mpremote_cmd, port, bundle_path, managed_targets, remote_bundle_filename,
+    predelete_targets=None, bundle_already_copied=False, allow_low_space_fallback=True,
+    progress_callback=None, trigger_restart_if_needed=True,
+):
+    """Kopiert bundle_path als remote_bundle_filename auf einen BEREITS
+    ausgewaehlten Pico-Port und laesst den Pico das Bundle SELBST entpacken
+    (siehe _build_device_unpack_script()) - immer der primaer versuchte Weg,
+    ein Bundle zu installieren. Faellt bei 'zu wenig Speicher' automatisch auf
+    _apply_bundle_entries_via_serial() (Direct-Serial-Copy, PC-seitig Datei
+    fuer Datei per 'cp') zurueck, ausser allow_low_space_fallback=False.
+    Liefert (extracted_names, needs_restart)."""
+    if predelete_targets is None:
+        predelete_targets = managed_targets
+
+    remote_device_bundle_path = ":" + remote_bundle_filename
+    direct_apply_done = False
+    direct_apply_names = []
+
+    if not bundle_already_copied:
+        try:
+            _cleanup_remote_bundle_artifacts(
+                mpremote_cmd, port, managed_targets=managed_targets, remove_targets=predelete_targets,
+            )
+            _run_mpremote(
+                mpremote_cmd, ["connect", port, "cp", bundle_path, remote_device_bundle_path],
+                timeout=240, retries=2,
+            )
+            _debug(f"bundle copied to {port} at {remote_device_bundle_path}")
+        except Exception as e:
+            msg = str(e)
+            low = msg.lower()
+            no_space = ("pico-dateisystem voll" in low) or ("no space left on device" in low)
+            if no_space and allow_low_space_fallback:
+                _debug(f"bundle copy hit no-space; switching to direct serial apply on {port}: {_shorten(msg)}")
+                direct_apply_names = _apply_bundle_entries_via_serial(
+                    mpremote_cmd, port, bundle_path, managed_targets, progress_callback=progress_callback,
+                )
+                direct_apply_done = True
+            else:
+                raise Exception(f"Transfer auf {port} fehlgeschlagen: {e}")
+
+    if progress_callback:
+        if direct_apply_done:
+            progress_callback(2, 4, "Direkt-Upload ohne Bundle-Datei aktiv")
+        else:
+            progress_callback(2, 4, "Bundle seriell uebertragen")
+
+    extracted_names = direct_apply_names
+    needs_restart = False
+
+    if direct_apply_done:
+        needs_restart = ("main.py" in direct_apply_names) or ("main.mpy" in direct_apply_names)
+    else:
+        unpack_script = _build_device_unpack_script(managed_targets, remote_bundle_filename)
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as tf:
+            tf.write(unpack_script)
+            temp_script_path = tf.name
+        try:
+            if progress_callback:
+                progress_callback(3, 4, "Bundle auf Pico entpacken")
+
+            try:
+                _run_mpremote(mpremote_cmd, ["connect", port, "soft-reset"], timeout=20)
+            except Exception as sr_err:
+                _debug(f"soft-reset vor unpack auf {port} fehlgeschlagen: {_shorten(sr_err)}")
+
+            try:
+                run_result = _run_mpremote(
+                    mpremote_cmd, ["connect", port, "run", temp_script_path], timeout=240,
+                )
+                run_output = (run_result.stdout or "") + "\n" + (run_result.stderr or "")
+                if "SERIAL_APPLY_OK:" not in run_output:
+                    raise Exception("Entpack-Skript beendet ohne Erfolgsmarker SERIAL_APPLY_OK")
+                needs_restart = "SERIAL_NEEDS_RESTART:1" in run_output
+                marker_line = next(line for line in run_output.splitlines() if line.startswith("SERIAL_APPLY_OK:"))
+                extracted_names = [n for n in marker_line[len("SERIAL_APPLY_OK:"):].split(",") if n]
+                _debug(f"unpack succeeded on {port}")
+            except Exception as e:
+                unpack_error = str(e)
+                _debug(f"unpack failed on {port}: {_shorten(unpack_error)}")
+                low_space_error = "Zu wenig Speicher beim Schreiben von" in unpack_error
+                if low_space_error and allow_low_space_fallback:
+                    _debug(
+                        "unpack low-space detected; trying serial direct-apply fallback "
+                        f"on {port}: {_shorten(unpack_error)}"
+                    )
+                    extracted_names = _apply_bundle_entries_via_serial(
+                        mpremote_cmd, port, bundle_path, managed_targets, progress_callback=progress_callback,
+                    )
+                    needs_restart = "main.py" in extracted_names
+                else:
+                    raise Exception(f"Entpacken auf {port} fehlgeschlagen: {unpack_error}")
+        finally:
+            try:
+                os.remove(temp_script_path)
+            except Exception:
+                pass
+
+    if needs_restart and trigger_restart_if_needed:
+        _debug(f"triggering post-unpack reset on {port}")
+        try:
+            _run_mpremote(mpremote_cmd, ["connect", port, "exec", "import machine; machine.reset()"], timeout=20)
+        except Exception as reset_err:
+            # Reset trennt die serielle Session oft sofort (expected).
+            _debug(
+                f"post-unpack reset disconnect on {port} is expected; "
+                f"ignoring transport error: {_shorten(reset_err)}"
+            )
+
+    if progress_callback:
+        progress_callback(4, 4, "Bundle auf Pico entpackt")
+
+    return extracted_names, needs_restart
 
 
 def upload_bundle_via_serial(bundle_path, progress_callback=None):
@@ -1129,7 +1794,12 @@ def upload_bundle_via_serial(bundle_path, progress_callback=None):
     if language_pack_mode:
         managed_targets = tuple(_resolve_language_pack_files(SOURCE_DIR))
     else:
-        managed_targets = tuple(get_files_to_bundle(True) + OPTIONAL_FILES_TO_BUNDLE)
+        # Um .py- UND .mpy-Namen erweitert: das Bundle enthaelt seit der
+        # mpy-Kompilierung (siehe build_bundle()) .mpy-Namen, waehrend ein
+        # Geraet mit einer aelteren, unkompilierten Firmware noch die rohen
+        # .py-Dateien traegt - beide Varianten muessen als "verwaltet" gelten,
+        # damit predelete_targets unten sie zuverlaessig erfasst.
+        managed_targets = tuple(_expand_with_mpy_variants(get_files_to_bundle(True) + OPTIONAL_FILES_TO_BUNDLE))
 
     if bundle_mode == "complete":
         predelete_targets = tuple(name for name in managed_targets if name != "copil")
@@ -1190,250 +1860,14 @@ def upload_bundle_via_serial(bundle_path, progress_callback=None):
     if progress_callback:
         progress_callback(1, 4, f"Pico gefunden: {port}")
 
-    direct_apply_done = False
-    direct_apply_names = []
+    _extracted_names, _needs_restart = _push_and_unpack_bundle_on_device(
+        mpremote_cmd, port, bundle_path, managed_targets, remote_bundle_filename,
+        predelete_targets=predelete_targets,
+        bundle_already_copied=bundle_already_copied,
+        allow_low_space_fallback=not language_pack_mode,
+        progress_callback=progress_callback,
+    )
 
-    # Nach erfolgreicher Probe jetzt genau einmal kopieren, falls noch nicht
-    # bereits im Fallback-Transfer geschehen.
-    if not bundle_already_copied:
-        try:
-            _cleanup_remote_bundle_artifacts(
-                mpremote_cmd,
-                port,
-                managed_targets=managed_targets,
-                remove_targets=predelete_targets,
-            )
-            _run_mpremote(
-                mpremote_cmd,
-                ["connect", port, "cp", bundle_path, remote_device_bundle_path],
-                timeout=240,
-                retries=2,
-            )
-            _debug(f"bundle copied to {port} at {remote_device_bundle_path}")
-        except Exception as e:
-            msg = str(e)
-            low = msg.lower()
-            no_space = ("pico-dateisystem voll" in low) or ("no space left on device" in low)
-            if no_space:
-                _debug(
-                    "bundle copy hit no-space; switching to direct serial apply "
-                    f"on {port}: {_shorten(msg)}"
-                )
-                direct_apply_names = _apply_bundle_entries_via_serial(
-                    mpremote_cmd,
-                    port,
-                    bundle_path,
-                    managed_targets,
-                    progress_callback=progress_callback,
-                )
-                direct_apply_done = True
-            else:
-                raise Exception(f"Transfer auf {port} fehlgeschlagen: {e}")
-
-    if progress_callback:
-        if direct_apply_done:
-            progress_callback(2, 4, "Direkt-Upload ohne Bundle-Datei aktiv")
-        else:
-            progress_callback(2, 4, "Bundle seriell uebertragen")
-
-    allowed_names = managed_targets
-    allowed_tuple_literal = repr(allowed_names)
-    bundle_file_literal = repr(remote_bundle_filename)
-    needs_restart = False
-
-    if direct_apply_done:
-        needs_restart = "main.py" in direct_apply_names
-    else:
-        unpack_script = f"""import os
-import struct
-import machine
-
-MAGIC = b"FPVBNDL1"
-ALLOWED = {allowed_tuple_literal}
-BUNDLE_FILE = {bundle_file_literal}
-
-
-def read_exact(f, n):
-    data = bytearray()
-    while len(data) < n:
-        chunk = f.read(n - len(data))
-        if not chunk:
-            break
-        data.extend(chunk)
-    return bytes(data)
-
-
-extracted = []
-with open(BUNDLE_FILE, "rb") as f:
-    if read_exact(f, len(MAGIC)) != MAGIC:
-        raise Exception("Ungueltiges Bundle (Magic)")
-
-    count_bytes = read_exact(f, 4)
-    if len(count_bytes) < 4:
-        raise Exception("Bundle beschaedigt (count)")
-    (count,) = struct.unpack(">I", count_bytes)
-
-    for _ in range(count):
-        name_len_bytes = read_exact(f, 4)
-        if len(name_len_bytes) < 4:
-            raise Exception("Bundle beschaedigt (name len)")
-        (name_len,) = struct.unpack(">I", name_len_bytes)
-
-        name_bytes = read_exact(f, name_len)
-        if len(name_bytes) < name_len:
-            raise Exception("Bundle beschaedigt (name)")
-        name = name_bytes.decode("utf-8")
-
-        content_len_bytes = read_exact(f, 4)
-        if len(content_len_bytes) < 4:
-            raise Exception("Bundle beschaedigt (content len)")
-        (content_len,) = struct.unpack(">I", content_len_bytes)
-
-        if not name or "/" in name or "\\\\" in name or ".." in name or name.startswith("."):
-            raise Exception("Datei im Bundle nicht erlaubt: " + name)
-
-        # Low-space-Modus: direkt in die Zieldatei schreiben.
-        try:
-            os.remove(name + ".bndl_tmp")
-        except Exception:
-            pass
-        # Wichtig bei wenig Flash: alte Zieldatei vor dem Schreiben entfernen,
-        # damit nicht parallel alter+neuer Inhalt Platz belegen.
-        try:
-            os.remove(name)
-        except Exception:
-            pass
-
-        remaining = content_len
-        try:
-            with open(name, "wb") as out:
-                while remaining > 0:
-                    chunk = f.read(min(512, remaining))
-                    if not chunk:
-                        raise Exception("Bundle beschaedigt (content)")
-                    out.write(chunk)
-                    remaining -= len(chunk)
-        except OSError as e:
-            raise Exception("Zu wenig Speicher beim Schreiben von " + name + ": " + str(e))
-        extracted.append(name)
-
-try:
-    os.remove(BUNDLE_FILE)
-except Exception:
-    pass
-
-# Nur Update-Artefakte entfernen, keine Benutzerdaten.
-for fixed_name in ("update.pbp", "ota_staging.tmp"):
-    try:
-        os.remove(fixed_name)
-    except Exception:
-        pass
-
-for name in os.listdir():
-    remove = False
-    if name == "main_backup.py" and "main.py" in ALLOWED:
-        remove = True
-    elif name.endswith(".bak"):
-        base = name[:-4]
-        if base in ALLOWED:
-            remove = True
-    elif name.endswith(".bndl_tmp"):
-        base = name[:-9]
-        if base in ALLOWED:
-            remove = True
-    if remove:
-        try:
-            os.remove(name)
-        except Exception:
-            pass
-
-needs_restart = ("main.py" in extracted)
-print("SERIAL_APPLY_OK:" + ",".join(extracted))
-print("SERIAL_NEEDS_RESTART:" + ("1" if needs_restart else "0"))
-"""
-        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as tf:
-            tf.write(unpack_script)
-            temp_script_path = tf.name
-        try:
-            if progress_callback:
-                progress_callback(3, 4, "Bundle auf Pico entpacken")
-
-            # Primär immer auf dem bereits erfolgreich verwendeten Port entpacken.
-            # Das vermeidet lange Fehlversuche auf fremden COM-Ports.
-            unpack_ports = [port]
-
-            unpack_ok = False
-            unpack_error = ""
-            for idx, unpack_port in enumerate(unpack_ports, start=1):
-                try:
-                    if progress_callback:
-                        progress_callback(3, 4, f"Entpacke auf {unpack_port} ({idx}/{len(unpack_ports)})...")
-
-                    # Vor dem Run in einen sauberen REPL-Zustand wechseln.
-                    try:
-                        _run_mpremote(mpremote_cmd, ["connect", unpack_port, "soft-reset"], timeout=20)
-                    except Exception as sr_err:
-                        _debug(f"soft-reset vor unpack auf {unpack_port} fehlgeschlagen: {_shorten(sr_err)}")
-
-                    run_result = _run_mpremote(
-                        mpremote_cmd,
-                        ["connect", unpack_port, "run", temp_script_path],
-                        timeout=240,
-                    )
-                    run_output = (run_result.stdout or "") + "\n" + (run_result.stderr or "")
-                    if "SERIAL_APPLY_OK:" not in run_output:
-                        raise Exception("Entpack-Skript beendet ohne Erfolgsmarker SERIAL_APPLY_OK")
-                    needs_restart = "SERIAL_NEEDS_RESTART:1" in run_output
-
-                    port = unpack_port
-                    unpack_ok = True
-                    _debug(f"unpack succeeded on {unpack_port}")
-                    break
-                except Exception as e:
-                    unpack_error = str(e)
-                    _debug(f"unpack failed on {unpack_port}: {_shorten(unpack_error)}")
-
-            if not unpack_ok:
-                low_space_error = "Zu wenig Speicher beim Schreiben von" in unpack_error
-                if low_space_error and not language_pack_mode:
-                    _debug(
-                        "unpack low-space detected; trying serial direct-apply fallback "
-                        f"on {port}: {_shorten(unpack_error)}"
-                    )
-                    fallback_names = _apply_bundle_entries_via_serial(
-                        mpremote_cmd,
-                        port,
-                        bundle_path,
-                        allowed_names,
-                        progress_callback=progress_callback,
-                    )
-                    needs_restart = "main.py" in fallback_names
-                    unpack_ok = True
-                else:
-                    raise Exception(
-                        "Entpacken auf dem Pico fehlgeschlagen. "
-                        f"Getestete Ports: {', '.join(unpack_ports)}. Letzter Fehler: {unpack_error}"
-                    )
-        finally:
-            try:
-                os.remove(temp_script_path)
-            except Exception:
-                pass
-
-    if needs_restart:
-        _debug(f"triggering post-unpack reset on {port}")
-        try:
-            _run_mpremote(mpremote_cmd, ["connect", port, "exec", "import machine; machine.reset()"], timeout=20)
-        except Exception as reset_err:
-            # Reset trennt die serielle Session oft sofort (expected).
-            # Kein Fehler fuer den Update-Status, nur als Info protokollieren.
-            _debug(
-                f"post-unpack reset disconnect on {port} is expected; "
-                f"ignoring transport error: {_shorten(reset_err)}"
-            )
-
-    if progress_callback:
-        progress_callback(4, 4, "Bundle auf Pico entpackt")
     _debug(f"upload_bundle_via_serial done: port={port}")
     return {
         "ok": True,
@@ -1452,7 +1886,6 @@ def run_cli(
     language_pack_mode=False,
     boot_main_only_mode=False,
     bump_version=True,
-    with_source2=False,
 ):
     source_dir = SOURCE_DIR
     output_path = output_path or os.path.join(BUILD_DIR, "firmware.nbo")
@@ -1495,31 +1928,6 @@ def run_cli(
     print()
     print("Naechster Schritt: firmware.nbo im Admin-Bereich unter /admin-update hochladen.")
 
-    if with_source2:
-        source2_output_path = os.path.join(os.path.dirname(os.path.abspath(output_path)) or BUILD_DIR, SOURCE2_OUTPUT_NAME)
-        print()
-        print("Baue zusaetzlich source2 (Tor-/Huegel-Firmware)...")
-        s2_included, s2_missing = build_source2_bundle(
-            source2_output_path,
-            progress_callback=report,
-            bump_version=bump_version,
-        )
-        s2_total_size = sum(size for _, size in s2_included)
-        s2_bundle_size = os.path.getsize(source2_output_path)
-        print()
-        print(f"source2-Bundle erstellt: {source2_output_path}")
-        print(f"{'Datei':<28} {'Groesse':>10}")
-        print("-" * 40)
-        for filename, size in s2_included:
-            print(f"{filename:<28} {size:>8} B")
-        print("-" * 40)
-        print(f"{'Summe (Inhalte)':<28} {s2_total_size:>8} B")
-        print(f"{'Bundle-Datei gesamt':<28} {s2_bundle_size:>8} B")
-        if s2_missing:
-            print()
-            print(f"HINWEIS (source2): {len(s2_missing)} Datei(en) fehlten und wurden uebersprungen: {', '.join(s2_missing)}")
-
-
 
 def launch_gui():
     import tkinter as tk
@@ -1554,17 +1962,9 @@ def launch_gui():
     build_recovery_var = tk.BooleanVar(value=DEFAULT_BUILD_RECOVERY_FIRMWARE)
     build_language_pack_var = tk.BooleanVar(value=DEFAULT_BUILD_LANGUAGE_PACK)
     build_boot_main_only_var = tk.BooleanVar(value=DEFAULT_BUILD_BOOT_MAIN_ONLY)
-    build_source2_var = tk.BooleanVar(value=DEFAULT_BUILD_SOURCE2)
 
     def on_mode_change():
-        if build_source2_var.get():
-            include_boot_stack_var.set(False)
-            build_light_var.set(False)
-            build_recovery_var.set(False)
-            build_language_pack_var.set(False)
-            build_boot_main_only_var.set(False)
-            output_var.set(os.path.join(BUILD_DIR, SOURCE2_OUTPUT_NAME))
-        elif build_language_pack_var.get():
+        if build_language_pack_var.get():
             include_boot_stack_var.set(False)
             build_light_var.set(False)
             build_recovery_var.set(False)
@@ -1583,26 +1983,22 @@ def launch_gui():
             build_boot_main_only_var.set(False)
         else:
             output_name = os.path.basename(output_var.get().strip()).lower()
-            if output_name in (SOURCE2_OUTPUT_NAME, LANGUAGE_BUNDLE_FILENAME, EMERGENCY_BUNDLE_FILENAME):
+            if output_name in (LANGUAGE_BUNDLE_FILENAME, EMERGENCY_BUNDLE_FILENAME):
                 output_var.set(default_output_path)
         scan_files()
 
     def scan_files():
         _debug("GUI scan_files triggered")
         tree.delete(*tree.get_children())
-        if build_source2_var.get():
-            selected = list(SOURCE2_FILES_TO_BUNDLE)
-            scan_dir = SOURCE2_DIR
-        else:
-            selected = _resolve_files_to_bundle(
-                source_dir,
-                include_boot_stack=include_boot_stack_var.get(),
-                light_mode=build_light_var.get(),
-                recovery_mode=build_recovery_var.get(),
-                language_pack_mode=build_language_pack_var.get(),
-                boot_main_only_mode=build_boot_main_only_var.get(),
-            )
-            scan_dir = source_dir
+        selected = _resolve_files_to_bundle(
+            source_dir,
+            include_boot_stack=include_boot_stack_var.get(),
+            light_mode=build_light_var.get(),
+            recovery_mode=build_recovery_var.get(),
+            language_pack_mode=build_language_pack_var.get(),
+            boot_main_only_mode=build_boot_main_only_var.get(),
+        )
+        scan_dir = source_dir
         for filename in selected:
             file_path = _bundle_source_path(scan_dir, filename)
             if os.path.isfile(file_path):
@@ -1648,12 +2044,6 @@ def launch_gui():
         variable=build_boot_main_only_var,
         command=on_mode_change,
     ).pack(anchor="w")
-    ttk.Checkbutton(
-        mode_frame,
-        text="Nur Source2 (Tor/Huegel) Firmware builden (gatehill.nbo)",
-        variable=build_source2_var,
-        command=on_mode_change,
-    ).pack(anchor="w")
 
     path_frame = ttk.Frame(frame)
     path_frame.pack(fill="x", pady=(0, 10))
@@ -1679,6 +2069,54 @@ def launch_gui():
     pico_url_var = tk.StringVar(value=DEFAULT_PICO_URL)
     ttk.Entry(target_frame, textvariable=pico_url_var).pack(side="left", fill="x", expand=True, padx=6)
 
+    ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=(0, 10))
+    ttk.Label(frame, text="Offline-Lizenz (RSA-Hardware-Kopplung)", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+
+    license_frame = ttk.Frame(frame)
+    license_frame.pack(fill="x", pady=(4, 4))
+    ttk.Label(license_frame, text="Kunden-ID / Referenz:").pack(side="left")
+    customer_id_var = tk.StringVar(value="")
+    ttk.Entry(license_frame, textvariable=customer_id_var).pack(side="left", fill="x", expand=True, padx=6)
+
+    keys_status_var = tk.StringVar(value="")
+
+    def update_keys_status():
+        if keys_exist():
+            keys_status_var.set(f"Schluesselpaar vorhanden ({KEYS_DIR})")
+        else:
+            keys_status_var.set("KEIN Schluesselpaar gefunden - zuerst erzeugen!")
+
+    def on_generate_keys():
+        if keys_exist():
+            if not messagebox.askyesno(
+                "Ueberschreiben?",
+                "Es existiert bereits ein Schluesselpaar. Ein neues zu erzeugen macht ALLE bisher "
+                "ausgestellten Lizenzen ungueltig (der Public Key auf bereits geflashten Geraeten passt "
+                "dann nicht mehr). Wirklich ein neues Schluesselpaar erzeugen?",
+            ):
+                return
+        try:
+            ensure_keys_dir()
+            license_generator.generate_keypair(DEFAULT_PRIVATE_KEY_PATH, DEFAULT_PUBLIC_KEY_PATH)
+        except Exception as e:
+            messagebox.showerror("Fehler", str(e))
+            return
+        update_keys_status()
+        messagebox.showinfo("Fertig", f"Neues Schluesselpaar erzeugt unter {KEYS_DIR}.")
+
+    keys_frame = ttk.Frame(frame)
+    keys_frame.pack(fill="x", pady=(0, 4))
+    ttk.Label(keys_frame, textvariable=keys_status_var).pack(side="left")
+    ttk.Button(keys_frame, text="Schluesselpaar erzeugen", command=on_generate_keys).pack(side="right")
+    update_keys_status()
+
+    regenerate_license_var = tk.BooleanVar(value=True)
+    ttk.Checkbutton(
+        frame,
+        text="Neue Lizenz fuer dieses Geraet erzeugen (aus, um eine vorhandene Lizenz zu behalten)",
+        variable=regenerate_license_var,
+    ).pack(anchor="w", pady=(0, 10))
+
     progress_var = tk.DoubleVar(value=0)
     ttk.Progressbar(frame, variable=progress_var, maximum=100).pack(fill="x", pady=(0, 6))
 
@@ -1699,63 +2137,13 @@ def launch_gui():
     serial_upload_button.pack(side="left", padx=6)
     ttk.Button(btn_frame, text="Aktualisieren", command=scan_files).pack(side="left", padx=6)
 
+    license_build_button = ttk.Button(
+        frame,
+        text="Komplette Firmware inkl. Lizenz bauen & installieren (seriell)",
+    )
+    license_build_button.pack(fill="x", pady=(8, 0))
+
     def build_worker(output_path):
-        if build_source2_var.get():
-            _debug(f"GUI build_worker (source2-only) start: output_path={output_path}")
-
-            def report_s2(done, total, filename):
-                def update():
-                    progress_var.set(done / total * 100 if total else 100)
-                    status_var.set(f"Verpacke {filename} ({done}/{total})...")
-                root.after(0, update)
-
-            try:
-                included, missing = build_source2_bundle(
-                    output_path,
-                    progress_callback=report_s2,
-                )
-                total_size = sum(size for _, size in included)
-                bundle_size = os.path.getsize(output_path)
-                current_version = _read_version_state(SOURCE2_DIR)
-                total_size_kb = total_size / 1024.0
-                bundle_size_kb = bundle_size / 1024.0
-
-                def finish_s2():
-                    progress_var.set(100)
-                    msg = (
-                        f"Fertig (Source2 Tor/Huegel): {output_path}\n"
-                        f"Firmware-Version: {current_version}\n"
-                        f"{len(included)} Datei(en), {total_size} B ({total_size_kb:.1f} KB) Inhalt, "
-                        f"{bundle_size} B ({bundle_size_kb:.1f} KB) Bundle."
-                    )
-                    if missing:
-                        msg += f"\nFehlend (uebersprungen): {', '.join(missing)}"
-                    msg += "\n\nJetzt mit 'Seriell ins Dateisystem + entpacken' hochladen."
-                    status_var.set(msg)
-                    build_button.config(state="normal")
-                    upload_button.config(state="normal")
-                    lang_upload_button.config(state="normal")
-                    lang_serial_upload_button.config(state="normal")
-                    serial_upload_button.config(state="normal")
-                    messagebox.showinfo("Source2-Bundle erstellt", msg)
-
-                root.after(0, finish_s2)
-            except Exception as e:
-                err_text = str(e)
-                _debug(f"GUI build_worker (source2-only) failed: {_shorten(err_text)}")
-
-                def fail_s2():
-                    status_var.set(f"Fehler: {err_text}")
-                    build_button.config(state="normal")
-                    upload_button.config(state="normal")
-                    lang_upload_button.config(state="normal")
-                    lang_serial_upload_button.config(state="normal")
-                    serial_upload_button.config(state="normal")
-                    messagebox.showerror("Fehler", err_text)
-
-                root.after(0, fail_s2)
-            return
-
         output_name = os.path.basename(output_path).lower()
         output_is_lang_bundle = output_name == LANGUAGE_BUNDLE_FILENAME
         include_boot_stack = include_boot_stack_var.get()
@@ -1825,6 +2213,7 @@ def launch_gui():
                     msg += f"\nFehlend (uebersprungen): {', '.join(missing)}"
                 status_var.set(msg)
                 build_button.config(state="normal")
+                license_build_button.config(state="normal")
                 upload_button.config(state="normal")
                 lang_upload_button.config(state="normal")
                 lang_serial_upload_button.config(state="normal")
@@ -1839,6 +2228,7 @@ def launch_gui():
             def fail():
                 status_var.set(f"Fehler: {err_text}")
                 build_button.config(state="normal")
+                license_build_button.config(state="normal")
                 upload_button.config(state="normal")
                 lang_upload_button.config(state="normal")
                 lang_serial_upload_button.config(state="normal")
@@ -1852,24 +2242,6 @@ def launch_gui():
         _debug(f"GUI start_build called: output_path={output_path}")
         if not output_path:
             messagebox.showerror("Fehler", "Bitte einen Ausgabepfad angeben.")
-            return
-
-        if build_source2_var.get():
-            present = [
-                f for f in SOURCE2_FILES_TO_BUNDLE
-                if os.path.isfile(_bundle_source_path(SOURCE2_DIR, f))
-            ]
-            if not present:
-                messagebox.showerror("Fehler", "Keine der erwarteten Source2-Dateien gefunden.")
-                return
-            build_button.config(state="disabled")
-            upload_button.config(state="disabled")
-            lang_upload_button.config(state="disabled")
-            lang_serial_upload_button.config(state="disabled")
-            serial_upload_button.config(state="disabled")
-            progress_var.set(0)
-            status_var.set("Starte Source2-Build...")
-            threading.Thread(target=build_worker, args=(output_path,), daemon=True).start()
             return
 
         output_name = os.path.basename(output_path).lower()
@@ -1892,6 +2264,7 @@ def launch_gui():
             messagebox.showerror("Fehler", "Keine der erwarteten Firmware-Dateien gefunden.")
             return
         build_button.config(state="disabled")
+        license_build_button.config(state="disabled")
         upload_button.config(state="disabled")
         lang_upload_button.config(state="disabled")
         lang_serial_upload_button.config(state="disabled")
@@ -1920,6 +2293,7 @@ def launch_gui():
                 lang_upload_button.config(state="normal")
                 lang_serial_upload_button.config(state="normal")
                 build_button.config(state="normal")
+                license_build_button.config(state="normal")
                 serial_upload_button.config(state="normal")
                 messagebox.showinfo("OTA erfolgreich", msg)
 
@@ -1934,6 +2308,7 @@ def launch_gui():
                 lang_upload_button.config(state="normal")
                 lang_serial_upload_button.config(state="normal")
                 build_button.config(state="normal")
+                license_build_button.config(state="normal")
                 serial_upload_button.config(state="normal")
                 messagebox.showerror("OTA-Fehler", err_text)
 
@@ -1953,6 +2328,7 @@ def launch_gui():
         lang_upload_button.config(state="disabled")
         lang_serial_upload_button.config(state="disabled")
         build_button.config(state="disabled")
+        license_build_button.config(state="disabled")
         serial_upload_button.config(state="disabled")
         progress_var.set(0)
         status_var.set(f"Starte OTA-Upload nach {base_url}...")
@@ -1977,6 +2353,7 @@ def launch_gui():
         lang_serial_upload_button.config(state="disabled")
         upload_button.config(state="disabled")
         build_button.config(state="disabled")
+        license_build_button.config(state="disabled")
         serial_upload_button.config(state="disabled")
         progress_var.set(0)
         status_var.set(f"Starte OTA-Upload von lang.pak nach {base_url}...")
@@ -2003,6 +2380,7 @@ def launch_gui():
                 lang_upload_button.config(state="normal")
                 lang_serial_upload_button.config(state="normal")
                 build_button.config(state="normal")
+                license_build_button.config(state="normal")
                 messagebox.showinfo("Serieller Upload erfolgreich", msg)
 
             root.after(0, finish)
@@ -2017,6 +2395,7 @@ def launch_gui():
                 lang_upload_button.config(state="normal")
                 lang_serial_upload_button.config(state="normal")
                 build_button.config(state="normal")
+                license_build_button.config(state="normal")
                 messagebox.showerror("Serieller Upload-Fehler", err_text)
 
             root.after(0, fail)
@@ -2036,6 +2415,7 @@ def launch_gui():
         lang_upload_button.config(state="disabled")
         lang_serial_upload_button.config(state="disabled")
         build_button.config(state="disabled")
+        license_build_button.config(state="disabled")
         progress_var.set(0)
         status_var.set("Suche Pico ueber USB-Seriell...")
         threading.Thread(target=serial_upload_worker, args=(bundle_path,), daemon=True).start()
@@ -2059,15 +2439,82 @@ def launch_gui():
         upload_button.config(state="disabled")
         lang_upload_button.config(state="disabled")
         build_button.config(state="disabled")
+        license_build_button.config(state="disabled")
         progress_var.set(0)
         status_var.set("Suche Pico ueber USB-Seriell fuer lang.pak...")
         threading.Thread(target=serial_upload_worker, args=(bundle_path,), daemon=True).start()
+
+    def license_build_worker(customer_id, regenerate_license):
+        _debug(f"GUI license_build_worker start: customer_id={customer_id} regenerate={regenerate_license}")
+
+        def report(done, total, message):
+            def update():
+                progress_var.set(done / total * 100 if total else 100)
+                status_var.set(message)
+            root.after(0, update)
+
+        try:
+            result = build_and_flash_with_license(
+                customer_id, regenerate_license=regenerate_license, progress_callback=report,
+            )
+
+            def finish():
+                progress_var.set(100)
+                msg = f"Fertig ({result['port']}). Hardware-ID: {result['hardware_id']}."
+                if result["license_issued"]:
+                    msg += f" Neue Lizenz ausgestellt und archiviert: {result['license_record_path']}"
+                if result["version_warning"]:
+                    msg += f"\nWARNUNG: {result['version_warning']}"
+                status_var.set(msg)
+                build_button.config(state="normal")
+                upload_button.config(state="normal")
+                lang_upload_button.config(state="normal")
+                lang_serial_upload_button.config(state="normal")
+                serial_upload_button.config(state="normal")
+                license_build_button.config(state="normal")
+                messagebox.showinfo("Firmware + Lizenz installiert", msg)
+
+            root.after(0, finish)
+        except Exception as e:
+            err_text = str(e)
+            _debug(f"GUI license_build_worker failed: {_shorten(err_text)}")
+
+            def fail():
+                status_var.set(f"Fehler: {err_text}")
+                build_button.config(state="normal")
+                upload_button.config(state="normal")
+                lang_upload_button.config(state="normal")
+                lang_serial_upload_button.config(state="normal")
+                serial_upload_button.config(state="normal")
+                license_build_button.config(state="normal")
+                messagebox.showerror("Fehler", err_text)
+
+            root.after(0, fail)
+
+    def start_license_build():
+        if regenerate_license_var.get() and not keys_exist():
+            messagebox.showerror("Fehler", "Kein Schluesselpaar vorhanden. Bitte zuerst 'Schluesselpaar erzeugen'.")
+            return
+        build_button.config(state="disabled")
+        upload_button.config(state="disabled")
+        lang_upload_button.config(state="disabled")
+        lang_serial_upload_button.config(state="disabled")
+        serial_upload_button.config(state="disabled")
+        license_build_button.config(state="disabled")
+        progress_var.set(0)
+        status_var.set("Suche Pico ueber USB-Seriell...")
+        threading.Thread(
+            target=license_build_worker,
+            args=(customer_id_var.get().strip(), regenerate_license_var.get()),
+            daemon=True,
+        ).start()
 
     build_button.config(command=start_build)
     upload_button.config(command=start_upload)
     lang_upload_button.config(command=start_upload_language_pack)
     lang_serial_upload_button.config(command=start_serial_upload_language_pack)
     serial_upload_button.config(command=start_serial_upload)
+    license_build_button.config(command=start_license_build)
 
     root.mainloop()
 
@@ -2083,9 +2530,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="FPV Firmware Bundle Builder")
     parser.add_argument("output_path", nargs="?", default=os.path.join(BUILD_DIR, "firmware.nbo"))
-    parser.add_argument("--mode", choices=["normal", "complete", "light", "recovery", "lang", "bootmain", "source2"], default="normal")
+    parser.add_argument("--mode", choices=["normal", "complete", "light", "recovery", "lang", "bootmain"], default="normal")
     parser.add_argument("--no-version-bump", action="store_true", help="Version nicht automatisch erhoehen")
-    parser.add_argument("--with-source2", action="store_true", help="Baut zusaetzlich die source2 Tor-/Huegel-Firmware (gatehill.nbo)")
     args = parser.parse_args()
 
     # Ein reiner Dateiname ohne Verzeichnisanteil (z.B. "firmware.nbo") landet
@@ -2094,36 +2540,6 @@ def main():
     # CLI-Aufrufen wie "python build_firmware.py firmware.nbo".
     if os.path.dirname(args.output_path) == "":
         args.output_path = os.path.join(BUILD_DIR, args.output_path)
-
-    if args.mode == "source2":
-        # source2 ist ein eigenstaendiges Bundle mit eigenem Quellordner/
-        # Versionsstand - laeuft komplett am normalen run_cli()-Pfad vorbei.
-        if args.output_path == os.path.join(BUILD_DIR, "firmware.nbo"):
-            args.output_path = os.path.join(BUILD_DIR, SOURCE2_OUTPUT_NAME)
-
-        def report(done, total, filename):
-            print(f"[{done}/{total}] {filename}")
-
-        included, missing = build_source2_bundle(
-            args.output_path,
-            progress_callback=report,
-            bump_version=(not args.no_version_bump),
-        )
-        total_size = sum(size for _, size in included)
-        bundle_size = os.path.getsize(args.output_path)
-        print()
-        print(f"source2-Bundle erstellt: {args.output_path}")
-        print(f"{'Datei':<28} {'Groesse':>10}")
-        print("-" * 40)
-        for filename, size in included:
-            print(f"{filename:<28} {size:>8} B")
-        print("-" * 40)
-        print(f"{'Summe (Inhalte)':<28} {total_size:>8} B")
-        print(f"{'Bundle-Datei gesamt':<28} {bundle_size:>8} B")
-        if missing:
-            print()
-            print(f"HINWEIS: {len(missing)} Datei(en) fehlten und wurden uebersprungen: {', '.join(missing)}")
-        return
 
     include_boot_stack = False
     light_mode = False
@@ -2151,7 +2567,6 @@ def main():
         language_pack_mode=language_pack_mode,
         boot_main_only_mode=boot_main_only_mode,
         bump_version=(not args.no_version_bump),
-        with_source2=args.with_source2,
     )
 
 

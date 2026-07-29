@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Webshop – Lizenz-Einrichtung{% endblock %}
+
+{% block content %}
+  <section class="license-setup-page">
+    <div class="status-icon">&#10003;</div>
+    <h1>Fast geschafft – jetzt deine Lizenz einrichten</h1>
+    <p class="license-intro">
+      Deine <strong>{{ product.name }}</strong> wurde erfolgreich gekauft (Bestätigung an
+      <strong>{{ email }}</strong>). Damit dein Pico damit läuft, brauchst du einmalig drei
+      Schritte: MicroPython installieren, deine Hardware-ID auslesen und deine persönliche
+      Lizenzdatei erzeugen.
+    </p>
+
+    <div class="license-step">
+      <h2>Schritt 1 – MicroPython auf dem Pico installieren</h2>
+      <ol>
+        <li>
+          Lade die passende MicroPython-<code>.uf2</code>-Datei für deinen Pico
+          (Pico / Pico W / Pico 2 W) von der offiziellen Downloadseite
+          <code>micropython.org/download</code> herunterladen.
+        </li>
+        <li>
+          Halte die <strong>BOOTSEL</strong>-Taste am Pico gedrückt und schließe ihn dabei
+          per USB-Kabel an deinen PC an. Lasse die Taste erst los, wenn ein Laufwerk namens
+          <strong>RPI-RP2</strong> im Explorer erscheint.
+        </li>
+        <li>
+          Kopiere die heruntergeladene <code>.uf2</code>-Datei auf dieses Laufwerk. Der Pico
+          startet automatisch neu und läuft danach mit MicroPython.
+        </li>
+      </ol>
+    </div>
+
+    <div class="license-step">
+      <h2>Schritt 2 – Hardware-ID mit Thonny auslesen</h2>
+      <ol>
+        <li>
+          Installiere die kostenlose Entwicklungsumgebung <strong>Thonny</strong>
+          (<code>thonny.org</code>) und öffne sie.
+        </li>
+        <li>
+          Wähle unten rechts als Interpreter
+          <strong>„MicroPython (Raspberry Pi Pico)“</strong> und den passenden COM-Port aus,
+          sodass Thonny sich mit dem Pico verbindet.
+        </li>
+        <li>Kopiere folgendes Mini-Skript in das Shell-Fenster von Thonny und drücke Enter:</li>
+      </ol>
+      <pre class="wiring-box license-script">import machine, binascii
+print(binascii.hexlify(machine.unique_id()).decode())</pre>
+      <ol start="4">
+        <li>
+          Thonny gibt eine Zeichenkette wie <code>e6612483f5a2b12c</code> aus – das ist deine
+          Hardware-ID. Kopiere sie unverändert.
+        </li>
+      </ol>
+    </div>
+
+    <div class="license-step">
+      <h2>Schritt 3 – Lizenz erzeugen</h2>
+      <p>Füge deine Hardware-ID hier ein und bestätige:</p>
+
+      <div id="license-error" class="checkout-error" hidden></div>
+      <div id="license-success" class="license-success" hidden></div>
+
+      <div class="form-field">
+        <label for="hardware-id-input">Hardware-ID</label>
+        <input
+          type="text"
+          id="hardware-id-input"
+          placeholder="z. B. e6612483f5a2b12c"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+
+      <button id="confirm-license-button" class="btn btn-primary btn-large">
+        Bestätigen &amp; Lizenz erzeugen
+      </button>
+    </div>
+
+    <div class="license-step">
+      <h2>Schritt 4 – Dateien auf den Pico kopieren</h2>
+      <p>
+        Nach dem Bestätigen lädt dein Browser automatisch <strong>zwei Dateien</strong>
+        herunter: <code>license.lic</code> und <code>public_key.pem</code>. Beide landen in
+        deinem Downloads-Ordner - ein separater Download ist nicht nötig.
+      </p>
+      <ol>
+        <li>Öffne in Thonny den Dateien-Bereich (Ansicht → Dateien).</li>
+        <li>
+          Ziehe sowohl <code>license.lic</code> als auch <code>public_key.pem</code> aus deinem
+          lokalen Dateisystem in das Pico-Dateisystem (oberste Ebene, gleiche Ebene wie
+          <code>main.py</code>).
+        </li>
+        <li>Starte den Pico neu (Reset-Taste oder USB-Kabel neu einstecken).</li>
+      </ol>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const errorBox = document.getElementById("license-error");
+    const successBox = document.getElementById("license-success");
+    const hardwareIdInput = document.getElementById("hardware-id-input");
+    const confirmButton = document.getElementById("confirm-license-button");
+
+    function zeigeFehler(nachricht) {
+      successBox.hidden = true;
+      errorBox.textContent = nachricht;
+      errorBox.hidden = false;
+    }
+
+    function zeigeErfolg(nachricht) {
+      errorBox.hidden = true;
+      successBox.textContent = nachricht;
+      successBox.hidden = false;
+    }
+
+    function ladeDateiHerunter(blob, dateiname) {
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = dateiname;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    }
+
+    confirmButton.addEventListener("click", function () {
+      const hardwareId = hardwareIdInput.value.trim().toLowerCase();
+      if (!/^[0-9a-f]{8,32}$/.test(hardwareId)) {
+        zeigeFehler(
+          "Das sieht nicht nach einer gültigen Hardware-ID aus. Bitte die Ausgabe des Thonny-Skripts unverändert einfügen."
+        );
+        return;
+      }
+
+      confirmButton.disabled = true;
+      confirmButton.textContent = "Lizenz wird erzeugt...";
+
+      fetch("/api/license/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ hardware_id: hardwareId }),
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            return response.json().then(function (daten) {
+              throw new Error(daten.error || "Die Lizenz konnte nicht erzeugt werden.");
+            });
+          }
+          return response.blob();
+        })
+        .then(function (licenseBlob) {
+          ladeDateiHerunter(licenseBlob, "license.lic");
+          // public_key.pem wird direkt im Anschluss automatisch mit heruntergeladen,
+          // damit der Kunde nicht noch einen zweiten, separaten Download anstossen muss.
+          return fetch("/license-setup/public-key.pem");
+        })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("license.lic wurde erzeugt, public_key.pem konnte aber nicht automatisch geladen werden.");
+          }
+          return response.blob();
+        })
+        .then(function (publicKeyBlob) {
+          ladeDateiHerunter(publicKeyBlob, "public_key.pem");
+          zeigeErfolg(
+            "license.lic und public_key.pem wurden heruntergeladen. Kopiere beide Dateien (Schritt 4) auf den Pico."
+          );
+        })
+        .catch(function (fehler) {
+          zeigeFehler(fehler.message || "Verbindung zum Server fehlgeschlagen. Bitte versuche es erneut.");
+        })
+        .finally(function () {
+          confirmButton.disabled = false;
+          confirmButton.textContent = "Bestätigen & Lizenz erzeugen";
+        });
+    });
+  </script>
+{% endblock %}

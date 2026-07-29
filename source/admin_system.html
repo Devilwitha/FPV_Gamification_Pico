@@ -47,6 +47,7 @@ input:checked+.slider:before{transform:translateX(20px)}
 <a href="/admin-infection" data-i18n="nav.infection">Infection</a>
 <a href="/admin-koth" data-i18n="nav.koth">King of the Hill</a>
 <a href="/admin-race" data-i18n="nav.race">Race</a>
+<a href="/admin-credits" data-i18n="nav.credits">Credits</a>
 <a href="/" data-i18n="nav.home">Home</a>
 </div>
 <div class="s">
@@ -61,7 +62,18 @@ input:checked+.slider:before{transform:translateX(20px)}
 <div class="st2"><span data-i18n="system.uptime">Laufzeit</span><b id="v_uptime">-</b></div>
 <div class="st2"><span data-i18n="system.activeProfile">Aktives Trick-Profil</span><b id="v_prof">-</b></div>
 <div class="st2"><span data-i18n="system.otaActive">OTA aktiv</span><b id="v_ota">-</b></div>
+<div class="st2"><span data-i18n="system.licenseLabel">Lizenz</span><b id="v_license">-</b></div>
+<div class="st2"><span data-i18n="system.mainLabel">main</span><b id="v_main">-</b></div>
+<div class="st2"><span data-i18n="system.bootLabel">boot</span><b id="v_boot">-</b></div>
 <div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
+</div>
+<div class="s" id="licenseSection" style="display:none">
+<h2 data-i18n="system.licenseTitle">Lizenz</h2>
+<div style="color:#9fb4cb;font-size:.78em;margin-bottom:8px" data-i18n="system.licenseHint">Ohne gueltige Lizenz sind die Hauptfunktionen gesperrt - nur diese System-Seite ist erreichbar. Lade hier deine license.lic hoch.</div>
+<label class="field"><span data-i18n="system.licenseFileLabel">Lizenzdatei (license.lic)</span><input type="file" id="licenseFile" accept=".lic"></label>
+<button class="b secondary" onclick="uploadLicense()" data-i18n="system.licenseUpload">Lizenz hochladen</button>
+<a class="b" style="text-decoration:none;display:inline-block;text-align:center" href="https://bollisoft.ch/shop" target="_blank" rel="noopener" data-i18n="system.licenseBuy">Lizenz kaufen</a>
+<div id="licenseMsg" class="msg"></div>
 </div>
 <div class="s">
 <h2 data-i18n="system.language">Sprache</h2>
@@ -88,6 +100,14 @@ input:checked+.slider:before{transform:translateX(20px)}
 <label class="inline-check"><input id="showWlanPassword" type="checkbox" onchange="toggleWlanPassword()"><span data-i18n="system.wlanShowPassword">Passwort anzeigen</span></label>
 <button class="b secondary" onclick="saveWlan()" data-i18n="system.wlanSave">Speichern</button>
 <div id="wlanMsg" class="msg"></div>
+</div>
+<div class="s">
+<h2 data-i18n="system.deviceRole">Geraete-Rolle</h2>
+<div class="st2"><span data-i18n="system.deviceRoleLabel">Aktuelle Rolle</span><b id="v_devicerole">-</b></div>
+<div class="st2"><span data-i18n="system.boardType">Hardware</span><b id="v_boardtype">-</b></div>
+<div style="color:#9fb4cb;font-size:.78em;margin:8px 0" data-i18n="system.deviceRoleHint">Setzt nur die gespeicherte Geraete-Rolle zurueck (device_role.json) und startet neu - danach erscheint wieder die Ersteinrichtungs-Seite. Wird von Updates nie geloescht oder ueberschrieben.</div>
+<button class="b warning" onclick="resetDeviceRole()" data-i18n="system.deviceRoleReset">Rolle zuruecksetzen</button>
+<div id="deviceRoleMsg" class="msg"></div>
 </div>
 <div class="s">
 <h2 data-i18n="system.developerMode">Developer-Modus</h2>
@@ -199,6 +219,19 @@ document.getElementById('v_fsused').innerText=fmtBytes(d.fs_used);
 document.getElementById('v_uptime').innerText=fmtUptime(d.uptime_s||0);
 document.getElementById('v_prof').innerText=d.trick_tuning_profile||'-';
 document.getElementById('v_ota').innerText=d.ota_active?t('common.yes','Ja'):t('common.no','Nein');
+document.getElementById('v_devicerole').innerText=d.device_role==='gatehill'?t('system.deviceRoleGatehill','Gate/Hill Pico'):t('system.deviceRoleGamification','Gamification Pico');
+document.getElementById('v_boardtype').innerText=d.board_type||'-';
+const lic=d.license_status||'MISSING',vLic=document.getElementById('v_license');
+if(lic==='VALID'){vLic.innerText=t('system.licenseValid','Gueltig');vLic.style.color='#2ecc71';}
+else if(lic==='INVALID'){vLic.innerText=t('system.licenseInvalid','Ungueltig');vLic.style.color='#e74c3c';}
+else{vLic.innerText=t('system.licenseMissing','Keine vorhanden');vLic.style.color='#e67e22';}
+document.getElementById('licenseSection').style.display=(lic==='VALID')?'none':'block';
+const vMain=document.getElementById('v_main');
+if(d.main_present){vMain.innerText=t('system.filePresent','Vorhanden');vMain.style.color='#2ecc71';}
+else{vMain.innerText=t('system.fileMissing','Nicht gefunden');vMain.style.color='#e74c3c';}
+const vBoot=document.getElementById('v_boot');
+if(d.boot_present){vBoot.innerText=t('system.filePresent','Vorhanden');vBoot.style.color='#2ecc71';}
+else{vBoot.innerText=t('system.fileMissing','Nicht gefunden');vBoot.style.color='#e74c3c';}
 if(!devTouched){document.getElementById('devmode').checked=!!d.developer_mode;}
 const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
 if(d.ota_active&&d.ota_total_chunks>0){
@@ -208,6 +241,15 @@ pbwrap.style.display='block';pbbar.style.width=pct+'%';pbtxt.innerText=pct+'%';
 pbwrap.style.display='none';pbbar.style.width='0%';pbtxt.innerText='';
 }
 }).catch(e=>0);
+}
+function resetDeviceRole(){
+if(!confirm(t('system.deviceRoleResetConfirm','Geraete-Rolle wirklich zuruecksetzen? Der Pico startet neu und zeigt danach wieder die Ersteinrichtungs-Seite.')))return;
+const msg=document.getElementById('deviceRoleMsg');
+msg.innerText=t('system.deviceRoleResetting','Setze zurueck...');
+fetch('/reset-device-role?confirm=1',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){msg.innerText=d.message||t('system.deviceRoleResetDone','Zurueckgesetzt. Neustart laeuft...');}
+else{msg.innerText=d.error||t('system.deviceRoleResetError','Fehler beim Zuruecksetzen.');}
+}).catch(()=>{msg.innerText=t('system.deviceRoleResetting','Setze zurueck...');});
 }
 function r(){
 if(confirm(t('system.restartConfirm','Pico jetzt neu starten?'))){
@@ -250,6 +292,37 @@ fetch('/set-developer-mode?enabled='+(en?'1':'0'),{cache:'no-store'}).then(r=>r.
 devTouched=false;
 if(!d.ok){cb.checked=!en;}
 }).catch(()=>{devTouched=false;cb.checked=!en;});
+}
+function uploadLicense(){
+const f=document.getElementById('licenseFile').files[0],msg=document.getElementById('licenseMsg');
+if(!f){msg.innerText=t('system.licenseErrNoFile','Keine Datei ausgewaehlt!');return;}
+const rd=new FileReader();
+rd.onload=function(e){
+const b=new Uint8Array(e.target.result);
+let bn='';
+for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);}
+const b64=btoa(bn),tc=Math.ceil(b64.length/1024)||1;
+let idx=0;
+msg.innerText=t('system.licenseUploading','Lade hoch...');
+function nc(){
+if(idx>=tc){
+fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){msg.innerText=d.message||t('system.licenseUploaded','Lizenz hochgeladen.');upd();}
+else{msg.innerText='Fehler: '+d.error;}
+}).catch(er=>{msg.innerText='Fehler: '+er;});
+return;
+}
+const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);
+fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&target=license.lic&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){idx++;nc();}else{msg.innerText='Fehler: '+d.error;}
+}).catch(er=>{msg.innerText='Fehler: '+er;});
+}
+fetch('/prepare-upload?target=license.lic&bundle_mode=light',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok){msg.innerText='Fehler: '+(d.error||'Prepare fehlgeschlagen');return;}
+nc();
+}).catch(er=>{msg.innerText='Fehler: '+er;});
+};
+rd.readAsArrayBuffer(f);
 }
 function loadLanguages(){
 fetch('/language-packs',{cache:'no-store'}).then(r=>r.json()).then(d=>{

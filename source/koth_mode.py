@@ -174,9 +174,11 @@ class KothMode:
         if isinstance(values, dict):
             config.update(values)
         config["enabled"] = bool(config.get("enabled", False))
-        # Die Haupt-Firmware (source/) darf NIE als Huegel agieren - dafuer gibt
-        # es die eigenstaendige source2-Firmware. Rolle daher fest auf "player".
-        config["role"] = "player"
+        # "hill" ist nur ueber index_gatehill.html (Geraete-Rolle "gatehill",
+        # siehe boot_runtime.py/role_setup.py) tatsaechlich waehlbar - die
+        # normale Gamification-Admin-Seite (admin_koth.html) zeigt keine
+        # Rollen-Auswahl an und schickt daher nie etwas anderes als "player".
+        config["role"] = "hill" if config.get("role") == "hill" else "player"
         config["round_seconds"] = _clamp(int(config.get("round_seconds", DEFAULT_ROUND_SECONDS)), 30, 3600)
         config["rssi_threshold"] = _clamp(int(config.get("rssi_threshold", DEFAULT_RSSI_THRESHOLD)), -95, -20)
         try:

@@ -1,8 +1,302 @@
+import asyncio
 import gc
 import json
+import machine
 import network
 import os
 import time
+
+# Dauerhafter Verlauf ERREICHTER Trick-Highscores - ausgelagert aus main.py
+# (siehe dortiger Kommentar bei trick_highscore_log_entries) um main.py's
+# eigene Kompiliergroesse beim riskanten `import main` in boot.py klein zu
+# halten. main.py ruft diese beiden Funktionen nur noch per Lazy-Import auf.
+TRICK_HIGHSCORE_LOG_FILE = "fpv_trick_highscore_log.json"
+TRICK_HIGHSCORE_LOG_MAX_ENTRIES = 50
+
+
+def load_trick_highscore_log():
+    try:
+        with open(TRICK_HIGHSCORE_LOG_FILE, 'r') as f:
+            data = json.loads(f.read())
+        if isinstance(data, list):
+            return data[-TRICK_HIGHSCORE_LOG_MAX_ENTRIES:]
+    except Exception:
+        pass
+    return []
+
+
+def save_trick_highscore_log(entries):
+    trimmed = entries[-TRICK_HIGHSCORE_LOG_MAX_ENTRIES:]
+    payload = json.dumps(trimmed)
+    try:
+        tmp_path = TRICK_HIGHSCORE_LOG_FILE + ".tmp"
+        with open(tmp_path, 'w') as f:
+            f.write(payload)
+        try:
+            os.remove(TRICK_HIGHSCORE_LOG_FILE)
+        except Exception:
+            pass
+        os.rename(tmp_path, TRICK_HIGHSCORE_LOG_FILE)
+        return True, ""
+    except Exception as e:
+        try:
+            with open(TRICK_HIGHSCORE_LOG_FILE, 'w') as f:
+                f.write(payload)
+            return True, ""
+        except Exception as e2:
+            return False, f"{e} | fallback={e2}"
+
+
+def _build_redirect_html(title, heading, message, refresh_seconds=1):
+    # Bewusst mit "+" zwischen direkt benachbarten f-Strings statt impliziter
+    # Literal-Aneinanderreihung: MicroPython (mpy-cross) lehnt zwei direkt
+    # aneinandergereihte f-String-Literale ohne "+" dazwischen mit einem
+    # SyntaxError beim Kompilieren ab.
+    return (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>" +
+        f"<meta http-equiv='refresh' content='{int(refresh_seconds)}; url=/'>" +
+        f"<title>{title}</title></head>"
+        "<body style='font-family:sans-serif;background:#0b0e14;color:#f0f4f8;text-align:center;padding:40px;'>" +
+        f"<h2>{heading}</h2>" +
+        f"<p>{message}</p>"
+        "<p>Du wirst zur Hauptseite zurueckgeleitet...</p>"
+        "</body></html>"
+    ).encode('utf-8')
+
+
+# Die folgenden drei Highscore-HTTP-Antwort-Builder waren frueher Teil von
+# main.py, wurden aber hierher verschoben - sie wurden ohnehin nur von
+# handle_misc_routes() unten aufgerufen (per deps-Callback), landen also
+# genauso in diesem bereits lazy importierten Modul, nur ohne main.py's
+# eigene Kompiliergroesse beim riskanten `import main` in boot.py zu
+# vergroessern (~200 Zeilen weniger dort, siehe main.py's Kommentare zu
+# "memory allocation failed").
+async def _send_highscore_name_response(writer, query_params, body_params, deps):
+    highscore_data = deps["highscore_data"]
+    pending_highscore = deps["pending_highscore"]
+    detector = deps["detector"]
+    default_pilot_name = deps["default_pilot_name"]
+    debug_console_only = deps["debug_console_only"]
+    get_datetime_string = deps["get_datetime_string"]
+    html_escape = deps["html_escape"]
+    save_highscore = deps["save_highscore"]
+    record_trick_highscore_log_entry = deps["record_trick_highscore_log_entry"]
+
+    name = query_params.get('name', '').strip()
+    if not name:
+        name = body_params.get('name', '').strip()
+    is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
+    success = False
+    error = ""
+    score_to_save = None
+    timestamp_to_save = None
+
+    if not name:
+        error = "Name darf nicht leer sein."
+    else:
+        if pending_highscore["active"]:
+            score_to_save = pending_highscore["score"]
+            timestamp_to_save = pending_highscore["timestamp"]
+        elif detector.score > highscore_data["score"]:
+            score_to_save = detector.score
+            timestamp_to_save = get_datetime_string()
+            debug_console_only("[HIGHSCORE] Fallback: Score hoeher als Highscore.")
+        elif highscore_data["score"] > 0:
+            score_to_save = highscore_data["score"]
+            timestamp_to_save = highscore_data.get("timestamp", "Unbekannt")
+            debug_console_only("[HIGHSCORE] Name fuer bestehenden Highscore wird aktualisiert.")
+        else:
+            error = "Kein neuer Highscore zum Speichern vorhanden."
+
+    if error == "" and score_to_save is not None:
+        highscore_data["score"] = int(score_to_save)
+        highscore_data["timestamp"] = timestamp_to_save or get_datetime_string()
+        highscore_data["player"] = name
+        saved_ok, save_error = save_highscore()
+        if saved_ok:
+            pending_highscore["active"] = False
+            pending_highscore["score"] = 0
+            pending_highscore["timestamp"] = "Unbekannt"
+            success = True
+            debug_console_only(
+                f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
+            )
+            record_trick_highscore_log_entry()
+        else:
+            error = "Speichern fehlgeschlagen: " + str(save_error)
+            debug_console_only("[HIGHSCORE ERROR] " + error)
+
+    if is_web_submit:
+        if success:
+            response_html = _build_redirect_html(
+                "Highscore gespeichert",
+                "Highscore gespeichert",
+                f"{html_escape(highscore_data.get('player', default_pilot_name))} steht jetzt mit {highscore_data['score']} Punkten im Highscore.",
+                refresh_seconds=1,
+            )
+        else:
+            response_html = _build_redirect_html(
+                "Speichern fehlgeschlagen",
+                "Speichern fehlgeschlagen",
+                html_escape(error or 'Unbekannter Fehler'),
+                refresh_seconds=2,
+            )
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: text/html\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_html)).encode('utf-8') + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_html)
+    else:
+        payload = json.dumps({
+            "ok": success,
+            "error": error,
+            "highscore": highscore_data["score"],
+            "highscore_player": highscore_data.get("player", default_pilot_name),
+            "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
+        }).encode('utf-8')
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(payload)).encode('utf-8') + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(payload)
+
+
+async def _send_confirm_highscore_response(writer, deps):
+    highscore_data = deps["highscore_data"]
+    pending_highscore = deps["pending_highscore"]
+    detector = deps["detector"]
+    default_pilot_name = deps["default_pilot_name"]
+    debug_console_only = deps["debug_console_only"]
+    get_datetime_string = deps["get_datetime_string"]
+    save_highscore = deps["save_highscore"]
+    record_trick_highscore_log_entry = deps["record_trick_highscore_log_entry"]
+
+    success = False
+    error = ""
+
+    if pending_highscore["active"]:
+        highscore_data["score"] = int(pending_highscore["score"])
+        highscore_data["timestamp"] = pending_highscore["timestamp"] or get_datetime_string()
+        highscore_data["player"] = default_pilot_name
+        saved_ok, save_error = save_highscore()
+        if saved_ok:
+            pending_highscore["active"] = False
+            pending_highscore["score"] = 0
+            pending_highscore["timestamp"] = "Unbekannt"
+            success = True
+            debug_console_only(
+                f"[HIGHSCORE] Rekord gespeichert: {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
+            )
+            record_trick_highscore_log_entry()
+        else:
+            error = "Speichern fehlgeschlagen: " + str(save_error)
+            debug_console_only("[HIGHSCORE ERROR] " + error)
+    elif detector.score > highscore_data["score"]:
+        highscore_data["score"] = int(detector.score)
+        highscore_data["timestamp"] = get_datetime_string()
+        highscore_data["player"] = default_pilot_name
+        saved_ok, save_error = save_highscore()
+        if saved_ok:
+            success = True
+            debug_console_only(
+                f"[HIGHSCORE] Rekord gespeichert (Fallback): {highscore_data['score']} Pkt | Pilot: {highscore_data['player']}"
+            )
+            record_trick_highscore_log_entry()
+        else:
+            error = "Speichern fehlgeschlagen: " + str(save_error)
+            debug_console_only("[HIGHSCORE ERROR] " + error)
+    else:
+        success = True
+
+    payload = json.dumps({
+        "ok": success,
+        "error": error,
+        "highscore": highscore_data["score"],
+        "highscore_player": highscore_data.get("player", default_pilot_name),
+        "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
+    }).encode('utf-8')
+
+    writer.write(b'HTTP/1.1 200 OK\r\n')
+    writer.write(b'Content-Type: application/json\r\n')
+    writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+    writer.write(b'Pragma: no-cache\r\n')
+    writer.write(b'Content-Length: ' + str(len(payload)).encode('utf-8') + b'\r\n')
+    writer.write(b'Connection: close\r\n\r\n')
+    writer.write(payload)
+
+
+async def _send_reset_highscore_response(writer, query_params, body_params, deps):
+    highscore_data = deps["highscore_data"]
+    pending_highscore = deps["pending_highscore"]
+    detector = deps["detector"]
+    default_pilot_name = deps["default_pilot_name"]
+    debug_console_only = deps["debug_console_only"]
+    save_highscore = deps["save_highscore"]
+
+    is_web_submit = query_params.get('web', '') == '1' or body_params.get('web', '') == '1'
+    debug_console_only(f"[HIGHSCORE] Reset-Route aufgerufen (web={is_web_submit}).")
+
+    highscore_data["score"] = 0
+    highscore_data["timestamp"] = "Unbekannt"
+    highscore_data["player"] = default_pilot_name
+    pending_highscore["active"] = False
+    pending_highscore["score"] = 0
+    pending_highscore["timestamp"] = "Unbekannt"
+    detector.score = 0
+    detector.trick_history = []
+    detector.last_trick_name = "Keiner"
+
+    saved_ok, save_error = save_highscore()
+    if saved_ok:
+        debug_console_only("[HIGHSCORE] Highscore wurde manuell zurueckgesetzt.")
+    else:
+        debug_console_only("[HIGHSCORE ERROR] Reset-Speichern fehlgeschlagen: " + str(save_error))
+
+    if is_web_submit:
+        if saved_ok:
+            response_html = _build_redirect_html(
+                "Reset erfolgreich",
+                "Highscore wurde zurueckgesetzt",
+                "Highscore und Session-Score stehen jetzt auf 0.",
+                refresh_seconds=1,
+            )
+        else:
+            response_html = _build_redirect_html(
+                "Reset fehlgeschlagen",
+                "Reset fehlgeschlagen",
+                deps["html_escape"](str(save_error)),
+                refresh_seconds=2,
+            )
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: text/html\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(response_html)).encode('utf-8') + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(response_html)
+    else:
+        payload = json.dumps({
+            "ok": saved_ok,
+            "error": "" if saved_ok else ("Reset fehlgeschlagen: " + str(save_error)),
+            "highscore": highscore_data["score"],
+            "highscore_player": highscore_data.get("player", default_pilot_name),
+            "highscore_timestamp": highscore_data.get("timestamp", "Unbekannt")
+        }).encode('utf-8')
+
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(payload)).encode('utf-8') + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(payload)
 
 
 async def handle_misc_routes(
@@ -44,9 +338,6 @@ async def handle_misc_routes(
     set_language_code = deps["set_language_code"]
     is_allowed_language = deps["is_allowed_language"]
     list_language_codes = deps["list_language_codes"]
-    send_highscore_name_response = deps["send_highscore_name_response"]
-    send_confirm_highscore_response = deps["send_confirm_highscore_response"]
-    send_reset_highscore_response = deps["send_reset_highscore_response"]
     enable_serial_debug = deps["enable_serial_debug"]
     write_text_file = deps["write_text_file"]
     session_export_file_path = deps["session_export_file_path"]
@@ -60,7 +351,7 @@ async def handle_misc_routes(
     perform_emergency_delete_boot = deps["perform_emergency_delete_boot"]
     infection_status = deps.get("infection_status")
     trick_highscore_log_entries = deps["trick_highscore_log_entries"]
-    save_trick_highscore_log = deps["save_trick_highscore_log"]
+    boot_runtime = deps.get("boot_runtime")
 
     if request_path == '/admin-profiles':
         await send_html_file(writer, admin_profiles_html_path)
@@ -98,6 +389,21 @@ async def handle_misc_routes(
             except Exception:
                 ip_addr = ""
 
+        main_present = False
+        for main_name in ("main.py", "main.mpy"):
+            try:
+                os.stat(main_name)
+                main_present = True
+                break
+            except OSError:
+                pass
+
+        boot_present = True
+        try:
+            os.stat("boot.py")
+        except OSError:
+            boot_present = False
+
         info_data = {
             "mem_free": mem_free,
             "mem_alloc": mem_alloc,
@@ -117,6 +423,11 @@ async def handle_misc_routes(
             "developer_mode": developer_mode_enabled,
             "language": language_code,
             "firmware_version": firmware_version,
+            "device_role": deps.get("device_role", "gamification"),
+            "board_type": boot_runtime.detect_board_type() if boot_runtime else "Unbekannt",
+            "license_status": deps.get("license_status", "MISSING"),
+            "main_present": main_present,
+            "boot_present": boot_present,
         }
         response_data = json.dumps(info_data).encode('utf-8')
         writer.write(b'HTTP/1.1 200 OK\r\n')
@@ -265,6 +576,48 @@ async def handle_misc_routes(
         writer.write(b'Content-Length: ' + str(len(response_data)).encode() + b'\r\n')
         writer.write(b'Connection: close\r\n\r\n')
         writer.write(response_data)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/reset-device-role':
+        # Loescht NUR device_role.json (nie Teil eines OTA-Bundles/einer
+        # OTA_ALLOWED_TARGETS-Whitelist, siehe boot_runtime.py) und startet
+        # neu - boot.py zeigt danach wieder role_setup.py.
+        if query_params.get('confirm', '') != '1':
+            payload = json.dumps({"ok": False, "error": "Bestaetigung fehlt"}).encode('utf-8')
+            writer.write(b'HTTP/1.1 400 Bad Request\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(payload)
+            return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+        cleared = False
+        if boot_runtime is not None:
+            try:
+                cleared = boot_runtime.clear_device_role()
+            except Exception:
+                cleared = False
+
+        if cleared:
+            payload = json.dumps({"ok": True, "message": "Rolle zurueckgesetzt. Neustart laeuft."}).encode('utf-8')
+            writer.write(b'HTTP/1.1 200 OK\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(payload)
+            try:
+                await writer.drain()
+            except Exception:
+                pass
+            await asyncio.sleep_ms(1000)
+            machine.reset()
+        else:
+            payload = json.dumps({"ok": False, "error": "Zuruecksetzen fehlgeschlagen"}).encode('utf-8')
+            writer.write(b'HTTP/1.1 500 Internal Server Error\r\n')
+            writer.write(b'Content-Type: application/json\r\n')
+            writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+            writer.write(b'Connection: close\r\n\r\n')
+            writer.write(payload)
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path == '/language-packs':
@@ -505,7 +858,7 @@ async def handle_misc_routes(
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path == '/set-highscore-name':
-        await send_highscore_name_response(writer, query_params, body_params)
+        await _send_highscore_name_response(writer, query_params, body_params, deps)
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path == '/set-trick-profile':
@@ -626,11 +979,11 @@ async def handle_misc_routes(
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path == '/confirm-highscore':
-        await send_confirm_highscore_response(writer)
+        await _send_confirm_highscore_response(writer, deps)
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path == '/reset-highscore':
-        await send_reset_highscore_response(writer, query_params, body_params)
+        await _send_reset_highscore_response(writer, query_params, body_params, deps)
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path in ('/clear-debug-log', '/clear-session-log') and request_method == 'POST':

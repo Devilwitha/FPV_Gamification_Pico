@@ -106,6 +106,26 @@ def run_lilygo():
             time.sleep(60)
 
 
+def run_role_setup():
+    """Wird gestartet, wenn noch keine Geraete-Rolle gewaehlt wurde (siehe
+    boot_runtime.get_device_role()) - zeigt eine minimale, in sich
+    geschlossene Web-Seite (role_setup.py, gleiches Muster wie recovery.py:
+    kein Import von index.html/main.py noetig, da an dieser Stelle noch
+    nicht feststeht, welches Hauptskript ueberhaupt geladen werden soll),
+    auf der der Nutzer zwischen "Gamification Pico" und "Gate/Hill Pico"
+    waehlt. Speichert die Wahl und startet danach per machine.reset() neu -
+    boot.py importiert beim naechsten Start dann direkt das passende
+    Hauptskript."""
+    debug_log("Keine Geraete-Rolle gewaehlt: starte role_setup.py")
+    gc.collect()
+    try:
+        import role_setup
+    except Exception as e:
+        debug_log(f"role_setup.py Crash: {e}")
+        while True:
+            time.sleep(60)
+
+
 def run_recovery(reason):
     debug_log(f"Wechsle auf recovery.py: {reason}")
     # Vor dem (Kompilieren+Ausfuehren von) recovery.py den Heap defragmentieren -
@@ -151,35 +171,61 @@ else:
         debug_log(f"Watchdog nicht verfuegbar: {e}")
     debug_log_mem("nach Watchdog-Setup")
 
-    force_main_retry = False
+    device_role = None
     try:
-        force_main_retry = boot_runtime.consume_main_retry_once()
+        device_role = boot_runtime.get_device_role()
     except Exception:
-        force_main_retry = False
+        device_role = None
 
-    if force_main_retry:
-        debug_log("Recovery-Flag erkannt: main.py wird einmalig erneut versucht.")
-        try:
-            boot_runtime.clear_main_fail_count()
-        except Exception:
-            pass
-
-    should_recovery, fail_count = boot_runtime.should_boot_recovery()
-    if should_recovery and not force_main_retry:
-        run_recovery(f"zu viele Main-Fehler ({fail_count})")
+    if device_role is None:
+        run_role_setup()
     else:
-        boot_runtime.mark_main_attempt_failed_or_unhealthy()
-        # main.py ist sehr gross (>90KB Quelltext); das Kompilieren beim Import
-        # braucht deutlich mehr RAM als der resultierende Bytecode selbst. Nach
-        # AP-Start + Watchdog-Setup + boot_state.json-I/O ist der Heap oft schon
-        # fragmentiert genug, dass selbst kleine Allokationen (wenige KB) waehrend
-        # des Kompilierens fehlschlagen ("memory allocation failed") - deshalb hier
-        # explizit aufraeumen, bevor der teure Import beginnt.
-        gc.collect()
-        debug_log_mem("direkt vor import main")
+        force_main_retry = False
         try:
-            import main
-        except Exception as e:
-            debug_log(f"main.py Crash: {e}")
-            debug_log_mem("direkt nach main.py Crash")
-            run_recovery("main.py Exception")
+            force_main_retry = boot_runtime.consume_main_retry_once()
+        except Exception:
+            force_main_retry = False
+
+        if force_main_retry:
+            debug_log("Recovery-Flag erkannt: main.py wird einmalig erneut versucht.")
+            try:
+                boot_runtime.clear_main_fail_count()
+            except Exception:
+                pass
+
+        should_recovery, fail_count = boot_runtime.should_boot_recovery()
+        if should_recovery and not force_main_retry:
+            run_recovery(f"zu viele Main-Fehler ({fail_count})")
+        else:
+            boot_runtime.mark_main_attempt_failed_or_unhealthy()
+            # main.py ist sehr gross (>90KB Quelltext); das Kompilieren beim Import
+            # braucht deutlich mehr RAM als der resultierende Bytecode selbst. Nach
+            # AP-Start + Watchdog-Setup + boot_state.json-I/O ist der Heap oft schon
+            # fragmentiert genug, dass selbst kleine Allokationen (wenige KB) waehrend
+            # des Kompilierens fehlschlagen ("memory allocation failed") - deshalb hier
+            # explizit aufraeumen, bevor der teure Import beginnt.
+            gc.collect()
+            debug_log_mem("direkt vor import main")
+            pre_main_modules = set(sys.modules.keys())
+            try:
+                if device_role == "gatehill":
+                    import main_gatehill
+                else:
+                    import main
+            except Exception as e:
+                debug_log(f"main Crash: {e}")
+                debug_log_mem("direkt nach main Crash")
+                # main.py/main_gatehill.py haben beim Absturz weitere Module
+                # importiert (trick_profile_helpers, ota_helpers, gmr, ...) -
+                # die bleiben in sys.modules haengen und blockieren damit RAM,
+                # das gc.collect() NICHT freigibt (MicroPythons GC ist nicht
+                # kompaktierend: als erreichbar markierte, aber ungenutzte
+                # Bloecke bleiben fragmentiert belegt). Ohne dieses Aufraeumen
+                # kann selbst der kleine Import von recovery.py gleich danach
+                # an Fragmentierung scheitern.
+                for mod_name in list(sys.modules.keys()):
+                    if mod_name not in pre_main_modules:
+                        del sys.modules[mod_name]
+                gc.collect()
+                debug_log_mem("nach Modul-Cleanup")
+                run_recovery("main Exception")

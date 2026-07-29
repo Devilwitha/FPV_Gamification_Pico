@@ -106,6 +106,7 @@ async def handle_upload_chunk(writer, body_text, body_params, ota_state, deps):
     ota_bundle_target = deps["ota_bundle_target"]
     ota_lang_bundle_target = deps["ota_lang_bundle_target"]
     ota_allowed_targets = deps["ota_allowed_targets"]
+    license_upload_target = deps.get("license_upload_target")
 
     chunk_index_str = '-1'
     total_str = '0'
@@ -156,6 +157,11 @@ async def handle_upload_chunk(writer, body_text, body_params, ota_state, deps):
 
         if chunk_index == 0:
             if target_str == ota_bundle_target or target_str == ota_lang_bundle_target:
+                target_valid = True
+            elif license_upload_target is not None and target_str == license_upload_target:
+                # license.lic muss immer hochladbar sein, unabhaengig vom
+                # Developer-Modus (siehe update_manager.py/PROTECTED_FILES -
+                # dieser Upload ist der einzige erlaubte Weg, es zu setzen).
                 target_valid = True
             elif target_str in ota_allowed_targets:
                 target_valid = developer_mode_enabled
@@ -231,6 +237,7 @@ async def handle_prepare_upload(writer, query_params, body_params, ota_state, de
     ota_bundle_target = deps["ota_bundle_target"]
     ota_lang_bundle_target = deps["ota_lang_bundle_target"]
     ota_allowed_targets = deps["ota_allowed_targets"]
+    license_upload_target = deps.get("license_upload_target")
 
     target_str = query_params.get('target', '').strip()
     if not target_str:
@@ -259,6 +266,8 @@ async def handle_prepare_upload(writer, query_params, body_params, ota_state, de
     target_valid = True
     target_error = ""
     if target_str == ota_bundle_target or target_str == ota_lang_bundle_target:
+        target_valid = True
+    elif license_upload_target is not None and target_str == license_upload_target:
         target_valid = True
     elif target_str in ota_allowed_targets:
         target_valid = developer_mode_enabled
@@ -329,6 +338,8 @@ async def handle_finalize_upload(writer, ota_state, deps):
     ota_staging_path = deps["ota_staging_path"]
     apply_firmware_bundle_from_base64 = deps["apply_firmware_bundle_from_base64"]
     safe_base64_file_to_file = deps["safe_base64_file_to_file"]
+    license_upload_target = deps.get("license_upload_target")
+    refresh_license_status = deps.get("refresh_license_status")
 
     try:
         debug_log(f"[OTA] Finalisierung: {ota_state['received_chunks']}/{ota_state['total_chunks']} Chunks vorhanden")
@@ -337,7 +348,8 @@ async def handle_finalize_upload(writer, ota_state, deps):
 
         ota_target_file = ota_state["target_file"]
         is_bundle = (ota_target_file == ota_bundle_target or ota_target_file == ota_lang_bundle_target)
-        target = ota_target_file if (is_bundle or ota_target_file in ota_allowed_targets) else "main.py"
+        is_license = (license_upload_target is not None and ota_target_file == license_upload_target)
+        target = ota_target_file if (is_bundle or is_license or ota_target_file in ota_allowed_targets) else "main.py"
 
         if is_bundle:
             # Bundle wird DIREKT aus der noch base64-kodierten 'update.pbp'
@@ -386,6 +398,12 @@ async def handle_finalize_upload(writer, ota_state, deps):
             message = f"Update erfolgreich gespeichert: {target} ({staged_size} bytes)!"
             if needs_restart:
                 message += " Starte Neustart..."
+
+            if is_license and refresh_license_status is not None:
+                # Sperre sofort neu bewerten (kein Neustart noetig, damit ein
+                # frisch hochgeladener Schluessel direkt wirkt).
+                new_status = refresh_license_status()
+                message = f"Lizenz gespeichert. Status: {new_status}"
 
         response = json.dumps({"ok": True, "message": message, "restart": needs_restart}).encode('utf-8')
         writer.write(b'HTTP/1.1 200 OK\r\n')

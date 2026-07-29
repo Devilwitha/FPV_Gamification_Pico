@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}Webshop – Checkout{% endblock %}
+
+{% block head %}
+  <script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=EUR"></script>
+{% endblock %}
+
+{% block content %}
+  <section class="checkout-page">
+    <h1>Checkout</h1>
+
+    <div class="checkout-grid">
+      <div class="checkout-summary">
+        <h2>Deine Bestellung</h2>
+        <div class="order-summary-card">
+          <img class="order-summary-image" src="{{ product.image }}" alt="{{ product.name }}" />
+          <div class="order-summary-details">
+            <h3>{{ product.name }}</h3>
+            <p>{{ product.description }}</p>
+            <p class="order-summary-price">{{ product.price_cents | format_price }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="checkout-payment">
+        <h2>Zahlungsmethode wählen</h2>
+
+        <div id="checkout-error" class="checkout-error" hidden></div>
+
+        <div class="form-field">
+          <label for="checkout-email">E-Mail-Adresse *</label>
+          <input
+            type="email"
+            id="checkout-email"
+            placeholder="du@example.com"
+            required
+          />
+          <p class="form-hint">
+            {% if product.type == "digital" %}
+              Wird für die spätere Lizenz-Einrichtung benötigt.
+            {% else %}
+              Wird für die Bestellbestätigung benötigt.
+            {% endif %}
+          </p>
+        </div>
+
+        <div class="payment-option">
+          <h3>Kreditkarte (Stripe)</h3>
+          <p>Du wirst zur gesicherten Stripe-Checkout-Seite weitergeleitet.</p>
+          <button id="stripe-checkout-button" class="btn btn-primary btn-large">
+            Mit Kreditkarte bezahlen
+          </button>
+        </div>
+
+        <div class="payment-divider">
+          <span>oder</span>
+        </div>
+
+        <div class="payment-option">
+          <h3>PayPal</h3>
+          <p>Bezahle direkt und sicher über dein PayPal-Konto.</p>
+          <div id="paypal-button-container"></div>
+        </div>
+
+        {% if dummy_mode %}
+          <div class="payment-divider">
+            <span>Dev-Modus</span>
+          </div>
+
+          <div class="payment-option payment-option-dummy">
+            <h3>🧪 Dummy-Kauf simulieren</h3>
+            <p>
+              Nur im DUMMY_MODE sichtbar: simuliert einen abgeschlossenen Kauf
+              ohne Stripe/PayPal anzusprechen, um den Lizenz-Einrichtungs-Flow
+              lokal testen zu können.
+            </p>
+            <button id="dummy-checkout-button" class="btn btn-dummy btn-large">
+              Dummy-Kauf abschließen
+            </button>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const productId = "{{ product.id }}";
+    const errorBox = document.getElementById("checkout-error");
+    const emailInput = document.getElementById("checkout-email");
+
+    function zeigeFehler(nachricht) {
+      errorBox.textContent = nachricht;
+      errorBox.hidden = false;
+    }
+
+    function leseEmailOderZeigeFehler() {
+      const email = emailInput.value.trim();
+      if (!email || !email.includes("@")) {
+        zeigeFehler("Bitte zuerst eine gültige E-Mail-Adresse eingeben.");
+        emailInput.focus();
+        return null;
+      }
+      return email;
+    }
+
+    const dummyButton = document.getElementById("dummy-checkout-button");
+    if (dummyButton) {
+      dummyButton.addEventListener("click", function () {
+        const email = leseEmailOderZeigeFehler();
+        if (!email) {
+          return;
+        }
+        fetch("/api/dummy/create-purchase", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ product_id: productId, email: email }),
+        })
+          .then(function (response) {
+            return response.json();
+          })
+          .then(function (daten) {
+            if (daten.redirect_url) {
+              window.location.href = daten.redirect_url;
+            } else {
+              zeigeFehler(daten.error || "Der Dummy-Kauf konnte nicht simuliert werden.");
+            }
+          })
+          .catch(function () {
+            zeigeFehler("Verbindung zum Server fehlgeschlagen. Bitte versuche es erneut.");
+          });
+      });
+    }
+
+    document.getElementById("stripe-checkout-button").addEventListener("click", function () {
+      const email = leseEmailOderZeigeFehler();
+      if (!email) {
+        return;
+      }
+      fetch("/api/stripe/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ product_id: productId, email: email }),
+      })
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (daten) {
+          if (daten.checkout_url) {
+            window.location.href = daten.checkout_url;
+          } else {
+            zeigeFehler(daten.error || "Die Stripe-Zahlung konnte nicht gestartet werden.");
+          }
+        })
+        .catch(function () {
+          zeigeFehler("Verbindung zu Stripe fehlgeschlagen. Bitte versuche es erneut.");
+        });
+    });
+
+    paypal
+      .Buttons({
+        style: {
+          layout: "vertical",
+          color: "gold",
+          shape: "rect",
+          label: "paypal",
+        },
+        createOrder: function () {
+          const email = leseEmailOderZeigeFehler();
+          if (!email) {
+            return Promise.reject("email fehlt");
+          }
+          return fetch("/api/paypal/create-order", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ product_id: productId, email: email }),
+          })
+            .then(function (response) {
+              return response.json();
+            })
+            .then(function (daten) {
+              if (daten.id) {
+                return daten.id;
+              }
+              zeigeFehler(daten.error || "Die PayPal-Bestellung konnte nicht erstellt werden.");
+              return Promise.reject(daten.error);
+            });
+        },
+        onApprove: function (data) {
+          return fetch("/api/paypal/capture-order/" + data.orderID, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          })
+            .then(function (response) {
+              return response.json();
+            })
+            .then(function () {
+              window.location.href = "/success?order_id=" + encodeURIComponent(data.orderID);
+            });
+        },
+        onError: function () {
+          zeigeFehler("Bei der PayPal-Zahlung ist ein Fehler aufgetreten. Bitte versuche es erneut.");
+        },
+        onCancel: function () {
+          window.location.href = "/cancel";
+        },
+      })
+      .render("#paypal-button-container");
+  </script>
+{% endblock %}

@@ -29,6 +29,7 @@ einzeln aktualisiert werden kann.
 """
 import os
 import struct
+from update_manager import is_protected as _is_protected_filename
 
 
 def _noop_log(_message):
@@ -53,6 +54,10 @@ def _is_safe_bundle_entry_filename(filename):
     if "/" in filename or "\\" in filename or ".." in filename:
         return False
     if filename.startswith("."):
+        return False
+    if _is_protected_filename(filename):
+        # license.lic/public_key.pem duerfen nie via Bundle ersetzt werden
+        # (siehe update_manager.py) - weder GitHub-OTA noch manuelle Uploads.
         return False
     return True
 
@@ -294,12 +299,29 @@ def _apply_firmware_bundle_from_stream(f, allowed_targets, bundle_magic, log=_no
             os.remove(filename)
         except Exception:
             pass
+        # Stale Gegenstueck aus einer frueheren Firmware-Generation entfernen:
+        # build_firmware.py kompiliert .py-Quellcode (ausser boot.py/
+        # recovery.py) inzwischen zu .mpy - ohne diese Aufraeumung wuerde ein
+        # Geraet, das zuvor noch main.py (Klartext) hatte, nach diesem Update
+        # main.py UND main.mpy gleichzeitig besitzen. MicroPythons Import-
+        # Reihenfolge ist dann nicht garantiert die gewuenschte - sicherer,
+        # das jeweils andere Format konsequent zu entfernen.
+        if filename.endswith(".mpy"):
+            try:
+                os.remove(filename[:-4] + ".py")
+            except Exception:
+                pass
+        elif filename.endswith(".py"):
+            try:
+                os.remove(filename[:-3] + ".mpy")
+            except Exception:
+                pass
         os.rename(tmp_name, filename)
 
         extracted_files.append(filename)
         log(f"[OTA BUNDLE] Datei ersetzt: {filename} ({content_len} bytes)")
 
-    needs_restart = "main.py" in extracted_files
+    needs_restart = ("main.py" in extracted_files) or ("main.mpy" in extracted_files)
     return extracted_files, needs_restart
 
 

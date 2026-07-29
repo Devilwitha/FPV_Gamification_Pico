@@ -146,9 +146,13 @@ class RaceMode:
         if isinstance(values, dict):
             config.update(values)
         config["enabled"] = bool(config.get("enabled", False))
-        # Die Haupt-Firmware (source/) darf NIE als Tor agieren - dafuer gibt es
-        # die eigenstaendige source2-Firmware. Rolle daher fest auf "racer".
-        config["role"] = "racer"
+        # "gate_a"/"gate_b" sind nur ueber index_gatehill.html (Geraete-Rolle
+        # "gatehill", siehe boot_runtime.py/role_setup.py) tatsaechlich
+        # waehlbar - die normale Gamification-Admin-Seite (admin_race.html)
+        # zeigt keine Rollen-Auswahl an und schickt daher nie etwas anderes
+        # als "racer".
+        role = config.get("role")
+        config["role"] = role if role in ("gate_a", "gate_b", "racer") else "racer"
         config["laps"] = _clamp(int(config.get("laps", DEFAULT_LAPS)), 1, 99)
         config["rssi_threshold"] = _clamp(int(config.get("rssi_threshold", DEFAULT_RSSI_THRESHOLD)), -95, -20)
         config["cooldown_seconds"] = _clamp(int(config.get("cooldown_seconds", DEFAULT_COOLDOWN_SECONDS)), 1, 30)

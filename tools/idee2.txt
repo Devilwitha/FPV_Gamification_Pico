@@ -1,7 +1,0 @@
-ich möchte auf der updateseite einen button der nach updates suchen heisst und schmücke die animation einbischen aus dafür und wenn daraufgeklickt soll sich der pico über wlan eine verbindung zu diesem repo ins main bei releases nach dem neusten update suchen wenn dieses fw nbo eine neuere version wie die die bereitsinstalliert dann lade sie herunter und füre ein update durch
-nun wie soll der wechsle zu wlan funktionieren unter system kann man wie für hotspot.conf eine wlan verbindung eingeben name pw und diese speichern in der wlan.conf
-das heisd der benutzer klickt auf updats suchen und dan versucht der pico sich mit dem davorgespeichertem wlan 3 mal zu verbinden wenn es dan nicht klapt stelle den hotspot wieder her wenn es klapt lade die neuste fw nbo herunter auf github unter releases (main)
-der pico soll dan mit der led 2 s leuchten und 2 s aus und das im loop bis updatsuche und herunterladen durchgeführt
-auf der webseit soll vor dem wechsel ein pop up erscheinen für den benutzer der ihn darauf hinweisst was nun passier nach dem bestätigen auf ja wird der prozess gestartet
-wenn der pico normal gestartet ist und im system dev aus ist blende unter update das hochladen von den einzelnen datein und so wie fw aus und zeige nur nach updates suchen an wen jedoch aktiv zeige diese funktionen wieder an zusammen mit nach updates suchen 
-

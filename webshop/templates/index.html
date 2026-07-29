@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}FPV Gamification Pico – Startseite{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <h1>FPV Gamification Pico</h1>
+    <p class="hero-subtitle">
+      Ein anpassungsfähiger FPV-Score-Tracker, Infection-Game und
+      Mini-Game-Server auf Basis eines Raspberry Pi Pico / Pico W mit
+      passivem CRSF-Readout. Das Gerät klinkt sich passiv in deine
+      Telemetrie ein, liest Attitude-Daten und Sensorik, erkennt Tricks,
+      vergibt Highscores und hostet eine Live-Web-App direkt aus der
+      Hosentasche – ganz ohne zusätzliche Sensoren oder Kabel.
+    </p>
+    <a class="btn btn-primary btn-large" href="{{ url_for('shop') }}">Jetzt zum Shop</a>
+  </section>
+
+  <section class="features">
+    <h2>Das steckt drin</h2>
+    <div class="feature-grid">
+      <article class="feature-card">
+        <h3>Passiver CRSF-UART Sniffer</h3>
+        <p>
+          Klinkt sich geräuschlos in deine ELRS/TBS-Telemetrie ein und liest
+          Attitude-, Vario- und Akku-Frames mit – ohne zusätzliche Sensoren.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Smart Trick-Erkennung</h3>
+        <p>
+          Automatische Erkennung von Flips, Rolls und Spins mit dynamischer
+          Punktevergabe direkt aus dem Gyro-Datenstrom.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Infection-Modus (BLE)</h3>
+        <p>
+          Erkennt Mitspieler über verbindungslose Bluetooth-LE-Advertisements
+          direkt in der Luft – für spontane Verfolgungsjagden.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Live Highscore-System</h3>
+        <p>
+          Mit Zeitstempel und Pilotenname, Bestätigungs-Popup bei neuem
+          Rekord und LED-Blink-Party direkt am Gerät.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Eigener WLAN-Hotspot</h3>
+        <p>
+          Keine App-Installation nötig – einfach per Smartphone oder Tablet
+          im Feld mit dem Pico verbinden und lossfliegen.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Real-Time Mini-Games</h3>
+        <p>
+          Touch &amp; Go, Altitude-Hold/Limbo und Eco-Challenge – alle
+          Spielmodi werten den Telemetrie-Stream in Echtzeit aus.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>OTA &amp; Bundle-Updates</h3>
+        <p>
+          Komplette Firmware-Updates oder einzelne Seiten kabellos direkt im
+          Browser aktualisieren – nie wieder USB-Gefummel.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Mehrstufiges Admin-Panel</h3>
+        <p>
+          Dashboard, Trick-Profile, OTA-Update, Mini-Game-Verwaltung und
+          System-Monitor – alles direkt im Webinterface.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section class="wiring">
+    <h2>In drei Kabeln startklar</h2>
+    <p class="wiring-intro">
+      Du benötigst lediglich drei Leitungen vom Flight Controller oder
+      ELRS-Empfänger zum Pico:
+    </p>
+    <pre class="wiring-box">Flight Controller              Raspberry Pi Pico
+--------------------------------------------------
+        GND  ------------------->  GND
+     CRSF TX ------------------->  GP1 (UART0 RX)
+         5V  ------------------->  VSYS (optional)</pre>
+    <p class="wiring-note">
+      Wichtig: Niemals 5 V direkt auf den 3V3-Pin legen und auf eine
+      gemeinsame Masse (GND) achten, sonst kommen keine stabilen Daten an.
+    </p>
+  </section>
+
+  <section class="cta">
+    <h2>Bereit für deinen eigenen Score-Tracker?</h2>
+    <p>
+      Wähle zwischen der digitalen Firmware-Lizenz oder dem kompletten
+      Hardware-Paket inklusive vorinstallierter Firmware.
+    </p>
+    <a class="btn btn-primary btn-large" href="{{ url_for('shop') }}">Zum Shop</a>
+  </section>
+{% endblock %}

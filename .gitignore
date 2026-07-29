@@ -7,3 +7,10 @@ __pycache__/main.cpython-311.pyc
 /build
 *.device
 /data2
+# RSA-Schluesselpaar fuer das Lizenzsystem (tools/license_generator.py) -
+# private_key.pem darf NIE ins Repo/geteilt werden.
+/keys
+*.lic
+# Lokales Archiv aller ausgestellten Lizenzen (siehe build_firmware.py's
+# save_license_record()) - enthaelt Kunden-/Geraetedaten, nicht ins Repo.
+/lizenzen

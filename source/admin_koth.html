@@ -23,6 +23,7 @@
 <a href="/admin-infection" data-i18n="nav.infection">Infection</a>
 <a href="/admin-koth" class="on" data-i18n="nav.koth">King of the Hill</a>
 <a href="/admin-race" data-i18n="nav.race">Race</a>
+<a href="/admin-credits" data-i18n="nav.credits">Credits</a>
 <a href="/" data-i18n="nav.home">Home</a>
 </div>
 <div class="s">
@@ -46,7 +47,7 @@
 <label class="field"><span data-i18n="koth.threshold">Naeheschwelle RSSI (dBm)</span><input id="rssi_threshold" type="number" min="-95" max="-20"></label>
 <label class="field"><span data-i18n="koth.pointsPerSecond">Punkte pro Sekunde</span><input id="points_per_second" type="number" min="0.1" max="100" step="0.1"></label>
 </div>
-<div class="hint" data-i18n="koth.hint">Ein Pico ist der Huegel und sendet einen BLE-Beacon. Alle Spieler-Picos sammeln Punkte, solange sie Empfang zum Huegel haben (RSSI ueber der Naeheschwelle). Auf allen Picos dieselbe Rundendauer/Naeheschwelle einstellen. Die Huegel-Rolle ist nur auf der separaten source2-Firmware (FPV_GateHill) verfuegbar - dieses Geraet ist immer Spieler.</div>
+<div class="hint" data-i18n="koth.hint">Ein Pico ist der Huegel und sendet einen BLE-Beacon. Alle Spieler-Picos sammeln Punkte, solange sie Empfang zum Huegel haben (RSSI ueber der Naeheschwelle). Auf allen Picos dieselbe Rundendauer/Naeheschwelle einstellen. Die Huegel-Rolle ist nur auf einem als Gate/Hill Pico eingerichteten Geraet waehlbar - dieses Geraet ist ueber diese Seite immer Spieler.</div>
 <div class="buttons"><button class="b" type="submit" data-i18n="koth.saveStart">Speichern &amp; Runde starten</button><button class="b stop" type="button" onclick="stopRound()" data-i18n="koth.stop">Runde stoppen</button></div>
 <div id="msg" class="msg"></div>
 </form>

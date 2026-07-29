@@ -7,6 +7,91 @@ RETRY_FLAG_FILE = "main_retry.flag"
 FAIL_WINDOW_MS = 120000
 MAX_MAIN_FAILS = 3
 
+# Geraete-Rolle ("gamification" oder "gatehill"), einmalig per Web-Seite
+# (siehe role_setup.py) gewaehlt - anders als der Geraetetyp (Pico/Pico2/
+# LilyGo, siehe boot.py's detect_device_type()) laesst sich die Rolle NICHT
+# aus der Hardware ableiten (beides ist ein normaler Pico W), daher muss sie
+# einmalig vom Nutzer gewaehlt und dauerhaft gespeichert werden.
+DEVICE_ROLE_FILE = "device_role.json"
+VALID_DEVICE_ROLES = ("gamification", "gatehill")
+
+
+def detect_board_type():
+    """Liefert einen menschenlesbaren Hardware-Namen (z.B. "Pico W", "Pico 2 W",
+    "Pico", "Pico 2") fuer die System-Info-Anzeige - im Unterschied zu
+    boot.py's eigenem detect_device_type() (nur "pico1"/"pico2"/"lilygo"/
+    "unknown" fuer die Boot-Routing-Entscheidung) unterscheidet diese Funktion
+    zusaetzlich zwischen Wireless- ("W") und Nicht-Wireless-Varianten, indem
+    sie den von MicroPython gelieferten Chipnamen auswertet (z.B.
+    "Raspberry Pi Pico W with RP2040")."""
+    try:
+        machine_name = os.uname().machine
+    except Exception:
+        return "Unbekannt"
+
+    lower = machine_name.lower()
+    if "esp32" in lower:
+        return "LilyGo (ESP32)"
+    if "rp2350" in lower:
+        generation = "Pico 2"
+    elif "rp2040" in lower:
+        generation = "Pico"
+    else:
+        return machine_name or "Unbekannt"
+
+    board_part = lower.split("with")[0].split()
+    is_wireless = bool(board_part) and board_part[-1] == "w"
+    return generation + " W" if is_wireless else generation
+
+
+def get_device_role():
+    """Liefert die gespeicherte Geraete-Rolle, oder None, wenn noch keine
+    gewaehlt wurde (boot.py startet dann role_setup.py)."""
+    try:
+        with open(DEVICE_ROLE_FILE, "r") as f:
+            data = json.loads(f.read())
+        role = data.get("role")
+        if role in VALID_DEVICE_ROLES:
+            return role
+    except Exception:
+        pass
+    return None
+
+
+def clear_device_role():
+    """Loescht die gespeicherte Geraete-Rolle - der Pico zeigt beim naechsten
+    Start wieder role_setup.py, damit die Rolle neu gewaehlt werden kann.
+    Aufgerufen ueber den "Rolle zurruecksetzen"-Button in main.py/
+    main_gatehill.py's System-Seite (siehe dort /reset-device-role)."""
+    try:
+        os.remove(DEVICE_ROLE_FILE)
+        return True
+    except Exception:
+        return False
+
+
+def set_device_role(role):
+    if role not in VALID_DEVICE_ROLES:
+        return False
+    tmp = DEVICE_ROLE_FILE + ".tmp"
+    payload = json.dumps({"role": role})
+    try:
+        with open(tmp, "w") as f:
+            f.write(payload)
+        try:
+            os.remove(DEVICE_ROLE_FILE)
+        except Exception:
+            pass
+        os.rename(tmp, DEVICE_ROLE_FILE)
+        return True
+    except Exception:
+        try:
+            with open(DEVICE_ROLE_FILE, "w") as f:
+                f.write(payload)
+            return True
+        except Exception:
+            return False
+
 _wdt = None
 
 

@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sys
+import time
 
 from pico_runtime import install
 
@@ -205,9 +206,27 @@ SIM_PROFILES_PATH = os.path.join(MODULE_DIR, "sim_profiles.json")
 SIM_PROFILES = load_sim_profiles(SIM_PROFILES_PATH)
 
 
+def _rmtree_with_retry(path, attempts=5, delay_s=0.3):
+    """shutil.rmtree() direkt nach Prozessende eines vorherigen Simulator-
+    Laufs schlaegt unter Windows gelegentlich mit PermissionError fehl, weil
+    das Betriebssystem (oder ein Virenscanner) eine Datei im Ordner noch
+    kurz offen haelt, obwohl der Python-Prozess selbst schon beendet ist -
+    ein kurzer Retry mit Verzoegerung reicht dafuer normalerweise aus."""
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return
+        except PermissionError as e:
+            last_error = e
+            if attempt < attempts - 1:
+                time.sleep(delay_s)
+    raise last_error
+
+
 def clone_source_to_data(source_dir, data_dir, refresh=False):
     if refresh and os.path.isdir(data_dir):
-        shutil.rmtree(data_dir)
+        _rmtree_with_retry(data_dir)
 
     if not os.path.isdir(data_dir):
         shutil.copytree(source_dir, data_dir)

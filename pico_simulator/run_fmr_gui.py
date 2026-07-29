@@ -30,13 +30,12 @@ class SimulatorGui(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _apply_firmware_selection(self):
-        # "source" -> source/ + data/ (Hauptfirmware), "source2" -> source2/ + data2/
-        # (eigenstaendige Tor/Huegel-Firmware). data2/ wird beim Start automatisch
-        # als Klon von source2/ angelegt, falls es noch nicht existiert (siehe
-        # clone_source_to_data in run_firmware.py).
-        suffix = "2" if self.firmware_var.get() == "source2" else ""
-        self.source_var.set(os.path.join(self.project_root, "source" + suffix))
-        self.data_var.set(os.path.join(self.project_root, "data" + suffix))
+        # source/ + data/ ist seit dem Merge von source2/ der einzige Baum -
+        # main.py (Geraete-Rolle "gamification") und main_gatehill.py
+        # (Geraete-Rolle "gatehill") leben jetzt beide dort, waehlbar ueber
+        # das "Entry"-Dropdown statt ueber einen eigenen Quellordner.
+        self.source_var.set(os.path.join(self.project_root, "source"))
+        self.data_var.set(os.path.join(self.project_root, "data"))
 
     def _build_ui(self):
         frame = ttk.Frame(self, padding=12)
@@ -45,7 +44,7 @@ class SimulatorGui(tk.Tk):
         row = 0
         ttk.Label(frame, text="Entry").grid(row=row, column=0, sticky="w")
         self.entry_var = tk.StringVar(value="main")
-        entry_cb = ttk.Combobox(frame, textvariable=self.entry_var, values=["main", "boot", "recovery"], state="readonly")
+        entry_cb = ttk.Combobox(frame, textvariable=self.entry_var, values=["main", "main_gatehill", "boot", "recovery"], state="readonly")
         entry_cb.grid(row=row, column=1, sticky="ew", padx=(8, 0))
 
         row += 1
@@ -79,7 +78,7 @@ class SimulatorGui(tk.Tk):
         firmware_cb = ttk.Combobox(
             frame,
             textvariable=self.firmware_var,
-            values=["source", "source2"],
+            values=["source"],
             state="readonly",
         )
         firmware_cb.grid(row=row, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))

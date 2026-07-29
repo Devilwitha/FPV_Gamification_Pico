@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Webshop – Zahlung abgebrochen{% endblock %}
+
+{% block content %}
+  <section class="status-page status-cancel">
+    <div class="status-icon">&#10007;</div>
+    <h1>Zahlung nicht abgeschlossen</h1>
+    <p>{{ message or "Der Bezahlvorgang wurde abgebrochen." }}</p>
+    <a class="btn btn-primary btn-large" href="{{ url_for('shop') }}">Zurück zum Shop</a>
+  </section>
+{% endblock %}

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}FPV Gamification Pico – Shop{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    {% if dummy_mode %}
+      <div class="dummy-banner">
+        ⚠️ DUMMY-MODUS AKTIV – Käufe werden nur simuliert, es fließt kein echtes Geld.
+      </div>
+    {% endif %}
+    <header class="site-header">
+      <nav class="navbar">
+        <a class="brand" href="{{ url_for('index') }}">FPV Gamification Pico</a>
+        <div class="nav-links">
+          <a href="{{ url_for('index') }}">Start</a>
+          <a href="{{ url_for('shop') }}">Shop</a>
+        </div>
+      </nav>
+    </header>
+
+    <main class="site-main">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+      <p>&copy; 2026 Webshop. Alle Rechte vorbehalten.</p>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

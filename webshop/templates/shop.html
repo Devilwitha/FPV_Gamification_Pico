@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}FPV Gamification Pico – Artikelübersicht{% endblock %}
+
+{% block content %}
+  <section class="shop-header">
+    <h1>Unsere Artikel</h1>
+    <p>Wähle das passende Produkt und gehe direkt zum Checkout.</p>
+  </section>
+
+  <section class="product-grid">
+    {% for product in products %}
+      <article class="product-card">
+        <img class="product-image" src="{{ product.image }}" alt="{{ product.name }}" />
+        <div class="product-card-body">
+          <h2 class="product-name">{{ product.name }}</h2>
+          <p class="product-type">
+            {% if product.type == "digital" %}
+              Digitales Produkt
+            {% else %}
+              Physisches Produkt
+            {% endif %}
+          </p>
+          <p class="product-description">{{ product.description }}</p>
+          <p class="product-price">{{ product.price_cents | format_price }}</p>
+          <a class="btn btn-primary" href="{{ url_for('checkout', product_id=product.id) }}">
+            Jetzt kaufen
+          </a>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}

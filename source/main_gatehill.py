@@ -1,11 +1,18 @@
-"""main.py - FPV_GateHill (source2): eigenstaendige Tor-/Huegel-Firmware.
+"""main_gatehill.py - Hauptskript fuer die Geraete-Rolle "gatehill".
 
-Schlanke Zusatz-Firmware fuer Picos, die AUSSCHLIESSLICH als King-of-the-Hill-
+Schlankes Hauptskript fuer Picos, die AUSSCHLIESSLICH als King-of-the-Hill-
 Huegel oder als Race-Tor (Tor A/Tor B) eingesetzt werden - kein Trick-
-Tracking, kein Profile-/Ausweis-/Infection-System, keine Missionen. Nutzt
-denselben Boot-/Recovery-/OTA-Unterbau wie die Haupt-Firmware (source/), aber
-mit eigenem WLAN-Hotspot-Namen und einer einzigen kombinierten Konfigurations-
-seite (index.html) fuer beide Spielmodi.
+Tracking, kein Profile-/Ausweis-/Infection-System, keine Missionen. Liegt
+im selben Ordner wie main.py (Geraete-Rolle "gamification") und teilt sich
+mit ihm den Boot-/Recovery-/OTA-Unterbau (boot.py, boot_runtime.py,
+hotspot_common.py, ota_helpers.py, github_ota_helpers.py) sowie
+koth_mode.py/race_mode.py - genau wie main_LilyGo.py als eigenstaendiges
+alternatives Hauptskript neben main.py existiert.
+
+boot.py entscheidet anhand der einmalig per role_setup.py gewaehlten und in
+boot_runtime.py gespeicherten Geraete-Rolle, ob main.py oder main_gatehill.py
+importiert wird - beide Skripte liegen auf JEDEM geflashten Geraet, weil die
+Rollen-Wahl zur Laufzeit (nicht beim Flashen) passiert.
 """
 import machine
 import time
@@ -33,7 +40,7 @@ except Exception:
 # ==================== KONFIGURATION ====================
 ENABLE_SERIAL_DEBUG = True
 ENABLE_HOTSPOT = True
-INDEX_HTML_PATH = "index.html"
+INDEX_HTML_PATH = "index_gatehill.html"
 FIRMWARE_VERSION_FILE = "firmware_version.txt"
 
 _HOTSPOT_CONFIG = load_hotspot_config()
@@ -42,31 +49,69 @@ AP_PASSWORD = _HOTSPOT_CONFIG["password"]
 # =======================================================
 
 OTA_STAGING_PATH = "ota_staging.tmp"
-# Eigene, schlanke Whitelist fuer source2 (nur Tor/Huegel-Dateien - keine
-# Trick-/Infection-/Profil-Dateien der Haupt-Firmware).
+# Eigene, schlanke Whitelist fuer die gatehill-Rolle (nur Tor/Huegel-Dateien -
+# keine Trick-/Infection-/Profil-Dateien der Gamification-Rolle). Steuert nur
+# den eigenen /upload-chunk-Endpunkt hier - recovery.py hat eine eigene,
+# vereinigte Whitelist ueber beide Rollen.
 OTA_ALLOWED_TARGETS = (
     "boot.py", "recovery.py", "hotspot_common.py", "hotspot.conf", "wlan.conf", "boot_runtime.py",
-    "ota_helpers.py", "github_ota_helpers.py", "koth_mode.py", "race_mode.py",
-    "main.py", "index.html",
+    "ota_helpers.py", "update_manager.py", "license_verifier.py", "github_ota_helpers.py", "koth_mode.py", "race_mode.py",
+    "main_gatehill.py", "index_gatehill.html",
     "firmware_version.txt",
 )
-OTA_BUNDLE_TARGET = "gatehill.nbo"
+OTA_BUNDLE_TARGET = "firmware.nbo"
 OTA_BUNDLE_MAGIC = b"FPVBNDL1"
+# license.lic wird wie das Bundle-Ziel behandelt (immer erlaubt). Gate/Hill
+# sperrt keine Funktionen ohne Lizenz (siehe Spezifikation) - der Upload
+# existiert hier nur, damit ein spaeteres Upgrade auf "gamification" bzw.
+# eine Status-Anzeige moeglich ist.
+LICENSE_UPLOAD_TARGET = "license.lic"
+_license_verifier_module = None
+# Gecacht wie in main.py: eine RSA-2048-Signaturpruefung pro /system-info-Poll
+# (alle 5s, siehe index_gatehill.html) waere unnoetige CPU-Last auf einem
+# Geraet, das Zeitmessung/KOTH-Timing macht. Gate/Hill sperrt ohnehin nichts
+# anhand des Status - er dient hier nur der Anzeige.
+_LICENSE_STATUS = None
+
+
+def _get_license_verifier():
+    global _license_verifier_module
+    if _license_verifier_module is None:
+        import license_verifier as _lazy_license_verifier
+        _license_verifier_module = _lazy_license_verifier
+    return _license_verifier_module
+
+
+def _refresh_license_status():
+    global _LICENSE_STATUS
+    try:
+        _LICENSE_STATUS = _get_license_verifier().verify()
+    except Exception:
+        _LICENSE_STATUS = "INVALID"
+    return _LICENSE_STATUS
+
+
+def _get_license_status():
+    global _LICENSE_STATUS
+    if _LICENSE_STATUS is None:
+        _refresh_license_status()
+    return _LICENSE_STATUS
 
 ota_total_chunks = 0
 ota_received_chunks = 0
-ota_target_file = "main.py"
+ota_target_file = "main_gatehill.py"
 ota_update_active = False
 
 # ==================== GITHUB-OTA ("Nach Updates suchen") ====================
-# Siehe github_ota_helpers.py: verbindet sich kurzzeitig mit wlan.conf,
-# prueft das neueste gatehill.nbo-Release (eigene Release-Reihe, siehe
-# .github/workflows/build-and-release-gatehill.yml) und installiert es bei
-# Bedarf. Gleiches Muster wie source/main.py, hier nur ohne separates
-# misc_routes_helpers.py-Modul (source2 hat nur main.py).
+# Siehe github_ota_helpers.py (gemeinsam mit main.py genutzt): verbindet
+# sich kurzzeitig mit wlan.conf und prueft die neueste Release fuer ein
+# firmware.nbo-Asset. main_gatehill.py/role_setup.py/index_gatehill.html
+# sind bereits Teil dieses normalen Bundles (siehe tools/build_firmware.py),
+# ein eigenes gatehill.nbo-Release-Asset gibt es nicht mehr - daher reicht
+# die einfache /releases/latest-Abfrage in github_ota_helpers.py aus.
 GITHUB_REPO_OWNER = "Devilwitha"
 GITHUB_REPO_NAME = "FPV_Gamification_Pico"
-GITHUB_OTA_ASSET_NAME = "gatehill.nbo"
+GITHUB_OTA_ASSET_NAME = "firmware.nbo"
 GITHUB_OTA_STAGING_PATH = "github_update.nbo"
 GITHUB_OTA_LED_BLINK_INTERVAL_MS = 2000
 OTA_LED_BLINK_INTERVAL_MS = 90
@@ -176,9 +221,9 @@ def _set_status_led(on):
 
 def update_status_led():
     """LED-Prioritaet: GitHub-Update-Suche (2s an/2s aus) > lokaler Chunk-
-    Upload (90ms an/aus) > dauerhaft an. Siehe source/main.py's gleichnamige
-    Funktion fuer die ausfuehrlichere Begruendung - source2 hat kein
-    Highscore-System, daher entfaellt diese Prioritaetsstufe hier."""
+    Upload (90ms an/aus) > dauerhaft an. Siehe main.py's gleichnamige
+    Funktion fuer die ausfuehrlichere Begruendung - die gatehill-Rolle hat
+    kein Highscore-System, daher entfaellt diese Prioritaetsstufe hier."""
     global status_led_last_toggle_ms, ota_led_cycle_start_ms, github_ota_led_cycle_start_ms
     if not status_led_available:
         return
@@ -312,9 +357,9 @@ def _json_response(writer, status_line, data):
     writer.write(body)
 
 
-# Eager statt lazy: source2 ist klein genug, dass beide Spielmodi + BLE
-# sofort beim Start initialisiert werden koennen, ohne die ~85KB-Compile-
-# Grenze der Haupt-Firmware zu riskieren.
+# Eager statt lazy: main_gatehill.py ist klein genug, dass beide Spielmodi +
+# BLE sofort beim Start initialisiert werden koennen, ohne die Compile-
+# Groessengrenze zu riskieren, die main.py (Gamification-Rolle) betrifft.
 koth_manager = KothMode("", debug_log)
 race_manager = RaceMode("", debug_log)
 init_status_led()
@@ -380,7 +425,7 @@ async def handle_client(reader, writer):
             except Exception as e:
                 debug_log(f"[HTTP] Fehler beim Lesen des POST Body: {e}")
 
-        if request_path == '/' or request_path == '/index.html':
+        if request_path == '/' or request_path == '/index_gatehill.html':
             await send_html_file(writer, INDEX_HTML_PATH)
 
         elif request_path.startswith('/koth-'):
@@ -398,6 +443,19 @@ async def handle_client(reader, writer):
                 ip_addr = network.WLAN(network.AP_IF).ifconfig()[0]
             except Exception:
                 ip_addr = ""
+            main_present = False
+            for main_name in ("main_gatehill.py", "main_gatehill.mpy"):
+                try:
+                    os.stat(main_name)
+                    main_present = True
+                    break
+                except OSError:
+                    pass
+            boot_present = True
+            try:
+                os.stat("boot.py")
+            except OSError:
+                boot_present = False
             _json_response(writer, '200 OK', {
                 "mem_free": mem_free,
                 "uptime_s": time.ticks_ms() // 1000,
@@ -405,12 +463,17 @@ async def handle_client(reader, writer):
                 "ip": ip_addr,
                 "firmware_version": _read_firmware_version(),
                 "ota_active": ota_update_active,
+                "device_role": "gatehill",
+                "board_type": boot_runtime.detect_board_type() if boot_runtime else "Unbekannt",
+                "license_status": _get_license_status(),
+                "main_present": main_present,
+                "boot_present": boot_present,
             })
 
         elif request_path == '/upload-chunk' and request_method == 'POST':
             chunk_index_str = '-1'
             total_str = '0'
-            target_str = 'main.py'
+            target_str = 'main_gatehill.py'
             if body_text:
                 idx_pos = body_text.find('index=')
                 if idx_pos >= 0:
@@ -451,7 +514,9 @@ async def handle_client(reader, writer):
                 target_valid = True
 
                 if chunk_index == 0:
-                    if target_str not in OTA_ALLOWED_TARGETS and target_str != OTA_BUNDLE_TARGET:
+                    if (target_str not in OTA_ALLOWED_TARGETS
+                            and target_str != OTA_BUNDLE_TARGET
+                            and target_str != LICENSE_UPLOAD_TARGET):
                         target_valid = False
                     else:
                         ota_total_chunks = total
@@ -486,7 +551,8 @@ async def handle_client(reader, writer):
                     raise Exception(f"Unvollstaendiger Upload: {ota_received_chunks}/{ota_total_chunks}")
 
                 is_bundle = (ota_target_file == OTA_BUNDLE_TARGET)
-                target = ota_target_file if (is_bundle or ota_target_file in OTA_ALLOWED_TARGETS) else "main.py"
+                is_license = (ota_target_file == LICENSE_UPLOAD_TARGET)
+                target = ota_target_file if (is_bundle or is_license or ota_target_file in OTA_ALLOWED_TARGETS) else "main_gatehill.py"
 
                 if is_bundle:
                     extracted_files, needs_restart = apply_firmware_bundle_from_base64('update.pbp')
@@ -514,10 +580,13 @@ async def handle_client(reader, writer):
                     except Exception:
                         pass
                     os.rename(OTA_STAGING_PATH, target)
-                    needs_restart = (target == "main.py")
+                    needs_restart = (target == "main_gatehill.py")
                     message = f"Update erfolgreich gespeichert: {target} ({staged_size} bytes)!"
                     if needs_restart:
                         message += " Starte Neustart..."
+
+                    if is_license:
+                        message = f"Lizenz gespeichert. Status: {_refresh_license_status()}"
 
                 _json_response(writer, '200 OK', {"ok": True, "message": message, "restart": needs_restart})
 
@@ -622,6 +691,30 @@ async def handle_client(reader, writer):
             await asyncio.sleep_ms(1000)
             machine.reset()
 
+        elif request_path == '/reset-device-role':
+            # Loescht NUR device_role.json (nie Teil eines OTA-Bundles/einer
+            # OTA_ALLOWED_TARGETS-Whitelist, siehe boot_runtime.py) und
+            # startet neu - boot.py zeigt danach wieder role_setup.py.
+            if query_params.get('confirm', '') != '1':
+                _json_response(writer, '400 Bad Request', {"ok": False, "error": "Bestaetigung fehlt"})
+            else:
+                cleared = False
+                if boot_runtime is not None:
+                    try:
+                        cleared = boot_runtime.clear_device_role()
+                    except Exception:
+                        cleared = False
+                if cleared:
+                    _json_response(writer, '200 OK', {"ok": True, "message": "Rolle zurueckgesetzt. Neustart laeuft."})
+                    try:
+                        await writer.drain()
+                    except Exception:
+                        pass
+                    await asyncio.sleep_ms(1000)
+                    machine.reset()
+                else:
+                    _json_response(writer, '500 Internal Server Error', {"ok": False, "error": "Zuruecksetzen fehlgeschlagen"})
+
         else:
             body = b'Not Found'
             writer.write(b'HTTP/1.1 404 Not Found\r\n')
@@ -659,13 +752,13 @@ async def main_async():
         try:
             os.stat("boot.py")
             boot_present = True
-        except Exception:
+        except OSError:
             boot_present = False
 
         if boot_present:
-            debug_log("[BOOT] boot.py gefunden, Hotspot-Start in main uebersprungen.")
+            debug_log("[BOOT] boot.py gefunden, Hotspot-Start in main_gatehill uebersprungen.")
         else:
-            debug_log("[BOOT] boot.py fehlt, starte Hotspot aus main.")
+            debug_log("[BOOT] boot.py fehlt, starte Hotspot aus main_gatehill.")
             start_access_point()
 
     await asyncio.start_server(handle_client, "0.0.0.0", 80)
@@ -673,7 +766,7 @@ async def main_async():
     asyncio.create_task(race_manager.run())
     _boot_mark_healthy_once()
     system_ready = True
-    debug_log("FPV_GateHill (source2) laeuft. WLAN verbinden und http://192.168.4.1 aufrufen.")
+    debug_log("main_gatehill.py laeuft. WLAN verbinden und http://192.168.4.1 aufrufen.")
     update_status_led()
     while True:
         _boot_feed_watchdog()
@@ -682,7 +775,7 @@ async def main_async():
 
 
 def run():
-    debug_log("main.py (source2) wurde gestartet.")
+    debug_log("main_gatehill.py wurde gestartet.")
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:

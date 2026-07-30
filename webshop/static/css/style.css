@@ -132,6 +132,16 @@ h3 {
   width: 100%;
 }
 
+.btn-secondary {
+  background-color: var(--color-background);
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-border);
+}
+
 /* Hero */
 
 .hero {
@@ -559,4 +569,27 @@ h3 {
   padding: 12px 16px;
   margin-bottom: 20px;
   font-size: 0.95rem;
+}
+
+.license-download-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.license-download-list .btn {
+  width: auto;
+}
+
+.license-warning {
+  background-color: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  border-radius: var(--radius-medium);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
 }

@@ -9,3 +9,8 @@ cryptography>=42.0.0
 # Cross-Compiler-Version muss halbwegs zur MicroPython-Version auf dem Pico
 # passen - das Tool warnt (nicht blockierend), falls das nicht der Fall ist.
 mpy-cross>=1.22.0
+Flask==3.0.3
+stripe==10.5.0
+requests==2.32.3
+python-dotenv==1.0.1
+cryptography>=42.0.0

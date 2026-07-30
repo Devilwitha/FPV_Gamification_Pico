@@ -13,6 +13,44 @@
       Lizenzdatei erzeugen.
     </p>
 
+    <div class="license-step license-downloads">
+      <h2>Direkt-Downloads</h2>
+      <p>
+        Falls du sie noch nicht hast: Installer und Firmware-Bundles gibt es direkt von
+        GitHub (jeweils die neueste Release-Version):
+      </p>
+      <ul class="license-download-list">
+        <li>
+          <a
+            class="btn btn-secondary"
+            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/Gamification%20Installer.exe"
+            >Windows-Installer (.exe)</a
+          >
+        </li>
+        <li>
+          <a
+            class="btn btn-secondary"
+            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/firmware.nbo"
+            >Firmware-Bundle (firmware.nbo)</a
+          >
+        </li>
+        <li>
+          <a
+            class="btn btn-secondary"
+            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/firmware-recovery.nbo"
+            >Recovery-Bundle (firmware-recovery.nbo)</a
+          >
+        </li>
+        <li>
+          <a
+            class="btn btn-secondary"
+            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/emergency.nbo"
+            >Notfall-Bundle (emergency.nbo)</a
+          >
+        </li>
+      </ul>
+    </div>
+
     <div class="license-step">
       <h2>Schritt 1 – MicroPython auf dem Pico installieren</h2>
       <ol>
@@ -35,6 +73,15 @@
 
     <div class="license-step">
       <h2>Schritt 2 – Hardware-ID mit Thonny auslesen</h2>
+      <div class="license-warning">
+        <strong>Hinweis:</strong> Falls auf deinem Pico bereits eine Firmware
+        (<code>fw.nbo</code>) installiert ist, kann sich Thonny unter Umständen nicht
+        sauber verbinden. Öffne in diesem Fall zuerst im Geräte-Webinterface
+        (<code>http://192.168.4.1</code>) die Seite <strong>„System“</strong> und lösche dort
+        über die Notaus-Buttons die Dateien <code>boot.py</code> und <code>main.py</code>.
+        Danach startet der Pico wieder im reinen MicroPython-Modus und Thonny kann sich
+        verbinden.
+      </div>
       <ol>
         <li>
           Installiere die kostenlose Entwicklungsumgebung <strong>Thonny</strong>

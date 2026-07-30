@@ -1,9 +1,10 @@
 name: Firmware bauen & releasen
 
 # Baut firmware.nbo mit build_firmware.py (Kommandozeilen-Modus, kein GUI
-# noetig) und veroeffentlicht das Ergebnis als:
+# noetig) und den Windows Installer (windows/build_exe.py) und
+# veroeffentlicht beide Ergebnisse in EINER gemeinsamen GitHub Release als:
 #   1. Download-Artefakt des Workflow-Laufs (Actions-Tab, ~90 Tage gueltig)
-#   2. Anhang einer neuen GitHub Release mit automatisch generierter
+#   2. Anhang derselben GitHub Release mit automatisch generierter
 #      Versionsnummer (Datum + Lauf-Nummer)
 on:
   push:
@@ -12,6 +13,7 @@ on:
     paths:
       - "source/**"
       - "tools/build_firmware.py"
+      - "windows/**"
   workflow_dispatch: {}
     # Manuelles Ausloesen ueber den "Run workflow"-Button im Actions-Tab.
 
@@ -22,6 +24,8 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - name: Repository auschecken
         uses: actions/checkout@v4
@@ -37,10 +41,9 @@ jobs:
         # nur fuer den lizenzierten Seriell-Build.
         run: pip install -r requirements/requirements.txt
 
-      - name: Firmware-Bundles bauen (alle Modi)
+      - name: Firmware-Bundles bauen (alle Modi ausser light)
         run: |
           python tools/build_firmware.py build/firmware.nbo --mode normal
-          python tools/build_firmware.py build/firmware-light.nbo --mode light --no-version-bump
           python tools/build_firmware.py build/firmware-recovery.nbo --mode recovery --no-version-bump
           python tools/build_firmware.py build/emergency.nbo --mode bootmain --no-version-bump
         # Erhoeht dabei automatisch die Firmware-Versionsnummer (version.json /
@@ -50,6 +53,10 @@ jobs:
         # dasselbe Release. main_gatehill.py/role_setup.py/index_gatehill.html
         # sind bereits Teil des normalen Bundles (APP_FILES_TO_BUNDLE), ein
         # separates gatehill.nbo ist daher nicht mehr noetig.
+        #
+        # WICHTIG: --mode light (firmware-light.nbo) wird hier bewusst NICHT
+        # mehr gebaut/veroeffentlicht - dieser Modus wird nicht mehr per
+        # Workflow bereitgestellt.
         #
         # WICHTIG: --mode complete (firmware-complete.nbo) wird hier bewusst
         # NICHT gebaut/veroeffentlicht - dieser Modus bindet public_key.pem
@@ -82,7 +89,6 @@ jobs:
           name: firmware-bundles
           path: |
             build/firmware.nbo
-            build/firmware-light.nbo
             build/firmware-recovery.nbo
             build/emergency.nbo
           retention-days: 90
@@ -94,7 +100,37 @@ jobs:
           name: Firmware ${{ steps.version.outputs.tag }}
           files: |
             build/firmware.nbo
-            build/firmware-light.nbo
             build/firmware-recovery.nbo
             build/emergency.nbo
           generate_release_notes: true
+
+  build-windows-exe:
+    needs: build-and-release
+    runs-on: windows-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python-Abhaengigkeiten installieren
+        run: pip install -r windows/requirements.txt
+
+      - name: Windows-Installer (.exe) bauen
+        run: python windows/build_exe.py
+
+      - name: Windows-Installer als Download-Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: windows/dist/Gamification Installer.exe
+          retention-days: 90
+
+      - name: Windows-Installer an bestehende GitHub Release anhaengen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build-and-release.outputs.tag }}
+          files: windows/dist/Gamification Installer.exe

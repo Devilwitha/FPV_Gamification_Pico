@@ -34,10 +34,15 @@
             type="email"
             id="checkout-email"
             placeholder="du@example.com"
+            value="{{ account_email or '' }}"
+            {% if account_email %}readonly{% endif %}
             required
           />
           <p class="form-hint">
-            {% if product.type == "digital" %}
+            {% if account_email %}
+              Angemeldet als <strong>{{ account_email }}</strong> - die Bestellung wird automatisch
+              dieser Adresse zugeordnet. (<a href="{{ url_for('logout') }}">nicht du? ausloggen</a>)
+            {% elif product.type == "digital" %}
               Wird für die spätere Lizenz-Einrichtung benötigt.
             {% else %}
               Wird für die Bestellbestätigung benötigt.

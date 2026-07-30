@@ -19,6 +19,12 @@
         <div class="nav-links">
           <a href="{{ url_for('index') }}">Start</a>
           <a href="{{ url_for('shop') }}">Shop</a>
+          {% if session.get('account_email') %}
+            <a href="{{ url_for('account') }}">Mein Konto</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+          {% else %}
+            <a href="{{ url_for('login') }}">Login</a>
+          {% endif %}
         </div>
       </nav>
     </header>

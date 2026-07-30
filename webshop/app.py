@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import secrets
 import sys
 import time
 from datetime import datetime
@@ -11,6 +12,8 @@ import requests
 import stripe
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, session, url_for
+
+import db
 
 load_dotenv()
 
@@ -46,6 +49,12 @@ PUBLIC_KEY_PATH = os.environ.get("LICENSE_PUBLIC_KEY_PATH", "").strip() or os.pa
 # .gitignore ("/lizenzen"), landet nie im Repo (enthaelt Kundendaten).
 LICENSES_DIR = os.path.join(PROJECT_ROOT, "lizenzen")
 
+# Persistente Ablage fuer offene Bestellungen und bereits ausgestellte
+# Lizenzen (Login-/Konto-Bereich, siehe db.py) - ermoeglicht dem Kunden, sich
+# spaeter per E-Mail-Adresse erneut einzuloggen, statt nur der Flask-Session
+# zu vertrauen.
+db.init_db()
+
 # Pico-Hardware-IDs sind hexadezimale machine.unique_id()-Strings (8 Bytes ->
 # 16 Hex-Zeichen bei RP2040/RP2350) - Bereich bewusst etwas weiter gefasst
 # (8-32 Zeichen), damit zukuenftige Board-Varianten mit abweichender ID-Laenge
@@ -78,7 +87,7 @@ PRODUCTS = {
             "Freischaltung nach dem Kauf."
         ),
         "type": "digital",
-        "price_cents": 99,
+        "price_cents": 199,
         "currency": "eur",
         "image": "bilder/shop/lizenz/Gemini_Generated_Image_f7pr0tf7pr0tf7pr.png",
     },
@@ -91,7 +100,7 @@ PRODUCTS = {
             "(GND, CRSF TX auf GP1, optional 5V) und direkt lossfliegen."
         ),
         "type": "physical",
-        "price_cents": 999,
+        "price_cents": 1999,
         "currency": "eur",
         "image": "bilder/shop/Hardware/Gemini_Generated_Image_8jui9u8jui9u8jui.png",
     },
@@ -142,7 +151,12 @@ def shop():
 
 @app.route("/checkout/<product_id>")
 def checkout(product_id):
-    """Checkout-Seite für ein bestimmtes Produkt mit Auswahl der Zahlungsmethode."""
+    """Checkout-Seite für ein bestimmtes Produkt mit Auswahl der Zahlungsmethode.
+
+    Ist der Kunde bereits "eingeloggt" (siehe _current_account_email()), wird
+    dessen E-Mail-Adresse vorausgefüllt und im Frontend gesperrt - der Kauf
+    läuft dann automatisch über diese Adresse, ohne dass sie erneut
+    eingetippt werden muss."""
     product = PRODUCTS.get(product_id)
     if product is None:
         return render_template("cancel.html", message="Dieses Produkt existiert nicht."), 404
@@ -151,6 +165,7 @@ def checkout(product_id):
         product=product,
         stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
         paypal_client_id=PAYPAL_CLIENT_ID,
+        account_email=_current_account_email(),
     )
 
 
@@ -285,7 +300,18 @@ def paypal_capture_order(order_id):
     if response.status_code not in (200, 201):
         return jsonify({"error": "PayPal-Zahlung konnte nicht erfasst werden.", "details": response.text}), 502
 
-    return jsonify(response.json())
+    capture_data = response.json()
+
+    # Zahlung ist erst jetzt (nach der echten Capture-Antwort von PayPal) als
+    # gueltig zu betrachten - siehe _record_valid_purchase(). Vorher wurde in
+    # paypal_create_order() nur die Bestellabsicht in der Session gemerkt.
+    if capture_data.get("status") == "COMPLETED":
+        product = PRODUCTS.get(session.get("checkout_product_id"))
+        email = session.get("checkout_email")
+        if product is not None and email:
+            _record_valid_purchase(product, email, "paypal", order_id)
+
+    return jsonify(capture_data)
 
 
 @app.route("/api/dummy/create-purchase", methods=["POST"])
@@ -312,25 +338,65 @@ def dummy_create_purchase():
     session["checkout_product_id"] = product["id"]
     session["checkout_email"] = email
 
-    order_id = f"DUMMY-{int(time.time())}"
+    # DUMMY_MODE ist ausschließlich für lokale Entwicklung/Tests gedacht (siehe
+    # CLAUDE.md) - die "Zahlung" gilt hier per Definition sofort als gültig.
+    order_id = f"DUMMY-{int(time.time())}-{secrets.token_hex(4)}"
+    _record_valid_purchase(product, email, "dummy", order_id)
+
     return jsonify({"redirect_url": url_for("success", order_id=order_id)})
+
+
+def _record_valid_purchase(product, email, payment_provider, payment_reference):
+    """Wird aufgerufen, sobald eine Zahlung als gültig bestätigt wurde (echte
+    Stripe-/PayPal-Prüfung bzw. DUMMY_MODE). Legt für digitale Produkte einen
+    offenen Eintrag in der pending_licenses-Tabelle an (siehe db.py) und merkt
+    dessen ID zusätzlich in der Session, damit der Direkt-Flow (ohne Login)
+    unmittelbar zu /license-setup weiterleiten kann. Idempotent gegenüber
+    mehrfachen Aufrufen mit derselben Zahlungsreferenz (z. B. Reload von
+    /success)."""
+    if product["type"] != "digital":
+        return
+
+    if db.payment_already_recorded(payment_provider, payment_reference):
+        return
+
+    pending_id = db.add_pending_license(email, product["id"], payment_provider, payment_reference)
+    session["checkout_pending_id"] = pending_id
+    session["checkout_product_id"] = product["id"]
+    session["checkout_email"] = email
 
 
 @app.route("/success")
 def success():
     """Erfolgsseite nach abgeschlossener Zahlung.
 
-    Digitale Produkte (Software-Lizenz) werden direkt zur Lizenz-Einrichtung
-    weitergeleitet - Grundlage dafür ist NICHT der (client-kontrollierbare)
-    Query-String, sondern die serverseitige Flask-Session, die bereits beim
-    Start des Checkouts gesetzt wurde (siehe stripe_create_checkout_session()/
-    paypal_create_order()/dummy_create_purchase())."""
+    Digitale Produkte (Software-Lizenz) werden direkt zu "Mein Konto"
+    weitergeleitet (nicht mehr direkt zur Hardware-ID-Eingabe) - dort steht
+    oben ein hervorgehobener Button zur offenen Lizenz-Einrichtung, siehe
+    account_licenses.html. Grundlage für die Weiterleitung ist der offene
+    pending_licenses-Eintrag (siehe _record_valid_purchase()), nicht der
+    (client-kontrollierbare) Query-String. Bei Rückkehr von Stripe wird die
+    Zahlung hier zusätzlich serverseitig gegen die Stripe-API verifiziert, da
+    Stripe (anders als PayPal) keinen serverseitigen Capture-Schritt vor
+    dieser Weiterleitung kennt."""
     session_id = request.args.get("session_id")
     order_id = request.args.get("order_id")
 
+    if session_id and not db.payment_already_recorded("stripe", session_id):
+        try:
+            stripe_session = stripe.checkout.Session.retrieve(session_id)
+        except stripe.error.StripeError:
+            stripe_session = None
+
+        if stripe_session is not None and stripe_session.payment_status == "paid":
+            product = PRODUCTS.get(stripe_session.metadata.get("product_id"))
+            email = stripe_session.metadata.get("email")
+            if product is not None and email:
+                _record_valid_purchase(product, email, "stripe", session_id)
+
     product = PRODUCTS.get(session.get("checkout_product_id"))
-    if product is not None and product["type"] == "digital" and session.get("checkout_email"):
-        return redirect(url_for("license_setup"))
+    if product is not None and product["type"] == "digital" and session.get("checkout_pending_id"):
+        return redirect(url_for("account"))
 
     return render_template("success.html", session_id=session_id, order_id=order_id)
 
@@ -341,18 +407,55 @@ def cancel():
     return render_template("cancel.html", message="Der Bezahlvorgang wurde abgebrochen.")
 
 
+def _current_account_email():
+    """Liefert die aktuell "eingeloggte" E-Mail-Adresse - entweder über den
+    echten Login (/login, session["account_email"]) oder implizit direkt
+    nach einem Kauf über die Checkout-Session (session["checkout_email"]).
+    So landet man nach dem Kauf ohne einen expliziten Login-Schritt bereits
+    auf der eigenen Konto-Seite."""
+    return session.get("account_email") or session.get("checkout_email")
+
+
+def _is_authorized_for_pending(pending):
+    """Prüft, ob die aktuelle Session Zugriff auf die offene Bestellung
+    ``pending`` haben darf - entweder weil sie im Direkt-Flow selbst dafür
+    gesorgt hat (session["checkout_pending_id"]) oder weil die aktuell
+    "eingeloggte" E-Mail-Adresse zur Bestellung passt."""
+    if session.get("checkout_pending_id") == pending["id"]:
+        return True
+    email = (_current_account_email() or "").strip().lower()
+    return bool(email) and email == pending["email"].strip().lower()
+
+
+def _render_license_setup(pending):
+    """Rendert license_setup.html fuer eine offene Bestellung (sqlite3.Row
+    aus pending_licenses) - gemeinsam genutzt vom Direkt-Flow (/license-setup)
+    und vom Login-Flow (/account)."""
+    product = PRODUCTS.get(pending["product_id"])
+    return render_template(
+        "license_setup.html",
+        product=product,
+        email=pending["email"],
+        pending_id=pending["id"],
+        logged_in=bool(_current_account_email()),
+    )
+
+
 @app.route("/license-setup")
 def license_setup():
     """Anleitungsseite nach Kauf einer Software-Lizenz: MicroPython-Installation,
-    Thonny-Skript zum Auslesen der Hardware-ID, Eingabefeld zur Lizenzerzeugung."""
-    product = PRODUCTS.get(session.get("checkout_product_id"))
-    email = session.get("checkout_email")
-    if product is None or product["type"] != "digital" or not email:
+    Thonny-Skript zum Auslesen der Hardware-ID, Eingabefeld zur Lizenzerzeugung.
+    Erreichbar über den offenen pending_licenses-Eintrag der aktuellen
+    Checkout-Session ODER (über den Button auf /account) per expliziter
+    ``pending_id`` in der Query-Zeichenkette."""
+    pending_id = request.args.get("pending_id", type=int) or session.get("checkout_pending_id")
+    pending = db.get_pending_license(pending_id)
+    if pending is None or not _is_authorized_for_pending(pending):
         return render_template(
             "cancel.html",
             message="Keine gültige Lizenz-Bestellung gefunden. Bitte zuerst im Shop kaufen.",
         ), 403
-    return render_template("license_setup.html", product=product, email=email)
+    return _render_license_setup(pending)
 
 
 @app.route("/api/license/create", methods=["POST"])
@@ -361,11 +464,25 @@ def api_license_create():
     Hardware-ID und liefert sie zum Download. Der Kunde hat keine serielle
     Verbindung zu diesem Server (anders als beim GUI-Flow in
     tools/build_firmware.py) - daher wird die Hardware-ID manuell abgefragt
-    statt sie automatisiert vom Gerät zu lesen."""
-    product = PRODUCTS.get(session.get("checkout_product_id"))
-    email = session.get("checkout_email")
-    if product is None or product["type"] != "digital" or not email:
+    statt sie automatisiert vom Gerät zu lesen.
+
+    Erreichbar sowohl direkt nach dem Kauf (Session-basiert) als auch über den
+    Login-Bereich /account - in beiden Fällen muss die angegebene pending_id
+    zur aktuellen Session gehören (siehe _is_authorized_for_pending())."""
+    data = request.get_json(silent=True) or {}
+    pending_id = data.get("pending_id")
+    pending = db.get_pending_license(pending_id)
+    if pending is None:
         return jsonify({"error": "Keine gültige Lizenz-Bestellung gefunden. Bitte zuerst im Shop kaufen."}), 403
+
+    if not _is_authorized_for_pending(pending):
+        return jsonify({"error": "Keine Berechtigung für diese Bestellung."}), 403
+
+    ist_direkt_flow = session.get("checkout_pending_id") == pending["id"]
+
+    product = PRODUCTS.get(pending["product_id"])
+    if product is None:
+        return jsonify({"error": "Unbekanntes Produkt."}), 404
 
     if license_generator is None:
         return jsonify({"error": "Lizenzsystem serverseitig nicht verfügbar (Paket 'cryptography' fehlt)."}), 500
@@ -373,7 +490,6 @@ def api_license_create():
     if not (os.path.isfile(PRIVATE_KEY_PATH) and os.path.isfile(PUBLIC_KEY_PATH)):
         return jsonify({"error": "RSA-Schlüsselpaar für das Lizenzsystem wurde serverseitig noch nicht erzeugt."}), 500
 
-    data = request.get_json(silent=True) or {}
     hardware_id = (data.get("hardware_id") or "").strip().lower()
     if not HARDWARE_ID_PATTERN.match(hardware_id):
         return jsonify(
@@ -382,17 +498,28 @@ def api_license_create():
 
     try:
         license_content = license_generator.sign_license_from_key_file(
-            PRIVATE_KEY_PATH, hardware_id, email,
+            PRIVATE_KEY_PATH, hardware_id, pending["email"],
         )
     except Exception as fehler:
         return jsonify({"error": f"Lizenz konnte nicht erzeugt werden: {fehler}"}), 500
 
-    _save_license_record(hardware_id, email, license_content)
+    lic_path, _json_path = _save_license_record(hardware_id, pending["email"], license_content)
+    license_filename = os.path.splitext(os.path.basename(lic_path))[0]
 
-    # Session zurücksetzen: verhindert, dass mit derselben Bestellung mehrfach
-    # unbemerkt weitere Lizenzen für andere Hardware-IDs erzeugt werden.
-    session.pop("checkout_product_id", None)
-    session.pop("checkout_email", None)
+    # "Verschiebt" die E-Mail-Adresse von den offenen Bestellungen in die
+    # ausgestellten Lizenzen (siehe db.py, move_pending_to_customer()).
+    db.move_pending_to_customer(pending["id"], hardware_id, license_filename)
+
+    if ist_direkt_flow:
+        # checkout_pending_id/-product_id verwerfen: verhindert, dass mit
+        # derselben Bestellung mehrfach unbemerkt weitere Lizenzen erzeugt
+        # werden. account_email bleibt (bzw. wird jetzt gesetzt), damit
+        # /account nach der Einrichtung weiterhin erreichbar ist und die
+        # gerade erzeugte Lizenz in der Liste zeigt.
+        session.pop("checkout_pending_id", None)
+        session.pop("checkout_product_id", None)
+        session.pop("checkout_email", None)
+        session["account_email"] = pending["email"]
 
     response = Response(license_content, mimetype="application/octet-stream")
     response.headers["Content-Disposition"] = "attachment; filename=license.lic"
@@ -406,6 +533,78 @@ def license_setup_public_key():
     if not os.path.isfile(PUBLIC_KEY_PATH):
         return jsonify({"error": "Public Key nicht gefunden."}), 404
     return send_file(PUBLIC_KEY_PATH, mimetype="application/x-pem-file", as_attachment=True, download_name="public_key.pem")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """Login-Seite für den Konto-Bereich: die Eingabe der E-Mail-Adresse ist
+    hier bewusst bereits der gesamte Login-Vorgang (kein zusätzlicher
+    Bestätigungslink/-code per Mail) - Voraussetzung ist lediglich, dass zu
+    der Adresse mindestens eine offene Bestellung oder bereits ausgestellte
+    Lizenz existiert."""
+    error = None
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip()
+        if "@" not in email:
+            error = "Bitte eine gültige E-Mail-Adresse eingeben."
+        elif db.get_pending_licenses_for_email(email) or db.get_customer_licenses_for_email(email):
+            session["account_email"] = email
+            return redirect(url_for("account"))
+        else:
+            error = "Für diese E-Mail-Adresse wurden keine Bestellungen gefunden."
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    """Beendet die eingeloggte Konto-Sitzung - inklusive der impliziten
+    "Login" über eine frische Checkout-Session (siehe _current_account_email()),
+    damit /account danach tatsächlich nicht mehr erreichbar ist."""
+    session.pop("account_email", None)
+    session.pop("checkout_email", None)
+    session.pop("checkout_product_id", None)
+    session.pop("checkout_pending_id", None)
+    return redirect(url_for("index"))
+
+
+@app.route("/account")
+def account():
+    """Konto-Übersicht: zeigt oben einen hervorgehobenen Button zur
+    Lizenz-Einrichtung, falls noch eine offene Bestellung existiert (dieselbe
+    Zielseite wie direkt nach dem Kauf), und darunter die Liste der bereits
+    ausgestellten Lizenzen zum erneuten Download."""
+    email = _current_account_email()
+    if not email:
+        return redirect(url_for("login"))
+
+    pending_rows = db.get_pending_licenses_for_email(email)
+    licenses = db.get_customer_licenses_for_email(email)
+    return render_template(
+        "account_licenses.html",
+        email=email,
+        licenses=licenses,
+        products=PRODUCTS,
+        pending=pending_rows[0] if pending_rows else None,
+    )
+
+
+@app.route("/account/download/<int:license_id>")
+def account_download_license(license_id):
+    """Liefert die license.lic-Datei einer bereits ausgestellten Lizenz zum
+    erneuten Download - nur für den eingeloggten Besitzer der E-Mail-Adresse."""
+    email = _current_account_email()
+    if not email:
+        return redirect(url_for("login"))
+
+    record = db.get_customer_license(license_id)
+    if record is None or record["email"].strip().lower() != email.strip().lower():
+        return jsonify({"error": "Lizenz nicht gefunden."}), 404
+
+    lic_path = os.path.join(LICENSES_DIR, record["license_filename"] + ".lic")
+    if not os.path.isfile(lic_path):
+        return jsonify({"error": "Lizenzdatei ist serverseitig nicht mehr vorhanden."}), 404
+
+    return send_file(lic_path, mimetype="application/octet-stream", as_attachment=True, download_name="license.lic")
 
 
 def _save_license_record(hardware_id, email, license_content):

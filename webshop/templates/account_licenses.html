@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Webshop – Meine Lizenzen{% endblock %}
+
+{% block content %}
+  <section class="account-page">
+    <h1>Meine Lizenzen</h1>
+    <p class="license-intro">Eingeloggt als <strong>{{ email }}</strong>.</p>
+
+    {% if pending %}
+      <div class="pending-license-banner">
+        <p>
+          Offene Bestellung: <strong>{{ products.get(pending.product_id).name if products.get(pending.product_id) else pending.product_id }}</strong>
+          wartet noch auf die Lizenz-Einrichtung.
+        </p>
+        <a class="btn btn-primary btn-large btn-pulse" href="{{ url_for('license_setup', pending_id=pending.id) }}"
+          >Jetzt Lizenz einrichten</a
+        >
+      </div>
+    {% endif %}
+
+    {% if licenses %}
+      <ul class="license-list">
+        {% for license in licenses %}
+          <li class="license-list-item">
+            <div class="license-list-details">
+              <h3>{{ products.get(license.product_id).name if products.get(license.product_id) else license.product_id }}</h3>
+              <p>Hardware-ID: <code>{{ license.hardware_id }}</code></p>
+              <p class="form-hint">Ausgestellt am {{ license.issued_at[:10] }}</p>
+            </div>
+            <div class="license-list-actions">
+              <a class="btn btn-secondary" href="{{ url_for('account_download_license', license_id=license.id) }}"
+                >license.lic herunterladen</a
+              >
+              <a class="btn btn-secondary" href="{{ url_for('license_setup_public_key') }}">public_key.pem</a>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>Für diese E-Mail-Adresse liegen noch keine ausgestellten Lizenzen vor.</p>
+      <a class="btn btn-primary" href="{{ url_for('shop') }}">Zum Shop</a>
+    {% endif %}
+  </section>
+{% endblock %}

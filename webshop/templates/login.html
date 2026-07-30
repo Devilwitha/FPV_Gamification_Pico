@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Webshop – Login{% endblock %}
+
+{% block content %}
+  <section class="login-page">
+    <h1>Login</h1>
+    <p class="license-intro">
+      Gib die E-Mail-Adresse ein, mit der du bezahlt hast. Damit gelangst du
+      entweder zur Einrichtung einer noch offenen Lizenz oder zu deinen
+      bereits erzeugten Lizenzen.
+    </p>
+
+    <div class="login-card">
+      {% if error %}
+        <div class="checkout-error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('login') }}">
+        <div class="form-field">
+          <label for="login-email">E-Mail-Adresse</label>
+          <input
+            type="email"
+            id="login-email"
+            name="email"
+            placeholder="du@example.com"
+            autocomplete="email"
+            required
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-large">Einloggen</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

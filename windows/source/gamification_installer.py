@@ -463,6 +463,66 @@ def upload_and_apply(port, local_path, progress_cb=None, log=lambda *_a: None):
                 pass
 
 
+LICENSE_FILENAME = "license.lic"
+PUBLIC_KEY_FILENAME = "public_key.pem"
+
+
+def find_paired_public_key(license_path):
+    """Sucht public_key.pem im selben Ordner wie eine ausgewaehlte
+    license.lic - der Webshop (siehe webshop/templates/license_setup.html)
+    laedt beide Dateien beim Kauf automatisch gemeinsam in denselben
+    Downloads-Ordner herunter, daher reicht in der Regel die Auswahl von
+    license.lic allein."""
+    candidate = os.path.join(os.path.dirname(license_path), PUBLIC_KEY_FILENAME)
+    return candidate if os.path.isfile(candidate) else None
+
+
+def install_license_files(port, license_path, public_key_path, log=lambda *_a: None):
+    """Ueberspielt eine vom Webshop bezogene license.lic + public_key.pem per
+    USB-Seriell auf `port` und legt beide unveraendert im Root-Dateisystem
+    des Pico ab (siehe source/license_verifier.py, das genau dort danach
+    sucht). Nutzt fs_writefile() direkt statt des Bundle-Formats aus
+    upload_and_apply() - fuer zwei kleine Dateien (insgesamt wenige KB) ist
+    weder ein Watchdog-Feed noch das FPVBNDL1-Bundle-Format noetig, siehe
+    auch probe_pico_port(), das aus demselben Grund ebenfalls ohne
+    Watchdog-Feed auskommt."""
+    with open(license_path, "rb") as f:
+        license_bytes = f.read()
+    with open(public_key_path, "rb") as f:
+        public_key_bytes = f.read()
+
+    transport = None
+    entered_raw_repl = False
+    try:
+        log(f"Verbinde mit {port} ...")
+        try:
+            transport = connect_and_reset(port)
+            entered_raw_repl = True
+        except Exception:
+            # Siehe upload_and_apply()/Modul-Docstring: der erste Verbindungs-
+            # versuch scheitert bei der busy asyncio-Firmware gelegentlich.
+            log("Erster Verbindungsversuch fehlgeschlagen, versuche erneut ...")
+            time.sleep(1.0)
+            transport = connect_and_reset(port)
+            entered_raw_repl = True
+
+        log(f"Uebertrage {LICENSE_FILENAME} ({len(license_bytes)} Bytes) ...")
+        transport.fs_writefile(LICENSE_FILENAME, license_bytes)
+        log(f"Uebertrage {PUBLIC_KEY_FILENAME} ({len(public_key_bytes)} Bytes) ...")
+        transport.fs_writefile(PUBLIC_KEY_FILENAME, public_key_bytes)
+        log("Lizenzdateien erfolgreich auf den Pico uebertragen.")
+        return True
+    finally:
+        if entered_raw_repl:
+            log("Starte Pico neu, damit die Firmware wieder normal laeuft ...")
+            _restart_and_close(transport, log=log)
+        elif transport is not None:
+            try:
+                transport.close()
+            except Exception:
+                pass
+
+
 # ==================== GitHub Releases ====================
 
 def fetch_latest_release():
@@ -551,11 +611,13 @@ class InstallerApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("620x560")
-        self.minsize(560, 480)
+        self.geometry("620x700")
+        self.minsize(560, 620)
 
         self.pico_port = None
         self.selected_file = None
+        self.license_path = None
+        self.public_key_path = None
 
         self._build_widgets()
 
@@ -593,6 +655,19 @@ class InstallerApp(tk.Tk):
         self.status_var = tk.StringVar(value="Bereit.")
         tk.Label(step3, textvariable=self.status_var, anchor="w").pack(fill="x")
 
+        step4 = tk.LabelFrame(self, text="4. Lizenzdateien installieren (nach dem Kauf im Webshop)", padx=10, pady=8)
+        step4.pack(fill="x", **pad)
+        row4 = tk.Frame(step4)
+        row4.pack(fill="x")
+        self.license_browse_button = tk.Button(row4, text="license.lic auswaehlen...", command=self._on_browse_license)
+        self.license_browse_button.pack(side="left")
+        self.license_status_var = tk.StringVar(value="Keine Lizenzdateien ausgewaehlt.")
+        tk.Label(step4, textvariable=self.license_status_var, anchor="w", wraplength=560, justify="left").pack(fill="x", pady=(6, 6))
+        self.license_install_button = tk.Button(
+            step4, text="Lizenzdateien installieren", command=self._on_install_license, state="disabled"
+        )
+        self.license_install_button.pack(anchor="w")
+
         log_frame = tk.LabelFrame(self, text="Protokoll", padx=6, pady=6)
         log_frame.pack(fill="both", expand=True, **pad)
         self.log_text = tk.Text(log_frame, height=10, state="disabled", wrap="word")
@@ -616,10 +691,17 @@ class InstallerApp(tk.Tk):
         self.find_button.config(state=state)
         self.browse_button.config(state=state)
         self.github_button.config(state=state)
+        self.license_browse_button.config(state=state)
         self.install_button.config(state="disabled" if busy else ("normal" if (self.pico_port and self.selected_file) else "disabled"))
+        self.license_install_button.config(
+            state="disabled" if busy else ("normal" if (self.pico_port and self.license_path and self.public_key_path) else "disabled")
+        )
 
     def _update_install_button(self):
         self.install_button.config(state="normal" if (self.pico_port and self.selected_file) else "disabled")
+        self.license_install_button.config(
+            state="normal" if (self.pico_port and self.license_path and self.public_key_path) else "disabled"
+        )
 
     # ---------- Pico suchen ----------
 
@@ -788,6 +870,78 @@ class InstallerApp(tk.Tk):
         # zuverlaessig moeglich, wenn main.py/recovery.py vollstaendig
         # hochgefahren ist - der Nutzer muss daher bei Bedarf manuell erneut
         # suchen, statt dass wir hier sofort automatisch weitersuchen.
+        self.pico_status_var.set(f"{self.pico_port} (Neustart laeuft - bei Bedarf 'Pico suchen' erneut klicken)")
+
+    # ---------- Lizenzdateien installieren ----------
+
+    def _on_browse_license(self):
+        path = filedialog.askopenfilename(
+            title="license.lic auswaehlen",
+            filetypes=[("Lizenzdatei", "*.lic"), ("Alle Dateien", "*.*")],
+        )
+        if not path:
+            return
+
+        public_key_path = find_paired_public_key(path)
+        if public_key_path is None:
+            messagebox.showinfo(
+                "public_key.pem fehlt",
+                f"Im selben Ordner wie {os.path.basename(path)} wurde keine "
+                f"{PUBLIC_KEY_FILENAME} gefunden. Bitte waehle sie jetzt zusaetzlich aus "
+                "(der Webshop laedt beide Dateien normalerweise gemeinsam in denselben "
+                "Downloads-Ordner herunter).",
+            )
+            public_key_path = filedialog.askopenfilename(
+                title="public_key.pem auswaehlen",
+                filetypes=[("Oeffentlicher Schluessel", "*.pem"), ("Alle Dateien", "*.*")],
+            )
+            if not public_key_path:
+                return
+
+        self.license_path = path
+        self.public_key_path = public_key_path
+        self.license_status_var.set(
+            f"license.lic: {path}\npublic_key.pem: {public_key_path}"
+        )
+        self.log(f"Lizenzdateien ausgewaehlt: {path} + {public_key_path}")
+        self._update_install_button()
+
+    def _on_install_license(self):
+        if not self.pico_port:
+            messagebox.showerror("Kein Pico", "Es wurde kein Pico gefunden. Bitte zuerst 'Pico suchen' verwenden.")
+            return
+        if not (self.license_path and self.public_key_path):
+            messagebox.showerror("Keine Lizenzdateien", "Bitte zuerst license.lic auswaehlen.")
+            return
+        if not messagebox.askyesno(
+            "Installation bestaetigen",
+            f"license.lic und public_key.pem jetzt auf {self.pico_port} installieren?\n\n"
+            "Das Geraet startet nach erfolgreicher Installation automatisch neu.",
+        ):
+            return
+
+        self._set_busy(True)
+        self.status_var.set("Lizenzdateien werden installiert ...")
+        threading.Thread(target=self._install_license_worker, daemon=True).start()
+
+    def _install_license_worker(self):
+        try:
+            install_license_files(self.pico_port, self.license_path, self.public_key_path, log=self.log)
+        except Exception as e:
+            self.log(f"Fehler bei der Lizenz-Installation: {e}")
+            self.after(0, lambda: self._install_license_failed(e))
+            return
+        self.after(0, self._install_license_done)
+
+    def _install_license_failed(self, error):
+        self._set_busy(False)
+        self.status_var.set("Fehler bei der Lizenz-Installation.")
+        messagebox.showerror("Installation fehlgeschlagen", str(error))
+
+    def _install_license_done(self):
+        self._set_busy(False)
+        self.status_var.set("Lizenzdateien erfolgreich installiert.")
+        messagebox.showinfo("Fertig", "license.lic und public_key.pem wurden installiert. Der Pico startet neu.")
         self.pico_status_var.set(f"{self.pico_port} (Neustart laeuft - bei Bedarf 'Pico suchen' erneut klicken)")
 
 

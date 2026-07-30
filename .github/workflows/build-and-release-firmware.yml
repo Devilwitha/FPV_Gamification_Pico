@@ -41,9 +41,27 @@ jobs:
         # nur fuer den lizenzierten Seriell-Build.
         run: pip install -r requirements/requirements.txt
 
+      - name: Public Key aus Secret bereitstellen
+        # keys/public_key.pem liegt lokal per .gitignore (/keys) bewusst NICHT
+        # im Repo (nur private_key.pem darf niemals hinein, siehe .gitignore-
+        # Kommentar). Fuer --mode complete (firmware-complete.nbo) wird der
+        # Public Key trotzdem gebraucht - er kommt daher aus dem Repo-Secret
+        # LICENSE_PUBLIC_KEY_PEM (Settings > Secrets and variables > Actions),
+        # das den Inhalt von keys/public_key.pem enthalten muss.
+        env:
+          PUBLIC_KEY_PEM: ${{ secrets.LICENSE_PUBLIC_KEY_PEM }}
+        run: |
+          if [ -z "$PUBLIC_KEY_PEM" ]; then
+            echo "::error::Secret LICENSE_PUBLIC_KEY_PEM ist nicht gesetzt - firmware-complete.nbo kann nicht gebaut werden."
+            exit 1
+          fi
+          mkdir -p keys
+          printf '%s' "$PUBLIC_KEY_PEM" > keys/public_key.pem
+
       - name: Firmware-Bundles bauen (alle Modi ausser light)
         run: |
           python tools/build_firmware.py build/firmware.nbo --mode normal
+          python tools/build_firmware.py build/firmware-complete.nbo --mode complete --no-version-bump
           python tools/build_firmware.py build/firmware-recovery.nbo --mode recovery --no-version-bump
           python tools/build_firmware.py build/emergency.nbo --mode bootmain --no-version-bump
         # Erhoeht dabei automatisch die Firmware-Versionsnummer (version.json /
@@ -58,14 +76,14 @@ jobs:
         # mehr gebaut/veroeffentlicht - dieser Modus wird nicht mehr per
         # Workflow bereitgestellt.
         #
-        # WICHTIG: --mode complete (firmware-complete.nbo) wird hier bewusst
-        # NICHT gebaut/veroeffentlicht - dieser Modus bindet public_key.pem
-        # mit ein (siehe build_firmware.py's Kommentar bei
-        # PUBLIC_KEY_BUNDLE_FILENAME) und ist AUSSCHLIESSLICH fuer den
-        # seriellen Lizenz-Flash-Weg gedacht (build_and_flash_with_license()),
-        # nicht fuer einen oeffentlichen Download. Ein automatisierter,
-        # oeffentlicher Release wuerde den Public Key sonst fuer jeden
-        # extrahierbar machen, der die .nbo-Datei herunterlaedt.
+        # HINWEIS: firmware-complete.nbo (--mode complete) enthaelt public_key.pem
+        # und ist fuer den seriellen Lizenz-Flash-Weg gedacht (siehe
+        # build_and_flash_with_license()). Das Geraet blockiert public_key.pem in
+        # JEDEM per HTTP-OTA angewendeten Bundle kategorisch (siehe
+        # HTTP_OTA_BLOCKED_BUNDLE_FILES in build_firmware.py sowie
+        # source/update_manager.py/ota_helpers.py) - firmware-complete.nbo darf
+        # also NICHT ueber die Browser-OTA-Seite (http://192.168.4.1) hochgeladen
+        # werden, sondern nur ueber den seriellen Weg.
 
       - name: Versionsnummer bestimmen
         id: version
@@ -89,6 +107,7 @@ jobs:
           name: firmware-bundles
           path: |
             build/firmware.nbo
+            build/firmware-complete.nbo
             build/firmware-recovery.nbo
             build/emergency.nbo
           retention-days: 90
@@ -100,6 +119,7 @@ jobs:
           name: Firmware ${{ steps.version.outputs.tag }}
           files: |
             build/firmware.nbo
+            build/firmware-complete.nbo
             build/firmware-recovery.nbo
             build/emergency.nbo
           generate_release_notes: true

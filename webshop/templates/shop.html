@@ -11,7 +11,7 @@
   <section class="product-grid">
     {% for product in products %}
       <article class="product-card">
-        <img class="product-image" src="{{ product.image }}" alt="{{ product.name }}" />
+        <img class="product-image" src="{{ url_for('static', filename=product.image) }}" alt="{{ product.name }}" />
         <div class="product-card-body">
           <h2 class="product-name">{{ product.name }}</h2>
           <p class="product-type">

@@ -18,7 +18,7 @@ load_dotenv()
 # (lokaler Dev-Schalter)": schaltet AUSSCHLIESSLICH lokal/zu Testzwecken einen
 # zusaetzlichen "Dummy-Kauf simulieren"-Button frei, der Stripe/PayPal komplett
 # umgeht. Ruehrt die echten Zahlungspfade nicht an und ist standardmaessig aus.
-DUMMY_MODE = os.environ.get("DUMMY_MODE", "false").strip().lower() == "true"
+DUMMY_MODE = os.environ.get("DUMMY_MODE", "true").strip().lower() == "true"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "geheim_schluessel_change_me")
@@ -78,9 +78,9 @@ PRODUCTS = {
             "Freischaltung nach dem Kauf."
         ),
         "type": "digital",
-        "price_cents": 4999,
+        "price_cents": 99,
         "currency": "eur",
-        "image": "https://via.placeholder.com/400x300?text=Software-Lizenz",
+        "image": "bilder/shop/lizenz/Gemini_Generated_Image_f7pr0tf7pr0tf7pr.png",
     },
     "hardware-lizenz": {
         "id": "hardware-lizenz",
@@ -91,9 +91,9 @@ PRODUCTS = {
             "(GND, CRSF TX auf GP1, optional 5V) und direkt lossfliegen."
         ),
         "type": "physical",
-        "price_cents": 19999,
+        "price_cents": 999,
         "currency": "eur",
-        "image": "https://via.placeholder.com/400x300?text=Hardware+Lizenz",
+        "image": "bilder/shop/Hardware/Gemini_Generated_Image_8jui9u8jui9u8jui.png",
     },
 }
 
@@ -419,16 +419,10 @@ def _save_license_record(hardware_id, email, license_content):
     issued_date = datetime.now().strftime("%Y%m%d")
     safe_hardware_id = "".join(c for c in hardware_id if c.isalnum()) or "unknown"
 
-    # Reine Datums-Zeitstempel (keine Uhrzeit) sind nicht mehr zwingend
-    # eindeutig, wenn fuer dieselbe Hardware-ID am selben Tag mehrfach eine
-    # Lizenz ausgestellt wird (z.B. erneuter Kaufversuch) - daher bei Bedarf
-    # einen laufenden Suffix anhaengen, statt eine bestehende Datei stumm zu
-    # ueberschreiben.
+    # Nur noch Datum statt vollem Zeitstempel: eine erneute Lizenzausstellung
+    # fuer dieselbe Hardware-ID am selben Tag ueberschreibt bewusst die
+    # vorherige Datei (jede Hardware-ID soll genau eine aktuelle Lizenz haben).
     base_name = f"{safe_hardware_id}_{issued_date}"
-    suffix = 1
-    while os.path.exists(os.path.join(LICENSES_DIR, base_name + ".lic")):
-        suffix += 1
-        base_name = f"{safe_hardware_id}_{issued_date}_{suffix}"
 
     lic_path = os.path.join(LICENSES_DIR, base_name + ".lic")
     with open(lic_path, "w", encoding="utf-8", newline="\n") as f:

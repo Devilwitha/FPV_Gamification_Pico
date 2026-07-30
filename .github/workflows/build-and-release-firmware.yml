@@ -40,7 +40,6 @@ jobs:
       - name: Firmware-Bundles bauen (alle Modi)
         run: |
           python tools/build_firmware.py build/firmware.nbo --mode normal
-          python tools/build_firmware.py build/firmware-complete.nbo --mode complete --no-version-bump
           python tools/build_firmware.py build/firmware-light.nbo --mode light --no-version-bump
           python tools/build_firmware.py build/firmware-recovery.nbo --mode recovery --no-version-bump
           python tools/build_firmware.py build/emergency.nbo --mode bootmain --no-version-bump
@@ -51,6 +50,15 @@ jobs:
         # dasselbe Release. main_gatehill.py/role_setup.py/index_gatehill.html
         # sind bereits Teil des normalen Bundles (APP_FILES_TO_BUNDLE), ein
         # separates gatehill.nbo ist daher nicht mehr noetig.
+        #
+        # WICHTIG: --mode complete (firmware-complete.nbo) wird hier bewusst
+        # NICHT gebaut/veroeffentlicht - dieser Modus bindet public_key.pem
+        # mit ein (siehe build_firmware.py's Kommentar bei
+        # PUBLIC_KEY_BUNDLE_FILENAME) und ist AUSSCHLIESSLICH fuer den
+        # seriellen Lizenz-Flash-Weg gedacht (build_and_flash_with_license()),
+        # nicht fuer einen oeffentlichen Download. Ein automatisierter,
+        # oeffentlicher Release wuerde den Public Key sonst fuer jeden
+        # extrahierbar machen, der die .nbo-Datei herunterlaedt.
 
       - name: Versionsnummer bestimmen
         id: version
@@ -74,7 +82,6 @@ jobs:
           name: firmware-bundles
           path: |
             build/firmware.nbo
-            build/firmware-complete.nbo
             build/firmware-light.nbo
             build/firmware-recovery.nbo
             build/emergency.nbo
@@ -87,7 +94,6 @@ jobs:
           name: Firmware ${{ steps.version.outputs.tag }}
           files: |
             build/firmware.nbo
-            build/firmware-complete.nbo
             build/firmware-light.nbo
             build/firmware-recovery.nbo
             build/emergency.nbo

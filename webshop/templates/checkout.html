@@ -14,7 +14,7 @@
       <div class="checkout-summary">
         <h2>Deine Bestellung</h2>
         <div class="order-summary-card">
-          <img class="order-summary-image" src="{{ product.image }}" alt="{{ product.name }}" />
+          <img class="order-summary-image" src="{{ url_for('static', filename=product.image) }}" alt="{{ product.name }}" />
           <div class="order-summary-details">
             <h3>{{ product.name }}</h3>
             <p>{{ product.description }}</p>

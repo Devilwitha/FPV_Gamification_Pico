@@ -71,9 +71,13 @@ input:checked+.slider:before{transform:translateX(20px)}
 <h2 data-i18n="system.licenseTitle">Lizenz</h2>
 <div style="color:#9fb4cb;font-size:.78em;margin-bottom:8px" data-i18n="system.licenseHint">Ohne gueltige Lizenz sind die Hauptfunktionen gesperrt - nur diese System-Seite ist erreichbar. Lade hier deine license.lic hoch.</div>
 <label class="field"><span data-i18n="system.licenseFileLabel">Lizenzdatei (license.lic)</span><input type="file" id="licenseFile" accept=".lic"></label>
-<button class="b secondary" onclick="uploadLicense()" data-i18n="system.licenseUpload">Lizenz hochladen</button>
+<button class="b secondary" onclick="uploadFile('licenseFile','license.lic','licenseMsg')" data-i18n="system.licenseUpload">Lizenz hochladen</button>
 <a class="b" style="text-decoration:none;display:inline-block;text-align:center" href="https://bollisoft.ch/shop" target="_blank" rel="noopener" data-i18n="system.licenseBuy">Lizenz kaufen</a>
 <div id="licenseMsg" class="msg"></div>
+<div style="color:#9fb4cb;font-size:.78em;margin:12px 0 8px;border-top:1px solid rgba(255,255,255,.07);padding-top:10px" data-i18n="system.publicKeyHint">Fehlt oder ist der Public Key defekt, lade hier deine public_key.pem erneut hoch.</div>
+<label class="field"><span data-i18n="system.publicKeyFileLabel">Public Key (public_key.pem)</span><input type="file" id="publicKeyFile" accept=".pem"></label>
+<button class="b secondary" onclick="uploadFile('publicKeyFile','public_key.pem','publicKeyMsg')" data-i18n="system.publicKeyUpload">Public Key hochladen</button>
+<div id="publicKeyMsg" class="msg"></div>
 </div>
 <div class="s">
 <h2 data-i18n="system.language">Sprache</h2>
@@ -293,8 +297,8 @@ devTouched=false;
 if(!d.ok){cb.checked=!en;}
 }).catch(()=>{devTouched=false;cb.checked=!en;});
 }
-function uploadLicense(){
-const f=document.getElementById('licenseFile').files[0],msg=document.getElementById('licenseMsg');
+function uploadFile(fileInputId,targetName,msgId){
+const f=document.getElementById(fileInputId).files[0],msg=document.getElementById(msgId);
 if(!f){msg.innerText=t('system.licenseErrNoFile','Keine Datei ausgewaehlt!');return;}
 const rd=new FileReader();
 rd.onload=function(e){
@@ -307,17 +311,17 @@ msg.innerText=t('system.licenseUploading','Lade hoch...');
 function nc(){
 if(idx>=tc){
 fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{
-if(d.ok){msg.innerText=d.message||t('system.licenseUploaded','Lizenz hochgeladen.');upd();}
+if(d.ok){msg.innerText=d.message||t('system.licenseUploaded','Hochgeladen.');upd();}
 else{msg.innerText='Fehler: '+d.error;}
 }).catch(er=>{msg.innerText='Fehler: '+er;});
 return;
 }
 const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);
-fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&target=license.lic&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{
+fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&target='+encodeURIComponent(targetName)+'&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{
 if(d.ok){idx++;nc();}else{msg.innerText='Fehler: '+d.error;}
 }).catch(er=>{msg.innerText='Fehler: '+er;});
 }
-fetch('/prepare-upload?target=license.lic&bundle_mode=light',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+fetch('/prepare-upload?target='+encodeURIComponent(targetName)+'&bundle_mode=light',{cache:'no-store'}).then(r=>r.json()).then(d=>{
 if(!d.ok){msg.innerText='Fehler: '+(d.error||'Prepare fehlgeschlagen');return;}
 nc();
 }).catch(er=>{msg.innerText='Fehler: '+er;});

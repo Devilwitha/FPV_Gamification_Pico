@@ -294,9 +294,13 @@ OTA_ALLOWED_TARGETS = (
 OTA_BUNDLE_TARGET = "firmware.nbo"
 OTA_LANG_BUNDLE_TARGET = "lang.pak"
 OTA_BUNDLE_MAGIC = b"FPVBNDL1"
-# license.lic wird wie die Bundle-Ziele behandelt (immer erlaubt, unabhaengig
-# vom Developer-Modus) - siehe upload_helpers.py und update_manager.py.
-LICENSE_UPLOAD_TARGET = "license.lic"
+# license.lic und public_key.pem werden wie die Bundle-Ziele behandelt (immer
+# erlaubt, unabhaengig vom Developer-Modus) - siehe upload_helpers.py und
+# update_manager.py. public_key.pem muss hier hochladbar sein, weil ohne
+# gueltige Lizenz nur die System-Seite erreichbar ist (siehe
+# _LICENSE_GATE_ALLOWED_PATHS) - fehlt oder ist der Public Key defekt, waere
+# er sonst nur per seriellem Dateizugriff (Thonny) zu ersetzen.
+LICENSE_UPLOAD_TARGETS = ("license.lic", "public_key.pem")
 
 # ==================== GITHUB-OTA ("Nach Updates suchen") ====================
 # Siehe github_ota_helpers.py: verbindet sich kurzzeitig mit wlan.conf,
@@ -790,7 +794,7 @@ def _build_upload_deps():
         "ota_bundle_target": OTA_BUNDLE_TARGET,
         "ota_lang_bundle_target": OTA_LANG_BUNDLE_TARGET,
         "ota_allowed_targets": OTA_ALLOWED_TARGETS,
-        "license_upload_target": LICENSE_UPLOAD_TARGET,
+        "license_upload_targets": LICENSE_UPLOAD_TARGETS,
         "refresh_license_status": _refresh_license_status,
         "ota_staging_path": OTA_STAGING_PATH,
         "firmware_version_file": FIRMWARE_VERSION_FILE,

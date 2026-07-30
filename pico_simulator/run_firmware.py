@@ -226,11 +226,64 @@ def _rmtree_with_retry(path, attempts=5, delay_s=0.3):
 
 def clone_source_to_data(source_dir, data_dir, refresh=False):
     if refresh and os.path.isdir(data_dir):
-        _rmtree_with_retry(data_dir)
+        try:
+            _rmtree_with_retry(data_dir)
+        except PermissionError:
+            # Das Verzeichnis SELBST ist gesperrt (nicht nur eine einzelne
+            # Datei darin) - typischerweise, weil ein vorheriger, nicht
+            # sauber beendeter Simulator-Prozess data_dir noch als aktuelles
+            # Arbeitsverzeichnis haelt (siehe os.chdir(data_dir) weiter
+            # unten). Umbenennen statt Loeschen umgeht das meistens, weil es
+            # eine reine Verzeichnis-Metadatenoperation ist und keine
+            # Dateiinhalte anfasst - der alte Ordner bleibt als Altlast
+            # liegen (manuell loeschbar, sobald der alte Prozess wirklich
+            # beendet ist) statt den kompletten Lauf zu blockieren.
+            stale_dir = f"{data_dir}_stale_{int(time.time())}"
+            os.rename(data_dir, stale_dir)
+            print(f"[SIM] WARNUNG: {data_dir} war gesperrt (vermutlich ein alter Simulator-Prozess, der noch laeuft) - alten Ordner nach {stale_dir} verschoben.")
 
     if not os.path.isdir(data_dir):
         shutil.copytree(source_dir, data_dir)
         print("[SIM] Created data clone from source.")
+
+
+def ensure_simulator_license(project_root, data_dir):
+    """Stellt bei jedem Simulator-Start sicher, dass ein gueltiges
+    license.lic + public_key.pem in data_dir liegen (device-seitig noetig
+    fuer source/license_verifier.py) - so als haette der Test-Pico bereits
+    einmal den echten license-setup-Ablauf (siehe webshop/) durchlaufen.
+
+    Schluesselpaar (keys/) und die signierte Simulator-Lizenz
+    (pico_simulator/sim_license.lic) werden nur beim allerersten Aufruf
+    erzeugt und danach dauerhaft wiederverwendet, statt bei jedem Start neu
+    zu signieren - beide Pfade sind bereits ueber .gitignore (/keys, *.lic)
+    ausgeschlossen."""
+    tools_dir = os.path.join(project_root, "tools")
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+    import binascii
+    import license_generator
+    from pico_runtime import SIMULATED_HARDWARE_ID
+
+    keys_dir = os.path.join(project_root, "keys")
+    private_key_path = os.path.join(keys_dir, "private_key.pem")
+    public_key_path = os.path.join(keys_dir, "public_key.pem")
+    sim_license_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim_license.lic")
+
+    if not (os.path.isfile(private_key_path) and os.path.isfile(public_key_path)):
+        os.makedirs(keys_dir, exist_ok=True)
+        license_generator.generate_keypair(private_key_path, public_key_path)
+        print(f"[SIM] Neues RSA-Schluesselpaar fuer Test-Lizenzen erzeugt unter {keys_dir}.")
+
+    if not os.path.isfile(sim_license_path):
+        hardware_id = binascii.hexlify(SIMULATED_HARDWARE_ID).decode()
+        content = license_generator.sign_license_from_key_file(private_key_path, hardware_id, "Simulator")
+        license_generator.save_license(content, sim_license_path)
+        print(f"[SIM] Neue Simulator-Lizenz erzeugt unter {sim_license_path}.")
+
+    shutil.copyfile(sim_license_path, os.path.join(data_dir, "license.lic"))
+    shutil.copyfile(public_key_path, os.path.join(data_dir, "public_key.pem"))
+    print("[SIM] license.lic + public_key.pem nach data/ kopiert.")
 
 
 def main():
@@ -290,6 +343,7 @@ def main():
         raise SystemExit(f"Source directory not found: {source_dir}")
 
     clone_source_to_data(source_dir, data_dir, refresh=args.refresh_data)
+    ensure_simulator_license(project_root, data_dir)
 
     profile = dict(sim_profiles[args.sim_profile])
     if args.mem_free_kb is not None:
@@ -333,7 +387,21 @@ def main():
     print(f"[SIM] Importing firmware entry: {args.entry}.py")
     print(f"[SIM] Open UI at: http://127.0.0.1:{args.port}/")
 
-    importlib.import_module(args.entry)
+    if args.entry == "main":
+        # --entry main importiert main.py direkt und ueberspringt damit
+        # boot.py's eigentliche Absturzsicherung (siehe source/boot.py:204-225:
+        # "import main" dort steht in einem try/except, das bei Fehlern auf
+        # recovery.py zurueckfaellt). Ohne dieses Nachbauen wuerde z.B. ein
+        # geloeschtes main.py (Emergency-Delete-Feature) den Simulator mit
+        # einem unbehandelten Traceback abstuerzen lassen statt - wie auf
+        # echter Hardware - in den Recovery-Modus zu wechseln.
+        try:
+            importlib.import_module("main")
+        except Exception as e:
+            print(f"[SIM] main.py Import fehlgeschlagen ({e}) - falle wie boot.py auf recovery.py zurueck.")
+            importlib.import_module("recovery")
+    else:
+        importlib.import_module(args.entry)
 
 
 if __name__ == "__main__":

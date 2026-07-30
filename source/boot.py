@@ -135,12 +135,6 @@ def run_recovery(reason):
         import recovery
     except Exception as e:
         debug_log(f"Recovery Start fehlgeschlagen: {e}")
-        try:
-            debug_log("Versuche main_backup.py als Notfall-Fallback...")
-            gc.collect()
-            import main_backup
-        except Exception as e2:
-            debug_log(f"main_backup.py Start fehlgeschlagen: {e2}")
 
 
 try:

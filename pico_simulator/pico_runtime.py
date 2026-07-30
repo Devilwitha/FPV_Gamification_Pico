@@ -172,12 +172,16 @@ def _machine_freq(new_freq_hz=None):
     return _SimState.cpu_freq_hz
 
 
+# Feste, erkennbare Fake-ID fuer den Simulator (echte Picos liefern hier
+# 8 zufaellige Bytes aus dem Flash) - stabil ueber Laeufe hinweg, damit eine
+# im Simulator signierte license.lic (siehe license_verifier.py und
+# run_firmware.py's _ensure_simulator_license()) reproduzierbar getestet
+# werden kann.
+SIMULATED_HARDWARE_ID = b"SIM0\x00\x00\x00\x01"
+
+
 def _machine_unique_id():
-    # Feste, erkennbare Fake-ID fuer den Simulator (echte Picos liefern hier
-    # 8 zufaellige Bytes aus dem Flash) - stabil ueber Laeufe hinweg, damit
-    # eine im Simulator signierte license.lic (siehe license_verifier.py)
-    # reproduzierbar getestet werden kann.
-    return b"SIM0\x00\x00\x00\x01"
+    return SIMULATED_HARDWARE_ID
 
 
 def _install_machine_module():

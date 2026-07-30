@@ -80,6 +80,16 @@ BUILD_DIR = os.path.join(PROJECT_ROOT, "build")
 KEYS_DIR = os.path.join(PROJECT_ROOT, "keys")
 DEFAULT_PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "private_key.pem")
 DEFAULT_PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "public_key.pem")
+# Bundle-interner Dateiname von public_key.pem - siehe _bundle_source_path()
+# (Quelle: KEYS_DIR statt SOURCE_DIR) und _resolve_files_to_bundle() (nur im
+# "komplett"-Modus/include_boot_stack enthalten, siehe dort fuer den Grund).
+PUBLIC_KEY_BUNDLE_FILENAME = "public_key.pem"
+# Dateinamen, die das Geraet in JEDEM per HTTP/GitHub-OTA angewendeten Bundle
+# kategorisch blockiert (siehe source/update_manager.py/ota_helpers.py) - ein
+# solches Bundle darf daher nie ueber upload_bundle_to_pico() (HTTP) gehen,
+# nur seriell (siehe _apply_bundle_entries_via_serial(), das diese Pruefung
+# nicht durchlaeuft).
+HTTP_OTA_BLOCKED_BUNDLE_FILES = frozenset({"public_key.pem", "license.lic"})
 # Lokales Archiv aller ausgestellten Lizenzen (siehe save_license_record()) -
 # jede neu signierte license.lic landet hier zusammen mit den beim Ausstellen
 # abgefragten Geraete-Werten (Hardware-ID, MicroPython-Version, Port, ...),
@@ -228,12 +238,15 @@ RECOVERY_MODE_FILES_SET = _expand_with_mpy_variants(RECOVERY_FILES_TO_BUNDLE)
 
 def _bundle_source_path(source_dir, filename):
     """Loest den tatsaechlichen Quellpfad einer Bundle-Datei auf. Mission-
-    Dateien (*.mission) liegen im separaten MISSIONS_DIR statt in source_dir -
+    Dateien (*.mission) liegen im separaten MISSIONS_DIR statt in source_dir,
+    public_key.pem im separaten KEYS_DIR (siehe PUBLIC_KEY_BUNDLE_FILENAME) -
     ueberall dort, wo der Bundle-Prozess auf eine Datei zugreifen will
     (Lesen, Groessen-/Vorhanden-Pruefung in der GUI), muss diese Funktion
     statt eines direkten os.path.join(source_dir, filename) verwendet werden."""
     if filename.endswith(MISSION_FILE_EXTENSION):
         return os.path.join(MISSIONS_DIR, filename)
+    if filename == PUBLIC_KEY_BUNDLE_FILENAME:
+        return DEFAULT_PUBLIC_KEY_PATH
     return os.path.join(source_dir, filename)
 
 
@@ -368,6 +381,21 @@ def _resolve_files_to_bundle(
         # anderen Dateien (siehe _build_file_signature_map), damit nur
         # tatsaechlich neue/geaenderte Missionen erneut hochgeladen werden.
         base = get_files_to_bundle(include_boot_stack) + _resolve_mission_files()
+
+        # public_key.pem NUR in der kompletten Firmware (--mode complete,
+        # include_boot_stack=True) mitliefern - NICHT in normal/light. Grund:
+        # die komplette Variante ist ausschliesslich fuer den seriellen Weg
+        # gedacht (siehe _apply_bundle_entries_via_serial() sowie
+        # build_and_flash_with_license(), die genau das schon so handhaben),
+        # der die geraeteseitige Bundle-Pruefung gar nicht durchlaeuft. Die
+        # normale/leichte Variante (firmware.nbo) wird dagegen per HTTP-Upload
+        # und automatischem GitHub-OTA angewendet - dort blockiert das Geraet
+        # public_key.pem in JEDEM Bundle kategorisch (siehe
+        # source/update_manager.py/ota_helpers.py), ein Aufnehmen dort wuerde
+        # dieses Update komplett zum Abbrechen bringen. Siehe auch die
+        # Absicherung in upload_bundle_to_pico() weiter unten.
+        if include_boot_stack:
+            base = base + [PUBLIC_KEY_BUNDLE_FILENAME]
 
     # Standard-Workflow: en.pak + de.pak im Haupt-Firmware-Bundle.
     # Weitere Sprachen werden ausschliesslich ueber den lang.pak-Workflow gebaut.
@@ -1156,15 +1184,10 @@ def save_license_record(hardware_id, customer_id, license_content, device_info=N
     issued_date = datetime.now().strftime("%Y%m%d")
     safe_hardware_id = "".join(c for c in hardware_id if c.isalnum()) or "unknown"
 
-    # Reine Datums-Zeitstempel (keine Uhrzeit) sind nicht mehr zwingend
-    # eindeutig, wenn fuer dieselbe Hardware-ID am selben Tag mehrfach eine
-    # Lizenz ausgestellt wird - daher bei Bedarf einen laufenden Suffix
-    # anhaengen, statt eine bestehende Datei stumm zu ueberschreiben.
+    # Nur noch Datum statt vollem Zeitstempel: eine erneute Lizenzausstellung
+    # fuer dieselbe Hardware-ID am selben Tag ueberschreibt bewusst die
+    # vorherige Datei (jede Hardware-ID soll genau eine aktuelle Lizenz haben).
     base_name = f"{safe_hardware_id}_{issued_date}"
-    suffix = 1
-    while os.path.exists(os.path.join(LICENSES_DIR, base_name + ".lic")):
-        suffix += 1
-        base_name = f"{safe_hardware_id}_{issued_date}_{suffix}"
 
     lic_path = os.path.join(LICENSES_DIR, base_name + ".lic")
     with open(lic_path, "w", encoding="utf-8", newline="\n") as f:

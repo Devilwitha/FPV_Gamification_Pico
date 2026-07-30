@@ -140,6 +140,16 @@ def get_customer_licenses_for_email(email):
         ).fetchall()
 
 
+def get_all_customer_licenses():
+    """Liefert ALLE bereits ausgestellten Lizenzen (ueber alle E-Mail-Adressen
+    hinweg), neueste zuerst - Grundlage fuer die Admin-Übersicht "Alle
+    verkauften Produkte" (siehe app.py's /admin)."""
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT * FROM customer_licenses ORDER BY issued_at DESC"
+        ).fetchall()
+
+
 def get_customer_license(license_id):
     """Liefert eine einzelne ausgestellte Lizenz (sqlite3.Row) oder None."""
     if license_id is None:

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Webshop – Versandadresse{% endblock %}
+
+{% block content %}
+  <section class="license-setup-page">
+    <div class="status-icon">&#128230;</div>
+    <h1>Fast geschafft – wohin soll dein Paket?</h1>
+    <p class="license-intro">
+      Deine <strong>{{ product.name }}</strong> wurde erfolgreich gekauft (Bestätigung an
+      <strong>{{ email }}</strong>). Damit wir sie verschicken können, brauchen wir noch
+      einmalig deine Versandadresse.
+    </p>
+
+    <div class="license-step">
+      <h2>Versandadresse</h2>
+
+      {% if error %}
+        <div class="checkout-error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('shipping_setup', pending_id=pending_id) }}">
+        <div class="form-field">
+          <label for="full_name">Vollständiger Name</label>
+          <input
+            type="text"
+            id="full_name"
+            name="full_name"
+            value="{{ form.get('full_name', '') }}"
+            autocomplete="name"
+            required
+          />
+        </div>
+
+        <div class="form-field">
+          <label for="street_address">Straße und Hausnummer</label>
+          <input
+            type="text"
+            id="street_address"
+            name="street_address"
+            value="{{ form.get('street_address', '') }}"
+            autocomplete="street-address"
+            required
+          />
+        </div>
+
+        <div class="form-field">
+          <label for="address_line2">Adresszusatz (optional)</label>
+          <input
+            type="text"
+            id="address_line2"
+            name="address_line2"
+            value="{{ form.get('address_line2', '') }}"
+            placeholder="z. B. c/o, Wohnung 4"
+            autocomplete="address-line2"
+          />
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="postal_code">PLZ</label>
+            <input
+              type="text"
+              id="postal_code"
+              name="postal_code"
+              value="{{ form.get('postal_code', '') }}"
+              autocomplete="postal-code"
+              required
+            />
+          </div>
+          <div class="form-field">
+            <label for="city">Stadt</label>
+            <input
+              type="text"
+              id="city"
+              name="city"
+              value="{{ form.get('city', '') }}"
+              autocomplete="address-level2"
+              required
+            />
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="country">Land</label>
+          <input
+            type="text"
+            id="country"
+            name="country"
+            value="{{ form.get('country', 'Deutschland') }}"
+            autocomplete="country-name"
+            required
+          />
+        </div>
+
+        <div class="form-field">
+          <label for="phone">Telefonnummer (optional, für den Versanddienstleister)</label>
+          <input
+            type="tel"
+            id="phone"
+            name="phone"
+            value="{{ form.get('phone', '') }}"
+            autocomplete="tel"
+          />
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-large">
+          Adresse bestätigen &amp; Bestellung abschließen
+        </button>
+      </form>
+
+      {% if logged_in %}
+        <p class="form-hint">
+          <a href="{{ url_for('account') }}">Zurück zu meinem Konto</a>
+        </p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

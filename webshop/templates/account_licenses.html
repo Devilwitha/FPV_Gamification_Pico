@@ -1,11 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Webshop – Meine Lizenzen{% endblock %}
+{% block title %}Webshop – Mein Konto{% endblock %}
 
 {% block content %}
   <section class="account-page">
-    <h1>Meine Lizenzen</h1>
+    <h1>Mein Konto</h1>
     <p class="license-intro">Eingeloggt als <strong>{{ email }}</strong>.</p>
+
+    {% if shipping_saved %}
+      <div class="license-success">
+        Versandadresse gespeichert - deine Bestellung ist abgeschlossen und wird demnächst
+        verschickt.
+      </div>
+    {% endif %}
 
     {% if pending %}
       <div class="pending-license-banner">
@@ -19,6 +26,41 @@
       </div>
     {% endif %}
 
+    {% if pending_shipping %}
+      <div class="pending-license-banner">
+        <p>
+          Offene Bestellung: <strong>{{ products.get(pending_shipping.product_id).name if products.get(pending_shipping.product_id) else pending_shipping.product_id }}</strong>
+          wartet noch auf deine Versandadresse.
+        </p>
+        <a class="btn btn-primary btn-large btn-pulse" href="{{ url_for('shipping_setup', pending_id=pending_shipping.id) }}"
+          >Jetzt Versandadresse angeben</a
+        >
+      </div>
+    {% endif %}
+
+    {% if shipping_orders %}
+      <h2>Meine Hardware-Bestellungen</h2>
+      <ul class="license-list">
+        {% for order in shipping_orders %}
+          <li class="license-list-item">
+            <div class="license-list-details">
+              <h3>{{ products.get(order.product_id).name if products.get(order.product_id) else order.product_id }}</h3>
+              <p>{{ order.full_name }}, {{ order.street_address }}, {{ order.postal_code }} {{ order.city }}, {{ order.country }}</p>
+              <p class="form-hint">
+                Bestellt am {{ order.ordered_at[:10] }} -
+                {% if order.shipped_at %}
+                  verschickt am {{ order.shipped_at[:10] }}
+                {% else %}
+                  noch nicht verschickt
+                {% endif %}
+              </p>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <h2>Meine Lizenzen</h2>
     {% if licenses %}
       <ul class="license-list">
         {% for license in licenses %}

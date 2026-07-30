@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Admin – Dashboard{% endblock %}
+
+{% block content %}
+  <section class="admin-dashboard-page">
+    <h1>Admin-Dashboard</h1>
+    <p class="license-intro">
+      Eingeloggt im Admin-Bereich. <a href="{{ url_for('admin_logout') }}">Ausloggen</a>
+    </p>
+
+    <div class="admin-tabs" role="tablist">
+      <button type="button" class="admin-tab-button active" data-tab-target="unshipped">
+        Offene Hardware-Bestellungen <span class="admin-tab-count">{{ unshipped_orders|length }}</span>
+      </button>
+      <button type="button" class="admin-tab-button" data-tab-target="shipped">
+        Verschickte Bestellungen <span class="admin-tab-count">{{ shipped_orders|length }}</span>
+      </button>
+      <button type="button" class="admin-tab-button" data-tab-target="sales">
+        Alle verkauften Produkte <span class="admin-tab-count">{{ all_sales|length }}</span>
+      </button>
+    </div>
+
+    <div id="tab-unshipped" class="admin-tab-panel active">
+      <input
+        type="text"
+        class="admin-search"
+        data-search-for="table-unshipped"
+        placeholder="Suchen (E-Mail, Name, Adresse, ...)"
+      />
+      {% if unshipped_orders %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table" id="table-unshipped">
+            <thead>
+              <tr>
+                <th>Produkt</th>
+                <th>E-Mail</th>
+                <th>Name</th>
+                <th>Adresse</th>
+                <th>Telefon</th>
+                <th>Zahlung</th>
+                <th>Bestellt am</th>
+                <th>Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in unshipped_orders %}
+                <tr>
+                  <td>{{ products.get(order.product_id).name if products.get(order.product_id) else order.product_id }}</td>
+                  <td>{{ order.email }}</td>
+                  <td>{{ order.full_name }}</td>
+                  <td>
+                    {{ order.street_address }}{% if order.address_line2 %}, {{ order.address_line2 }}{% endif %},
+                    {{ order.postal_code }} {{ order.city }}, {{ order.country }}
+                  </td>
+                  <td>{{ order.phone or "-" }}</td>
+                  <td>{{ order.payment_provider }} ({{ order.payment_reference }})</td>
+                  <td>{{ order.ordered_at[:10] }}</td>
+                  <td>
+                    <form method="post" action="{{ url_for('admin_mark_shipped', order_id=order.id) }}">
+                      <button type="submit" class="btn btn-primary">Als verschickt markieren</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-empty-hint">Keine offenen Hardware-Bestellungen.</p>
+      {% endif %}
+    </div>
+
+    <div id="tab-shipped" class="admin-tab-panel">
+      <input
+        type="text"
+        class="admin-search"
+        data-search-for="table-shipped"
+        placeholder="Suchen (E-Mail, Name, Adresse, ...)"
+      />
+      {% if shipped_orders %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table" id="table-shipped">
+            <thead>
+              <tr>
+                <th>Produkt</th>
+                <th>E-Mail</th>
+                <th>Name</th>
+                <th>Adresse</th>
+                <th>Telefon</th>
+                <th>Zahlung</th>
+                <th>Bestellt am</th>
+                <th>Verschickt am</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in shipped_orders %}
+                <tr>
+                  <td>{{ products.get(order.product_id).name if products.get(order.product_id) else order.product_id }}</td>
+                  <td>{{ order.email }}</td>
+                  <td>{{ order.full_name }}</td>
+                  <td>
+                    {{ order.street_address }}{% if order.address_line2 %}, {{ order.address_line2 }}{% endif %},
+                    {{ order.postal_code }} {{ order.city }}, {{ order.country }}
+                  </td>
+                  <td>{{ order.phone or "-" }}</td>
+                  <td>{{ order.payment_provider }} ({{ order.payment_reference }})</td>
+                  <td>{{ order.ordered_at[:10] }}</td>
+                  <td>{{ order.shipped_at[:10] }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-empty-hint">Noch keine verschickten Hardware-Bestellungen.</p>
+      {% endif %}
+    </div>
+
+    <div id="tab-sales" class="admin-tab-panel">
+      <input
+        type="text"
+        class="admin-search"
+        data-search-for="table-sales"
+        placeholder="Suchen (E-Mail, Produkt, Details, ...)"
+      />
+      {% if all_sales %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table" id="table-sales">
+            <thead>
+              <tr>
+                <th>Typ</th>
+                <th>Produkt</th>
+                <th>E-Mail</th>
+                <th>Details</th>
+                <th>Zahlung</th>
+                <th>Datum</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sale in all_sales %}
+                <tr>
+                  <td>
+                    {% if sale.type == "digital" %}
+                      <span class="admin-badge admin-badge-digital">Digital</span>
+                    {% else %}
+                      <span class="admin-badge admin-badge-physical">Hardware</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ sale.product_name }}</td>
+                  <td>{{ sale.email }}</td>
+                  <td>{{ sale.detail }}</td>
+                  <td>{{ sale.payment_provider }} ({{ sale.payment_reference }})</td>
+                  <td>{{ sale.date[:10] }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-empty-hint">Es wurden noch keine Produkte verkauft.</p>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function () {
+      var tabButtons = document.querySelectorAll(".admin-tab-button");
+      var tabPanels = document.querySelectorAll(".admin-tab-panel");
+
+      tabButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          var targetId = "tab-" + button.dataset.tabTarget;
+
+          tabButtons.forEach(function (otherButton) {
+            otherButton.classList.remove("active");
+          });
+          button.classList.add("active");
+
+          tabPanels.forEach(function (panel) {
+            panel.classList.toggle("active", panel.id === targetId);
+          });
+        });
+      });
+
+      var searchInputs = document.querySelectorAll(".admin-search");
+      searchInputs.forEach(function (input) {
+        input.addEventListener("input", function () {
+          var table = document.getElementById(input.dataset.searchFor);
+          if (!table) {
+            return;
+          }
+          var query = input.value.trim().toLowerCase();
+          var rows = table.querySelectorAll("tbody tr");
+          rows.forEach(function (row) {
+            var text = row.textContent.toLowerCase();
+            row.style.display = text.indexOf(query) === -1 ? "none" : "";
+          });
+        });
+      });
+    })();
+  </script>
+{% endblock %}

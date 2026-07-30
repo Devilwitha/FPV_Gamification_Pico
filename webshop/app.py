@@ -7,6 +7,7 @@ import secrets
 import sys
 import time
 from datetime import datetime
+from functools import wraps
 
 import requests
 import stripe
@@ -14,6 +15,7 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, session, url_for
 
 import db
+import orders_db
 
 load_dotenv()
 
@@ -55,6 +57,17 @@ LICENSES_DIR = os.path.join(PROJECT_ROOT, "lizenzen")
 # zu vertrauen.
 db.init_db()
 
+# Separate, eigenstaendige Datenbank ausschliesslich fuer Hardware-Bestellungen
+# (Versandadressen) - siehe orders_db.py's Modul-Docstring: bewusst getrennt
+# von webshop.db und wird nie geloescht/ersetzt.
+orders_db.init_db()
+
+# Admin-Bereich (siehe /admin, /admin/login): Zugangsdaten kommen AUSSCHLIESSLICH
+# aus der .env-Datei, niemals hartkodiert. Ohne gesetzte Zugangsdaten bleibt der
+# Admin-Bereich serverseitig gesperrt (siehe _admin_login_configured()).
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "").strip()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
 # Pico-Hardware-IDs sind hexadezimale machine.unique_id()-Strings (8 Bytes ->
 # 16 Hex-Zeichen bei RP2040/RP2350) - Bereich bewusst etwas weiter gefasst
 # (8-32 Zeichen), damit zukuenftige Board-Varianten mit abweichender ID-Laenge
@@ -87,8 +100,8 @@ PRODUCTS = {
             "Freischaltung nach dem Kauf."
         ),
         "type": "digital",
-        "price_cents": 199,
-        "currency": "eur",
+        "price_cents": 195,
+        "currency": "chf",
         "image": "bilder/shop/lizenz/Gemini_Generated_Image_f7pr0tf7pr0tf7pr.png",
     },
     "hardware-lizenz": {
@@ -100,18 +113,20 @@ PRODUCTS = {
             "(GND, CRSF TX auf GP1, optional 5V) und direkt lossfliegen."
         ),
         "type": "physical",
-        "price_cents": 1999,
-        "currency": "eur",
+        "price_cents": 1995,
+        "currency": "chf",
         "image": "bilder/shop/Hardware/Gemini_Generated_Image_8jui9u8jui9u8jui.png",
     },
 }
 
 
 def format_price(price_cents):
-    """Formatiert einen Cent-Betrag als deutsche Euro-Zeichenkette."""
-    euro_betrag = price_cents / 100
-    formatiert = f"{euro_betrag:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"{formatiert} €"
+    """Formatiert einen Rappen-Betrag als Schweizer-Franken-Zeichenkette
+    (Schweizer Zahlenformat: Punkt als Dezimaltrennzeichen, Apostroph als
+    Tausendertrennzeichen, z. B. 1995 -> "19.95 CHF")."""
+    franken_betrag = price_cents / 100
+    formatiert = f"{franken_betrag:,.2f}".replace(",", "'")
+    return f"{formatiert} CHF"
 
 
 app.jinja_env.filters["format_price"] = format_price
@@ -348,37 +363,51 @@ def dummy_create_purchase():
 
 def _record_valid_purchase(product, email, payment_provider, payment_reference):
     """Wird aufgerufen, sobald eine Zahlung als gültig bestätigt wurde (echte
-    Stripe-/PayPal-Prüfung bzw. DUMMY_MODE). Legt für digitale Produkte einen
-    offenen Eintrag in der pending_licenses-Tabelle an (siehe db.py) und merkt
-    dessen ID zusätzlich in der Session, damit der Direkt-Flow (ohne Login)
-    unmittelbar zu /license-setup weiterleiten kann. Idempotent gegenüber
-    mehrfachen Aufrufen mit derselben Zahlungsreferenz (z. B. Reload von
-    /success)."""
-    if product["type"] != "digital":
-        return
+    Stripe-/PayPal-Prüfung bzw. DUMMY_MODE).
 
-    if db.payment_already_recorded(payment_provider, payment_reference):
-        return
+    - Digitale Produkte (Software-Lizenz): legt einen offenen Eintrag in der
+      pending_licenses-Tabelle an (siehe db.py) und merkt dessen ID in der
+      Session (checkout_pending_id), damit der Direkt-Flow (ohne Login)
+      unmittelbar zu /license-setup weiterleiten kann.
+    - Physische Produkte (Hardware): legt analog einen offenen Eintrag in der
+      pending_shipping-Tabelle an (siehe orders_db.py, komplett getrennte
+      Datenbank) und merkt dessen ID in checkout_pending_shipping_id, damit
+      /account den Hinweis auf die noch fehlende Versandadresse anzeigen kann
+      (siehe /shipping-setup) - exakt dasselbe Muster wie bei der Lizenz.
 
-    pending_id = db.add_pending_license(email, product["id"], payment_provider, payment_reference)
-    session["checkout_pending_id"] = pending_id
-    session["checkout_product_id"] = product["id"]
-    session["checkout_email"] = email
+    Idempotent gegenüber mehrfachen Aufrufen mit derselben Zahlungsreferenz
+    (z. B. Reload von /success)."""
+    if product["type"] == "digital":
+        if db.payment_already_recorded(payment_provider, payment_reference):
+            return
+        pending_id = db.add_pending_license(email, product["id"], payment_provider, payment_reference)
+        session["checkout_pending_id"] = pending_id
+        session["checkout_product_id"] = product["id"]
+        session["checkout_email"] = email
+    elif product["type"] == "physical":
+        if orders_db.payment_already_recorded(payment_provider, payment_reference):
+            return
+        pending_shipping_id = orders_db.add_pending_shipping(email, product["id"], payment_provider, payment_reference)
+        session["checkout_pending_shipping_id"] = pending_shipping_id
+        session["checkout_product_id"] = product["id"]
+        session["checkout_email"] = email
 
 
 @app.route("/success")
 def success():
     """Erfolgsseite nach abgeschlossener Zahlung.
 
-    Digitale Produkte (Software-Lizenz) werden direkt zu "Mein Konto"
-    weitergeleitet (nicht mehr direkt zur Hardware-ID-Eingabe) - dort steht
-    oben ein hervorgehobener Button zur offenen Lizenz-Einrichtung, siehe
-    account_licenses.html. Grundlage für die Weiterleitung ist der offene
-    pending_licenses-Eintrag (siehe _record_valid_purchase()), nicht der
-    (client-kontrollierbare) Query-String. Bei Rückkehr von Stripe wird die
-    Zahlung hier zusätzlich serverseitig gegen die Stripe-API verifiziert, da
-    Stripe (anders als PayPal) keinen serverseitigen Capture-Schritt vor
-    dieser Weiterleitung kennt."""
+    Digitale Produkte (Software-Lizenz) UND physische Produkte (Hardware)
+    werden direkt zu "Mein Konto" weitergeleitet (nicht mehr direkt zur
+    Hardware-ID-Eingabe bzw. zum Adressformular) - dort steht oben ein
+    hervorgehobener Button zur jeweils offenen Einrichtung (Lizenz bzw.
+    Versandadresse), siehe account_licenses.html. Grundlage für die
+    Weiterleitung ist der jeweils offene pending_licenses-/pending_shipping-
+    Eintrag (siehe _record_valid_purchase()), nicht der (client-kontrollierbare)
+    Query-String. Bei Rückkehr von Stripe wird die Zahlung hier zusätzlich
+    serverseitig gegen die Stripe-API verifiziert, da Stripe (anders als
+    PayPal) keinen serverseitigen Capture-Schritt vor dieser Weiterleitung
+    kennt."""
     session_id = request.args.get("session_id")
     order_id = request.args.get("order_id")
 
@@ -396,6 +425,8 @@ def success():
 
     product = PRODUCTS.get(session.get("checkout_product_id"))
     if product is not None and product["type"] == "digital" and session.get("checkout_pending_id"):
+        return redirect(url_for("account"))
+    if product is not None and product["type"] == "physical" and session.get("checkout_pending_shipping_id"):
         return redirect(url_for("account"))
 
     return render_template("success.html", session_id=session_id, order_id=order_id)
@@ -422,6 +453,16 @@ def _is_authorized_for_pending(pending):
     gesorgt hat (session["checkout_pending_id"]) oder weil die aktuell
     "eingeloggte" E-Mail-Adresse zur Bestellung passt."""
     if session.get("checkout_pending_id") == pending["id"]:
+        return True
+    email = (_current_account_email() or "").strip().lower()
+    return bool(email) and email == pending["email"].strip().lower()
+
+
+def _is_authorized_for_pending_shipping(pending):
+    """Prüft, ob die aktuelle Session Zugriff auf die offene Hardware-
+    Bestellung ``pending`` haben darf - analog zu _is_authorized_for_pending(),
+    nur für orders_db.pending_shipping statt db.pending_licenses."""
+    if session.get("checkout_pending_shipping_id") == pending["id"]:
         return True
     email = (_current_account_email() or "").strip().lower()
     return bool(email) and email == pending["email"].strip().lower()
@@ -456,6 +497,61 @@ def license_setup():
             message="Keine gültige Lizenz-Bestellung gefunden. Bitte zuerst im Shop kaufen.",
         ), 403
     return _render_license_setup(pending)
+
+
+REQUIRED_SHIPPING_FIELDS = ("full_name", "street_address", "postal_code", "city", "country")
+
+
+@app.route("/shipping-setup", methods=["GET", "POST"])
+def shipping_setup():
+    """Formularseite nach Kauf der Hardware: fragt die Versandadresse ab,
+    damit das Paket verschickt werden kann. Erreichbar über den offenen
+    pending_shipping-Eintrag der aktuellen Checkout-Session ODER (über den
+    Button auf /account) per expliziter ``pending_id`` in der Query-
+    Zeichenkette - exakt dasselbe Muster wie /license-setup, nur für
+    orders_db.pending_shipping statt db.pending_licenses."""
+    pending_id = request.args.get("pending_id", type=int) or session.get("checkout_pending_shipping_id")
+    pending = orders_db.get_pending_shipping(pending_id)
+    if pending is None or not _is_authorized_for_pending_shipping(pending):
+        return render_template(
+            "cancel.html",
+            message="Keine gültige Hardware-Bestellung gefunden. Bitte zuerst im Shop kaufen.",
+        ), 403
+
+    product = PRODUCTS.get(pending["product_id"])
+    error = None
+
+    if request.method == "POST":
+        address = {field: (request.form.get(field) or "").strip() for field in REQUIRED_SHIPPING_FIELDS}
+        address["address_line2"] = (request.form.get("address_line2") or "").strip()
+        address["phone"] = (request.form.get("phone") or "").strip()
+
+        missing = [field for field in REQUIRED_SHIPPING_FIELDS if not address[field]]
+        if missing:
+            error = "Bitte alle Pflichtfelder ausfüllen: Name, Straße, PLZ, Stadt und Land."
+        else:
+            ist_direkt_flow = session.get("checkout_pending_shipping_id") == pending["id"]
+            orders_db.move_pending_to_order(pending["id"], address)
+
+            if ist_direkt_flow:
+                # Siehe api_license_create(): verhindert, dass mit derselben
+                # Bestellung mehrfach unbemerkt weitere Adressen angelegt werden.
+                session.pop("checkout_pending_shipping_id", None)
+                session.pop("checkout_product_id", None)
+                session.pop("checkout_email", None)
+                session["account_email"] = pending["email"]
+
+            return redirect(url_for("account", shipping_saved=1))
+
+    return render_template(
+        "shipping_setup.html",
+        product=product,
+        email=pending["email"],
+        pending_id=pending["id"],
+        logged_in=bool(_current_account_email()),
+        error=error,
+        form=request.form if request.method == "POST" else {},
+    )
 
 
 @app.route("/api/license/create", methods=["POST"])
@@ -535,19 +631,33 @@ def license_setup_public_key():
     return send_file(PUBLIC_KEY_PATH, mimetype="application/x-pem-file", as_attachment=True, download_name="public_key.pem")
 
 
+def _has_any_order_for_email(email):
+    """Prüft, ob zu ``email`` irgendein Datensatz existiert - egal ob
+    offene/ausgestellte Lizenz (db.py, webshop.db) oder offene/abgeschlossene
+    Hardware-Bestellung (orders_db.py, komplett getrennte orders.db). Beide
+    Datenbanken müssen hier geprüft werden, sonst findet ein Kunde mit einer
+    reinen Hardware-Bestellung (noch ohne Lizenz-Kauf) beim Login nichts."""
+    return bool(
+        db.get_pending_licenses_for_email(email)
+        or db.get_customer_licenses_for_email(email)
+        or orders_db.get_pending_shipping_for_email(email)
+        or orders_db.get_shipping_orders_for_email(email)
+    )
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     """Login-Seite für den Konto-Bereich: die Eingabe der E-Mail-Adresse ist
     hier bewusst bereits der gesamte Login-Vorgang (kein zusätzlicher
     Bestätigungslink/-code per Mail) - Voraussetzung ist lediglich, dass zu
     der Adresse mindestens eine offene Bestellung oder bereits ausgestellte
-    Lizenz existiert."""
+    Lizenz bzw. Hardware-Bestellung existiert."""
     error = None
     if request.method == "POST":
         email = (request.form.get("email") or "").strip()
         if "@" not in email:
             error = "Bitte eine gültige E-Mail-Adresse eingeben."
-        elif db.get_pending_licenses_for_email(email) or db.get_customer_licenses_for_email(email):
+        elif _has_any_order_for_email(email):
             session["account_email"] = email
             return redirect(url_for("account"))
         else:
@@ -564,27 +674,34 @@ def logout():
     session.pop("checkout_email", None)
     session.pop("checkout_product_id", None)
     session.pop("checkout_pending_id", None)
+    session.pop("checkout_pending_shipping_id", None)
     return redirect(url_for("index"))
 
 
 @app.route("/account")
 def account():
-    """Konto-Übersicht: zeigt oben einen hervorgehobenen Button zur
-    Lizenz-Einrichtung, falls noch eine offene Bestellung existiert (dieselbe
-    Zielseite wie direkt nach dem Kauf), und darunter die Liste der bereits
-    ausgestellten Lizenzen zum erneuten Download."""
+    """Konto-Übersicht: zeigt oben hervorgehobene Buttons zur Lizenz-
+    Einrichtung bzw. zur Versandadress-Eingabe, falls jeweils eine offene
+    Bestellung existiert (dieselbe Zielseite wie direkt nach dem Kauf), und
+    darunter die Liste der bereits ausgestellten Lizenzen sowie der
+    aufgegebenen Hardware-Bestellungen."""
     email = _current_account_email()
     if not email:
         return redirect(url_for("login"))
 
     pending_rows = db.get_pending_licenses_for_email(email)
     licenses = db.get_customer_licenses_for_email(email)
+    pending_shipping_rows = orders_db.get_pending_shipping_for_email(email)
+    shipping_orders = orders_db.get_shipping_orders_for_email(email)
     return render_template(
         "account_licenses.html",
         email=email,
         licenses=licenses,
         products=PRODUCTS,
         pending=pending_rows[0] if pending_rows else None,
+        pending_shipping=pending_shipping_rows[0] if pending_shipping_rows else None,
+        shipping_orders=shipping_orders,
+        shipping_saved=request.args.get("shipping_saved") == "1",
     )
 
 
@@ -639,6 +756,140 @@ def _save_license_record(hardware_id, email, license_content):
         f.write("\n")
 
     return lic_path, json_path
+
+
+# ==================== Admin-Bereich ====================
+# Komplett getrennt vom Kunden-Login (/login, /account): Zugangsdaten kommen
+# ausschliesslich aus ADMIN_USERNAME/ADMIN_PASSWORD in der .env-Datei (siehe
+# oben, niemals hartkodiert). Erreichbar ueber einen bewusst unauffaelligen
+# Link unten rechts auf jeder Seite (siehe base.html, .admin-corner-link).
+
+def _admin_login_configured():
+    return bool(ADMIN_USERNAME) and bool(ADMIN_PASSWORD)
+
+
+def admin_required(view_func):
+    """Decorator: leitet zu /admin/login um, falls die aktuelle Session nicht
+    als Admin authentifiziert ist (session["is_admin"])."""
+
+    @wraps(view_func)
+    def wrapped_view(*args, **kwargs):
+        if not session.get("is_admin"):
+            return redirect(url_for("admin_login"))
+        return view_func(*args, **kwargs)
+
+    return wrapped_view
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    """Login-Seite für den Admin-Bereich - komplett getrennt vom
+    Kunden-Login (/login). Zugangsdaten kommen ausschließlich aus der
+    .env-Datei, niemals aus der Datenbank oder dem Frontend."""
+    if session.get("is_admin"):
+        return redirect(url_for("admin_dashboard"))
+
+    error = None
+    if request.method == "POST":
+        if not _admin_login_configured():
+            error = "Admin-Zugang ist serverseitig nicht konfiguriert (ADMIN_USERNAME/ADMIN_PASSWORD in .env setzen)."
+        else:
+            username = request.form.get("username") or ""
+            password = request.form.get("password") or ""
+            # Konstante Vergleichszeit gegen Timing-Angriffe.
+            username_ok = secrets.compare_digest(username, ADMIN_USERNAME)
+            password_ok = secrets.compare_digest(password, ADMIN_PASSWORD)
+            if username_ok and password_ok:
+                session["is_admin"] = True
+                return redirect(url_for("admin_dashboard"))
+            error = "Benutzername oder Passwort falsch."
+    return render_template("admin_login.html", error=error)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    """Beendet die Admin-Sitzung. Bewusst kein login_required davor - ein
+    Logout darf immer funktionieren, auch bei bereits abgelaufener Session."""
+    session.pop("is_admin", None)
+    return redirect(url_for("index"))
+
+
+@app.route("/admin")
+@admin_required
+def admin_dashboard():
+    """Admin-Übersicht mit drei Tabs (die Suche läuft rein clientseitig per
+    JS über die jeweils bereits gerenderte Tabelle, siehe
+    admin_dashboard.html):
+
+    - Offene Hardware-Bestellungen: bezahlt, Versandadresse liegt vor, aber
+      noch nicht verschickt - mit Button zum Markieren als verschickt.
+    - Bereits verschickte Hardware-Bestellungen.
+    - Alle verkauften Produkte: digitale Lizenzen UND Hardware-Bestellungen
+      zusammen, unabhängig vom Versandstatus - die Gesamtübersicht."""
+    unshipped_orders = orders_db.get_unshipped_orders()
+    shipped_orders = orders_db.get_shipped_orders()
+    all_sales = _build_all_sales_overview()
+
+    return render_template(
+        "admin_dashboard.html",
+        products=PRODUCTS,
+        unshipped_orders=unshipped_orders,
+        shipped_orders=shipped_orders,
+        all_sales=all_sales,
+    )
+
+
+def _build_all_sales_overview():
+    """Baut die einheitliche Verkaufsübersicht für den Admin-Tab "Alle
+    verkauften Produkte": vereint db.py's customer_licenses (digital) und
+    orders_db.py's shipping_orders (physisch) - zwei unterschiedlich
+    aufgebaute Tabellen aus zwei getrennten Datenbanken - zu einer einzigen,
+    nach Datum sortierten Liste einheitlich aufgebauter dicts, damit das
+    Template nicht zwischen zwei Zeilen-Formen unterscheiden muss."""
+    sales = []
+    for license_row in db.get_all_customer_licenses():
+        product = PRODUCTS.get(license_row["product_id"])
+        sales.append(
+            {
+                "type": "digital",
+                "product_name": product["name"] if product else license_row["product_id"],
+                "email": license_row["email"],
+                "date": license_row["issued_at"],
+                "detail": f"Hardware-ID: {license_row['hardware_id']}",
+                "payment_provider": license_row["payment_provider"],
+                "payment_reference": license_row["payment_reference"],
+            }
+        )
+    for order_row in orders_db.get_all_orders():
+        product = PRODUCTS.get(order_row["product_id"])
+        versandstatus = (
+            f"verschickt am {order_row['shipped_at'][:10]}" if order_row["shipped_at"] else "noch nicht verschickt"
+        )
+        sales.append(
+            {
+                "type": "physical",
+                "product_name": product["name"] if product else order_row["product_id"],
+                "email": order_row["email"],
+                "date": order_row["ordered_at"],
+                "detail": (
+                    f"{order_row['full_name']}, {order_row['street_address']}, "
+                    f"{order_row['postal_code']} {order_row['city']}, {order_row['country']} - {versandstatus}"
+                ),
+                "payment_provider": order_row["payment_provider"],
+                "payment_reference": order_row["payment_reference"],
+            }
+        )
+    sales.sort(key=lambda entry: entry["date"], reverse=True)
+    return sales
+
+
+@app.route("/admin/ship/<int:order_id>", methods=["POST"])
+@admin_required
+def admin_mark_shipped(order_id):
+    """Markiert eine Hardware-Bestellung als verschickt und kehrt zum
+    Admin-Dashboard zurück (Tab "Offene Bestellungen")."""
+    orders_db.mark_order_shipped(order_id)
+    return redirect(url_for("admin_dashboard", _anchor="unshipped"))
 
 
 if __name__ == "__main__":

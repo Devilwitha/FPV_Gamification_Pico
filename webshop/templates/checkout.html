@@ -3,7 +3,7 @@
 {% block title %}Webshop – Checkout{% endblock %}
 
 {% block head %}
-  <script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=EUR"></script>
+  <script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency={{ product.currency.upper() }}"></script>
 {% endblock %}
 
 {% block content %}

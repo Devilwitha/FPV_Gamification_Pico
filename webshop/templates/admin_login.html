@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Admin – Login{% endblock %}
+
+{% block content %}
+  <section class="admin-page">
+    <h1>Admin-Login</h1>
+    <p class="license-intro">Interner Bereich - Zugangsdaten kommen aus der Server-Konfiguration.</p>
+
+    <div class="login-card">
+      {% if error %}
+        <div class="checkout-error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('admin_login') }}">
+        <div class="form-field">
+          <label for="admin-username">Benutzername</label>
+          <input
+            type="text"
+            id="admin-username"
+            name="username"
+            autocomplete="username"
+            required
+          />
+        </div>
+        <div class="form-field">
+          <label for="admin-password">Passwort</label>
+          <input
+            type="password"
+            id="admin-password"
+            name="password"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-large">Einloggen</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

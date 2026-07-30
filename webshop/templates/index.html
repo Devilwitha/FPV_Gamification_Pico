@@ -85,6 +85,224 @@
     </div>
   </section>
 
+  <section class="screenshots">
+    <h2>Ein Blick in die Live-Web-App</h2>
+    <p class="screenshots-intro">
+      Kein App-Store, keine Installation: Sobald dein Smartphone mit dem
+      eigenen WLAN-Hotspot des Pico verbunden ist, läuft die komplette
+      Oberfläche direkt im Browser – hier ein paar echte Screenshots vom
+      Gerät.
+    </p>
+
+    <div class="screenshot-carousel" id="screenshotCarousel">
+      <div class="screenshot-viewport">
+        <div class="screenshot-track" id="screenshotTrack">
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/home-with-score.png') }}"
+                 alt="Startseite mit Highscore 1550 und Liste erkannter Tricks" loading="lazy" />
+            <figcaption>
+              <h3>Live-Score &amp; Trick-Log</h3>
+              <p>
+                Erkannte Manöver wie „CW Flat Spin 720“ oder „Forward Double
+                Flip“ inklusive Zeitstempel und Punktevergabe – in Echtzeit
+                direkt aus dem Gyro-Datenstrom.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/home.png') }}"
+                 alt="Startseite Test Arcade mit Highscore und Trick-Tuning-Profil" loading="lazy" />
+            <figcaption>
+              <h3>Die Startseite: Test Arcade</h3>
+              <p>
+                Highscore, aktives Trick-Tuning-Profil und Schnellzugriff auf
+                alle Mini-Games und Modi – direkt nach dem Verbinden mit dem
+                Hotspot.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/gamemodes.png') }}"
+                 alt="Übersicht der Game Modes King of the Hill und Race Modus" loading="lazy" />
+            <figcaption>
+              <h3>Game Modes im Überblick</h3>
+              <p>
+                King of the Hill und Race-Modus mit Live-Status, Bestenliste
+                und Rundenzeiten auf einen Blick.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/kingofthehill-set.png') }}"
+                 alt="Einstellungsseite für den King-of-the-Hill-Modus" loading="lazy" />
+            <figcaption>
+              <h3>King of the Hill einrichten</h3>
+              <p>
+                Rolle, Rundendauer, Näheschwelle (RSSI) und Punkte pro
+                Sekunde individuell festlegen.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/race-set.png') }}"
+                 alt="Einstellungsseite für den Race-Modus mit Live-Status" loading="lazy" />
+            <figcaption>
+              <h3>Race-Modus: Zeitmessung per BLE</h3>
+              <p>
+                Zwei Picos als Tor A/B, ein dritter misst automatisch die
+                Rundenzeiten – Best- und Gesamtzeit immer live im Blick.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/infection.png') }}"
+                 alt="Radaransicht des Infection-Modus mit Signalstärke" loading="lazy" />
+            <figcaption>
+              <h3>Infection-Modus: Radar-Ansicht</h3>
+              <p>
+                Signalstärke zum Infizierten, letzter Kontakt und
+                Rollenwechsel live per Bluetooth-LE – ganz ohne GPS.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/infection-set.png') }}"
+                 alt="Einstellungsseite für den Infection-Modus" loading="lazy" />
+            <figcaption>
+              <h3>Infection-Modus konfigurieren</h3>
+              <p>
+                Startrolle, Spielmodus (z. B. Bomben-Modus) und
+                Näheschwelle direkt im Admin-Bereich einstellen.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/challenges.png') }}"
+                 alt="Live-Ansicht der Challenges Touch & Go, Altitude-Hold und Eco-Challenge" loading="lazy" />
+            <figcaption>
+              <h3>Mini-Games in Echtzeit</h3>
+              <p>
+                Touch &amp; Go, Altitude-Hold/Limbo und Eco-Challenge – alle
+                Werte kommen live aus dem Telemetrie-Stream.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/challenges-set.png') }}"
+                 alt="Steuerungsseite für die Challenges im Admin-Bereich" loading="lazy" />
+            <figcaption>
+              <h3>Challenges steuern</h3>
+              <p>
+                Versuche starten oder abbrechen und Höhe, Toleranz sowie
+                weitere Parameter je Challenge einstellen.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/dashboard.png') }}"
+                 alt="Admin-Dashboard mit Status und Statistik zu allen Spielmodi" loading="lazy" />
+            <figcaption>
+              <h3>Admin-Dashboard</h3>
+              <p>
+                Score, Highscore, freier Speicher und Statistik zu allen
+                Spielmodi zentral auf einer Seite.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/profiles-set.png') }}"
+                 alt="Verwaltung der Trick-Tuning-Profile" loading="lazy" />
+            <figcaption>
+              <h3>Trick-Tuning-Profile</h3>
+              <p>
+                Vordefinierte Profile wie „Aggressive“, „Freestyle“ oder
+                „Beginner“ laden, anpassen oder eigene erstellen.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/sim-set.png') }}"
+                 alt="Trick-Simulation ohne Drohne mit Roll-, Flip- und Spin-Buttons" loading="lazy" />
+            <figcaption>
+              <h3>Trick-Simulation ohne Drohne</h3>
+              <p>
+                Roll, Flip und Spin am Schreibtisch testen und die
+                Trick-Erkennung ganz ohne Flug ausprobieren.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/updates.png') }}"
+                 alt="OTA-Update-Seite mit GitHub-Suche" loading="lazy" />
+            <figcaption>
+              <h3>OTA-Update direkt von GitHub</h3>
+              <p>
+                Sucht automatisch nach der neuesten Firmware auf GitHub und
+                installiert sie kabellos über das hinterlegte WLAN.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/system-set.png') }}"
+                 alt="Systemseite mit Firmware-Version, Geräte-ID und Lizenzstatus" loading="lazy" />
+            <figcaption>
+              <h3>System-Status auf einen Blick</h3>
+              <p>
+                Firmware-Version, Geräte-ID, Speicherbelegung und
+                Lizenzstatus – alles zentral einsehbar.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/fpv-ausweis-set.png') }}"
+                 alt="Upload-Seite für den FPV-Ausweis als Notfall-Kopie" loading="lazy" />
+            <figcaption>
+              <h3>FPV-Ausweis als Notfall-Kopie</h3>
+              <p>
+                Eine Kopie deines Drohnenausweises direkt auf dem Pico
+                hinterlegen – griffbereit für die Kontrolle vor Ort.
+              </p>
+            </figcaption>
+          </figure>
+
+          <figure class="screenshot-slide">
+            <img src="{{ url_for('static', filename='bilder/screenshots/credits.png') }}"
+                 alt="Credits-Seite mit Versionsstand und Links zu GitHub" loading="lazy" />
+            <figcaption>
+              <h3>Über die Firmware</h3>
+              <p>
+                Versionsstand, Entwickler-Credits und direkte Links zu
+                GitHub, Issues und Releases.
+              </p>
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <button class="screenshot-nav screenshot-prev" type="button" aria-label="Vorheriger Screenshot">&#10094;</button>
+      <button class="screenshot-nav screenshot-next" type="button" aria-label="Nächster Screenshot">&#10095;</button>
+
+      <p class="screenshot-counter">
+        <span id="screenshotCounterCurrent">1</span> / <span id="screenshotCounterTotal">16</span>
+      </p>
+      <div class="screenshot-dots" id="screenshotDots"></div>
+    </div>
+  </section>
+
   <section class="wiring">
     <h2>In drei Kabeln startklar</h2>
     <p class="wiring-intro">
@@ -110,4 +328,111 @@
     </p>
     <a class="btn btn-primary btn-large" href="{{ url_for('shop') }}">Zum Shop</a>
   </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (function () {
+      var track = document.getElementById("screenshotTrack");
+      if (!track) {
+        return;
+      }
+
+      var carousel = document.getElementById("screenshotCarousel");
+      var dotsContainer = document.getElementById("screenshotDots");
+      var counterCurrent = document.getElementById("screenshotCounterCurrent");
+      var prevButton = carousel.querySelector(".screenshot-prev");
+      var nextButton = carousel.querySelector(".screenshot-next");
+      var slides = track.querySelectorAll(".screenshot-slide");
+      var total = slides.length;
+      var currentIndex = 0;
+      var autoplayTimer = null;
+      var autoplayDelayMs = 4500;
+
+      slides.forEach(function (_slide, slideIndex) {
+        var dot = document.createElement("button");
+        dot.type = "button";
+        dot.className = "screenshot-dot";
+        dot.setAttribute("aria-label", "Screenshot " + (slideIndex + 1) + " von " + total + " anzeigen");
+        dot.addEventListener("click", function () {
+          goToSlide(slideIndex);
+          restartAutoplay();
+        });
+        dotsContainer.appendChild(dot);
+      });
+      var dots = dotsContainer.querySelectorAll(".screenshot-dot");
+
+      function render() {
+        track.style.transform = "translateX(-" + currentIndex * 100 + "%)";
+        counterCurrent.textContent = String(currentIndex + 1);
+        dots.forEach(function (dot, dotIndex) {
+          dot.classList.toggle("active", dotIndex === currentIndex);
+        });
+      }
+
+      function goToSlide(targetIndex) {
+        currentIndex = (targetIndex + total) % total;
+        render();
+      }
+
+      function showNext() {
+        goToSlide(currentIndex + 1);
+      }
+
+      function showPrevious() {
+        goToSlide(currentIndex - 1);
+      }
+
+      function startAutoplay() {
+        autoplayTimer = window.setInterval(showNext, autoplayDelayMs);
+      }
+
+      function stopAutoplay() {
+        if (autoplayTimer) {
+          window.clearInterval(autoplayTimer);
+          autoplayTimer = null;
+        }
+      }
+
+      function restartAutoplay() {
+        stopAutoplay();
+        startAutoplay();
+      }
+
+      prevButton.addEventListener("click", function () {
+        showPrevious();
+        restartAutoplay();
+      });
+      nextButton.addEventListener("click", function () {
+        showNext();
+        restartAutoplay();
+      });
+
+      carousel.addEventListener("mouseenter", stopAutoplay);
+      carousel.addEventListener("mouseleave", startAutoplay);
+
+      var touchStartX = null;
+      track.addEventListener("pointerdown", function (event) {
+        touchStartX = event.clientX;
+        stopAutoplay();
+      });
+      track.addEventListener("pointerup", function (event) {
+        if (touchStartX === null) {
+          return;
+        }
+        var deltaX = event.clientX - touchStartX;
+        var swipeThresholdPx = 40;
+        if (deltaX <= -swipeThresholdPx) {
+          showNext();
+        } else if (deltaX >= swipeThresholdPx) {
+          showPrevious();
+        }
+        touchStartX = null;
+        restartAutoplay();
+      });
+
+      render();
+      startAutoplay();
+    })();
+  </script>
 {% endblock %}

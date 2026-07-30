@@ -1,4 +1,5 @@
 import asyncio
+import binascii
 import gc
 import json
 import machine
@@ -404,6 +405,11 @@ async def handle_misc_routes(
         except OSError:
             boot_present = False
 
+        try:
+            hardware_id = binascii.hexlify(machine.unique_id()).decode('utf-8')
+        except Exception:
+            hardware_id = ""
+
         info_data = {
             "mem_free": mem_free,
             "mem_alloc": mem_alloc,
@@ -428,6 +434,7 @@ async def handle_misc_routes(
             "license_status": deps.get("license_status", "MISSING"),
             "main_present": main_present,
             "boot_present": boot_present,
+            "hardware_id": hardware_id,
         }
         response_data = json.dumps(info_data).encode('utf-8')
         writer.write(b'HTTP/1.1 200 OK\r\n')

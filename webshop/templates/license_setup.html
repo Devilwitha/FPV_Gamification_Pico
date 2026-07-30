@@ -16,8 +16,8 @@
     <div class="license-step license-downloads">
       <h2>Direkt-Downloads</h2>
       <p>
-        Falls du sie noch nicht hast: Installer und Firmware-Bundles gibt es direkt von
-        GitHub (jeweils die neueste Release-Version):
+        Falls du sie noch nicht hast: Installer und komplettes Firmware-Bundle gibt es
+        direkt von GitHub (jeweils die neueste Release-Version):
       </p>
       <ul class="license-download-list">
         <li>
@@ -30,22 +30,8 @@
         <li>
           <a
             class="btn btn-secondary"
-            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/firmware.nbo"
-            >Firmware-Bundle (firmware.nbo)</a
-          >
-        </li>
-        <li>
-          <a
-            class="btn btn-secondary"
-            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/firmware-recovery.nbo"
-            >Recovery-Bundle (firmware-recovery.nbo)</a
-          >
-        </li>
-        <li>
-          <a
-            class="btn btn-secondary"
-            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/emergency.nbo"
-            >Notfall-Bundle (emergency.nbo)</a
+            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/firmware-complete.nbo"
+            >Firmware-Bundle (firmware-complete.nbo)</a
           >
         </li>
       </ul>
@@ -72,15 +58,30 @@
     </div>
 
     <div class="license-step">
-      <h2>Schritt 2 – Hardware-ID mit Thonny auslesen</h2>
+      <h2>Schritt 2 – Hardware-ID auslesen</h2>
+
+      <div class="license-info-box">
+        <strong>Läuft auf deinem Pico schon die App-Firmware (Gamification-Menü im
+        Browser sichtbar)?</strong> Dann findest du die Hardware-ID direkt im
+        Geräte-Webinterface – ganz ohne Thonny:
+        <ol>
+          <li>
+            Verbinde dich mit dem WLAN-Hotspot deines Pico und öffne im Browser
+            <code>http://192.168.4.1</code>.
+          </li>
+          <li>
+            Öffne dort die Seite <strong>„System“</strong>. Im Abschnitt
+            <strong>„Info“</strong> steht die <strong>Geräte-ID (UID)</strong> – z. B.
+            <code>e6612483f5a2b12c</code>. Über den Knopf <strong>„Kopieren“</strong>
+            landet sie direkt in der Zwischenablage.
+          </li>
+        </ol>
+        Damit kannst du direkt zu Schritt 3 springen und die kopierte ID dort einfügen.
+      </div>
+
       <div class="license-warning">
-        <strong>Hinweis:</strong> Falls auf deinem Pico bereits eine Firmware
-        (<code>fw.nbo</code>) installiert ist, kann sich Thonny unter Umständen nicht
-        sauber verbinden. Öffne in diesem Fall zuerst im Geräte-Webinterface
-        (<code>http://192.168.4.1</code>) die Seite <strong>„System“</strong> und lösche dort
-        über die Notaus-Buttons die Dateien <code>boot.py</code> und <code>main.py</code>.
-        Danach startet der Pico wieder im reinen MicroPython-Modus und Thonny kann sich
-        verbinden.
+        <strong>Frischer Pico ohne installierte Firmware (nur reines MicroPython)?</strong>
+        Dann liest du die Hardware-ID stattdessen kurz mit Thonny aus:
       </div>
       <ol>
         <li>

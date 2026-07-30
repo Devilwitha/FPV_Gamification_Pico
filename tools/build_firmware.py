@@ -2106,8 +2106,13 @@ def launch_gui():
     def update_keys_status():
         if keys_exist():
             keys_status_var.set(f"Schluesselpaar vorhanden ({KEYS_DIR})")
+            # Button ausblenden, sobald ein Schluesselpaar existiert - verhindert
+            # versehentliches Ueberschreiben per Klick (macht sonst ALLE bisher
+            # ausgestellten Lizenzen ungueltig, siehe Warnung in on_generate_keys()).
+            generate_keys_button.pack_forget()
         else:
             keys_status_var.set("KEIN Schluesselpaar gefunden - zuerst erzeugen!")
+            generate_keys_button.pack(side="right")
 
     def on_generate_keys():
         if keys_exist():
@@ -2130,7 +2135,7 @@ def launch_gui():
     keys_frame = ttk.Frame(frame)
     keys_frame.pack(fill="x", pady=(0, 4))
     ttk.Label(keys_frame, textvariable=keys_status_var).pack(side="left")
-    ttk.Button(keys_frame, text="Schluesselpaar erzeugen", command=on_generate_keys).pack(side="right")
+    generate_keys_button = ttk.Button(keys_frame, text="Schluesselpaar erzeugen", command=on_generate_keys)
     update_keys_status()
 
     regenerate_license_var = tk.BooleanVar(value=True)

@@ -40,8 +40,11 @@ laeuft. Waehrend der eigentlichen Dateiuebertragung feedet der Entpack-Schritt
 zusaetzlich ueber das im Geraet laufende boot_runtime-Modul (siehe
 _build_unpack_script()), falls das Entpacken mehrerer Dateien laenger dauert.
 """
+import ctypes
+import glob
 import json
 import os
+import string
 import struct
 import sys
 import tempfile
@@ -88,6 +91,32 @@ ASSET_LABELS = {
     "lang.pak": "Sprachpaket",
 }
 DEFAULT_ASSET_PRIORITY = ("firmware.nbo", "firmware-light.nbo", "firmware-recovery.nbo", "emergency.nbo", "lang.pak")
+
+
+# ==================== Abbrechen laufender Aktionen ====================
+#
+# Alle laenger laufenden Funktionen (Port-Suche, Bootloader-Warteschleifen,
+# Datei-/UF2-Uebertragungen, Downloads) nehmen optional ein
+# threading.Event `cancel_event` entgegen und pruefen es an sicheren
+# Zwischenschritten (z.B. zwischen zwei Kandidaten-Ports, zwischen zwei
+# Dateien) via _check_cancelled(). Das GUI setzt dieses Event ueber den
+# globalen "Abbrechen"-Button (siehe InstallerApp._on_cancel()), damit der
+# Nutzer nicht auf eine lang laufende Suche warten muss, sondern sofort
+# etwas anderes tun kann (z.B. eine gerade laufende Pico-Suche abbrechen,
+# um stattdessen den Bootloader-Flash-Schritt zu starten). Laufende Datei-/
+# UF2-Uebertragungen werden bewusst NICHT mitten im Schreibvorgang
+# abgebrochen (siehe copy_uf2_to_drive()), nur zwischen abgeschlossenen
+# Schritten - ein halb geschriebenes UF2/Bundle waere unsicher.
+
+
+class OperationCancelled(Exception):
+    """Wird ausgeloest, wenn der Nutzer eine laufende Aktion ueber den
+    Abbrechen-Button im GUI abgebrochen hat."""
+
+
+def _check_cancelled(cancel_event):
+    if cancel_event is not None and cancel_event.is_set():
+        raise OperationCancelled()
 
 
 # ==================== Log/Downloads-Verzeichnis ====================
@@ -142,6 +171,23 @@ def connect_and_reset(port, timeout_overall=CONNECT_TIMEOUT):
     return transport
 
 
+def _connect_raw_repl_with_retry(port, timeout_overall=CONNECT_TIMEOUT, log=lambda *_a: None):
+    """connect_and_reset() mit einem Wiederholungsversuch. Unmittelbar nach
+    einem vorangegangenen machine.reset() (z.B. am Ende einer vorherigen
+    Raw-REPL-Sitzung auf demselben Port) braucht Windows kurz, um den
+    COM-Port nach der USB-Neuenumeration wieder freizugeben - ein sofortiger
+    zweiter Verbindungsversuch auf genau diesem Port kann dann kurzzeitig
+    mit einem Zugriffsfehler scheitern, obwohl der Port eine Sekunde spaeter
+    wieder verfuegbar ist. Bereits produktiv bewaehrtes Muster, hier fuer
+    alle Aufrufer zentralisiert."""
+    try:
+        return connect_and_reset(port, timeout_overall=timeout_overall)
+    except Exception:
+        log(f"Erster Verbindungsversuch zu {port} fehlgeschlagen, versuche erneut ...")
+        time.sleep(1.0)
+        return connect_and_reset(port, timeout_overall=timeout_overall)
+
+
 def _restart_and_close(transport, log=lambda *_a: None):
     """Setzt den Pico zurueck, damit main.py nach einer Raw-REPL-Sitzung
     wieder normal laeuft (siehe Modul-Docstring), und trennt danach die
@@ -191,7 +237,14 @@ def probe_pico_port(port, connect_timeout=CONNECT_TIMEOUT, log=None):
     Sekunden dauern - ein kuerzeres Timeout fuehrt zu FALSE NEGATIVES auf dem
     tatsaechlich angeschlossenen Pico, nicht nur zu einer schnelleren
     Ablehnung falscher Ports. Loggt (falls `log` uebergeben) den
-    tatsaechlichen Fehler, statt ihn stillschweigend zu verschlucken."""
+    tatsaechlichen Fehler, statt ihn stillschweigend zu verschlucken.
+
+    BEWUSST OHNE _connect_raw_repl_with_retry(): dies wird beim Scannen
+    ALLER Kandidaten-Ports aufgerufen, die meisten davon sind gar kein Pico
+    und schlagen legitim fehl - ein Retry mit 1s Wartezeit wuerde die
+    Scan-Zeit fuer jeden falschen Port verdoppeln, ohne einen Nutzen zu
+    bringen (der Retry lohnt sich nur, wenn ein bestimmter Port bereits als
+    Pico bekannt ist, siehe read_pico_uid()/upload_and_apply())."""
     transport = None
     entered_raw_repl = False
     found = False
@@ -215,7 +268,12 @@ def probe_pico_port(port, connect_timeout=CONNECT_TIMEOUT, log=None):
     return found
 
 
-def find_pico_port(log=lambda *_a: None):
+def find_pico_port(log=lambda *_a: None, cancel_event=None):
+    """cancel_event wird zwischen den Kandidaten-Ports geprueft (nicht
+    waehrend eines einzelnen Verbindungsversuchs, siehe Modul-Docstring zu
+    _check_cancelled()) - bei vielen COM-Ports auf dem System kann ein
+    voller Scan sonst mehrere x CONNECT_TIMEOUT Sekunden dauern, waehrend
+    derer die GUI komplett blockiert waere."""
     if SerialTransport is None:
         raise RuntimeError("Das Paket 'mpremote' ist nicht installiert.")
     ports = list_candidate_ports()
@@ -223,12 +281,86 @@ def find_pico_port(log=lambda *_a: None):
         log("Keine seriellen Ports gefunden.")
         return None
     for port in ports:
+        _check_cancelled(cancel_event)
         log(f"Pruefe {port} ...")
         if probe_pico_port(port, log=log):
             log(f"Pico gefunden auf {port} (startet kurz neu und ist danach wieder normal erreichbar).")
             return port
     log("Kein Pico gefunden.")
     return None
+
+
+def read_pico_uid(port, log=lambda *_a: None):
+    """Liest die eindeutige, fest im Chip einprogrammierte Hardware-ID
+    (machine.unique_id()) eines per USB-Seriell verbundenen, MicroPython
+    ausfuehrenden Pico aus und liefert sie als Hex-String zurueck. Nutzt
+    dieselbe Raw-REPL-Verbindung/Reset-Logik wie probe_pico_port()."""
+    transport = None
+    entered_raw_repl = False
+    try:
+        transport = _connect_raw_repl_with_retry(port, log=log)
+        entered_raw_repl = True
+        out = transport.exec(
+            "import machine, ubinascii\n"
+            "print(ubinascii.hexlify(machine.unique_id()).decode())\n"
+        )
+        return out.decode("utf-8", "replace").strip()
+    finally:
+        if entered_raw_repl:
+            _restart_and_close(transport, log=log)
+        elif transport is not None:
+            try:
+                transport.close()
+            except Exception:
+                pass
+
+
+def find_pico_port_and_uid(log=lambda *_a: None, cancel_event=None):
+    """Wie find_pico_port(), liest aber die UID in DERSELBEN Raw-REPL-
+    Sitzung mit aus. Vermeidet dadurch, dass die GUI nach einer Pico-Suche
+    (die den Pico am Ende bereits per machine.reset() neu startet) sofort
+    eine zweite, separate Verbindung fuer read_pico_uid() aufbaut - genau
+    das lief in der Praxis gegen die USB-Neuenumeration des COM-Ports und
+    schlug mit einem Zugriffsfehler fehl. Liefert (port, uid) oder
+    (None, None). BEWUSST OHNE _connect_raw_repl_with_retry() beim Scannen
+    (siehe probe_pico_port()); cancel_event wird wie bei find_pico_port()
+    zwischen den Kandidaten-Ports geprueft."""
+    if SerialTransport is None:
+        raise RuntimeError("Das Paket 'mpremote' ist nicht installiert.")
+    ports = list_candidate_ports()
+    if not ports:
+        log("Keine seriellen Ports gefunden.")
+        return None, None
+    for port in ports:
+        _check_cancelled(cancel_event)
+        log(f"Pruefe {port} ...")
+        transport = None
+        entered_raw_repl = False
+        try:
+            transport = connect_and_reset(port)
+            entered_raw_repl = True
+            out = transport.exec(
+                "import machine, ubinascii\n"
+                "print('PICO_OK')\n"
+                "print(ubinascii.hexlify(machine.unique_id()).decode())\n"
+            ).decode("utf-8", "replace")
+            lines = [line.strip() for line in out.splitlines() if line.strip()]
+            if len(lines) >= 2 and lines[0] == "PICO_OK":
+                log(f"Pico gefunden auf {port} (startet kurz neu und ist danach wieder normal erreichbar).")
+                return port, lines[1]
+        except Exception as e:
+            log(f"  {port}: kein Pico ({e})")
+        finally:
+            if transport is not None:
+                if entered_raw_repl:
+                    _restart_and_close(transport, log=log)
+                else:
+                    try:
+                        transport.close()
+                    except Exception:
+                        pass
+    log("Kein Pico gefunden.")
+    return None, None
 
 
 # ==================== Bundle-Format (FPVBNDL1) ====================
@@ -383,7 +515,7 @@ print("NEEDS_RESTART:" + ("1" if needs_restart else "0"))
 """
 
 
-def upload_and_apply(port, local_path, progress_cb=None, log=lambda *_a: None):
+def upload_and_apply(port, local_path, progress_cb=None, log=lambda *_a: None, cancel_event=None):
     """Ueberspielt local_path (.nbo/lang.pak) per USB-Seriell auf `port`
     (mit derselben mpremote-SerialTransport-Verbindung/Uebertragungsart wie
     tools/build_firmware.py's "cp"-Upload, siehe Transport.fs_writefile())
@@ -396,7 +528,12 @@ def upload_and_apply(port, local_path, progress_cb=None, log=lambda *_a: None):
     lang.pak-Update nicht) und unabhaengig davon, ob die Uebertragung am Ende
     erfolgreich war. Der finally-Block unten resettet daher IN JEDEM Fall,
     sobald wir die Raw-REPL erfolgreich betreten haben - siehe denselben
-    Ansatz in probe_pico_port()."""
+    Ansatz in probe_pico_port(). cancel_event wird nur VOR dem
+    Verbindungsaufbau geprueft (nicht mehr waehrend der eigentlichen
+    Uebertragung) - ein abgebrochener Bundle-Transfer waere zwar unkritisch
+    (siehe prep_code oben, das stehengebliebene Bundle-Dateien beim naechsten
+    Versuch aufraeumt), ein sauberer Abbruchpunkt VOR dem Reset der laufenden
+    Firmware ist aber die bessere Nutzererfahrung."""
     target = remote_target_for(local_path)
     names = read_bundle_entries(local_path)
     if not names:
@@ -408,18 +545,10 @@ def upload_and_apply(port, local_path, progress_cb=None, log=lambda *_a: None):
     transport = None
     entered_raw_repl = False
     try:
+        _check_cancelled(cancel_event)
         log(f"Verbinde mit {port} ...")
-        try:
-            transport = connect_and_reset(port)
-            entered_raw_repl = True
-        except Exception:
-            # Siehe Modul-Docstring: der Watchdog-/Soft-Reset-Handshake kann
-            # bei der busy asyncio-Firmware gelegentlich beim ersten Versuch
-            # scheitern - ein zweiter Versuch reicht danach meist.
-            log("Erster Verbindungsversuch fehlgeschlagen, versuche erneut ...")
-            time.sleep(1.0)
-            transport = connect_and_reset(port)
-            entered_raw_repl = True
+        transport = _connect_raw_repl_with_retry(port, log=log)
+        entered_raw_repl = True
 
         log(f"Bereite Uebertragung von {target} vor ...")
         prep_code = (
@@ -463,66 +592,6 @@ def upload_and_apply(port, local_path, progress_cb=None, log=lambda *_a: None):
                 pass
 
 
-LICENSE_FILENAME = "license.lic"
-PUBLIC_KEY_FILENAME = "public_key.pem"
-
-
-def find_paired_public_key(license_path):
-    """Sucht public_key.pem im selben Ordner wie eine ausgewaehlte
-    license.lic - der Webshop (siehe webshop/templates/license_setup.html)
-    laedt beide Dateien beim Kauf automatisch gemeinsam in denselben
-    Downloads-Ordner herunter, daher reicht in der Regel die Auswahl von
-    license.lic allein."""
-    candidate = os.path.join(os.path.dirname(license_path), PUBLIC_KEY_FILENAME)
-    return candidate if os.path.isfile(candidate) else None
-
-
-def install_license_files(port, license_path, public_key_path, log=lambda *_a: None):
-    """Ueberspielt eine vom Webshop bezogene license.lic + public_key.pem per
-    USB-Seriell auf `port` und legt beide unveraendert im Root-Dateisystem
-    des Pico ab (siehe source/license_verifier.py, das genau dort danach
-    sucht). Nutzt fs_writefile() direkt statt des Bundle-Formats aus
-    upload_and_apply() - fuer zwei kleine Dateien (insgesamt wenige KB) ist
-    weder ein Watchdog-Feed noch das FPVBNDL1-Bundle-Format noetig, siehe
-    auch probe_pico_port(), das aus demselben Grund ebenfalls ohne
-    Watchdog-Feed auskommt."""
-    with open(license_path, "rb") as f:
-        license_bytes = f.read()
-    with open(public_key_path, "rb") as f:
-        public_key_bytes = f.read()
-
-    transport = None
-    entered_raw_repl = False
-    try:
-        log(f"Verbinde mit {port} ...")
-        try:
-            transport = connect_and_reset(port)
-            entered_raw_repl = True
-        except Exception:
-            # Siehe upload_and_apply()/Modul-Docstring: der erste Verbindungs-
-            # versuch scheitert bei der busy asyncio-Firmware gelegentlich.
-            log("Erster Verbindungsversuch fehlgeschlagen, versuche erneut ...")
-            time.sleep(1.0)
-            transport = connect_and_reset(port)
-            entered_raw_repl = True
-
-        log(f"Uebertrage {LICENSE_FILENAME} ({len(license_bytes)} Bytes) ...")
-        transport.fs_writefile(LICENSE_FILENAME, license_bytes)
-        log(f"Uebertrage {PUBLIC_KEY_FILENAME} ({len(public_key_bytes)} Bytes) ...")
-        transport.fs_writefile(PUBLIC_KEY_FILENAME, public_key_bytes)
-        log("Lizenzdateien erfolgreich auf den Pico uebertragen.")
-        return True
-    finally:
-        if entered_raw_repl:
-            log("Starte Pico neu, damit die Firmware wieder normal laeuft ...")
-            _restart_and_close(transport, log=log)
-        elif transport is not None:
-            try:
-                transport.close()
-            except Exception:
-                pass
-
-
 # ==================== GitHub Releases ====================
 
 def fetch_latest_release():
@@ -547,23 +616,235 @@ def fetch_latest_release():
     return data.get("tag_name", "?"), assets
 
 
-def download_asset(url, dest_path, progress_cb=None, timeout=30):
+def download_asset(url, dest_path, progress_cb=None, timeout=30, cancel_event=None):
     req = request.Request(url, headers={"User-Agent": USER_AGENT})
     tmp_path = dest_path + ".part"
-    with request.urlopen(req, timeout=timeout) as resp:
-        total = int(resp.headers.get("Content-Length", 0) or 0)
-        received = 0
-        with open(tmp_path, "wb") as out:
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                out.write(chunk)
-                received += len(chunk)
-                if progress_cb and total:
-                    progress_cb(received, total)
+    try:
+        with request.urlopen(req, timeout=timeout) as resp:
+            total = int(resp.headers.get("Content-Length", 0) or 0)
+            received = 0
+            with open(tmp_path, "wb") as out:
+                while True:
+                    _check_cancelled(cancel_event)
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    received += len(chunk)
+                    if progress_cb and total:
+                        progress_cb(received, total)
+    except OperationCancelled:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
     os.replace(tmp_path, dest_path)
     return dest_path
+
+
+# ==================== Bootloader-Modus (BOOTSEL/UF2-Laufwerk) ====================
+#
+# Ein Pico, der beim Einstecken mit gedrueckter BOOTSEL-Taste startet (oder
+# noch nie eine Firmware hatte), meldet sich nicht ueber USB-Seriell, sondern
+# als gewoehnliches USB-Massenspeicher-Laufwerk mit einer INFO_UF2.TXT-Datei
+# im Root - darauf kopierte .uf2-Dateien werden vom eingebauten UF2-
+# Bootloader direkt in den Flash geschrieben (das ist derselbe Mechanismus
+# wie das manuelle Ziehen einer .uf2-Datei per Explorer auf das Laufwerk).
+# Dieser Abschnitt bildet genau diesen Ablauf programmatisch nach: Laufwerk
+# per INFO_UF2.TXT erkennen (inkl. Unterscheidung Pico 1/RP2040 vs.
+# Pico 2/RP2350), zuerst die passende *_nuke.uf2 kopieren (loescht den
+# kompletten Flash-Speicher und der Pico faellt danach automatisch wieder in
+# den Bootloader-Modus zurueck), dann warten bis das Laufwerk erneut
+# erscheint, und zuletzt die passende MicroPython-*.uf2 installieren.
+
+DRIVE_REMOVABLE = 2  # Windows GetDriveType()-Rueckgabewert
+BOOTSEL_POLL_INTERVAL = 1.0
+BOOTSEL_WAIT_TIMEOUT = 30  # Sekunden
+
+PICO_VARIANT_LABELS = {
+    "pico1": "Pico (RP2040)",
+    "pico2": "Pico 2 (RP2350)",
+}
+
+
+def get_picofw_dir():
+    """Pfad zum picofw/-Ordner mit den .uf2-Dateien - bei einer per
+    PyInstaller (--onefile) gebauten .exe liegen mitgepackte Daten zur
+    Laufzeit unter sys._MEIPASS (siehe build_exe.py's --add-data), beim
+    direkten Ausfuehren dieses Skripts liegt picofw/ zwei Ebenen ueber
+    windows/source/ im Projekt-Root."""
+    bundled_base = getattr(sys, "_MEIPASS", None)
+    if bundled_base:
+        return os.path.join(bundled_base, "picofw")
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.abspath(os.path.join(here, "..", "..", "picofw"))
+
+
+def get_nuke_uf2_path(variant):
+    name = "universal_flash_nuke.uf2" if variant == "pico2" else "flash_nuke.uf2"
+    path = os.path.join(get_picofw_dir(), name)
+    return path if os.path.isfile(path) else None
+
+
+def get_firmware_uf2_path(variant):
+    """Waehlt die neueste passende MicroPython-.uf2 im picofw/-Ordner aus
+    (Dateiname enthaelt das Datum, z.B. RPI_PICO_W-20260406-v1.28.0.uf2) -
+    per Praefix statt fest verdrahtetem Dateinamen, damit neuere Firmware-
+    Versionen im Ordner automatisch verwendet werden."""
+    prefix = "RPI_PICO2_W-" if variant == "pico2" else "RPI_PICO_W-"
+    candidates = sorted(glob.glob(os.path.join(get_picofw_dir(), prefix + "*.uf2")))
+    return candidates[-1] if candidates else None
+
+
+def _iter_removable_drive_roots():
+    if os.name != "nt":
+        return
+    bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+    for i, letter in enumerate(string.ascii_uppercase):
+        if not (bitmask & (1 << i)):
+            continue
+        root = f"{letter}:\\"
+        try:
+            drive_type = ctypes.windll.kernel32.GetDriveTypeW(root)
+        except Exception:
+            continue
+        if drive_type == DRIVE_REMOVABLE:
+            yield root
+
+
+def _detect_bootsel_variant(drive_root):
+    """Liest INFO_UF2.TXT (vom UF2-Bootloader selbst erzeugt, siehe
+    https://github.com/microsoft/uf2) und unterscheidet anhand des Inhalts
+    zwischen Pico 1 (RP2040, Board-ID 'RPI-RP2') und Pico 2 (RP2350,
+    Board-ID 'RP2350'). Gibt None zurueck, falls das Laufwerk kein
+    UF2-Bootloader-Laufwerk ist."""
+    info_path = os.path.join(drive_root, "INFO_UF2.TXT")
+    if not os.path.isfile(info_path):
+        return None
+    try:
+        with open(info_path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read().upper()
+    except Exception:
+        return None
+    if "RP2350" in content:
+        return "pico2"
+    if "RP2" in content:
+        return "pico1"
+    return None
+
+
+def find_bootsel_drive(log=lambda *_a: None):
+    """Sucht unter allen Wechseldatentraegern nach einem Pico im
+    Bootloader-Modus und liefert (Laufwerk-Root, Variante) oder None."""
+    for root in _iter_removable_drive_roots():
+        variant = _detect_bootsel_variant(root)
+        if variant:
+            log(f"Bootloader-Laufwerk gefunden: {root} ({PICO_VARIANT_LABELS[variant]})")
+            return root, variant
+    return None
+
+
+def wait_for_bootsel_drive(timeout=BOOTSEL_WAIT_TIMEOUT, log=lambda *_a: None, cancel_event=None):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        _check_cancelled(cancel_event)
+        found = find_bootsel_drive(log=log)
+        if found:
+            return found
+        time.sleep(BOOTSEL_POLL_INTERVAL)
+    return None
+
+
+def wait_for_drive_gone(drive_root, timeout=BOOTSEL_WAIT_TIMEOUT, cancel_event=None):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        _check_cancelled(cancel_event)
+        if not os.path.isdir(drive_root):
+            return True
+        time.sleep(0.5)
+    return not os.path.isdir(drive_root)
+
+
+def copy_uf2_to_drive(uf2_path, drive_root, progress_cb=None, log=lambda *_a: None):
+    """Kopiert eine .uf2-Datei auf das Bootloader-Laufwerk - entspricht dem
+    manuellen Ziehen der Datei per Explorer auf das RPI-RP2/RP2350-Laufwerk.
+    Sobald die Datei vollstaendig geschrieben ist, resettet der UF2-
+    Bootloader das Board von sich aus und das Laufwerk verschwindet; dabei
+    kann Windows den letzten Flush/Close als OSError melden, obwohl der
+    Flash-Vorgang bereits vollstaendig war - daher wird ein OSError nur dann
+    als echter Fehler behandelt, wenn tatsaechlich noch nicht alle Bytes
+    geschrieben wurden."""
+    dest = os.path.join(drive_root, os.path.basename(uf2_path))
+    size = os.path.getsize(uf2_path)
+    copied = 0
+    log(f"Kopiere {os.path.basename(uf2_path)} ({size} Bytes) nach {drive_root} ...")
+    try:
+        with open(uf2_path, "rb") as src, open(dest, "wb") as dst:
+            while True:
+                chunk = src.read(256 * 1024)
+                if not chunk:
+                    break
+                dst.write(chunk)
+                copied += len(chunk)
+                if progress_cb:
+                    progress_cb(copied, size)
+    except OSError as e:
+        if copied < size:
+            raise
+        log(f"Hinweis: Laufwerk wurde direkt nach dem Schreiben getrennt ({e}) - "
+            "das ist beim UF2-Bootloader normal, da das Board sofort neu startet.")
+
+
+def flash_bootsel_pico(progress_cb=None, log=lambda *_a: None, cancel_event=None):
+    """Kompletter Ablauf fuer einen im Bootloader-Modus angeschlossenen
+    Pico: Variante erkennen, Flash-Speicher komplett loeschen (nuke-UF2)
+    und danach die passende MicroPython-Firmware installieren. Liefert die
+    erkannte Variante ('pico1'/'pico2') zurueck.
+
+    cancel_event wird zwischen den einzelnen Schritten geprueft (vor jedem
+    Kopiervorgang und in den Wartescheifen), aber bewusst NICHT waehrend
+    eines laufenden copy_uf2_to_drive()-Aufrufs - ein mitten im Schreiben
+    abgebrochener UF2-Transfer koennte den Pico in einem undefinierten
+    Zustand zuruecklassen."""
+    log("Suche nach einem Pico im Bootloader-Modus (BOOTSEL) ...")
+    found = find_bootsel_drive(log=log)
+    if not found:
+        raise RuntimeError(
+            "Kein Pico im Bootloader-Modus gefunden. BOOTSEL-Taste gedrueckt "
+            "halten, waehrend das USB-Kabel eingesteckt (oder der Pico per "
+            "Reset-Taste neu gestartet) wird, und danach erneut versuchen."
+        )
+    drive_root, variant = found
+    label = PICO_VARIANT_LABELS[variant]
+
+    nuke_path = get_nuke_uf2_path(variant)
+    firmware_path = get_firmware_uf2_path(variant)
+    if not nuke_path:
+        raise RuntimeError(f"Nuke-UF2 fuer {label} nicht gefunden (picofw/-Ordner unvollstaendig).")
+    if not firmware_path:
+        raise RuntimeError(f"MicroPython-UF2 fuer {label} nicht gefunden (picofw/-Ordner unvollstaendig).")
+
+    _check_cancelled(cancel_event)
+    log(f"{label} im Bootloader-Modus gefunden auf {drive_root}. Loesche Flash-Speicher ...")
+    copy_uf2_to_drive(nuke_path, drive_root, progress_cb=progress_cb, log=log)
+
+    log("Warte, bis der Pico nach dem Loeschen wieder im Bootloader-Modus erscheint ...")
+    wait_for_drive_gone(drive_root, cancel_event=cancel_event)
+    reappeared = wait_for_bootsel_drive(log=log, cancel_event=cancel_event)
+    if not reappeared:
+        raise RuntimeError(
+            "Der Pico ist nach dem Loeschen nicht wieder im Bootloader-Modus "
+            "erschienen. Bitte USB-Kabel pruefen bzw. BOOTSEL-Taste erneut "
+            "gedrueckt halten und neu einstecken."
+        )
+    drive_root2, _variant2 = reappeared
+
+    _check_cancelled(cancel_event)
+    log(f"Installiere {os.path.basename(firmware_path)} auf {label} ...")
+    copy_uf2_to_drive(firmware_path, drive_root2, progress_cb=progress_cb, log=log)
+    log(f"{label}: MicroPython erfolgreich installiert. Der Pico startet automatisch neu.")
+    return variant
 
 
 # ==================== GUI ====================
@@ -616,8 +897,13 @@ class InstallerApp(tk.Tk):
 
         self.pico_port = None
         self.selected_file = None
-        self.license_path = None
-        self.public_key_path = None
+        # Wird von _set_busy() bei jeder neuen Aktion neu erzeugt/geklaert und
+        # von den Worker-Threads regelmaessig geprueft (siehe _check_cancelled()
+        # in gamification_installer.py) - erlaubt dem Nutzer, eine laufende,
+        # lang dauernde Aktion (z.B. Pico-Suche ueber viele COM-Ports) sofort
+        # abzubrechen, statt bis zum Ende warten zu muessen, um danach eine
+        # andere Aktion zu starten.
+        self._cancel_event = threading.Event()
 
         self._build_widgets()
 
@@ -625,6 +911,38 @@ class InstallerApp(tk.Tk):
 
     def _build_widgets(self):
         pad = {"padx": 12, "pady": 6}
+
+        top_bar = tk.Frame(self)
+        top_bar.pack(fill="x", padx=12, pady=(10, 0))
+        self.busy_status_var = tk.StringVar(value="Bereit - alle Aktionen sind verfuegbar.")
+        tk.Label(top_bar, textvariable=self.busy_status_var, anchor="w").pack(side="left", fill="x", expand=True)
+        self.cancel_button = tk.Button(top_bar, text="Laufende Aktion abbrechen", command=self._on_cancel, state="disabled")
+        self.cancel_button.pack(side="right")
+
+        step0 = tk.LabelFrame(self, text="0. Pico im Bootloader-Modus (BOOTSEL) komplett neu flashen", padx=10, pady=8)
+        step0.pack(fill="x", **pad)
+        tk.Label(
+            step0,
+            text=(
+                "Fuer einen Pico, der mit gedrueckter BOOTSEL-Taste eingesteckt wurde "
+                "und als USB-Laufwerk erscheint: loescht zuerst den kompletten "
+                "Flash-Speicher (passende nuke-UF2 fuer Pico 1/RP2040 bzw. "
+                "Pico 2/RP2350 wird automatisch erkannt) und installiert danach "
+                "automatisch die passende MicroPython-Firmware. "
+                "ACHTUNG: loescht alle vorhandenen Daten auf dem Pico!"
+            ),
+            anchor="w", wraplength=560, justify="left",
+        ).pack(fill="x", pady=(0, 6))
+        row0 = tk.Frame(step0)
+        row0.pack(fill="x")
+        self.bootsel_flash_button = tk.Button(
+            row0, text="Bootloader-Pico erkennen & komplett neu flashen", command=self._on_bootsel_flash
+        )
+        self.bootsel_flash_button.pack(side="left")
+        self.bootsel_progress = ttk.Progressbar(step0, orient="horizontal", mode="determinate", maximum=100)
+        self.bootsel_progress.pack(fill="x", pady=(8, 4))
+        self.bootsel_status_var = tk.StringVar(value="Bereit.")
+        tk.Label(step0, textvariable=self.bootsel_status_var, anchor="w").pack(fill="x")
 
         step1 = tk.LabelFrame(self, text="1. Pico verbinden", padx=10, pady=8)
         step1.pack(fill="x", **pad)
@@ -634,6 +952,23 @@ class InstallerApp(tk.Tk):
         tk.Label(row1, textvariable=self.pico_status_var, anchor="w").pack(side="left", fill="x", expand=True)
         self.find_button = tk.Button(row1, text="Pico suchen", command=self._on_find_pico)
         self.find_button.pack(side="right")
+        self.uid_button = tk.Button(row1, text="UID anzeigen", command=self._on_show_uid)
+        self.uid_button.pack(side="right", padx=(0, 8))
+
+        row1b = tk.Frame(step1)
+        row1b.pack(fill="x", pady=(4, 0))
+        self.uid_status_var = tk.StringVar(value="")
+        tk.Label(row1b, textvariable=self.uid_status_var, anchor="w").pack(side="left")
+        self.uid_value_var = tk.StringVar(value="")
+        # state="readonly" statt "disabled": readonly Entries lassen sich per
+        # Maus/Tastatur markieren und mit Strg+C kopieren, nur die Eingabe ist
+        # gesperrt - "disabled" wuerde auch das Markieren verhindern.
+        self.uid_entry = tk.Entry(row1b, textvariable=self.uid_value_var, width=20, justify="left", state="readonly")
+        self.uid_entry.pack(side="left", padx=(6, 6))
+        self.uid_entry.bind("<FocusIn>", lambda _e: self.uid_entry.select_range(0, "end"))
+        self.uid_entry.bind("<Button-1>", lambda _e: self.after(1, lambda: self.uid_entry.select_range(0, "end")))
+        self.uid_copy_button = tk.Button(row1b, text="Kopieren", command=self._on_copy_uid, state="disabled")
+        self.uid_copy_button.pack(side="left")
 
         step2 = tk.LabelFrame(self, text="2. Firmware-Datei waehlen", padx=10, pady=8)
         step2.pack(fill="x", **pad)
@@ -655,19 +990,6 @@ class InstallerApp(tk.Tk):
         self.status_var = tk.StringVar(value="Bereit.")
         tk.Label(step3, textvariable=self.status_var, anchor="w").pack(fill="x")
 
-        step4 = tk.LabelFrame(self, text="4. Lizenzdateien installieren (nach dem Kauf im Webshop)", padx=10, pady=8)
-        step4.pack(fill="x", **pad)
-        row4 = tk.Frame(step4)
-        row4.pack(fill="x")
-        self.license_browse_button = tk.Button(row4, text="license.lic auswaehlen...", command=self._on_browse_license)
-        self.license_browse_button.pack(side="left")
-        self.license_status_var = tk.StringVar(value="Keine Lizenzdateien ausgewaehlt.")
-        tk.Label(step4, textvariable=self.license_status_var, anchor="w", wraplength=560, justify="left").pack(fill="x", pady=(6, 6))
-        self.license_install_button = tk.Button(
-            step4, text="Lizenzdateien installieren", command=self._on_install_license, state="disabled"
-        )
-        self.license_install_button.pack(anchor="w")
-
         log_frame = tk.LabelFrame(self, text="Protokoll", padx=6, pady=6)
         log_frame.pack(fill="both", expand=True, **pad)
         self.log_text = tk.Text(log_frame, height=10, state="disabled", wrap="word")
@@ -688,20 +1010,29 @@ class InstallerApp(tk.Tk):
 
     def _set_busy(self, busy):
         state = "disabled" if busy else "normal"
+        self.bootsel_flash_button.config(state=state)
         self.find_button.config(state=state)
+        self.uid_button.config(state=state)
         self.browse_button.config(state=state)
         self.github_button.config(state=state)
-        self.license_browse_button.config(state=state)
         self.install_button.config(state="disabled" if busy else ("normal" if (self.pico_port and self.selected_file) else "disabled"))
-        self.license_install_button.config(
-            state="disabled" if busy else ("normal" if (self.pico_port and self.license_path and self.public_key_path) else "disabled")
-        )
+        if busy:
+            self._cancel_event.clear()
+            self.cancel_button.config(state="normal")
+        else:
+            self.cancel_button.config(state="disabled")
+            self.busy_status_var.set("Bereit - alle Aktionen sind verfuegbar.")
 
     def _update_install_button(self):
         self.install_button.config(state="normal" if (self.pico_port and self.selected_file) else "disabled")
-        self.license_install_button.config(
-            state="normal" if (self.pico_port and self.license_path and self.public_key_path) else "disabled"
-        )
+
+    # ---------- Abbrechen ----------
+
+    def _on_cancel(self):
+        self._cancel_event.set()
+        self.cancel_button.config(state="disabled")
+        self.busy_status_var.set("Breche ab ... (kann noch einen Moment dauern, laeuft im Hintergrund weiter bis zum naechsten sicheren Zwischenschritt)")
+        self.log("Abbruch angefordert.")
 
     # ---------- Pico suchen ----------
 
@@ -712,7 +1043,10 @@ class InstallerApp(tk.Tk):
 
     def _find_pico_worker(self):
         try:
-            port = find_pico_port(log=self.log)
+            port = find_pico_port(log=self.log, cancel_event=self._cancel_event)
+        except OperationCancelled:
+            port = None
+            self.log("Pico-Suche abgebrochen.")
         except Exception as e:
             port = None
             self.log(f"Fehler bei der Pico-Suche: {e}")
@@ -727,6 +1061,110 @@ class InstallerApp(tk.Tk):
             self._update_install_button()
 
         self.after(0, finish)
+
+    # ---------- UID anzeigen ----------
+
+    def _on_show_uid(self):
+        self._set_busy(True)
+        self.uid_status_var.set("Lese UID ...")
+        self.uid_value_var.set("")
+        self.uid_copy_button.config(state="disabled")
+        threading.Thread(target=self._show_uid_worker, args=(self.pico_port,), daemon=True).start()
+
+    def _show_uid_worker(self, port):
+        try:
+            if port:
+                uid = read_pico_uid(port, log=self.log)
+            else:
+                port, uid = find_pico_port_and_uid(log=self.log, cancel_event=self._cancel_event)
+                if not port:
+                    raise RuntimeError("Kein Pico gefunden. Bitte USB-Kabel pruefen und erneut versuchen.")
+        except OperationCancelled:
+            self.log("UID-Suche abgebrochen.")
+            self.after(0, self._show_uid_cancelled)
+            return
+        except Exception as e:
+            self.log(f"Fehler beim Lesen der UID: {e}")
+            self.after(0, lambda: self._show_uid_failed(e))
+            return
+        self.after(0, lambda: self._show_uid_done(port, uid))
+
+    def _show_uid_cancelled(self):
+        self._set_busy(False)
+        self.uid_status_var.set("Abgebrochen.")
+
+    def _show_uid_failed(self, error):
+        self._set_busy(False)
+        self.uid_status_var.set("Fehler beim Lesen der UID.")
+        messagebox.showerror("UID konnte nicht gelesen werden", str(error))
+
+    def _show_uid_done(self, port, uid):
+        self.pico_port = port
+        self.pico_status_var.set(f"Verbunden: {port}")
+        self._set_busy(False)
+        self.uid_status_var.set("Pico-UID:")
+        self.uid_value_var.set(uid)
+        self.uid_copy_button.config(state="normal")
+        self._update_install_button()
+
+    def _on_copy_uid(self):
+        uid = self.uid_value_var.get()
+        if not uid:
+            return
+        self.clipboard_clear()
+        self.clipboard_append(uid)
+        self.uid_status_var.set("Pico-UID (in Zwischenablage kopiert):")
+
+    # ---------- Bootloader-Modus: nuke + MicroPython flashen ----------
+
+    def _on_bootsel_flash(self):
+        if not messagebox.askyesno(
+            "Kompletten Flash-Speicher loeschen?",
+            "Dies loescht ALLE Daten auf dem im Bootloader-Modus (BOOTSEL) "
+            "angeschlossenen Pico und installiert danach eine frische "
+            "MicroPython-Firmware. Fortfahren?",
+        ):
+            return
+        self._set_busy(True)
+        self.bootsel_progress["value"] = 0
+        self.bootsel_status_var.set("Suche Pico im Bootloader-Modus ...")
+        threading.Thread(target=self._bootsel_flash_worker, daemon=True).start()
+
+    def _bootsel_flash_worker(self):
+        def progress_cb(copied, total):
+            pct = int(copied * 100 / total) if total else 0
+            self.after(0, lambda: self.bootsel_progress.configure(value=pct))
+
+        try:
+            variant = flash_bootsel_pico(progress_cb=progress_cb, log=self.log, cancel_event=self._cancel_event)
+        except OperationCancelled:
+            self.log("Bootloader-Flash abgebrochen.")
+            self.after(0, self._bootsel_flash_cancelled)
+            return
+        except Exception as e:
+            self.log(f"Fehler beim Bootloader-Flash: {e}")
+            self.after(0, lambda: self._bootsel_flash_failed(e))
+            return
+        self.after(0, lambda: self._bootsel_flash_done(variant))
+
+    def _bootsel_flash_cancelled(self):
+        self._set_busy(False)
+        self.bootsel_progress["value"] = 0
+        self.bootsel_status_var.set("Abgebrochen.")
+
+    def _bootsel_flash_failed(self, error):
+        self._set_busy(False)
+        self.bootsel_status_var.set("Fehler beim Bootloader-Flash.")
+        messagebox.showerror("Bootloader-Flash fehlgeschlagen", str(error))
+
+    def _bootsel_flash_done(self, variant):
+        self._set_busy(False)
+        self.bootsel_progress["value"] = 100
+        label = PICO_VARIANT_LABELS[variant]
+        self.bootsel_status_var.set(f"{label}: MicroPython erfolgreich installiert.")
+        messagebox.showinfo(
+            "Fertig", f"{label} wurde geloescht und mit MicroPython neu geflasht. Der Pico startet automatisch neu."
+        )
 
     # ---------- Datei auswaehlen ----------
 
@@ -761,11 +1199,20 @@ class InstallerApp(tk.Tk):
 
     def _github_fetch_worker(self):
         try:
+            _check_cancelled(self._cancel_event)
             tag_name, assets = fetch_latest_release()
+        except OperationCancelled:
+            self.log("GitHub-Abfrage abgebrochen.")
+            self.after(0, self._github_fetch_cancelled)
+            return
         except Exception as e:
             self.after(0, lambda: self._github_fetch_failed(e))
             return
         self.after(0, lambda: self._github_fetch_done(tag_name, assets))
+
+    def _github_fetch_cancelled(self):
+        self._set_busy(False)
+        self.status_var.set("Bereit.")
 
     def _github_fetch_failed(self, error):
         self._set_busy(False)
@@ -797,12 +1244,21 @@ class InstallerApp(tk.Tk):
             self.after(0, lambda: self.progress.configure(value=pct))
 
         try:
-            download_asset(asset["url"], dest_path, progress_cb=progress_cb)
+            download_asset(asset["url"], dest_path, progress_cb=progress_cb, cancel_event=self._cancel_event)
             self.log(f"Heruntergeladen: {dest_path}")
+        except OperationCancelled:
+            self.log("Download abgebrochen.")
+            self.after(0, self._download_cancelled)
+            return
         except Exception as e:
             self.after(0, lambda: self._download_failed(e))
             return
         self.after(0, lambda: self._download_done(dest_path))
+
+    def _download_cancelled(self):
+        self._set_busy(False)
+        self.status_var.set("Bereit.")
+        self.progress["value"] = 0
 
     def _download_failed(self, error):
         self._set_busy(False)
@@ -849,12 +1305,21 @@ class InstallerApp(tk.Tk):
             self.after(0, lambda: self.progress.configure(value=pct))
 
         try:
-            upload_and_apply(port, path, progress_cb=progress_cb, log=self.log)
+            upload_and_apply(port, path, progress_cb=progress_cb, log=self.log, cancel_event=self._cancel_event)
+        except OperationCancelled:
+            self.log("Installation abgebrochen.")
+            self.after(0, self._install_cancelled)
+            return
         except Exception as e:
             self.log(f"Fehler bei der Installation: {e}")
             self.after(0, lambda: self._install_failed(e))
             return
         self.after(0, self._install_done)
+
+    def _install_cancelled(self):
+        self._set_busy(False)
+        self.progress["value"] = 0
+        self.status_var.set("Abgebrochen.")
 
     def _install_failed(self, error):
         self._set_busy(False)
@@ -870,78 +1335,6 @@ class InstallerApp(tk.Tk):
         # zuverlaessig moeglich, wenn main.py/recovery.py vollstaendig
         # hochgefahren ist - der Nutzer muss daher bei Bedarf manuell erneut
         # suchen, statt dass wir hier sofort automatisch weitersuchen.
-        self.pico_status_var.set(f"{self.pico_port} (Neustart laeuft - bei Bedarf 'Pico suchen' erneut klicken)")
-
-    # ---------- Lizenzdateien installieren ----------
-
-    def _on_browse_license(self):
-        path = filedialog.askopenfilename(
-            title="license.lic auswaehlen",
-            filetypes=[("Lizenzdatei", "*.lic"), ("Alle Dateien", "*.*")],
-        )
-        if not path:
-            return
-
-        public_key_path = find_paired_public_key(path)
-        if public_key_path is None:
-            messagebox.showinfo(
-                "public_key.pem fehlt",
-                f"Im selben Ordner wie {os.path.basename(path)} wurde keine "
-                f"{PUBLIC_KEY_FILENAME} gefunden. Bitte waehle sie jetzt zusaetzlich aus "
-                "(der Webshop laedt beide Dateien normalerweise gemeinsam in denselben "
-                "Downloads-Ordner herunter).",
-            )
-            public_key_path = filedialog.askopenfilename(
-                title="public_key.pem auswaehlen",
-                filetypes=[("Oeffentlicher Schluessel", "*.pem"), ("Alle Dateien", "*.*")],
-            )
-            if not public_key_path:
-                return
-
-        self.license_path = path
-        self.public_key_path = public_key_path
-        self.license_status_var.set(
-            f"license.lic: {path}\npublic_key.pem: {public_key_path}"
-        )
-        self.log(f"Lizenzdateien ausgewaehlt: {path} + {public_key_path}")
-        self._update_install_button()
-
-    def _on_install_license(self):
-        if not self.pico_port:
-            messagebox.showerror("Kein Pico", "Es wurde kein Pico gefunden. Bitte zuerst 'Pico suchen' verwenden.")
-            return
-        if not (self.license_path and self.public_key_path):
-            messagebox.showerror("Keine Lizenzdateien", "Bitte zuerst license.lic auswaehlen.")
-            return
-        if not messagebox.askyesno(
-            "Installation bestaetigen",
-            f"license.lic und public_key.pem jetzt auf {self.pico_port} installieren?\n\n"
-            "Das Geraet startet nach erfolgreicher Installation automatisch neu.",
-        ):
-            return
-
-        self._set_busy(True)
-        self.status_var.set("Lizenzdateien werden installiert ...")
-        threading.Thread(target=self._install_license_worker, daemon=True).start()
-
-    def _install_license_worker(self):
-        try:
-            install_license_files(self.pico_port, self.license_path, self.public_key_path, log=self.log)
-        except Exception as e:
-            self.log(f"Fehler bei der Lizenz-Installation: {e}")
-            self.after(0, lambda: self._install_license_failed(e))
-            return
-        self.after(0, self._install_license_done)
-
-    def _install_license_failed(self, error):
-        self._set_busy(False)
-        self.status_var.set("Fehler bei der Lizenz-Installation.")
-        messagebox.showerror("Installation fehlgeschlagen", str(error))
-
-    def _install_license_done(self):
-        self._set_busy(False)
-        self.status_var.set("Lizenzdateien erfolgreich installiert.")
-        messagebox.showinfo("Fertig", "license.lic und public_key.pem wurden installiert. Der Pico startet neu.")
         self.pico_status_var.set(f"{self.pico_port} (Neustart laeuft - bei Bedarf 'Pico suchen' erneut klicken)")
 
 

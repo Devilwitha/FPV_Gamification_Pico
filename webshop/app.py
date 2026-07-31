@@ -100,7 +100,7 @@ PRODUCTS = {
             "Freischaltung nach dem Kauf."
         ),
         "type": "digital",
-        "price_cents": 195,
+        "price_cents": 495,
         "currency": "chf",
         "image": "bilder/shop/lizenz/Gemini_Generated_Image_f7pr0tf7pr0tf7pr.png",
     },
@@ -114,6 +114,20 @@ PRODUCTS = {
         ),
         "type": "physical",
         "price_cents": 1995,
+        "currency": "chf",
+        "image": "bilder/shop/Hardware/Gemini_Generated_Image_8jui9u8jui9u8jui.png",
+    },
+    "gatehill-gratis": {
+        "id": "gatehill-gratis",
+        "name": "Gate/Hill Pico (kostenlos)",
+        "description": (
+            "Richte einen zusätzlichen Pico als stationären King-of-the-Hill-"
+            "Hügel bzw. als Race-Tor ein - komplett kostenlos, ohne Anmeldung "
+            "und ohne Lizenz nutzbar. Läuft mit derselben Firmware wie der "
+            "Gamification Pico, nur mit der Geräte-Rolle „Gate/Hill“."
+        ),
+        "type": "free",
+        "price_cents": 0,
         "currency": "chf",
         "image": "bilder/shop/Hardware/Gemini_Generated_Image_8jui9u8jui9u8jui.png",
     },
@@ -162,6 +176,21 @@ def index():
 def shop():
     """Shop-Übersicht mit allen verfügbaren Artikeln."""
     return render_template("shop.html", products=PRODUCTS.values())
+
+
+@app.route("/gatehill-install")
+def gatehill_install():
+    """Anleitungsseite für die kostenlose Einrichtung eines "Gate/Hill Pico"
+    (stationärer King-of-the-Hill-Hügel/Race-Tor, siehe source/role_setup.py
+    und source/main_gatehill.py) - öffentlich erreichbar ohne Kauf und ohne
+    Anmeldung (kein Bezug zu PRODUCTS/Checkout-Session nötig). Die Rolle
+    "Gate/Hill" sperrt laut Spezifikation (siehe main_gatehill.py) keinerlei
+    Funktionen ohne Lizenz, daher zeigt diese Seite denselben Installer-
+    Workflow wie nach einem Lizenzkauf (siehe /license-setup bzw.
+    _render_license_setup()), aber ohne den Lizenz-Schritt und ohne die
+    Hardware-ID-Anleitung - dafür mit dem zusätzlichen Schritt zur Auswahl
+    der Geräte-Rolle "Gate/Hill Pico" bei der Ersteinrichtung."""
+    return render_template("gatehill_install.html")
 
 
 @app.route("/checkout/<product_id>")

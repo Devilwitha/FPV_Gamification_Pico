@@ -16,12 +16,18 @@ import os
 import sys
 
 WINDOWS_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(WINDOWS_DIR)
 SOURCE_SCRIPT = os.path.join(WINDOWS_DIR, "source", "gamification_installer.py")
 DIST_DIR = os.path.join(WINDOWS_DIR, "dist")
 BUILD_DIR = os.path.join(WINDOWS_DIR, "build_tmp")
 SPEC_DIR = os.path.join(WINDOWS_DIR, "spec_tmp")
 APP_NAME = "Gamification Installer"
 ICON_PATH = os.path.join(WINDOWS_DIR, "icon.ico")
+# picofw/ enthaelt die UF2-Dateien (MicroPython + Nuke) fuer den
+# Bootloader-Flash (siehe gamification_installer.py's flash_bootsel_pico())
+# - wird als Datenordner mit in die .exe gepackt, damit die Funktion auch
+# ohne Internetzugriff/separates Repo-Checkout funktioniert.
+PICOFW_DIR = os.path.join(PROJECT_ROOT, "picofw")
 
 
 def main():
@@ -49,6 +55,12 @@ def main():
     ]
     if os.path.isfile(ICON_PATH):
         args += ["--icon", ICON_PATH]
+
+    if os.path.isdir(PICOFW_DIR):
+        # Windows-Trennzeichen fuer --add-data ist ';' (SRC;ZIEL-IM-BUNDLE).
+        args += ["--add-data", f"{PICOFW_DIR};picofw"]
+    else:
+        print(f"WARNUNG: {PICOFW_DIR} nicht gefunden - Bootloader-Flash-Funktion wird in der .exe nicht funktionieren.")
 
     print(f"Baue '{APP_NAME}.exe' mit PyInstaller ...")
     PyInstaller.__main__.run(args)

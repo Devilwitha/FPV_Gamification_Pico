@@ -17,15 +17,29 @@
           <p class="product-type">
             {% if product.type == "digital" %}
               Digitales Produkt
-            {% else %}
+            {% elif product.type == "physical" %}
               Physisches Produkt
+            {% else %}
+              Kostenloser Download
             {% endif %}
           </p>
           <p class="product-description">{{ product.description }}</p>
-          <p class="product-price">{{ product.price_cents | format_price }}</p>
-          <a class="btn btn-primary" href="{{ url_for('checkout', product_id=product.id) }}">
-            Jetzt kaufen
-          </a>
+          <p class="product-price">
+            {% if product.type == "free" %}
+              Kostenlos
+            {% else %}
+              {{ product.price_cents | format_price }}
+            {% endif %}
+          </p>
+          {% if product.type == "free" %}
+            <a class="btn btn-primary" href="{{ url_for('gatehill_install') }}">
+              Kostenlos installieren
+            </a>
+          {% else %}
+            <a class="btn btn-primary" href="{{ url_for('checkout', product_id=product.id) }}">
+              Jetzt kaufen
+            </a>
+          {% endif %}
         </div>
       </article>
     {% endfor %}

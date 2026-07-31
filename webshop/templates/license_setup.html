@@ -140,30 +140,19 @@ print(binascii.hexlify(machine.unique_id()).decode())</pre>
         herunter: <code>license.lic</code> und <code>public_key.pem</code>. Beide landen im
         selben Downloads-Ordner - ein separater Download ist nicht nötig.
       </p>
-      <p>
-        Am einfachsten geht die Installation mit unserem
-        <strong>Gamification Installer</strong> (Windows-Installer, siehe Direkt-Download
-        oben) - kein Thonny nötig:
-      </p>
+      <p>Kopiere anschließend beide Dateien mit Thonny auf den Pico:</p>
       <ol>
-        <li>Pico per USB anschließen und im Installer im Abschnitt „1. Pico verbinden“ auf <strong>„Pico suchen“</strong> klicken.</li>
         <li>
-          Im Abschnitt <strong>„4. Lizenzdateien installieren“</strong> auf
-          <strong>„license.lic auswählen...“</strong> klicken und die gerade heruntergeladene
-          <code>license.lic</code> aus deinem Downloads-Ordner wählen. <code>public_key.pem</code>
-          wird automatisch im selben Ordner gefunden.
+          Verbinde Thonny mit dem Pico (siehe Schritt 2) und öffne die
+          Dateien-Ansicht.
         </li>
         <li>
-          Auf <strong>„Lizenzdateien installieren“</strong> klicken. Der Pico startet danach
-          automatisch neu und ist einsatzbereit.
+          Ziehe <code>license.lic</code> und <code>public_key.pem</code> aus deinem
+          Downloads-Ordner per Drag &amp; Drop auf die oberste Ebene des
+          Pico-Dateisystems (gleiche Ebene wie <code>main.py</code>).
         </li>
+        <li>Starte den Pico danach neu - er ist damit einsatzbereit.</li>
       </ol>
-      <div class="license-info-box">
-        Alternativ geht es auch manuell über Thonny (Dateien-Ansicht → beide Dateien per
-        Drag &amp; Drop auf die oberste Ebene des Pico-Dateisystems ziehen, gleiche Ebene wie
-        <code>main.py</code>, danach Pico neu starten) - für die meisten reicht aber der
-        Installer aus Schritt oben.
-      </div>
     </div>
   </section>
 {% endblock %}

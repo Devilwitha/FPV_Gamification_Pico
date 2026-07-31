@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Webshop – Gate/Hill Pico kostenlos einrichten{% endblock %}
+
+{% block content %}
+  <section class="license-setup-page">
+    <div class="status-icon">&#10003;</div>
+    <h1>Fast geschafft – jetzt deinen Gate/Hill Pico einrichten</h1>
+    <p class="license-intro">
+      Du hast dich für den <strong>kostenlosen Gate/Hill Pico</strong> entschieden – ganz
+      ohne Anmeldung und ohne Kauf. Ein Gate/Hill Pico bleibt stationär stehen und dient
+      anderen Piloten als King-of-the-Hill-Hügel oder als Race-Tor. Er läuft mit derselben
+      Firmware wie der (kostenpflichtige) Gamification Pico, sperrt dabei aber laut
+      Spezifikation keinerlei Funktionen ohne Lizenz – du brauchst also keine Lizenzdatei.
+    </p>
+
+    <div class="license-step license-downloads">
+      <h2>Direkt-Downloads</h2>
+      <p>
+        Installer und komplettes Firmware-Bundle gibt es direkt von GitHub (jeweils die
+        neueste Release-Version):
+      </p>
+      <ul class="license-download-list">
+        <li>
+          <a
+            class="btn btn-secondary"
+            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/Gamification.Installer.exe"
+            >Windows-Installer (.exe)</a
+          >
+        </li>
+        <li>
+          <a
+            class="btn btn-secondary"
+            href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/firmware-complete.nbo"
+            >Firmware-Bundle (firmware-complete.nbo)</a
+          >
+        </li>
+      </ul>
+    </div>
+
+    <div class="license-step">
+      <h2>Schritt 1 – MicroPython auf dem Pico installieren</h2>
+      <ol>
+        <li>Starte den heruntergeladenen <strong>Gamification Installer</strong> auf deinem Windows-PC.</li>
+        <li>
+          Halte die <strong>BOOTSEL</strong>-Taste am Pico gedrückt und schließe ihn dabei
+          per USB-Kabel an deinen PC an. Lasse die Taste erst los, wenn der Pico als
+          Laufwerk erkannt wird.
+        </li>
+        <li>
+          Klicke im Installer im Abschnitt
+          <strong>„0. Pico im Bootloader-Modus (BOOTSEL) komplett neu flashen“</strong> auf
+          <strong>„Bootloader-Pico erkennen &amp; komplett neu flashen“</strong>. MicroPython
+          wird dabei automatisch installiert – ein manuelles Kopieren einer Datei ist nicht
+          nötig.
+        </li>
+      </ol>
+    </div>
+
+    <div class="license-step">
+      <h2>Schritt 2 – Firmware aufspielen</h2>
+      <ol>
+        <li>
+          Der Pico startet nach Schritt 1 automatisch neu und läuft danach mit MicroPython.
+          Lass ihn per USB angeschlossen.
+        </li>
+        <li>
+          Klicke im Installer im Abschnitt <strong>„1. Pico verbinden“</strong> auf
+          <strong>„Pico suchen“</strong>, damit sich der Installer mit dem Pico verbindet.
+        </li>
+        <li>
+          Wähle im Abschnitt <strong>„2. Firmware-Datei wählen“</strong> entweder über
+          <strong>„Datei auswählen...“</strong> die oben heruntergeladene
+          <code>firmware-complete.nbo</code>, oder klicke direkt auf
+          <strong>„Von GitHub herunterladen...“</strong> und wähle dort
+          <code>firmware-complete.nbo</code> aus der Liste – dort steht automatisch immer
+          die neueste Version zur Verfügung.
+        </li>
+        <li>
+          Klicke im Abschnitt <strong>„3. Installieren“</strong> auf
+          <strong>„Jetzt installieren“</strong>. Der Pico startet danach automatisch neu.
+        </li>
+      </ol>
+    </div>
+
+    <div class="license-step">
+      <h2>Schritt 3 – Rolle „Gate/Hill Pico“ auswählen</h2>
+      <p>
+        Ein frisch geflashter Pico kennt seine Rolle noch nicht und zeigt beim allerersten
+        Start automatisch eine Auswahlseite:
+      </p>
+      <ol>
+        <li>
+          Verbinde dich mit dem WLAN-Hotspot deines Pico und öffne im Browser
+          <code>http://192.168.4.1</code>.
+        </li>
+        <li>
+          Wähle dort <strong>nicht</strong> „🎮 Gamification Pico“, sondern
+          <strong>„⛳ Gate/Hill Pico“</strong> aus und bestätige.
+        </li>
+        <li>
+          Die Wahl wird dauerhaft gespeichert, der Pico startet automatisch neu und läuft
+          danach als King-of-the-Hill-Hügel bzw. Race-Tor. Diese Auswahlseite erscheint
+          danach nicht mehr.
+        </li>
+      </ol>
+      <div class="license-info-box">
+        Fertig! Dein Gate/Hill Pico ist jetzt einsatzbereit – ganz ohne Anmeldung, Kauf oder
+        Lizenz.
+      </div>
+    </div>
+
+    <p class="form-hint">
+      <a href="{{ url_for('shop') }}">Zurück zum Shop</a>
+    </p>
+  </section>
+{% endblock %}

@@ -4,5 +4,6 @@
   "code-runner.runInTerminal": true,
   "code-runner.executorMap": {
     "python": "& \"${workspaceFolder}\\.venv\\Scripts\\python.exe\" -u"
-  }
+  },
+  "python-envs.defaultEnvManager": "ms-python.python:system"
 }

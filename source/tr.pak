@@ -328,6 +328,9 @@
   "index.ok": "OK",
   "index.error": "Hata",
   "index.resetConfirm": "Rekor silinsin mi?",
+  "index.licenseThanksTitle": "Teşekkürler!",
+  "index.licenseThanksBody": "Ürünümüzü tercih ettiğiniz için teşekkür ederiz! Size harika uçuşlar ve başarılı hareketler dileriz.",
+  "index.licenseThanksButton": "Hadi başlayalım!",
 
   "profiles.pageTitle": "Admin - Profiller",
   "profiles.title": "&#127919; PROFILLER",

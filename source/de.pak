@@ -401,6 +401,9 @@
   "index.ok": "OK",
   "index.error": "Fehler",
   "index.resetConfirm": "Rekord loeschen?",
+  "index.licenseThanksTitle": "Vielen Dank!",
+  "index.licenseThanksBody": "Vielen Dank, dass du dich fuer unser Produkt entschieden hast! Wir wuenschen dir viele erfolgreiche Fluege und coole Tricks.",
+  "index.licenseThanksButton": "Los geht's!",
 
   "profiles.pageTitle": "Admin - Profile",
   "profiles.title": "&#127919; PROFILE",

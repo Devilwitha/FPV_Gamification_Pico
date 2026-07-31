@@ -328,6 +328,9 @@
   "index.ok": "OK",
   "index.error": "Error",
   "index.resetConfirm": "Borrar record?",
+  "index.licenseThanksTitle": "¡Muchas gracias!",
+  "index.licenseThanksBody": "¡Gracias por elegir nuestro producto! Te deseamos muchos vuelos increíbles y trucos geniales.",
+  "index.licenseThanksButton": "¡Vamos!",
 
   "profiles.pageTitle": "Admin - Perfiles",
   "profiles.title": "&#127919; PERFILES",

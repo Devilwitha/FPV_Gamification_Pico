@@ -72,6 +72,11 @@ _license_verifier_module = None
 # Geraet, das Zeitmessung/KOTH-Timing macht. Gate/Hill sperrt ohnehin nichts
 # anhand des Status - er dient hier nur der Anzeige.
 _LICENSE_STATUS = None
+# Blosse Existenz dieser Datei = Dankeschoen-Popup wurde vom Nutzer schon
+# einmal bestaetigt (siehe _get_license_thanks_pending()/_confirm_license_
+# thanks() sowie index_gatehill.html) - kein JSON-Settings-File noetig, da
+# main_gatehill.py (anders als main.py) bisher keines fuehrt.
+LICENSE_THANKS_FLAG_FILE = "license_thanks_shown.flag"
 
 
 def _get_license_verifier():
@@ -96,6 +101,25 @@ def _get_license_status():
     if _LICENSE_STATUS is None:
         _refresh_license_status()
     return _LICENSE_STATUS
+
+
+def _get_license_thanks_pending():
+    try:
+        os.stat(LICENSE_THANKS_FLAG_FILE)
+        shown = True
+    except OSError:
+        shown = False
+    return _get_license_status() == "VALID" and not shown
+
+
+def _confirm_license_thanks():
+    try:
+        with open(LICENSE_THANKS_FLAG_FILE, 'w') as f:
+            f.write('1')
+        return True
+    except Exception:
+        return False
+
 
 ota_total_chunks = 0
 ota_received_chunks = 0
@@ -466,9 +490,13 @@ async def handle_client(reader, writer):
                 "device_role": "gatehill",
                 "board_type": boot_runtime.detect_board_type() if boot_runtime else "Unbekannt",
                 "license_status": _get_license_status(),
+                "license_thanks_pending": _get_license_thanks_pending(),
                 "main_present": main_present,
                 "boot_present": boot_present,
             })
+
+        elif request_path == '/confirm-license-thanks':
+            _json_response(writer, '200 OK', {"ok": _confirm_license_thanks()})
 
         elif request_path == '/upload-chunk' and request_method == 'POST':
             chunk_index_str = '-1'

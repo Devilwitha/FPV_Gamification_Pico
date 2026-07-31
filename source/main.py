@@ -253,6 +253,12 @@ infection_task = None
 # duerfen auch einzelne .py/.html Dateien per OTA hochgeladen werden.
 DEVELOPER_MODE_ENABLED = False
 LANGUAGE_CODE = "de"
+# Wird beim ersten Erkennen einer gueltigen Lizenz einmalig auf True gesetzt,
+# sobald das Dankeschoen-Popup vom Nutzer bestaetigt wurde (siehe
+# _get_license_thanks_pending()/_confirm_license_thanks()). Persistiert in
+# fpv_system_settings.json, damit das Popup nach einem Neustart nicht erneut
+# erscheint.
+LICENSE_THANKS_SHOWN = False
 
 # ==================== OTA CHUNK STORAGE ====================
 # Als ein Dict statt vier einzelner Globals gehalten, damit es unveraendert
@@ -394,22 +400,25 @@ def save_trick_tuning_profile():
 
 
 def load_system_settings():
-    global DEVELOPER_MODE_ENABLED, LANGUAGE_CODE
+    global DEVELOPER_MODE_ENABLED, LANGUAGE_CODE, LICENSE_THANKS_SHOWN
     try:
         with open(SYSTEM_SETTINGS_FILE_PATH, 'r') as f:
             data = json.loads(f.read())
         DEVELOPER_MODE_ENABLED = bool(data.get("developer_mode", False))
         lang = str(data.get("language", "de")).strip().lower()
         LANGUAGE_CODE = lang or "de"
+        LICENSE_THANKS_SHOWN = bool(data.get("license_thanks_shown", False))
     except Exception:
         DEVELOPER_MODE_ENABLED = False
         LANGUAGE_CODE = "de"
+        LICENSE_THANKS_SHOWN = False
 
 
 def save_system_settings():
     payload = json.dumps({
         "developer_mode": DEVELOPER_MODE_ENABLED,
         "language": LANGUAGE_CODE,
+        "license_thanks_shown": LICENSE_THANKS_SHOWN,
     })
     try:
         tmp_path = SYSTEM_SETTINGS_FILE_PATH + ".tmp"
@@ -741,6 +750,22 @@ def _get_license_status():
     if _LICENSE_STATUS is None:
         _refresh_license_status()
     return _LICENSE_STATUS
+
+
+def _get_license_thanks_pending():
+    """True genau bis zur ersten Bestaetigung: sobald die Lizenz erstmals als
+    VALID erkannt wurde und der Nutzer das Dankeschoen-Popup noch nicht ueber
+    /confirm-license-thanks bestaetigt hat (siehe index.html)."""
+    return _get_license_status() == "VALID" and not LICENSE_THANKS_SHOWN
+
+
+def _confirm_license_thanks():
+    """Bestaetigt das Dankeschoen-Popup dauerhaft (persistiert in
+    fpv_system_settings.json), damit es nach dieser einen Bestaetigung nie
+    wieder erscheint."""
+    global LICENSE_THANKS_SHOWN
+    LICENSE_THANKS_SHOWN = True
+    return save_system_settings()
 
 
 # Wird ohne gueltige Lizenz weiterhin bedient - die System-Seite selbst und
@@ -1860,6 +1885,8 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "device_role": "gamification",
             "boot_runtime": boot_runtime,
             "license_status": _get_license_status(),
+            "license_thanks_pending": _get_license_thanks_pending(),
+            "confirm_license_thanks": _confirm_license_thanks,
         },
     )
 

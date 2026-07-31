@@ -353,6 +353,8 @@ async def handle_misc_routes(
     infection_status = deps.get("infection_status")
     trick_highscore_log_entries = deps["trick_highscore_log_entries"]
     boot_runtime = deps.get("boot_runtime")
+    license_thanks_pending = deps.get("license_thanks_pending", False)
+    confirm_license_thanks = deps.get("confirm_license_thanks")
 
     if request_path == '/admin-profiles':
         await send_html_file(writer, admin_profiles_html_path)
@@ -848,6 +850,7 @@ async def handle_misc_routes(
             "pending_highscore": pending_highscore["active"],
             "pending_highscore_score": pending_highscore["score"],
             "firmware_version": firmware_version,
+            "license_thanks_pending": license_thanks_pending,
         }
         if infection_status is not None:
             try:
@@ -987,6 +990,19 @@ async def handle_misc_routes(
 
     if request_path == '/confirm-highscore':
         await _send_confirm_highscore_response(writer, deps)
+        return True, trick_tuning_profile, developer_mode_enabled, language_code
+
+    if request_path == '/confirm-license-thanks':
+        if confirm_license_thanks:
+            confirm_license_thanks()
+        payload = json.dumps({"ok": True}).encode('utf-8')
+        writer.write(b'HTTP/1.1 200 OK\r\n')
+        writer.write(b'Content-Type: application/json\r\n')
+        writer.write(b'Cache-Control: no-store, no-cache, must-revalidate\r\n')
+        writer.write(b'Pragma: no-cache\r\n')
+        writer.write(b'Content-Length: ' + str(len(payload)).encode() + b'\r\n')
+        writer.write(b'Connection: close\r\n\r\n')
+        writer.write(payload)
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path == '/reset-highscore':

@@ -41,6 +41,12 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 .dot{width:9px;height:9px;border-radius:50%;background:#555;flex-shrink:0}
 .dot.on{background:var(--good);box-shadow:0 0 8px var(--good);animation:pulse 1.4s infinite}
 @keyframes pulse{0%{opacity:1}50%{opacity:.35}100%{opacity:1}}
+.modalbg{display:none;position:fixed;inset:0;background:rgba(4,6,10,.72);z-index:50;align-items:center;justify-content:center;padding:16px}
+.modalbg.show{display:flex}
+.modal{background:#141b25;border:2px solid var(--good);border-radius:8px;max-width:440px;width:100%;padding:20px;box-sizing:border-box}
+.modal h3{margin:0 0 10px;color:var(--good);font-size:1.1em}
+.modal .mbody{color:#c7d6e6;font-size:.9em;line-height:1.5;margin-bottom:16px}
+.modal .mbtns{display:flex;gap:8px;justify-content:flex-end}
 </style>
 </head>
 <body>
@@ -65,8 +71,16 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 <div class="btnrow"><button class="b" onclick="dl()" data-i18n="index.download">&#128229; Download</button><button class="b" onclick="dld()" data-i18n="index.debugLog">&#129514; Debug-Log</button></div>
 <div class="footer-row"><span class="ver" id="ver">v-.-.-</span><a class="admin" href="/admin" data-i18n="index.admin">&#9881;&#65039; Admin</a></div>
 </div>
+<div class="modalbg" id="licenseThanksModalBg">
+<div class="modal">
+<h3 data-i18n="index.licenseThanksTitle">Vielen Dank!</h3>
+<div class="mbody" data-i18n="index.licenseThanksBody">Vielen Dank, dass du dich fuer unser Produkt entschieden hast! Wir wuenschen dir viele erfolgreiche Fluege und coole Tricks.</div>
+<div class="mbtns"><button class="b" onclick="confirmLicenseThanks()" data-i18n="index.licenseThanksButton">Los geht's!</button></div>
+</div>
+</div>
 <script>
 let hsPromptOpen=false;
+let licenseThanksOpen=false;
 let I18N={strings:{}};
 function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
 function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const s=t(el.getAttribute('data-i18n'),'');if(s)el.innerHTML=s;});}
@@ -95,7 +109,17 @@ function handleHighscorePopup(d){
     }
   });
 }
-function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):t('index.noTricks','Keine Tricks');if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}document.getElementById("ver").innerText="v"+(d.firmware_version||"?");updateInfectionStatus(d.infection||{});handleHighscorePopup(d);}).catch(e=>0)}
+function handleLicenseThanksPopup(d){
+  if(licenseThanksOpen)return;
+  if(!d.license_thanks_pending)return;
+  licenseThanksOpen=true;
+  document.getElementById('licenseThanksModalBg').classList.add('show');
+}
+function confirmLicenseThanks(){
+  document.getElementById('licenseThanksModalBg').classList.remove('show');
+  fetch("/confirm-license-thanks",{cache:"no-store"}).catch(e=>0);
+}
+function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):t('index.noTricks','Keine Tricks');if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}document.getElementById("ver").innerText="v"+(d.firmware_version||"?");updateInfectionStatus(d.infection||{});handleHighscorePopup(d);handleLicenseThanksPopup(d);}).catch(e=>0)}
 function updateInfectionStatus(infection){
   const running=!!infection.running,role=infection.role||'seeker',dot=document.getElementById('infection_dot'),state=document.getElementById('infection_state'),text=document.getElementById('infection_text');
   dot.classList.toggle('on',running);

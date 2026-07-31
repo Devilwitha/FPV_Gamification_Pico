@@ -401,6 +401,9 @@
   "index.ok": "OK",
   "index.error": "Error",
   "index.resetConfirm": "Delete highscore?",
+  "index.licenseThanksTitle": "Thank You!",
+  "index.licenseThanksBody": "Thank you for choosing our product! We wish you many great flights and awesome tricks.",
+  "index.licenseThanksButton": "Let's go!",
 
   "profiles.pageTitle": "Admin - Profiles",
   "profiles.title": "&#127919; PROFILES",

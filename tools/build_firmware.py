@@ -1961,7 +1961,7 @@ def launch_gui():
 
     root = tk.Tk()
     root.title("FPV Gamification Pico - Firmware Bundle Builder")
-    root.geometry("980x660")
+    root.geometry("980x760")
     root.resizable(False, False)
 
     frame = ttk.Frame(root, padding=12)

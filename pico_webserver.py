@@ -54,6 +54,41 @@ AKTIONEN = {
 for _pin in AKTIONEN.values():
     _pin.value(0)
 
+# Zeitpunkt des Skriptstarts (fuer die Laufzeit-Anzeige) und die zuletzt
+# vergebene IP-Adresse (fuer die Info-Zeile im Web-UI)
+BOOT_ZEIT = time.time()
+AKTUELLE_IP = ""
+
+# Kurzer Verlauf der letzten Aktionen (manuell oder durch die Automatik
+# ausgeloest), neueste zuerst
+VERLAUF = []
+VERLAUF_MAX = 8
+
+
+def verlauf_eintragen(aktion, quelle):
+    VERLAUF.insert(0, {"aktion": aktion, "quelle": quelle, "zeit": time.time()})
+    del VERLAUF[VERLAUF_MAX:]
+
+
+def verlauf_abfragen():
+    jetzt = time.time()
+    return [
+        {
+            "aktion": eintrag["aktion"],
+            "quelle": eintrag["quelle"],
+            "vor_sek": max(0, int(jetzt - eintrag["zeit"])),
+        }
+        for eintrag in VERLAUF
+    ]
+
+
+def geraeteinfo():
+    return {
+        "ip": AKTUELLE_IP,
+        "hostname": GERAETENAME,
+        "uptime_sek": int(time.time() - BOOT_ZEIT),
+    }
+
 
 def lade_wlan_zugangsdaten():
     """Liest ssid/password aus wlan.conf falls vorhanden, sonst Konstanten oben."""
@@ -76,6 +111,7 @@ def hostname_setzen(name):
 
 
 def mit_wlan_verbinden(ssid, passwort, timeout=20):
+    global AKTUELLE_IP
     hostname_setzen(GERAETENAME)
 
     wlan = network.WLAN(network.STA_IF)
@@ -95,11 +131,12 @@ def mit_wlan_verbinden(ssid, passwort, timeout=20):
 
     LED.value(1)
     ip = wlan.ifconfig()[0]
+    AKTUELLE_IP = ip
     print("Mit WLAN verbunden, IP-Adresse:", ip, "- Hostname:", GERAETENAME)
     return wlan
 
 
-def aktion_ausfuehren(name):
+def aktion_ausfuehren(name, quelle="manuell"):
     """Kurzer Impuls fuer Aktionen wie 'stehen'/'sitzen'."""
     pin = AKTIONEN.get(name)
     if pin is None or name in HALTE_AKTIONEN:
@@ -107,6 +144,7 @@ def aktion_ausfuehren(name):
     pin.value(1)
     time.sleep(IMPULS_DAUER)
     pin.value(0)
+    verlauf_eintragen(name, quelle)
     return True
 
 
@@ -116,6 +154,7 @@ def aktion_start(name):
     if pin is None or name not in HALTE_AKTIONEN:
         return False
     pin.value(1)
+    verlauf_eintragen(name, "manuell")
     return True
 
 
@@ -183,7 +222,7 @@ def automatik_thread():
             dauer = automatik_sitzen_sek if automatik_phase == "sitzen" else automatik_stehen_sek
             if time.time() - automatik_phase_start >= dauer:
                 neue_phase = "stehen" if automatik_phase == "sitzen" else "sitzen"
-                aktion_ausfuehren(neue_phase)
+                aktion_ausfuehren(neue_phase, "automatik")
                 automatik_phase = neue_phase
                 automatik_phase_start = time.time()
         time.sleep(1)
@@ -202,10 +241,12 @@ SEITE_HTML = """<!DOCTYPE html>
 <style>
   :root {
     color-scheme: dark;
-    --bg-1: #0f172a;
+    --bg-1: #0b1120;
     --bg-2: #1e293b;
     --accent: #38bdf8;
     --accent-2: #a855f7;
+    --gruen: #4ade80;
+    --rot: #f87171;
     --card: rgba(255,255,255,0.06);
     --card-border: rgba(255,255,255,0.12);
     --text: #e2e8f0;
@@ -219,36 +260,96 @@ SEITE_HTML = """<!DOCTYPE html>
     align-items: center;
     justify-content: center;
     font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-    background: radial-gradient(circle at top, var(--bg-2), var(--bg-1) 70%);
     color: var(--text);
     padding: 24px;
+    background: var(--bg-1);
+    overflow-x: hidden;
+  }
+  body::before, body::after {
+    content: "";
+    position: fixed;
+    width: 60vmax;
+    height: 60vmax;
+    border-radius: 50%;
+    filter: blur(90px);
+    opacity: 0.28;
+    z-index: -1;
+    animation: schweben 16s ease-in-out infinite alternate;
+  }
+  body::before {
+    background: var(--accent);
+    top: -20vmax;
+    left: -20vmax;
+  }
+  body::after {
+    background: var(--accent-2);
+    bottom: -22vmax;
+    right: -18vmax;
+    animation-delay: -8s;
+  }
+  @keyframes schweben {
+    from { transform: translate(0, 0) scale(1); }
+    to { transform: translate(4vmax, 3vmax) scale(1.08); }
   }
   .karte {
+    position: relative;
     width: 100%;
     max-width: 420px;
     background: var(--card);
     border: 1px solid var(--card-border);
-    backdrop-filter: blur(16px);
-    border-radius: 24px;
-    padding: 32px 28px;
+    backdrop-filter: blur(20px);
+    border-radius: 26px;
+    padding: 30px 26px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.45);
   }
+  .kopf {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
   h1 {
-    margin: 0 0 4px;
-    font-size: 22px;
+    margin: 0;
+    font-size: 21px;
     text-align: center;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
+  }
+  .live-punkt {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .live-punkt.online {
+    background: var(--gruen);
+    box-shadow: 0 0 0 0 rgba(74,222,128,0.6);
+    animation: puls 2s ease-out infinite;
+  }
+  .live-punkt.offline { background: var(--rot); }
+  @keyframes puls {
+    0%   { box-shadow: 0 0 0 0 rgba(74,222,128,0.55); }
+    70%  { box-shadow: 0 0 0 8px rgba(74,222,128,0); }
+    100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+  }
+  .info-zeile {
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    margin-bottom: 22px;
+    letter-spacing: 0.2px;
   }
   .status {
     text-align: center;
     color: var(--text-dim);
     font-size: 13px;
-    margin-bottom: 28px;
+    margin-bottom: 20px;
     min-height: 18px;
     transition: color 0.2s ease;
   }
-  .status.ok { color: #4ade80; }
-  .status.fehler { color: #f87171; }
+  .status.ok { color: var(--gruen); }
+  .status.fehler { color: var(--rot); }
   .grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -296,15 +397,22 @@ SEITE_HTML = """<!DOCTYPE html>
     background: var(--card-border);
     margin: 26px 0 20px;
   }
-  .automatik-kopf {
+  .abschnitt-kopf {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 16px;
   }
-  .automatik-kopf span.titel {
+  .abschnitt-kopf .titel {
     font-weight: 600;
     font-size: 15px;
+  }
+  .abschnitt-kopf .zaehler {
+    font-size: 11px;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.06);
+    border-radius: 999px;
+    padding: 3px 9px;
   }
   .schalter {
     position: relative;
@@ -405,11 +513,65 @@ SEITE_HTML = """<!DOCTYPE html>
     color: var(--text-dim);
     margin-top: 4px;
   }
+  .verlauf-liste {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .verlauf-liste li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 4px;
+    border-bottom: 1px solid var(--card-border);
+    font-size: 13px;
+  }
+  .verlauf-liste li:last-child { border-bottom: none; }
+  .verlauf-icon {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+  .verlauf-text { flex: 1; }
+  .verlauf-badge {
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--accent-2);
+    background: rgba(168,85,247,0.14);
+    border-radius: 999px;
+    padding: 2px 7px;
+    margin-left: 6px;
+  }
+  .verlauf-zeit {
+    font-size: 11.5px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .verlauf-leer {
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    padding: 10px 0;
+  }
 </style>
 </head>
 <body>
   <div class="karte">
-    <h1>Pico Steuerung</h1>
+    <div class="kopf">
+      <span class="live-punkt" id="livePunkt"></span>
+      <h1>Pico Steuerung</h1>
+    </div>
+    <div class="info-zeile" id="infoZeile">Verbinde...</div>
     <div class="status" id="status">Bereit</div>
     <div class="grid">
       <button data-aktion="auf" data-modus="halten"><span class="icon">&#8593;</span>Auf</button>
@@ -420,7 +582,7 @@ SEITE_HTML = """<!DOCTYPE html>
 
     <div class="trenner"></div>
 
-    <div class="automatik-kopf">
+    <div class="abschnitt-kopf">
       <span class="titel">Automatik</span>
       <label class="schalter">
         <input type="checkbox" id="automatikToggle">
@@ -451,6 +613,15 @@ SEITE_HTML = """<!DOCTYPE html>
     </div>
 
     <div class="trenner"></div>
+
+    <div class="abschnitt-kopf">
+      <span class="titel">Verlauf</span>
+    </div>
+    <ul class="verlauf-liste" id="verlaufListe">
+      <li class="verlauf-leer">Noch keine Aktionen</li>
+    </ul>
+
+    <div class="trenner"></div>
     <footer>Raspberry Pi Pico W</footer>
   </div>
 
@@ -469,6 +640,7 @@ SEITE_HTML = """<!DOCTYPE html>
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       zeigeStatus(data.ok ? erfolgstext : ('Fehler bei "' + aktion + '"'), data.ok ? 'ok' : 'fehler');
+      if (data.ok) verlaufAbrufen();
     } catch (err) {
       zeigeStatus('Verbindungsfehler', 'fehler');
     }
@@ -594,6 +766,73 @@ SEITE_HTML = """<!DOCTYPE html>
     }
   });
 
+  // --- Info-Zeile (IP/Laufzeit) + Online-Anzeige ---
+  const infoZeile = document.getElementById('infoZeile');
+  const livePunkt = document.getElementById('livePunkt');
+
+  function formatDauer(sek) {
+    sek = Math.max(0, Math.floor(sek));
+    const h = Math.floor(sek / 3600);
+    const m = Math.floor((sek % 3600) / 60);
+    if (h > 0) return h + 'h ' + m + 'm';
+    if (m > 0) return m + 'm';
+    return sek + 's';
+  }
+
+  async function infoAbrufen() {
+    try {
+      const res = await fetch('/info');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      infoZeile.textContent = (data.ip || '?') + ' - Laufzeit ' + formatDauer(data.uptime_sek);
+      livePunkt.className = 'live-punkt online';
+    } catch (err) {
+      infoZeile.textContent = 'Keine Verbindung zum Pico';
+      livePunkt.className = 'live-punkt offline';
+    }
+  }
+
+  // --- Verlauf der letzten Aktionen ---
+  const verlaufListe = document.getElementById('verlaufListe');
+  const VERLAUF_ICON = { auf: '&#8593;', ab: '&#8595;', stehen: '&#128694;', sitzen: '&#128719;' };
+  const VERLAUF_LABEL = { auf: 'Auf', ab: 'Ab', stehen: 'Stehen', sitzen: 'Sitzen' };
+
+  function formatVor(sek) {
+    if (sek < 60) return 'vor ' + sek + 's';
+    const m = Math.floor(sek / 60);
+    if (m < 60) return 'vor ' + m + 'm';
+    return 'vor ' + Math.floor(m / 60) + 'h';
+  }
+
+  async function verlaufAbrufen() {
+    try {
+      const res = await fetch('/verlauf');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const eintraege = await res.json();
+      if (!eintraege.length) {
+        verlaufListe.innerHTML = '<li class="verlauf-leer">Noch keine Aktionen</li>';
+        return;
+      }
+      verlaufListe.innerHTML = eintraege.map(e => {
+        const icon = VERLAUF_ICON[e.aktion] || '&#8226;';
+        const label = VERLAUF_LABEL[e.aktion] || e.aktion;
+        const badge = e.quelle === 'automatik' ? '<span class="verlauf-badge">Automatik</span>' : '';
+        return '<li>' +
+          '<span class="verlauf-icon">' + icon + '</span>' +
+          '<span class="verlauf-text">' + label + badge + '</span>' +
+          '<span class="verlauf-zeit">' + formatVor(e.vor_sek) + '</span>' +
+        '</li>';
+      }).join('');
+    } catch (err) {
+      // Verlauf wird beim naechsten Poll erneut versucht
+    }
+  }
+
+  infoAbrufen();
+  verlaufAbrufen();
+  setInterval(infoAbrufen, 20000);
+  setInterval(verlaufAbrufen, 10000);
+
   automatikStatusAbrufen();
 </script>
 </body>
@@ -653,7 +892,11 @@ def anfrage_bearbeiten(client):
         zeile = request.decode("utf-8").split("\r\n", 1)[0]
         pfad = zeile.split(" ")[1] if " " in zeile else "/"
 
-        if pfad.startswith("/automatik/start"):
+        if pfad.startswith("/info"):
+            http_antwort(client, "200 OK", json.dumps(geraeteinfo()), "application/json")
+        elif pfad.startswith("/verlauf"):
+            http_antwort(client, "200 OK", json.dumps(verlauf_abfragen()), "application/json")
+        elif pfad.startswith("/automatik/start"):
             parameter = query_parsen(pfad)
             try:
                 automatik_einschalten(

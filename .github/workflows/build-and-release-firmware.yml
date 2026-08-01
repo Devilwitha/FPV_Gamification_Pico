@@ -139,18 +139,23 @@ jobs:
       - name: Python-Abhaengigkeiten installieren
         run: pip install -r windows/requirements.txt
 
-      - name: Windows-Installer (.exe) bauen
+      - name: Windows-Installer bauen (Ordner-Modus + ZIP)
+        # build_exe.py baut bewusst im --onedir- statt --onefile-Modus und
+        # packt das Ergebnis selbst zu einer .zip (siehe Kommentar dort):
+        # der --onefile-Selbstentpack-Mechanismus wird von Windows Defenders
+        # Cloud-Heuristik als Trojan:Win32/Wacatac.B!ml fehlerkannt und fuehrt
+        # zur sofortigen automatischen Quarantaene direkt beim Download.
         run: python windows/build_exe.py
 
       - name: Windows-Installer als Download-Artefakt hochladen
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: windows/dist/Gamification Installer.exe
+          path: windows/dist/Gamification Installer.zip
           retention-days: 90
 
       - name: Windows-Installer an bestehende GitHub Release anhaengen
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build-and-release.outputs.tag }}
-          files: windows/dist/Gamification Installer.exe
+          files: windows/dist/Gamification Installer.zip

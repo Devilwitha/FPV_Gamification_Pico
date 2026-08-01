@@ -1,19 +1,33 @@
 """
 build_exe.py
 
-Baut aus source/gamification_installer.py mit PyInstaller eine
-eigenstaendige Windows-.exe ("Gamification Installer.exe") - eine einzelne
-Datei ohne Konsolenfenster, die auf einem Windows-PC ganz ohne separate
-Python-Installation laeuft.
+Baut aus source/gamification_installer.py mit PyInstaller einen
+eigenstaendigen Windows-Installer ("Gamification Installer.exe" in einem
+Ordner mit seinen Abhaengigkeiten), der auf einem Windows-PC ganz ohne
+separate Python-Installation laeuft. Das Ergebnis wird anschliessend zu einer
+einzelnen "Gamification Installer.zip" gepackt, damit es weiterhin als ein
+einzelner Download angeboten werden kann.
 
 Nutzung:
     pip install -r requirements.txt
     python build_exe.py
 
-Das fertige Programm liegt danach unter windows/dist/Gamification Installer.exe
+Das fertige Programm liegt danach unter
+windows/dist/Gamification Installer/Gamification Installer.exe, gepackt unter
+windows/dist/Gamification Installer.zip
+
+HINWEIS (--onedir statt --onefile): Ein per --onefile gebauter Installer
+entpackt sich bei jedem Start selbst in einen temporaeren Ordner und fuehrt
+sich von dort neu aus - genau dieses Verhalten wird von Windows Defenders
+Cloud-/ML-Heuristik als Trojan:Win32/Wacatac.B!ml fehlklassifiziert (bestaetigt
+per Get-MpThreat, Severity 5 -> automatische Quarantaene direkt beim Download,
+unabhaengig vom eigentlichen Code). --onedir liefert dieselbe .exe stattdessen
+unkomprimiert direkt neben ihren Abhaengigkeiten aus, ohne Selbstentpacken zur
+Laufzeit, und vermeidet dadurch diesen Fehlalarm.
 """
 import os
 import sys
+import zipfile
 
 WINDOWS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(WINDOWS_DIR)
@@ -25,8 +39,8 @@ APP_NAME = "Gamification Installer"
 ICON_PATH = os.path.join(WINDOWS_DIR, "icon.ico")
 # picofw/ enthaelt die UF2-Dateien (MicroPython + Nuke) fuer den
 # Bootloader-Flash (siehe gamification_installer.py's flash_bootsel_pico())
-# - wird als Datenordner mit in die .exe gepackt, damit die Funktion auch
-# ohne Internetzugriff/separates Repo-Checkout funktioniert.
+# - wird als Datenordner mit in den Installer gepackt, damit die Funktion
+# auch ohne Internetzugriff/separates Repo-Checkout funktioniert.
 PICOFW_DIR = os.path.join(PROJECT_ROOT, "picofw")
 
 
@@ -45,7 +59,6 @@ def main():
     args = [
         SOURCE_SCRIPT,
         "--name", APP_NAME,
-        "--onefile",
         "--windowed",
         "--noconfirm",
         "--clean",
@@ -65,18 +78,32 @@ def main():
         # Windows-Trennzeichen fuer --add-data ist ';' (SRC;ZIEL-IM-BUNDLE).
         args += ["--add-data", f"{PICOFW_DIR};picofw"]
     else:
-        print(f"WARNUNG: {PICOFW_DIR} nicht gefunden - Bootloader-Flash-Funktion wird in der .exe nicht funktionieren.")
+        print(f"WARNUNG: {PICOFW_DIR} nicht gefunden - Bootloader-Flash-Funktion wird im Installer nicht funktionieren.")
 
-    print(f"Baue '{APP_NAME}.exe' mit PyInstaller ...")
+    print(f"Baue '{APP_NAME}' (Ordner-Modus) mit PyInstaller ...")
     PyInstaller.__main__.run(args)
 
-    exe_path = os.path.join(DIST_DIR, f"{APP_NAME}.exe")
+    app_dir = os.path.join(DIST_DIR, APP_NAME)
+    exe_path = os.path.join(app_dir, f"{APP_NAME}.exe")
     print()
-    if os.path.isfile(exe_path):
-        print(f"Fertig: {exe_path}")
-    else:
+    if not os.path.isfile(exe_path):
         print("Build abgeschlossen, aber die .exe wurde nicht am erwarteten Pfad gefunden.")
-        print(f"Bitte {DIST_DIR} pruefen.")
+        print(f"Bitte {app_dir} pruefen.")
+        sys.exit(1)
+
+    print(f"Fertig: {exe_path}")
+
+    zip_path = os.path.join(DIST_DIR, f"{APP_NAME}.zip")
+    if os.path.isfile(zip_path):
+        os.remove(zip_path)
+    print(f"Packe '{app_dir}' nach '{zip_path}' ...")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(app_dir):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                arcname = os.path.join(APP_NAME, os.path.relpath(file_path, app_dir))
+                zf.write(file_path, arcname)
+    print(f"Fertig: {zip_path}")
 
 
 if __name__ == "__main__":

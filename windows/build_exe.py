@@ -49,6 +49,11 @@ def main():
         "--windowed",
         "--noconfirm",
         "--clean",
+        # UPX-Packing macht die .exe kleiner, laesst sie aber bei Virenscannern
+        # und Browser-Downloadschutz (Chrome/Edge/SmartScreen) deutlich
+        # oefter als Malware anschlagen, da UPX auch von echter Malware zur
+        # Verschleierung genutzt wird - --noupx vermeidet diese False Positives.
+        "--noupx",
         "--distpath", DIST_DIR,
         "--workpath", BUILD_DIR,
         "--specpath", SPEC_DIR,

@@ -3,7 +3,10 @@ Pico W Steuerung - WLAN Webserver mit 4 Tasten (Auf / Ab / Stehen / Sitzen)
 
 Verbindet sich mit einem bestehenden WLAN und startet einen Webserver mit
 moderner Oberflaeche. Ueber vier Buttons koennen GPIO-Ausgaenge angesteuert
-werden (z.B. fuer Relais, Motorsteuerung o.ae.).
+werden (z.B. fuer Relais, Motorsteuerung o.ae.). Enthaelt ausserdem eine
+Automatik (zeitgesteuerter Wechsel Sitzen/Stehen) und eine WLAN-Update-
+Funktion: im Browser eine neue Version dieser Datei hochladen, der Pico
+prueft sie auf gueltiges Python, ersetzt main.py und startet neu.
 
 Einfach WLAN_SSID / WLAN_PASSWORT unten eintragen (oder eine Datei
 "wlan.conf" mit {"ssid": "...", "password": "..."} neben dieses Skript
@@ -15,6 +18,8 @@ import socket
 import time
 import json
 import gc
+import os
+import machine
 import _thread
 from machine import Pin
 
@@ -22,8 +27,13 @@ from machine import Pin
 # Konfiguration
 # ---------------------------------------------------------------------------
 
+VERSION = "1.1.0"
+
 WLAN_SSID = "FRITZ!Box 5530 BA_2GEXT"
 WLAN_PASSWORT = "1234567890"
+
+# Maximale Groesse einer Update-Datei in Bytes (Sicherheitsgrenze)
+UPDATE_MAX_BYTES = 400_000
 
 # Geraetename, unter dem der Pico im lokalen Netz per DHCP angemeldet wird.
 # Der Router haengt die lokale Domain an (z.B. "tisch"), damit ist das
@@ -87,7 +97,68 @@ def geraeteinfo():
         "ip": AKTUELLE_IP,
         "hostname": GERAETENAME,
         "uptime_sek": int(time.time() - BOOT_ZEIT),
+        "version": VERSION,
     }
+
+
+# ---------------------------------------------------------------------------
+# WLAN-Update: neue Skript-Version per Datei-Upload einspielen
+# ---------------------------------------------------------------------------
+
+UPDATE_DATEI_TEMP = "main_neu.py"
+UPDATE_DATEI_BACKUP = "main_backup.py"
+UPDATE_ZIEL = "main.py"
+
+
+def update_empfangen(client, laenge, bereits_gelesen):
+    """Liest genau `laenge` Bytes vom Socket und schreibt sie direkt (in
+    kleinen Stuecken) in eine temporaere Datei, statt alles im RAM zu halten."""
+    geschrieben = 0
+    with open(UPDATE_DATEI_TEMP, "wb") as f:
+        if bereits_gelesen:
+            f.write(bereits_gelesen)
+            geschrieben += len(bereits_gelesen)
+        while geschrieben < laenge:
+            stueck = client.recv(min(1024, laenge - geschrieben))
+            if not stueck:
+                break
+            f.write(stueck)
+            geschrieben += len(stueck)
+    return geschrieben == laenge
+
+
+def update_pruefen(pfad):
+    """Prueft, ob die hochgeladene Datei zumindest syntaktisch gueltiges
+    Python ist, bevor main.py ueberschrieben wird."""
+    try:
+        with open(pfad) as f:
+            quelltext = f.read()
+        if not quelltext.strip():
+            return False, "Datei ist leer"
+        compile(quelltext, pfad, "exec")
+        return True, None
+    except Exception as exc:
+        return False, "Ungueltiges Python: " + str(exc)
+
+
+def update_uebernehmen():
+    """Ersetzt main.py durch die neue Datei, alte Version bleibt als Backup."""
+    try:
+        os.remove(UPDATE_DATEI_BACKUP)
+    except OSError:
+        pass
+    try:
+        os.rename(UPDATE_ZIEL, UPDATE_DATEI_BACKUP)
+    except OSError:
+        pass
+    os.rename(UPDATE_DATEI_TEMP, UPDATE_ZIEL)
+
+
+def update_aufraeumen():
+    try:
+        os.remove(UPDATE_DATEI_TEMP)
+    except OSError:
+        pass
 
 
 def lade_wlan_zugangsdaten():
@@ -563,6 +634,64 @@ SEITE_HTML = """<!DOCTYPE html>
     color: var(--text-dim);
     padding: 10px 0;
   }
+  .update-datei {
+    display: block;
+    text-align: center;
+    padding: 14px;
+    border: 1px dashed var(--card-border);
+    border-radius: 12px;
+    font-size: 13px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+    margin-bottom: 12px;
+  }
+  .update-datei:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .update-datei.gewaehlt {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .update-aktionen {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .update-btn, .neustart-btn {
+    appearance: none;
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 11px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--text);
+    transition: opacity 0.15s ease, transform 0.12s ease;
+  }
+  .update-btn {
+    background: linear-gradient(160deg, rgba(56,189,248,0.28), rgba(168,85,247,0.20));
+  }
+  .neustart-btn {
+    background: rgba(255,255,255,0.05);
+  }
+  .update-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .update-btn:active:not(:disabled), .neustart-btn:active {
+    transform: scale(0.97);
+  }
+  .update-info {
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+  .update-info.fehler { color: var(--rot); }
+  .update-info.ok { color: var(--gruen); }
 </style>
 </head>
 <body>
@@ -620,6 +749,24 @@ SEITE_HTML = """<!DOCTYPE html>
     <ul class="verlauf-liste" id="verlaufListe">
       <li class="verlauf-leer">Noch keine Aktionen</li>
     </ul>
+
+    <div class="trenner"></div>
+
+    <div class="abschnitt-kopf">
+      <span class="titel">Update</span>
+      <span class="zaehler" id="versionAnzeige">v?</span>
+    </div>
+    <div class="update-bereich">
+      <label class="update-datei" for="updateDatei">
+        <span id="updateDateiName">Datei auswaehlen (.py)</span>
+      </label>
+      <input type="file" id="updateDatei" accept=".py" hidden>
+      <div class="update-aktionen">
+        <button type="button" class="update-btn" id="updateButton" disabled>Update hochladen</button>
+        <button type="button" class="neustart-btn" id="neustartButton">Neustart</button>
+      </div>
+      <div class="update-info" id="updateInfo">Ersetzt main.py auf dem Pico und startet danach neu. Ungueltige Dateien werden automatisch abgelehnt.</div>
+    </div>
 
     <div class="trenner"></div>
     <footer>Raspberry Pi Pico W</footer>
@@ -769,6 +916,7 @@ SEITE_HTML = """<!DOCTYPE html>
   // --- Info-Zeile (IP/Laufzeit) + Online-Anzeige ---
   const infoZeile = document.getElementById('infoZeile');
   const livePunkt = document.getElementById('livePunkt');
+  const versionAnzeige = document.getElementById('versionAnzeige');
 
   function formatDauer(sek) {
     sek = Math.max(0, Math.floor(sek));
@@ -786,6 +934,7 @@ SEITE_HTML = """<!DOCTYPE html>
       const data = await res.json();
       infoZeile.textContent = (data.ip || '?') + ' - Laufzeit ' + formatDauer(data.uptime_sek);
       livePunkt.className = 'live-punkt online';
+      if (data.version) versionAnzeige.textContent = 'v' + data.version;
     } catch (err) {
       infoZeile.textContent = 'Keine Verbindung zum Pico';
       livePunkt.className = 'live-punkt offline';
@@ -827,6 +976,70 @@ SEITE_HTML = """<!DOCTYPE html>
       // Verlauf wird beim naechsten Poll erneut versucht
     }
   }
+
+  // --- Update: neue Skript-Version hochladen, Geraet startet danach neu ---
+  const updateDatei = document.getElementById('updateDatei');
+  const updateDateiLabel = document.querySelector('.update-datei');
+  const updateDateiName = document.getElementById('updateDateiName');
+  const updateButton = document.getElementById('updateButton');
+  const neustartButton = document.getElementById('neustartButton');
+  const updateInfo = document.getElementById('updateInfo');
+
+  function updateInfoAnzeigen(text, art) {
+    updateInfo.className = art ? ('update-info ' + art) : 'update-info';
+    updateInfo.textContent = text;
+  }
+
+  updateDatei.addEventListener('change', () => {
+    const datei = updateDatei.files[0];
+    if (datei) {
+      updateDateiName.textContent = datei.name;
+      updateDateiLabel.classList.add('gewaehlt');
+      updateButton.disabled = false;
+    } else {
+      updateDateiName.textContent = 'Datei auswaehlen (.py)';
+      updateDateiLabel.classList.remove('gewaehlt');
+      updateButton.disabled = true;
+    }
+  });
+
+  updateButton.addEventListener('click', async () => {
+    const datei = updateDatei.files[0];
+    if (!datei) return;
+    if (!confirm('main.py mit "' + datei.name + '" ersetzen und Pico neu starten?')) return;
+
+    updateButton.disabled = true;
+    neustartButton.disabled = true;
+    updateInfoAnzeigen('Lade hoch...');
+    try {
+      const inhalt = await datei.arrayBuffer();
+      const res = await fetch('/update', { method: 'POST', body: inhalt });
+      const data = await res.json();
+      if (data.ok) {
+        updateInfoAnzeigen('Update erfolgreich - Pico startet neu. Seite in ca. 10s neu laden.', 'ok');
+        setTimeout(() => location.reload(), 10000);
+      } else {
+        updateInfoAnzeigen('Fehler: ' + (data.fehler || 'unbekannt'), 'fehler');
+        updateButton.disabled = false;
+        neustartButton.disabled = false;
+      }
+    } catch (err) {
+      updateInfoAnzeigen('Verbindung getrennt - falls das Update angenommen wurde, startet der Pico gerade neu.', 'fehler');
+      neustartButton.disabled = false;
+    }
+  });
+
+  neustartButton.addEventListener('click', async () => {
+    if (!confirm('Pico jetzt neu starten?')) return;
+    neustartButton.disabled = true;
+    updateInfoAnzeigen('Neustart...');
+    try {
+      await fetch('/neustart');
+    } catch (err) {
+      // Verbindung bricht durch den Neustart erwartungsgemaess ab
+    }
+    setTimeout(() => location.reload(), 8000);
+  });
 
   infoAbrufen();
   verlaufAbrufen();
@@ -883,16 +1096,81 @@ def query_parsen(pfad):
     return ergebnis
 
 
+def header_wert(kopf_text, name):
+    praefix = name.lower() + ":"
+    for zeile in kopf_text.split("\r\n"):
+        if zeile.lower().startswith(praefix):
+            return zeile.split(":", 1)[1].strip()
+    return None
+
+
 def anfrage_bearbeiten(client):
     try:
-        request = client.recv(1024)
-        if not request:
+        client.settimeout(15)
+        puffer = client.recv(1536)
+        if not puffer:
             client.close()
             return
-        zeile = request.decode("utf-8").split("\r\n", 1)[0]
-        pfad = zeile.split(" ")[1] if " " in zeile else "/"
+        # Falls die Kopfzeilen noch nicht vollstaendig da sind, weiterlesen
+        while b"\r\n\r\n" not in puffer and len(puffer) < 4096:
+            stueck = client.recv(1536)
+            if not stueck:
+                break
+            puffer += stueck
 
-        if pfad.startswith("/info"):
+        trenner = puffer.find(b"\r\n\r\n")
+        if trenner == -1:
+            kopf_text = puffer.decode("utf-8", "ignore")
+            body_bereits_gelesen = b""
+        else:
+            kopf_text = puffer[:trenner].decode("utf-8", "ignore")
+            body_bereits_gelesen = puffer[trenner + 4:]
+
+        erste_zeile = kopf_text.split("\r\n", 1)[0]
+        teile = erste_zeile.split(" ")
+        methode = teile[0] if teile else "GET"
+        pfad = teile[1] if len(teile) > 1 else "/"
+
+        if methode == "POST" and pfad.startswith("/update"):
+            laenge_text = header_wert(kopf_text, "Content-Length")
+            laenge = int(laenge_text) if laenge_text and laenge_text.isdigit() else 0
+
+            if laenge <= 0 or laenge > UPDATE_MAX_BYTES:
+                http_antwort(
+                    client, "400 Bad Request",
+                    json.dumps({"ok": False, "fehler": "Datei fehlt oder ist zu gross"}),
+                    "application/json",
+                )
+            else:
+                vollstaendig = update_empfangen(client, laenge, body_bereits_gelesen)
+                if not vollstaendig:
+                    update_aufraeumen()
+                    http_antwort(
+                        client, "400 Bad Request",
+                        json.dumps({"ok": False, "fehler": "Uebertragung unvollstaendig"}),
+                        "application/json",
+                    )
+                else:
+                    gueltig, fehler = update_pruefen(UPDATE_DATEI_TEMP)
+                    if not gueltig:
+                        update_aufraeumen()
+                        http_antwort(
+                            client, "400 Bad Request",
+                            json.dumps({"ok": False, "fehler": fehler}),
+                            "application/json",
+                        )
+                    else:
+                        update_uebernehmen()
+                        http_antwort(client, "200 OK", json.dumps({"ok": True}), "application/json")
+                        client.close()
+                        time.sleep(0.5)
+                        machine.reset()
+        elif pfad.startswith("/neustart"):
+            http_antwort(client, "200 OK", json.dumps({"ok": True}), "application/json")
+            client.close()
+            time.sleep(0.5)
+            machine.reset()
+        elif pfad.startswith("/info"):
             http_antwort(client, "200 OK", json.dumps(geraeteinfo()), "application/json")
         elif pfad.startswith("/verlauf"):
             http_antwort(client, "200 OK", json.dumps(verlauf_abfragen()), "application/json")

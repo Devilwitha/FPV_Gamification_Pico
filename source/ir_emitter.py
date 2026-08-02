@@ -1,7 +1,8 @@
 """Treiber fuer einen Grove Infrarot-Emitter (IR-LED-Modul).
 
-Verkabelung (Grove-Stecker, 3-polig): SIG -> GPIO16 (per Konstante unten
-aenderbar), VCC -> 3V3/5V je nach Grove-Shield, GND -> GND.
+Verkabelung (4-poliger Grove-Stecker): Die Beschriftung auf der Platine ist
+NC / TX / VCC / GND - NC ("Not Connected") bleibt frei, TX -> GPIO16 (per
+Konstante unten aenderbar), VCC -> 3V3/5V je nach Grove-Shield, GND -> GND.
 
 Erzeugt einen 38kHz-Traegerton per Hardware-PWM (RP2040 kann das ohne
 CPU-Last dauerhaft im Hintergrund erzeugen) und schaltet dessen Tastgrad

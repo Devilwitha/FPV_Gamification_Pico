@@ -173,6 +173,28 @@ def test_apply_hit_eliminates_when_lives_reach_zero():
     assert manager.lives_remaining == 0
 
 
+def test_apply_hit_ignored_once_eliminated():
+    manager = sm.ShooterMode()
+    manager.configure({"enabled": True, "lives": 1, "damage": 1})
+    manager._apply_hit(1, manager.config["damage"], 1000)  # bringt auf 0 Leben -> ausgeschieden
+    assert manager.eliminated is True
+    assert manager.hits_taken == 1
+
+    manager._apply_hit(2, manager.config["damage"], 5000)  # anderer Schuetze, weit ausserhalb Cooldown
+    assert manager.hits_taken == 1  # darf NICHT weiter mitgezaehlt werden
+    assert manager.last_hit_from == 1  # unveraendert vom letzten gueltigen Treffer
+
+
+def test_fire_still_blocked_once_eliminated():
+    manager = sm.ShooterMode()
+    manager.configure({"enabled": True, "lives": 1, "damage": 1})
+    manager._apply_hit(1, manager.config["damage"], 1000)
+    assert manager.eliminated is True
+    result = manager.fire()
+    assert result["ok"] is False
+    assert manager.shots_fired == 0
+
+
 def test_apply_hit_unlimited_lives_never_eliminates():
     manager = sm.ShooterMode()
     manager.configure({"enabled": True, "lives": 0})

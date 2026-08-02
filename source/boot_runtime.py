@@ -71,26 +71,40 @@ def clear_device_role():
 
 
 def set_device_role(role):
+    """Speichert die Rolle UND liest sie sofort wieder zurueck, bevor Erfolg
+    gemeldet wird. Ohne diese Rueck-Verifizierung koennen open()/write()/
+    rename() auf manchen frisch geflashten/fragmentierten Flash-Zustaenden
+    ohne Exception durchlaufen, obwohl der Inhalt danach nicht zuverlaessig
+    lesbar ist - role_setup.py wuerde dem Nutzer dann faelschlich
+    "Gespeichert" melden, obwohl boot.py beim naechsten Start trotzdem
+    wieder role_setup.py startet (device_role.json scheinbar leer/fehlend).
+    2 Versuche, da ein einzelner Fehlversuch direkt nach einem Reflash
+    manchmal transient ist."""
     if role not in VALID_DEVICE_ROLES:
         return False
-    tmp = DEVICE_ROLE_FILE + ".tmp"
+
     payload = json.dumps({"role": role})
-    try:
-        with open(tmp, "w") as f:
-            f.write(payload)
+    for _attempt in range(2):
         try:
-            os.remove(DEVICE_ROLE_FILE)
-        except Exception:
-            pass
-        os.rename(tmp, DEVICE_ROLE_FILE)
-        return True
-    except Exception:
-        try:
-            with open(DEVICE_ROLE_FILE, "w") as f:
+            tmp = DEVICE_ROLE_FILE + ".tmp"
+            with open(tmp, "w") as f:
                 f.write(payload)
-            return True
+            try:
+                os.remove(DEVICE_ROLE_FILE)
+            except Exception:
+                pass
+            os.rename(tmp, DEVICE_ROLE_FILE)
         except Exception:
-            return False
+            try:
+                with open(DEVICE_ROLE_FILE, "w") as f:
+                    f.write(payload)
+            except Exception:
+                continue
+
+        if get_device_role() == role:
+            return True
+
+    return False
 
 _wdt = None
 

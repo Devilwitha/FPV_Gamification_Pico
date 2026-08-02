@@ -91,10 +91,11 @@ Für den **Shooter-Modus** (`/admin-shooter`) braucht **jeder** mitspielende Pic
 ```text
 +---------------------------+             +-----------------------+
 | Grove Infrarot-Emitter    |             | Raspberry Pi Pico     |
-|                            |             |                       |
+| (4-poliger Stecker)       |             |                       |
 |        GND  --------------->------------->  GND                  |
 |        VCC  --------------->------------->  3V3 (oder 5V, siehe Modul) |
-|        SIG  --------------->------------->  GP16 (PWM-Ausgang)    |
+|         TX  --------------->------------->  GP16 (PWM-Ausgang)    |
+|         NC  ----(frei, nicht verbinden)                          |
 +---------------------------+             +-----------------------+
 
 +---------------------------+             +-----------------------+
@@ -107,6 +108,7 @@ Für den **Shooter-Modus** (`/admin-shooter`) braucht **jeder** mitspielende Pic
 ```
 
 > ⚠️ **Wichtig:**
+> - **Grove-Infrarot-Emitter-Pinbeschriftung:** Auf der Platine steht meist `NC / TX / VCC / GND` (4-poliger Grove-Stecker) statt eines generischen "SIG" - **TX** ist der Signalpin (an GP16), **NC** ("Not Connected") bleibt frei/unbeschaltet.
 > - Pin-Nummern sind Konstanten am Anfang von `source/ir_emitter.py` (`DEFAULT_IR_EMITTER_PIN`) bzw. `source/ir_receiver.py` (`DEFAULT_IR_RECEIVER_PIN`) – bei Bedarf dort anpassen, bevor die Firmware gebaut wird.
 > - Der IR-REC38 braucht **3V3**, keine 5V!
 > - Ohne angeschlossene Hardware meldet `/shooter-data` (bzw. die Hardware-Status-Zeile auf `/admin-shooter`) einfach `emitter_available: false` / `receiver_available: false` – kein Crash, der restliche Modus bleibt nutzbar.

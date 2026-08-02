@@ -29,6 +29,23 @@ def test_get_device_role_survives_corrupt_json():
     assert br.get_device_role() is None
 
 
+def test_set_device_role_fails_when_readback_never_verifies(monkeypatch):
+    # Simuliert einen Dateisystem-Zustand, bei dem write()/rename() ohne
+    # Exception durchlaufen, der Inhalt danach aber nicht lesbar ist (siehe
+    # set_device_role()'s Docstring) - muss ehrlich False melden statt einen
+    # falschen Erfolg vorzutaeuschen.
+    monkeypatch.setattr(br, "get_device_role", lambda: None)
+    assert br.set_device_role("gamification") is False
+
+
+def test_set_device_role_recovers_on_second_attempt(monkeypatch):
+    # Erster Rueck-Lese-Versuch schlaegt fehl (simuliert einen transienten
+    # Fehlversuch direkt nach einem Reflash), zweiter klappt.
+    results = iter([None, "gamification"])
+    monkeypatch.setattr(br, "get_device_role", lambda: next(results))
+    assert br.set_device_role("gamification") is True
+
+
 def test_clear_device_role_removes_file():
     br.set_device_role("gatehill")
     assert br.clear_device_role() is True

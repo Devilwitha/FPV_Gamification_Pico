@@ -32,3 +32,24 @@
 [DEBUG] [0s] [BOOT] boot.py fehlt, starte Hotspot aus main.
 [DEBUG] [0s] [AP] Aktiviere Access Point
 [DEBUG] [0s] [AP] WLAN-Hotspot aktiv: SSID=FPV_Gamification_Pico IP=192.168.4.1
+
+=== FPV DEBUG SESSION START ===
+[DEBUG] [0s] [TRICK PROFILE] Aktiv: aggressive
+[DEBUG] [0s] tracker.run() wurde aufgerufen.
+[DEBUG] [0s] [BOOT] boot.py fehlt, starte Hotspot aus main.
+[DEBUG] [0s] [AP] Aktiviere Access Point
+[DEBUG] [0s] [AP] WLAN-Hotspot aktiv: SSID=FPV_Gamification_Pico IP=192.168.4.1
+
+=== FPV DEBUG SESSION START ===
+[DEBUG] [0s] [TRICK PROFILE] Aktiv: aggressive
+[DEBUG] [0s] tracker.run() wurde aufgerufen.
+[DEBUG] [0s] [BOOT] boot.py fehlt, starte Hotspot aus main.
+[DEBUG] [0s] [AP] Aktiviere Access Point
+[DEBUG] [0s] [AP] WLAN-Hotspot aktiv: SSID=FPV_Gamification_Pico IP=192.168.4.1
+
+=== FPV DEBUG SESSION START ===
+[DEBUG] [0s] [TRICK PROFILE] Aktiv: aggressive
+[DEBUG] [0s] tracker.run() wurde aufgerufen.
+[DEBUG] [0s] [BOOT] boot.py fehlt, starte Hotspot aus main.
+[DEBUG] [0s] [AP] Aktiviere Access Point
+[DEBUG] [0s] [AP] WLAN-Hotspot aktiv: SSID=FPV_Gamification_Pico IP=192.168.4.1

@@ -275,6 +275,9 @@ class ShooterMode:
         return self.status()
 
     def _apply_hit(self, shooter_id, damage, now_ms):
+        if self.eliminated:
+            return  # ausgeschieden: zaehlt keine weiteren Treffer mehr (wie fire() fuer eigene Schuesse)
+
         if shooter_id == self.node_id:
             return  # eigenes Echo/Reflexion ignorieren
 
@@ -291,7 +294,7 @@ class ShooterMode:
         self.last_hit_ms = now_ms
         self.last_event = "Treffer von Schuetze %d" % shooter_id
 
-        if self.config["lives"] > 0 and not self.eliminated:
+        if self.config["lives"] > 0:
             self.lives_remaining = max(0, self.lives_remaining - damage)
             if self.lives_remaining <= 0:
                 self.eliminated = True

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/action_reload"
+        android:title="@string/menu_reload"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/action_browser"
+        android:title="@string/menu_browser"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_wifi"
+        android:title="@string/menu_wifi"
+        app:showAsAction="never" />
+</menu>

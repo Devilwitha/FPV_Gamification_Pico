@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FPV Gamification</string>
+
+    <!-- Muss zu source/hotspot.conf auf dem Pico passen (Standardwerte) -->
+    <string name="hotspot_ssid">FPV_Gamification_Pico</string>
+    <string name="hotspot_password">drohnenspiel</string>
+    <string name="webapp_base_url">http://192.168.4.1/</string>
+
+    <string name="status_connecting">Verbinde mit dem Pico-Hotspot…</string>
+    <string name="status_loading">Lade Weboberfläche…</string>
+    <string name="status_failed_connect">Hotspot nicht erreichbar. Ist der Pico eingeschaltet?</string>
+    <string name="status_failed_load">Weboberfläche konnte nicht geladen werden.</string>
+    <string name="action_retry">Erneut versuchen</string>
+    <string name="action_wifi_settings">WLAN-Einstellungen öffnen</string>
+
+    <string name="menu_reload">Neu laden</string>
+    <string name="menu_browser">Im Browser öffnen</string>
+    <string name="menu_wifi">WLAN-Einstellungen</string>
+</resources>

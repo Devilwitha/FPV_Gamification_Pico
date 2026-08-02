@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.FpvGamification" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/fpv_primary</item>
+        <item name="colorPrimaryVariant">@color/fpv_primary_dark</item>
+        <item name="colorOnPrimary">@color/fpv_on_primary</item>
+        <item name="colorSecondary">@color/fpv_accent</item>
+        <item name="colorSecondaryVariant">@color/fpv_accent</item>
+        <item name="colorOnSecondary">@color/fpv_on_primary</item>
+        <item name="android:colorBackground">@color/fpv_background</item>
+        <item name="colorSurface">@color/fpv_surface</item>
+        <item name="colorOnSurface">@color/fpv_text</item>
+        <item name="colorError">@color/fpv_error</item>
+        <item name="android:statusBarColor">@color/fpv_background</item>
+        <item name="android:navigationBarColor">@color/fpv_background</item>
+    </style>
+</resources>

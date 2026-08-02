@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - Update</title>
+<style>
+body{background:#0a0c12;color:#e8f0f8;margin:0;padding:12px;font-family:monospace}
+h1{color:#e74c3c;font-size:1.3em;margin:0 0 10px}
+.c{max-width:700px;margin:0 auto;background:#141b25;padding:20px;border:2px solid #e74c3c;border-radius:8px}
+.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:#1a2637;color:#9fb4cb;border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}
+.nv a.on{background:#e74c3c;color:#fff;border-color:#e74c3c;font-weight:bold}
+input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;width:100%;box-sizing:border-box}
+.b{background:#e74c3c;color:#fff;padding:10px 15px;border:0;border-radius:4px;cursor:pointer;margin:5px 2px;font-weight:bold;font-family:monospace}
+.b:hover{filter:brightness(1.1)}
+.s{margin:10px 0;padding:10px;border-radius:4px;display:none}
+.ok{background:#1a4d2e;color:#2ecc71;border:1px solid #2ecc71}
+.err{background:#4d1a1a;color:#ff6b6b;border:1px solid #ff6b6b}
+.pbwrap{display:none;margin:10px 0;height:20px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
+.pbbar{height:100%;width:0%;background:#e74c3c;transition:width .15s ease}
+.pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.72em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
+.gh{background:#1a2637;padding:15px;border:1px solid #335174;border-radius:8px;margin:0 0 16px}
+.gh h2{color:#d8e5f4;margin:0 0 8px;font-size:1em}
+.gh p{color:#9fb4cb;font-size:.8em;margin:0 0 12px}
+.ghrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ghicon{font-size:1.6em;line-height:1;display:inline-block;transition:transform .2s ease}
+.ghicon.spin{animation:ghspin 1.1s linear infinite}
+@keyframes ghspin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.b.gh-btn{background:#2e86de}
+.b.gh-btn:disabled{background:#555;cursor:not-allowed;opacity:.7;filter:none}
+.ghstatus{color:#9fb4cb;font-size:.82em;min-height:1.3em;flex:1 1 200px}
+.ghstatus.pulse{color:#5dade2;animation:ghpulse 1.6s ease-in-out infinite}
+@keyframes ghpulse{0%,100%{opacity:1}50%{opacity:.45}}
+.ghstatus.ok{color:#2ecc71}
+.ghstatus.err{color:#ff6b6b}
+.modalbg{display:none;position:fixed;inset:0;background:rgba(4,6,10,.72);z-index:50;align-items:center;justify-content:center;padding:16px}
+.modalbg.show{display:flex}
+.modal{background:#141b25;border:2px solid #2e86de;border-radius:8px;max-width:440px;width:100%;padding:20px;box-sizing:border-box}
+.modal h3{margin:0 0 10px;color:#5dade2;font-size:1.05em}
+.modal .mbody{color:#c7d6e6;font-size:.86em;line-height:1.5;margin-bottom:16px}
+.modal .mbtns{display:flex;gap:8px;justify-content:flex-end}
+.b.secondary2{background:#53657a}
+</style>
+</head>
+<body>
+<div class="c">
+<h1 data-i18n="update.title">&#128228; OTA UPDATE</h1>
+<div class="nv">
+<a href="/admin" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" class="on" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" data-i18n="nav.profiles">Profile</a>
+<a href="/admin-system" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
+<a href="/admin-challenges" data-i18n="nav.challenges">Challenges</a>
+<a href="/admin-infection" data-i18n="nav.infection">Infection</a>
+<a href="/admin-koth" data-i18n="nav.koth">King of the Hill</a>
+<a href="/admin-race" data-i18n="nav.race">Race</a>
+<a href="/admin-credits" data-i18n="nav.credits">Credits</a>
+<a href="/" data-i18n="nav.home">Home</a>
+</div>
+
+<div class="gh">
+<h2 data-i18n="update.checkSectionTitle">&#128225; GitHub-Update</h2>
+<p data-i18n="update.checkHint">Sucht automatisch bei GitHub nach einer neueren Firmware und installiert sie ueber das unter System hinterlegte WLAN.</p>
+<div class="ghrow">
+<button class="b gh-btn" id="ghBtn" onclick="openUpdateSearchModal()"><span class="ghicon" id="ghIcon">&#128269;</span> <span data-i18n="update.checkButton">Nach Updates suchen</span></button>
+<div class="ghstatus" id="ghStatus"></div>
+</div>
+</div>
+
+<div id="devUploadSection">
+<div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px" data-i18n="update.allowedHint">Erlaubt: main.py, index.html, admin_dashboard.html, admin_update.html, admin_simulate.html, admin_profiles.html, admin_system.html, admin_idcard.html - oder ein komplettes <b>firmware.nbo</b> Bundle (alle Dateien auf einmal, siehe build_firmware.py)</div>
+<div id="devhint" style="color:#9fb4cb;font-size:.78em;margin-bottom:6px"></div>
+<input type="file" id="f" accept=".py,.html,.nbo,.pak">
+<div id="fi" style="color:#9fb4cb;font-size:0.9em" data-i18n="update.chooseFile">Datei waehlen...</div>
+<div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
+<div id="s" class="s"></div>
+<button class="b" onclick="u()" data-i18n="update.uploadButton">Upload</button>
+</div>
+</div>
+
+<div class="modalbg" id="ghModalBg">
+<div class="modal">
+<h3 data-i18n="update.confirmTitle">Update-Suche starten?</h3>
+<div class="mbody" data-i18n="update.confirmBody">Der Pico trennt sich jetzt kurz vom eigenen Hotspot und versucht, sich mit dem unter System hinterlegten WLAN zu verbinden.</div>
+<div class="mbtns">
+<button class="b secondary2" onclick="closeUpdateSearchModal()" data-i18n="update.confirmNo">Abbrechen</button>
+<button class="b gh-btn" onclick="confirmStartUpdateSearch()" data-i18n="update.confirmYes">Ja, Update suchen</button>
+</div>
+</div>
+</div>
+<script>
+let I18N={strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const s=t(el.getAttribute('data-i18n'),'');if(s)el.innerHTML=s;});document.title=t('update.pageTitle','Admin - Update');}
+function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n();}).catch(()=>{});}
+document.getElementById('f').addEventListener('change',function(e){
+const f=e.target.files[0];
+document.getElementById('fi').innerText=f?(t('update.filePrefix','Datei: ')+f.name+' ('+(f.size/1024).toFixed(1)+' KB)'):t('update.chooseFile','Datei waehlen...');
+document.getElementById('pbwrap').style.display='none';
+document.getElementById('pbbar').style.width='0%';
+document.getElementById('pbtxt').innerText='';
+document.getElementById('s').style.display='none';
+});
+function tgtFromName(n){
+const a=['index.html','admin_dashboard.html','admin_update.html','admin_simulate.html','admin_profiles.html','admin_system.html'];
+if(n&&n.toLowerCase()==='lang.pak')return 'lang.pak';
+if(n&&n.toLowerCase().endsWith('.nbo'))return 'firmware.nbo';
+return (n&&a.indexOf(n)>=0)?n:'main.py';
+}
+function parseBundleEntryNames(bytes){
+	const out=[];
+	if(!bytes||bytes.length<12)return out;
+	const magic='FPVBNDL1';
+	let m='';
+	for(let i=0;i<8;i++)m+=String.fromCharCode(bytes[i]);
+	if(m!==magic)return out;
+	const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+	let off=8;
+	const count=dv.getUint32(off,false); off+=4;
+	const dec=new TextDecoder();
+	for(let i=0;i<count;i++){
+		if(off+4>bytes.length)break;
+		const nameLen=dv.getUint32(off,false); off+=4;
+		if(off+nameLen>bytes.length)break;
+		const name=dec.decode(bytes.slice(off,off+nameLen)); off+=nameLen;
+		out.push(name);
+		if(off+4>bytes.length)break;
+		const contentLen=dv.getUint32(off,false); off+=4;
+		if(off+contentLen>bytes.length)break;
+		off+=contentLen;
+	}
+	return out;
+}
+function classifyBundleMode(entries,isLangBundle){
+	if(isLangBundle)return 'language';
+	if(!entries||entries.length===0)return 'light';
+	const allPak=entries.every(n=>n.endsWith('.pak'));
+	if(allPak)return 'language';
+	const hasMain=entries.indexOf('main.py')>=0;
+	const hasBoot=entries.indexOf('boot.py')>=0;
+	if(hasMain&&hasBoot)return 'complete';
+	const recSet=['boot.py','recovery.py','hotspot_common.py','boot_runtime.py','ota_helpers.py','firmware_version.txt'];
+	const isRecovery=entries.every(n=>recSet.indexOf(n)>=0);
+	if(isRecovery)return 'recovery';
+	return 'light';
+}
+let devMode=false;
+function refreshDevMode(){
+fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+devMode=!!d.developer_mode;
+const fEl=document.getElementById('f'),hint=document.getElementById('devhint');
+document.getElementById('devUploadSection').style.display=devMode?'block':'none';
+if(devMode){
+fEl.setAttribute('accept','.py,.html,.nbo,.pak');
+hint.innerText=t('update.devOnHint','Developer-Modus AN: Einzeldateien (.py/.html) und .nbo Bundles erlaubt.');
+}else{
+fEl.setAttribute('accept','.nbo,.pak');
+hint.innerText=t('update.devOffHint','Developer-Modus AUS: Nur komplette firmware.nbo Bundles erlaubt (siehe System-Seite).')+' '+t('update.langBundleHint','lang.pak ist ebenfalls erlaubt.');
+}
+}).catch(()=>{});
+}
+function u(){
+const f=document.getElementById('f').files[0],s=document.getElementById('s');
+if(!f){s.className='s err';s.innerText=t('update.errNoFile','Keine Datei!');s.style.display='block';return;}
+const nl=f.name.toLowerCase();
+const isLangBundle=(nl==='lang.pak');
+if(!nl.endsWith('.py')&&!nl.endsWith('.html')&&!nl.endsWith('.nbo')&&!isLangBundle){s.className='s err';s.innerText=t('update.errType','Nur .py, .html oder .nbo Dateien erlaubt!')+' '+t('update.errTypeLang','Zusatz: lang.pak ist erlaubt.');s.style.display='block';return;}
+if(!devMode&&!nl.endsWith('.nbo')&&!isLangBundle){s.className='s err';s.innerText=t('update.errDevOff','Developer-Modus ist aus: Nur firmware.nbo Bundles erlaubt (siehe System-Seite).')+' '+t('update.langBundleHint','lang.pak ist ebenfalls erlaubt.');s.style.display='block';return;}
+const tgt=tgtFromName(f.name);
+const isBinary=nl.endsWith('.nbo')||isLangBundle;
+const rd=new FileReader();
+rd.onload=function(e){
+try{
+let b;
+if(isBinary){
+b=new Uint8Array(e.target.result);
+}else{
+const ct=e.target.result,enc=new TextEncoder();
+b=enc.encode(ct);
+}
+let entries=[];
+if(isBinary){
+entries=parseBundleEntryNames(b);
+}
+let bundleMode=classifyBundleMode(entries,isLangBundle);
+if(entries.length===0){
+entries=[tgt];
+}
+let bn='';
+for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);}
+const b64=btoa(bn),tc=Math.ceil(b64.length/1024);
+let idx=0;
+const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
+function setProgress(p){pbbar.style.width=p+'%';pbtxt.innerText=p+'%';}
+pbwrap.style.display='block';setProgress(0);
+s.innerText='Ziel: '+tgt+' | Upload laeuft...';s.className='s';s.style.display='block';
+function nc(){
+if(idx>=tc){
+setProgress(100);
+fetch('/finalize-upload',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){s.className='s ok';s.innerText=t('update.donePrefix','Fertig: ')+d.message+(d.restart?(' '+t('update.restarting','Neustart laeuft...')):(' '+t('update.reloadHint','Seite neu laden, um Aenderung zu sehen.')));}
+else{s.className='s err';s.innerText='Fehler: '+d.error;}
+}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});
+return;
+}
+const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);
+fetch('/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&target='+encodeURIComponent(tgt)+'&data='+encodeURIComponent(cd),cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(d.ok){idx++;setProgress(Math.round((idx/tc)*100));nc();}
+else{s.className='s err';s.innerText='Fehler: '+d.error;}
+}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});
+}
+const prepUrl='/prepare-upload?target='+encodeURIComponent(tgt)
+	+'&bundle_mode='+encodeURIComponent(bundleMode)
+	+'&entries='+encodeURIComponent(entries.join(','));
+s.className='s';
+s.innerText=t('update.preparing','Bereinige Speicher vor Upload...');
+s.style.display='block';
+fetch(prepUrl,{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok){s.className='s err';s.innerText='Fehler: '+(d.error||'Prepare fehlgeschlagen');return;}
+nc();
+}).catch(er=>{s.className='s err';s.innerText='Fehler: '+er;});
+}catch(er){s.className='s err';s.innerText='Fehler: '+er;s.style.display='block';}
+};
+if(isBinary){rd.readAsArrayBuffer(f);}else{rd.readAsText(f);}
+}
+function openUpdateSearchModal(){document.getElementById('ghModalBg').classList.add('show');}
+function closeUpdateSearchModal(){document.getElementById('ghModalBg').classList.remove('show');}
+function setGhStatus(text,cls){const el=document.getElementById('ghStatus');el.innerText=text||'';el.className='ghstatus'+(cls?(' '+cls):'');}
+function setGhIcon(spinning){document.getElementById('ghIcon').classList.toggle('spin',!!spinning);}
+const GH_TERMINAL_PHASES=['up_to_date','wifi_failed','check_failed','download_failed','no_wlan','error','success'];
+function ghPhaseText(phase){
+const map={
+'connecting_wifi':t('update.statusConnectingWifi','Verbinde mit gespeichertem WLAN...'),
+'checking_release':t('update.statusCheckingRelease','Suche nach neuer Firmware auf GitHub...'),
+'downloading':t('update.statusDownloading','Lade neue Firmware herunter...'),
+'applying':t('update.statusApplying','Installiere Update...'),
+'up_to_date':t('update.statusUpToDate','Firmware ist bereits aktuell.'),
+'wifi_failed':t('update.statusWifiFailed','WLAN-Verbindung fehlgeschlagen. Hotspot wurde wiederhergestellt.'),
+'check_failed':t('update.statusCheckFailed','Konnte GitHub-Release nicht pruefen. Hotspot wurde wiederhergestellt.'),
+'download_failed':t('update.statusDownloadFailed','Download/Installation fehlgeschlagen. Hotspot wurde wiederhergestellt.'),
+'no_wlan':t('update.statusNoWlan','Kein WLAN hinterlegt (siehe System-Seite).'),
+'error':t('update.statusError','Fehler bei der Update-Suche.'),
+'success':t('update.statusSuccess','Update erfolgreich! Pico startet neu...'),
+};
+return map[phase]||'';
+}
+let ghPollTimer=null;
+function startGhPolling(){
+if(ghPollTimer)clearInterval(ghPollTimer);
+pollGhStatus();
+ghPollTimer=setInterval(pollGhStatus,1500);
+}
+function stopGhPolling(){
+if(ghPollTimer){clearInterval(ghPollTimer);ghPollTimer=null;}
+}
+function pollGhStatus(){
+fetch('/github-update-status',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(GH_TERMINAL_PHASES.indexOf(d.phase)>=0&&!d.active){
+document.getElementById('ghBtn').disabled=false;
+setGhIcon(false);
+let text=ghPhaseText(d.phase);
+if(!d.ok&&d.error)text+=' ('+d.error+')';
+setGhStatus(text,d.ok?'ok':'err');
+stopGhPolling();
+return;
+}
+document.getElementById('ghBtn').disabled=true;
+setGhIcon(true);
+setGhStatus(ghPhaseText(d.phase)||t('update.statusBusy','Update-Suche laeuft...'),'pulse');
+}).catch(()=>{
+document.getElementById('ghBtn').disabled=true;
+setGhIcon(true);
+setGhStatus(t('update.statusDisconnected','Verbindung getrennt - Pico sucht/installiert. Bitte warten und ggf. erneut mit dem Hotspot verbinden.'),'pulse');
+});
+}
+function confirmStartUpdateSearch(){
+closeUpdateSearchModal();
+const btn=document.getElementById('ghBtn');
+btn.disabled=true;
+setGhIcon(true);
+setGhStatus(t('update.statusConnectingWifi','Verbinde mit gespeichertem WLAN...'),'pulse');
+fetch('/start-github-update',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+if(!d.ok){
+btn.disabled=false;setGhIcon(false);
+setGhStatus(d.error||t('update.statusError','Fehler bei der Update-Suche.'),'err');
+return;
+}
+startGhPolling();
+}).catch(()=>{startGhPolling();});
+}
+loadI18n().then(()=>{refreshDevMode();setInterval(loadI18n,5000);});
+</script>
+</body>
+</html>

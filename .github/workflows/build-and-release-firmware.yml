@@ -1,8 +1,9 @@
 name: Firmware bauen & releasen
 
 # Baut firmware.nbo mit build_firmware.py (Kommandozeilen-Modus, kein GUI
-# noetig) und den Windows Installer (windows/build_exe.py) und
-# veroeffentlicht beide Ergebnisse in EINER gemeinsamen GitHub Release als:
+# noetig), den Windows Installer (windows/build_exe.py) und die Android-App
+# (android_app/) und veroeffentlicht alle Ergebnisse in EINER gemeinsamen
+# GitHub Release als:
 #   1. Download-Artefakt des Workflow-Laufs (Actions-Tab, ~90 Tage gueltig)
 #   2. Anhang derselben GitHub Release mit automatisch generierter
 #      Versionsnummer (Datum + Lauf-Nummer)
@@ -14,6 +15,7 @@ on:
       - "source/**"
       - "tools/build_firmware.py"
       - "windows/**"
+      - "android_app/**"
   workflow_dispatch: {}
     # Manuelles Ausloesen ueber den "Run workflow"-Button im Actions-Tab.
 
@@ -159,3 +161,45 @@ jobs:
         with:
           tag_name: ${{ needs.build-and-release.outputs.tag }}
           files: windows/dist/Gamification Installer.zip
+
+  build-android-app:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: JDK 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK einrichten
+        uses: android-actions/setup-android@v3
+
+      - name: Android-App bauen (Debug-APK)
+        # Debug-signiert (Standard-Debug-Keystore von Gradle) statt Release,
+        # da kein eigener Signing-Keystore/Secret hinterlegt ist - dadurch
+        # bleibt die APK direkt per "adb install" bzw. "Unbekannte Quellen"
+        # installierbar, ohne dass Nutzer sie selbst nachsignieren muessen.
+        working-directory: android_app
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --console=plain
+
+      - name: APK fuer die Veroeffentlichung umbenennen
+        run: cp android_app/app/build/outputs/apk/debug/app-debug.apk FPV-Gamification-App.apk
+
+      - name: Android-App als Download-Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-app
+          path: FPV-Gamification-App.apk
+          retention-days: 90
+
+      - name: Android-App an bestehende GitHub Release anhaengen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build-and-release.outputs.tag }}
+          files: FPV-Gamification-App.apk

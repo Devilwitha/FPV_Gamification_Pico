@@ -28,12 +28,9 @@ $ProgressPreference = "SilentlyContinue"
 
 $root = $PSScriptRoot
 $sdkRoot = Join-Path $root ".android-sdk"
-$gradleRoot = Join-Path $root ".gradle-dist"
-$gradleVersion = "8.9"
 
 # Offizieller "latest"-Permalink der Android Command-Line Tools (Windows).
 $cmdlineToolsUrl = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
-$gradleUrl = "https://services.gradle.org/distributions/gradle-$gradleVersion-bin.zip"
 
 function Write-Step($msg) {
     Write-Host ""
@@ -167,28 +164,17 @@ $sdkPathForward = $effectiveSdkRoot -replace '\\', '/'
 Set-Content -Path (Join-Path $root "local.properties") -Value "sdk.dir=$sdkPathForward" -Encoding ASCII
 
 # ---------------------------------------------------------------------------
-# 4. Portables Gradle (kein Wrapper-Jar noetig)
-# ---------------------------------------------------------------------------
-$gradleExe = Join-Path $gradleRoot "gradle-$gradleVersion\bin\gradle.bat"
-if (-not (Test-Path $gradleExe)) {
-    Write-Step "Gradle $gradleVersion ..."
-    New-Item -ItemType Directory -Force -Path $gradleRoot | Out-Null
-    $gradleZip = Join-Path $env:TEMP "fpv-gradle-$gradleVersion-bin.zip"
-    Get-RemoteFile $gradleUrl $gradleZip "Gradle $gradleVersion (~130 MB)"
-    Write-Host "   Entpacke ..." -ForegroundColor DarkGray
-    Expand-Archive -Path $gradleZip -DestinationPath $gradleRoot -Force
-    Remove-Item $gradleZip -Force
-}
-
-# ---------------------------------------------------------------------------
-# 5. Build
+# 4. Build ueber den Gradle-Wrapper (gradlew.bat laedt die passende Gradle-
+#    Version beim ersten Aufruf selbststaendig herunter, falls noch nicht im
+#    globalen Wrapper-Cache vorhanden - kein eigener Download-Code noetig).
 # ---------------------------------------------------------------------------
 $task = if ($Release) { "assembleRelease" } else { "assembleDebug" }
-Write-Step "Baue APK ($task) - erster Lauf laedt Gradle-Abhaengigkeiten nach, das dauert ein paar Minuten ..."
+Write-Step "Baue APK ($task) - erster Lauf laedt ggf. Gradle + Abhaengigkeiten nach, das dauert ein paar Minuten ..."
 
+$gradlew = Join-Path $root "gradlew.bat"
 Push-Location $root
 try {
-    & $gradleExe $task --console=plain
+    & $gradlew $task --console=plain
     if ($LASTEXITCODE -ne 0) {
         throw "Gradle-Build fehlgeschlagen (Exit code $LASTEXITCODE)."
     }

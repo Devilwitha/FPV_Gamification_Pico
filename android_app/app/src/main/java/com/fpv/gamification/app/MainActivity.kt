@@ -1,6 +1,8 @@
 package com.fpv.gamification.app
 
 import android.Manifest
+import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -10,12 +12,10 @@ import android.provider.Settings
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -30,10 +30,28 @@ class MainActivity : AppCompatActivity() {
     private val ssid: String by lazy { getString(R.string.hotspot_ssid) }
     private val password: String by lazy { getString(R.string.hotspot_password) }
     private val baseUrl: String by lazy { getString(R.string.webapp_base_url) }
+    private val appHost: String by lazy { Uri.parse(baseUrl).host!! }
 
     private val locationPermissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             startHotspotConnection()
+        }
+
+    // Fuer <input type="file"> in den Upload-Seiten (admin-update, admin-profiles, ...):
+    // WebView unterstuetzt Datei-Auswahl nur, wenn onShowFileChooser() selbst einen
+    // System-Datei-Picker startet und das Ergebnis zurueckreicht.
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+
+    private val fileChooserLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val callback = filePathCallback
+            filePathCallback = null
+            val uris = if (result.resultCode == Activity.RESULT_OK) {
+                WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+            } else {
+                null
+            }
+            callback?.onReceiveValue(uris)
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,41 +94,41 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
         }
 
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val requestHost = request.url.host
-                val appHost = Uri.parse(baseUrl).host
-                return if (requestHost == appHost) {
-                    false
-                } else {
-                    startActivity(Intent(Intent.ACTION_VIEW, request.url))
-                    true
-                }
-            }
-
-            override fun onPageFinished(view: WebView, url: String?) {
+        webView.webViewClient = PicoWebViewClient(
+            context = this,
+            appHost = appHost,
+            onFinished = {
                 binding.swipeRefresh.isRefreshing = false
                 binding.progressBar.visibility = View.GONE
                 showOverlay(false)
+            },
+            onMainFrameError = {
+                binding.swipeRefresh.isRefreshing = false
+                showOverlay(true, getString(R.string.status_failed_load))
             }
-
-            override fun onReceivedError(
-                view: WebView,
-                request: WebResourceRequest,
-                error: WebResourceError
-            ) {
-                if (request.isForMainFrame) {
-                    binding.swipeRefresh.isRefreshing = false
-                    showOverlay(true, getString(R.string.status_failed_load))
-                }
-            }
-        }
+        )
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 binding.progressBar.progress = newProgress
                 binding.progressBar.visibility =
                     if (newProgress in 1..99) View.VISIBLE else View.GONE
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView,
+                filePathCallback: ValueCallback<Array<Uri>>,
+                fileChooserParams: FileChooserParams
+            ): Boolean {
+                this@MainActivity.filePathCallback?.onReceiveValue(null)
+                this@MainActivity.filePathCallback = filePathCallback
+                return try {
+                    fileChooserLauncher.launch(fileChooserParams.createIntent())
+                    true
+                } catch (e: ActivityNotFoundException) {
+                    this@MainActivity.filePathCallback = null
+                    false
+                }
             }
         }
     }

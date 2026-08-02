@@ -1,0 +1,153 @@
+<!DOCTYPE html><html>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orange Bee Arcade</title>
+<style>
+:root{--bg:#070b12;--panel:#111824;--panel2:#0d141f;--line:#26354a;--text:#eef4fb;--muted:#9fb4cb;--accent:#f39c12;--good:#2ecc71;--blue:#2d86d9;--red:#c0392b}
+*{box-sizing:border-box}body{margin:0;padding:18px;font-family:sans-serif;background:radial-gradient(circle at top,#10203a 0,#070b12 45%,#04070c 100%);color:var(--text)}
+.c{max-width:620px;margin:0 auto;background:linear-gradient(180deg,rgba(20,27,37,.96),rgba(12,18,28,.98));padding:22px;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 45px rgba(0,0,0,.45)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+h1{margin:0;color:var(--accent);font-size:1.5em;letter-spacing:1px;text-transform:uppercase}
+.badge{color:var(--muted);font-size:.82em;padding:.35rem .6rem;border:1px solid #30465f;border-radius:999px;background:#0e1622}
+#s{font-size:3.2em;font-weight:800;line-height:1;color:var(--good);margin:14px 0 10px;text-shadow:0 0 16px rgba(46,204,113,.22)}
+.meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:.92em;margin-bottom:12px}
+.card{background:linear-gradient(180deg,rgba(13,20,31,.98),rgba(9,14,22,.98));border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:14px}
+.card h2{margin:0 0 10px;font-size:1em;color:#d8e5f4;letter-spacing:.4px}
+select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;border-radius:10px;padding:10px 12px;font-size:1em;outline:none}
+.n{min-height:18px;margin-top:8px;color:var(--muted);font-size:.82em}
+.t{max-height:220px;overflow:auto;background:var(--panel2);border:1px solid #1f2a3a;border-radius:12px;padding:10px 12px;font-family:monospace;font-size:.88em;line-height:1.45}
+.td{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.td:last-child{border-bottom:0}
+.btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.b{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1 1 150px;background:var(--blue);color:#fff;border:none;border-radius:11px;padding:11px 14px;cursor:pointer;font-weight:700;text-decoration:none}
+.b:hover{filter:brightness(1.08)}
+.br{background:var(--red)}
+.footer-row{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+.ver{color:#89a7c4;font-size:.78em}
+.admin{color:#89a7c4;font-size:.78em;text-decoration:none}
+.card.challenge-card{display:block;text-decoration:none;color:inherit;border-color:#3a2a12;background:linear-gradient(135deg,rgba(243,156,18,.16),rgba(13,20,31,.98));cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.card.challenge-card:hover{transform:translateY(-2px);border-color:var(--accent);box-shadow:0 10px 24px rgba(243,156,18,.12)}
+.card.infection-card{display:block;text-decoration:none;color:inherit;border-color:#542b2b;background:linear-gradient(135deg,rgba(192,57,43,.18),rgba(13,20,31,.98));cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.card.infection-card:hover{transform:translateY(-2px);border-color:var(--red);box-shadow:0 10px 24px rgba(192,57,43,.14)}
+.infection-card .cc-arrow{color:#e96b5d}
+.card.gamemodes-card{display:block;text-decoration:none;color:inherit;border-color:#1e3a3f;background:linear-gradient(135deg,rgba(41,128,185,.18),rgba(13,20,31,.98));cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.card.gamemodes-card:hover{transform:translateY(-2px);border-color:var(--blue);box-shadow:0 10px 24px rgba(41,128,185,.14)}
+.gamemodes-card .cc-arrow{color:var(--blue)}
+.infection-state{color:var(--muted);font-size:.78em;font-weight:700;margin-left:auto}
+.cc-top{display:flex;justify-content:space-between;align-items:center}
+.cc-top h2{margin:0;font-size:1em;color:#d8e5f4;display:flex;align-items:center;gap:8px;letter-spacing:.4px}
+.cc-arrow{color:var(--accent);font-size:1.3em;font-weight:800;line-height:1}
+.cc-text{margin:8px 0 0;color:var(--muted);font-size:.85em}
+.dot{width:9px;height:9px;border-radius:50%;background:#555;flex-shrink:0}
+.dot.on{background:var(--good);box-shadow:0 0 8px var(--good);animation:pulse 1.4s infinite}
+@keyframes pulse{0%{opacity:1}50%{opacity:.35}100%{opacity:1}}
+.modalbg{display:none;position:fixed;inset:0;background:rgba(4,6,10,.72);z-index:50;align-items:center;justify-content:center;padding:16px}
+.modalbg.show{display:flex}
+.modal{background:#141b25;border:2px solid var(--good);border-radius:8px;max-width:440px;width:100%;padding:20px;box-sizing:border-box}
+.modal h3{margin:0 0 10px;color:var(--good);font-size:1.1em}
+.modal .mbody{color:#c7d6e6;font-size:.9em;line-height:1.5;margin-bottom:16px}
+.modal .mbtns{display:flex;gap:8px;justify-content:flex-end}
+</style>
+</head>
+<body>
+<div class="c">
+<div class="top"><h1 id="ct">&#128029; ARCADE</h1><div class="badge" data-i18n="index.badge">WLAN / FPV / Tricks</div></div>
+<div id="s">0</div>
+<div class="meta"><div><span data-i18n="index.highscore">Highscore:</span> <b id="hs">0</b></div><div><span data-i18n="index.pilot">Pilot:</span> <b id="p">-</b></div></div>
+<div class="card"><h2 data-i18n="index.profile">Trick-Tuning Profil</h2><select id="prof" onchange="setP()"><option value="freestyle">Freestyle</option></select><div id="pn" class="n" data-i18n="index.profileLoading">Profil...</div></div>
+<div class="card"><h2 data-i18n="index.detected">Detektierte Manoever</h2><div class="t" id="tr" data-i18n="index.wait">Warte...</div></div>
+<a class="card challenge-card" href="/challenges-view">
+<div class="cc-top"><h2><span class="dot" id="cc_dot"></span> <span data-i18n="index.challengesTitle">&#127942; Challenges</span></h2><span class="cc-arrow">&#8594;</span></div>
+<p class="cc-text" data-i18n="index.challengesText">Touch &amp; Go, Altitude-Hold/Limbo und Eco-Challenge live verfolgen</p>
+</a>
+<a class="card infection-card" href="/infection-view">
+<div class="cc-top"><h2><span class="dot" id="infection_dot"></span> <span data-i18n="index.infectionTitle">Infection Modus</span></h2><span id="infection_state" class="infection-state" data-i18n="infection.inactive">Inaktiv</span><span class="cc-arrow">&#8594;</span></div>
+<p class="cc-text" id="infection_text" data-i18n="index.infectionText">Infizierten suchen, Rollen wechseln und Restzeit live verfolgen</p>
+</a>
+<a class="card gamemodes-card" href="/gamemodes-view">
+<div class="cc-top"><h2><span class="dot" id="gm_dot"></span> <span data-i18n="index.gamemodesTitle">&#127942; King of the Hill / Race</span></h2><span class="cc-arrow">&#8594;</span></div>
+<p class="cc-text" data-i18n="index.gamemodesText">Huegel-Punkte und Rundenzeiten live verfolgen</p>
+</a>
+<div class="btnrow"><button class="b" onclick="dl()" data-i18n="index.download">&#128229; Download</button><button class="b" onclick="dld()" data-i18n="index.debugLog">&#129514; Debug-Log</button></div>
+<div class="footer-row"><span class="ver" id="ver">v-.-.-</span><a class="admin" href="/admin" data-i18n="index.admin">&#9881;&#65039; Admin</a></div>
+</div>
+<div class="modalbg" id="licenseThanksModalBg">
+<div class="modal">
+<h3 data-i18n="index.licenseThanksTitle">Vielen Dank!</h3>
+<div class="mbody" data-i18n="index.licenseThanksBody">Vielen Dank, dass du dich fuer unser Produkt entschieden hast! Wir wuenschen dir viele erfolgreiche Fluege und coole Tricks.</div>
+<div class="mbtns"><button class="b" onclick="confirmLicenseThanks()" data-i18n="index.licenseThanksButton">Los geht's!</button></div>
+</div>
+</div>
+<script>
+let hsPromptOpen=false;
+let licenseThanksOpen=false;
+let I18N={strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const s=t(el.getAttribute('data-i18n'),'');if(s)el.innerHTML=s;});}
+function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n();}).catch(()=>{});}
+function loadCopil(){
+  fetch('/copil-info',{cache:'no-store'})
+    .then(r=>r.json())
+    .then(d=>{
+      const n=((d&&d.copil&&d.copil.copter_name)||'Test').trim()||'Test';
+      document.getElementById('ct').innerText='🐝 '+n.toUpperCase()+' ARCADE';
+      document.title=n+' Arcade';
+    })
+    .catch(()=>0)
+}
+function loadProfiles(activeProfile){fetch("/profiles-list",{cache:"no-store"}).then(r=>r.json()).then(d=>{const sel=document.getElementById("prof");const cur=activeProfile||sel.value;sel.innerHTML="";for(let p of(d.profiles||[])){const o=document.createElement("option");o.value=p.name;o.innerText=p.name.charAt(0).toUpperCase()+p.name.slice(1);if(p.name===cur)o.selected=true;sel.appendChild(o);}}).catch(e=>0)}
+function handleHighscorePopup(d){
+  if(hsPromptOpen)return;
+  if(!d.pending_highscore)return;
+  hsPromptOpen=true;
+  loadI18n().finally(()=>{
+    const name=prompt(t('index.highscorePrompt','Neuer Highscore: ')+d.pending_highscore_score+' '+t('index.points','Punkte!')+'\n'+t('index.highscorePromptName','Pilot-Name eingeben (Abbrechen = Standard-Name):'),d.highscore_player||"");
+    if(name&&name.trim()){
+      fetch("/set-highscore-name?name="+encodeURIComponent(name.trim()),{cache:"no-store"}).then(r=>r.json()).then(()=>{hsPromptOpen=false;upd();}).catch(e=>{hsPromptOpen=false;});
+    }else{
+      fetch("/confirm-highscore",{cache:"no-store"}).then(r=>r.json()).then(()=>{hsPromptOpen=false;upd();}).catch(e=>{hsPromptOpen=false;});
+    }
+  });
+}
+function handleLicenseThanksPopup(d){
+  if(licenseThanksOpen)return;
+  if(!d.license_thanks_pending)return;
+  licenseThanksOpen=true;
+  document.getElementById('licenseThanksModalBg').classList.add('show');
+}
+function confirmLicenseThanks(){
+  document.getElementById('licenseThanksModalBg').classList.remove('show');
+  fetch("/confirm-license-thanks",{cache:"no-store"}).catch(e=>0);
+}
+function upd(){fetch("/data?t="+Date.now()).then(r=>r.json()).then(d=>{document.getElementById("s").innerText=d.score;document.getElementById("hs").innerText=d.highscore;document.getElementById("p").innerText=d.highscore_player;let h=d.history||[];document.getElementById("tr").innerHTML=h.length?[...h].reverse().map(x=>"<div class='td'>"+x+"</div>").join(""):t('index.noTricks','Keine Tricks');if(d.trick_tuning_profile){const sel=document.getElementById("prof");if(!sel.querySelector("option[value='"+d.trick_tuning_profile+"']"))loadProfiles(d.trick_tuning_profile);else sel.value=d.trick_tuning_profile;}document.getElementById("ver").innerText="v"+(d.firmware_version||"?");updateInfectionStatus(d.infection||{});handleHighscorePopup(d);handleLicenseThanksPopup(d);}).catch(e=>0)}
+function updateInfectionStatus(infection){
+  const running=!!infection.running,role=infection.role||'seeker',dot=document.getElementById('infection_dot'),state=document.getElementById('infection_state'),text=document.getElementById('infection_text');
+  dot.classList.toggle('on',running);
+  state.innerText=running?(role==='host'?t('infection.host','Infizierter'):t('infection.seeker','Sucher')):t('infection.inactive','Inaktiv');
+  if(running){const sec=Math.max(0,Number(infection.remaining_seconds)||0);text.innerText=t('index.infectionRemaining','Restzeit')+': '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+' | '+(infection.last_event||'');}
+  else{text.innerHTML=t('index.infectionText','Infizierten suchen, Rollen wechseln und Restzeit live verfolgen');}
+}
+function setP(){let p=document.getElementById("prof").value;document.getElementById("pn").innerText=t('index.saving','Speichert...');fetch("/set-trick-profile?profile="+p).then(r=>r.json()).then(d=>{document.getElementById("pn").innerText=t('index.ok','OK')}).catch(e=>{document.getElementById("pn").innerText=t('index.error','Fehler')})}
+function dl(){window.open("/download?manual=1","_blank")}
+function dld(){window.open("/download-debug?manual=1","_blank")}
+function loadChallengeStatus(){
+  fetch("/challenges-data",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    const c=(d&&d.challenges)||{};
+    const active=!!((c.touch_and_go&&c.touch_and_go.active)||(c.altitude_challenge&&c.altitude_challenge.active)||(c.eco&&c.eco.active));
+    const dot=document.getElementById("cc_dot");
+    if(dot)dot.classList.toggle("on",active);
+  }).catch(()=>0);
+}
+function loadGameModesStatus(){
+  Promise.all([
+    fetch("/koth-data",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+    fetch("/race-data",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+  ]).then(([koth,race])=>{
+    const active=!!(koth&&koth.running)||!!(race&&race.running);
+    const dot=document.getElementById("gm_dot");
+    if(dot)dot.classList.toggle("on",active);
+  }).catch(()=>0);
+}
+loadI18n().then(()=>{setInterval(upd,1000);setInterval(loadCopil,4000);setInterval(loadI18n,5000);setInterval(loadChallengeStatus,2000);setInterval(loadGameModesStatus,2000);loadCopil();loadProfiles();loadChallengeStatus();loadGameModesStatus();upd();});
+</script>
+</body></html>

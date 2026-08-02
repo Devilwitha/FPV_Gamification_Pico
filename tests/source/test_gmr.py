@@ -1,0 +1,114 @@
+"""Tests fuer source/gmr.py.
+
+gmr.py importiert am Modul-Top-Level `from main import DEFAULT_PILOT_NAME,
+debug_log, send_html_file` - main.py selbst ist zu gross/hardwarenah, um es
+hier zu importieren, daher wird ein winziges Stub-Modul namens "main" in
+sys.modules registriert, das exakt die drei von gmr.py benoetigten Namen
+bereitstellt.
+"""
+import pytest
+
+
+@pytest.fixture
+def gmr(install_stub_module, fresh_import):
+    sent = []
+
+    async def fake_send_html_file(writer, path):
+        sent.append((writer, path))
+
+    install_stub_module(
+        "main",
+        DEFAULT_PILOT_NAME="TestPilot",
+        debug_log=lambda message: None,
+        send_html_file=fake_send_html_file,
+    )
+    module = fresh_import("gmr")
+    module._sent = sent
+    return module
+
+
+class FakeWriter:
+    pass
+
+
+@pytest.mark.asyncio
+async def test_handle_admin_and_routes_serves_admin_koth_page(gmr):
+    writer = FakeWriter()
+    handled = await gmr.handle_admin_and_routes(writer, "/admin-koth", "GET", {}, {})
+    assert handled is True
+    assert gmr._sent == [(writer, gmr.ADMIN_KOTH_HTML_PATH)]
+
+
+@pytest.mark.asyncio
+async def test_handle_admin_and_routes_serves_admin_race_page(gmr):
+    writer = FakeWriter()
+    handled = await gmr.handle_admin_and_routes(writer, "/admin-race", "GET", {}, {})
+    assert handled is True
+    assert gmr._sent == [(writer, gmr.ADMIN_RACE_HTML_PATH)]
+
+
+@pytest.mark.asyncio
+async def test_handle_admin_and_routes_serves_gamemodes_view(gmr):
+    writer = FakeWriter()
+    handled = await gmr.handle_admin_and_routes(writer, "/gamemodes-view", "GET", {}, {})
+    assert handled is True
+    assert gmr._sent == [(writer, gmr.GAMEMODES_VIEW_HTML_PATH)]
+
+
+@pytest.mark.asyncio
+async def test_handle_admin_and_routes_unknown_path_returns_false(gmr):
+    writer = FakeWriter()
+    handled = await gmr.handle_admin_and_routes(writer, "/does-not-exist", "GET", {}, {})
+    assert handled is False
+
+
+@pytest.mark.asyncio
+async def test_handle_admin_and_routes_delegates_koth_prefixed_routes(gmr, monkeypatch):
+    import koth_mode
+
+    async def fake_handle_koth_route(writer, path, method, query, body, manager):
+        return True
+
+    monkeypatch.setattr(koth_mode, "handle_koth_route", fake_handle_koth_route)
+    writer = FakeWriter()
+    handled = await gmr.handle_admin_and_routes(writer, "/koth-data", "GET", {}, {})
+    assert handled is True
+
+
+@pytest.mark.asyncio
+async def test_handle_admin_and_routes_delegates_race_prefixed_routes(gmr, monkeypatch):
+    import race_mode
+
+    async def fake_handle_race_route(writer, path, method, query, body, manager):
+        return True
+
+    monkeypatch.setattr(race_mode, "handle_race_route", fake_handle_race_route)
+    writer = FakeWriter()
+    handled = await gmr.handle_admin_and_routes(writer, "/race-data", "GET", {}, {})
+    assert handled is True
+
+
+def test_ensure_koth_manager_is_singleton(gmr):
+    first = gmr.ensure_koth_manager()
+    second = gmr.ensure_koth_manager()
+    assert first is second
+
+
+def test_ensure_race_manager_is_singleton(gmr):
+    first = gmr.ensure_race_manager()
+    second = gmr.ensure_race_manager()
+    assert first is second
+
+
+def test_start_tasks_is_idempotent(gmr):
+    import asyncio
+
+    async def _run():
+        tasks_a = gmr.start_tasks()
+        tasks_b = gmr.start_tasks()
+        assert tasks_a is tasks_b
+        assert len(tasks_a) == 2
+        for task in tasks_a:
+            task.cancel()
+
+    asyncio.run(_run())

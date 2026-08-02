@@ -17,3 +17,7 @@ cryptography>=42.0.0
 pyinstaller>=6.0
 pyserial>=3.5
 mpremote>=1.20
+# Fuer die Unittests unter tests/ (source/-Firmware-Logik ueber die
+# pico_simulator/-Kompatibilitaetsschicht, siehe conftest.py/pytest.ini).
+pytest>=8.0
+pytest-asyncio>=0.24

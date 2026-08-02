@@ -12,15 +12,20 @@ import android.provider.Settings
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.widget.EditText
+import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.fpv.gamification.app.databinding.ActivityMainBinding
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class MainActivity : AppCompatActivity() {
 
@@ -129,6 +134,65 @@ class MainActivity : AppCompatActivity() {
                     this@MainActivity.filePathCallback = null
                     false
                 }
+            }
+
+            // Die Pico-Seiten nutzen echte window.alert()/confirm()/prompt() (z.B. der
+            // Piloten-Name beim neuen Highscore, Loeschbestaetigungen im Admin-Bereich).
+            // Ohne diese drei Overrides zeigt eine WebView dafuer standardmaessig GAR
+            // NICHTS an (JS bekommt sofort "abgebrochen" zurueck) - hier als native,
+            // zum Dark-Theme passende Dialoge nachgebaut.
+            override fun onJsAlert(
+                view: WebView,
+                url: String?,
+                message: String?,
+                result: JsResult
+            ): Boolean {
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm() }
+                    .setOnCancelListener { result.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsConfirm(
+                view: WebView,
+                url: String?,
+                message: String?,
+                result: JsResult
+            ): Boolean {
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm() }
+                    .setNegativeButton(android.R.string.cancel) { _, _ -> result.cancel() }
+                    .setOnCancelListener { result.cancel() }
+                    .show()
+                return true
+            }
+
+            override fun onJsPrompt(
+                view: WebView,
+                url: String?,
+                message: String?,
+                defaultValue: String?,
+                result: JsPromptResult
+            ): Boolean {
+                val padding = (16 * resources.displayMetrics.density).toInt()
+                val input = EditText(this@MainActivity).apply {
+                    setText(defaultValue)
+                }
+                val container = FrameLayout(this@MainActivity).apply {
+                    setPadding(padding, padding / 2, padding, 0)
+                    addView(input)
+                }
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setMessage(message)
+                    .setView(container)
+                    .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm(input.text.toString()) }
+                    .setNegativeButton(android.R.string.cancel) { _, _ -> result.cancel() }
+                    .setOnCancelListener { result.cancel() }
+                    .show()
+                return true
             }
         }
     }

@@ -33,9 +33,19 @@ class PicoWebViewClient(
     companion object {
         // Route -> gebuendelte HTML-Datei (assets/pico/), siehe source/main.py,
         // misc_routes_helpers.py und gmr.py fuer die Original-Routentabelle.
+        //
+        // "/" ist ABSICHTLICH NICHT gemappt: welche Seite der Pico dort liefert,
+        // haengt vom Geraetezustand ab, den die App nicht kennt, ohne den Pico
+        // zu fragen - role_setup.py (frisch geflashter Pico ohne gewaehlte Rolle),
+        // main.py/index.html (Rolle "gamification") oder main_gatehill.py/
+        // index_gatehill.html (Rolle "gatehill"). Ein hartes lokales Override
+        // wuerde z.B. die Rollen-Auswahlseite eines frischen Picos verstecken.
+        // "/" geht deshalb immer live raus; die Pico-eigene Routing-Logik
+        // entscheidet dort ganz normal, welche Seite ausgeliefert wird. Die
+        // untenstehenden Pfade existieren dagegen ausschliesslich in main.py
+        // (Rolle "gamification") und werden von den anderen beiden Zustaenden
+        // nie verlinkt, koennen also gefahrlos lokal bedient werden.
         private val PAGE_ASSETS = mapOf(
-            "/" to "index.html",
-            "/index.html" to "index.html",
             "/admin" to "admin_dashboard.html",
             "/admin-update" to "admin_update.html",
             "/admin-simulate" to "admin_simulate.html",

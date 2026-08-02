@@ -41,12 +41,17 @@ def _install_time_compat(cpu_scale):
     def sleep_ms(ms):
         _original_time_sleep((max(0, ms) / 1000.0) * _SimState.cpu_scale)
 
+    def sleep_us(us):
+        _original_time_sleep((max(0, us) / 1_000_000.0) * _SimState.cpu_scale)
+
     if not hasattr(time, "ticks_ms"):
         setattr(time, "ticks_ms", ticks_ms)
     if not hasattr(time, "ticks_diff"):
         setattr(time, "ticks_diff", ticks_diff)
     if not hasattr(time, "sleep_ms"):
         setattr(time, "sleep_ms", sleep_ms)
+    if not hasattr(time, "sleep_us"):
+        setattr(time, "sleep_us", sleep_us)
 
 
 def _install_gc_compat(mem_free_bytes, mem_alloc_bytes):
@@ -121,17 +126,67 @@ def _install_asyncio_compat(sim_port, cpu_scale, net_latency_ms):
 class _Pin:
     IN = 0
     OUT = 1
+    PULL_UP = 2
+    PULL_DOWN = 3
+    IRQ_FALLING = 1
+    IRQ_RISING = 2
 
-    def __init__(self, pin_id, mode=None):
+    def __init__(self, pin_id, mode=None, pull=None):
         self.pin_id = pin_id
         self.mode = mode
+        self.pull = pull
         self._value = 0
+        self._irq_handler = None
+        self._irq_trigger = None
 
     def value(self, new_value=None):
         if new_value is None:
             return self._value
         self._value = 1 if new_value else 0
         return self._value
+
+    def irq(self, trigger=None, handler=None):
+        # Es feuert im Simulator keine echte Interrupt-Hardware - registriert
+        # den Handler nur, damit Tests ihn gezielt manuell aufrufen koennen
+        # (siehe tests/source/test_ir_receiver.py).
+        self._irq_trigger = trigger
+        self._irq_handler = handler
+
+
+class _PWM:
+    """Minimaler PWM-Stub: haelt nur freq/duty nach, ohne tatsaechlich ein
+    Signal zu erzeugen - reicht aus, damit ir_emitter.py's IRTransmitter im
+    Simulator/Unittest als 'verfuegbar' initialisiert und dessen NEC-
+    Encoding-Logik end-to-end (inkl. echtem time.sleep_us) getestet werden
+    kann, siehe tests/source/test_ir_emitter.py."""
+
+    def __init__(self, pin):
+        self.pin = pin
+        self._freq_hz = 0
+        self._duty_u16 = 0
+
+    def freq(self, hz=None):
+        if hz is None:
+            return self._freq_hz
+        self._freq_hz = int(hz)
+        return self._freq_hz
+
+    def duty_u16(self, value=None):
+        if value is None:
+            return self._duty_u16
+        self._duty_u16 = int(value)
+        return self._duty_u16
+
+    def deinit(self):
+        self._duty_u16 = 0
+
+
+def _machine_disable_irq():
+    return None
+
+
+def _machine_enable_irq(_state):
+    return None
 
 
 class _UART:
@@ -187,11 +242,14 @@ def _machine_unique_id():
 def _install_machine_module():
     machine_mod = types.ModuleType("machine")
     machine_mod.Pin = _Pin
+    machine_mod.PWM = _PWM
     machine_mod.UART = _UART
     machine_mod.WDT = _WDT
     machine_mod.reset = _machine_reset
     machine_mod.freq = _machine_freq
     machine_mod.unique_id = _machine_unique_id
+    machine_mod.disable_irq = _machine_disable_irq
+    machine_mod.enable_irq = _machine_enable_irq
     sys.modules["machine"] = machine_mod
 
 

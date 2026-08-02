@@ -14,6 +14,7 @@ Jeder Pico wählt beim ersten Start eine **Geräte-Rolle**: **🎮 Gamification*
 * 🎯 **Smart Trick-Erkennung:** Automatische Erkennung von Flips, Rolls & Spins mit dynamischer Punktevergabe.
 * ☣️ **Infection-Modus (BLE):** Erkennt Mitspieler über verbindungslose Bluetooth-LE Advertisements direkt in der Luft!
 * ⛳ **King of the Hill & Race (BLE, Gate/Hill-Rolle):** Stationäre Picos als Hügel-Anker oder Start-/Ziel-Tore – Punkte über Zeit in Reichweite bzw. gestoppte Rundenzeiten.
+* 🔫 **Shooter-Modus (Infrarot-Laser-Tag):** Echtes IR-"Duell" zwischen mehreren Picos – Grove-Infrarot-Emitter zum Abfeuern, IR-REC38-Empfänger zählt Treffer automatisch (inkl. Leben/Ausscheiden, Trefferverlauf pro Schütze). Abfeuern per Web-Button **oder** automatisch über einen frei wählbaren AUX-Kanal am Sender (siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen)).
 * 🏆 **Live Highscore-System:** Mit Zeitstempel und Pilot. Inklusive Piloten-Eingabe im Browser, Bestätigungs-Popup bei neuem Rekord und LED-Blink-Party!
 * 📡 **Eigener WLAN-Hotspot:** Keine App-Installation nötig – einfach per Smartphone/Tablet im Feld mit dem Pico verbinden.
 * 🕹️ **Real-Time Mini-Games (Challenges):**
@@ -43,7 +44,8 @@ Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen (nicht
 | `role_setup.py` & `device_role.json` | 🧭 Einmalige Ersteinrichtungsseite zur Wahl der Geräte-Rolle (Gamification vs. Gate/Hill). |
 | `main.py` (oder `main_LilyGo.py`) | 🚀 Hauptskript der Rolle "Gamification" (startet nach `boot.py`). |
 | `main_gatehill.py` & `index_gatehill.html` | ⛳ Hauptskript & Oberfläche der Rolle "Gate/Hill" (King-of-the-Hill-Hügel bzw. Race-Tor A/B). |
-| `gmr.py`, `koth_mode.py`, `race_mode.py` | 🏁 Lazy-geladene Logik & Routen für die Spielmodi King of the Hill und Race (BLE-basiert, von beiden Rollen genutzt). |
+| `gmr.py`, `koth_mode.py`, `race_mode.py`, `shooter_mode.py` | 🏁 Lazy-geladene Logik & Routen für die Spielmodi King of the Hill, Race (BLE-basiert) und Shooter (IR-basiert), von beiden Rollen genutzt. |
+| `ir_emitter.py` & `ir_receiver.py` | 🔫 Treiber für Grove-Infrarot-Emitter (Senden) und IR-REC38-Empfänger (Empfangen) – NEC-Protokoll, siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen). |
 | `hotspot_common.py`, `hotspot.conf` & `wlan.conf` | 📡 WLAN-Access-Point-Konfiguration (`hotspot.conf`) sowie Ziel-WLAN für die GitHub-Update-Suche (`wlan.conf`). |
 | `ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py`, `github_ota_helpers.py`, `update_manager.py` | 🛠️ OTA-, Upload- und "Nach Updates suchen"-Hilfsfunktionen für den Webserver. |
 | `license_verifier.py`, `license.lic` & `public_key.pem` | 🔒 Offline-Lizenzprüfung: signierte, hardware-gebundene Freischaltung (siehe [Lizenzsystem](#-lizenzsystem)). |
@@ -51,11 +53,11 @@ Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen (nicht
 | `infection_mode.py` & `idcard_helpers.py` | ☣️ Logik für den Bluetooth-Infection-Modus und Spieler-Verwaltung. |
 | `*.pak` Dateien (z.B. `en.pak`, `de.pak`) | 🌍 Sprachpakete für die Internationalisierung des Webinterfaces. |
 | `index.html` | 📱 Hauptseite der Rolle "Gamification" (Scoreboard, Live-Feed, Historie, Downloads für Session/Debug). |
-| `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html` | 🎛️ Alle Admin-Unterseiten (Update, Simulation, System-Info, Challenges, Spielmodi, Credits, etc.). |
+| `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html`, `admin_shooter.html` | 🎛️ Alle Admin-Unterseiten (Update, Simulation, System-Info, Challenges, Spielmodi, Credits, etc.). |
 | `challenges_view.html`, `infection_view.html` & `gamemodes_view.html` | 📺 Öffentliche Live-Visualisierungen für Zuschauer. |
 | `firmware_version.txt` & `version.json` | 🏷️ Versionstag (z.B. `1.3.3`). Wird bei jedem Release **automatisch** hochgezählt. Nicht manuell bearbeiten! |
 
-*Zusätzliche Laufzeit-/Datendateien (legt das System selbst an):* `fpv_highscore.json`, `fpv_trick_settings.json`, `fpv_system_settings.json`, `koth.conf`, `race.conf`, `boot_state.json`, Log-Dateien (`fpv_debug_session.txt`), Custom-Trick-Profile (`<name>.pro`), etc.
+*Zusätzliche Laufzeit-/Datendateien (legt das System selbst an):* `fpv_highscore.json`, `fpv_trick_settings.json`, `fpv_system_settings.json`, `koth.conf`, `race.conf`, `shooter.conf`, `shooter_log.json`, `boot_state.json`, Log-Dateien (`fpv_debug_session.txt`), Custom-Trick-Profile (`<name>.pro`), etc.
 
 **💡 Wichtiger Hinweis zu Thonny:** Teste das Skript **nicht** mit "Run current script". Dadurch wird der Text als fetter String in den RAM geladen und erzeugt schnell einen `MemoryError`. Speichere es als `main.py` und mache einen Hardware-Reset!
 
@@ -79,6 +81,53 @@ Du benötigst lediglich **3 Leitungen** vom Flight Controller (oder ELRS-Empfän
 > - Niemals 5V direkt auf den `3V3`-Pin legen!
 > - Auf gemeinsame Masse (`GND`) achten, sonst kommen keine stabilen Daten an!
 > - **Aktuelle UART-Konfiguration im Code:** UART0 RX ist auf **GP1**! Hier kommen die CRSF-Daten rein. (UART0 TX liegt auf GP0, wird aber aktuell nicht aktiv genutzt).
+
+---
+
+## 🔫 Shooter-Hardware anschliessen & testen
+
+Für den **Shooter-Modus** (`/admin-shooter`) braucht **jeder** mitspielende Pico zusätzlich zwei kleine IR-Module: einen **Grove-Infrarot-Emitter** (Senden) und einen **IR-REC38-Empfänger** (Empfangen, wie er auch einzeln oder auf Grove-Empfänger-Modulen verbaut ist). Beide hängen an frei wählbaren GPIOs – Standard ist:
+
+```text
++---------------------------+             +-----------------------+
+| Grove Infrarot-Emitter    |             | Raspberry Pi Pico     |
+|                            |             |                       |
+|        GND  --------------->------------->  GND                  |
+|        VCC  --------------->------------->  3V3 (oder 5V, siehe Modul) |
+|        SIG  --------------->------------->  GP16 (PWM-Ausgang)    |
++---------------------------+             +-----------------------+
+
++---------------------------+             +-----------------------+
+| IR-REC38 Empfänger        |             | Raspberry Pi Pico     |
+|                            |             |                       |
+|        GND  --------------->------------->  GND                  |
+|        VCC  --------------->------------->  3V3                  |
+|        OUT  --------------->------------->  GP17 (Interrupt-Eingang) |
++---------------------------+             +-----------------------+
+```
+
+> ⚠️ **Wichtig:**
+> - Pin-Nummern sind Konstanten am Anfang von `source/ir_emitter.py` (`DEFAULT_IR_EMITTER_PIN`) bzw. `source/ir_receiver.py` (`DEFAULT_IR_RECEIVER_PIN`) – bei Bedarf dort anpassen, bevor die Firmware gebaut wird.
+> - Der IR-REC38 braucht **3V3**, keine 5V!
+> - Ohne angeschlossene Hardware meldet `/shooter-data` (bzw. die Hardware-Status-Zeile auf `/admin-shooter`) einfach `emitter_available: false` / `receiver_available: false` – kein Crash, der restliche Modus bleibt nutzbar.
+
+### AUX-Kanal als automatischer Abzug (optional)
+
+Statt (oder zusätzlich zu) dem Test-Knopf im Webinterface kann ein **AUX-Kanal** vom Sender als Abzug dienen: Auf `/admin-shooter` einfach die CRSF-Kanalnummer (1-16, z.B. ein 2-Positions-Schalter) und eine Schwelle (988-2011, Betaflight-übliche µs-Konvention, Mitte 1500) eintragen. Steht der Kanal über der Schwelle, feuert der Pico automatisch – solange der Schalter oben bleibt, im Takt der "Schuss-Abklingzeit" (Dauerfeuer-Gefühl).
+
+Das setzt voraus, dass dein Flight Controller/ELRS-Aufbau `RC_CHANNELS_PACKED`-CRSF-Frames auf derselben Leitung sendet, die auch für das Attitude-/Telemetrie-Sniffen genutzt wird (bei den meisten ELRS-Setups mit echtem Halb-Duplex-Bus der Fall). Kommen keine Kanaldaten an, zeigt `/admin-shooter` unter "AUX-Abzug" **"Kein Signal"** – dann bleibt nur der manuelle Test-Knopf.
+
+### Empfänger isoliert testen (2. "Test-Pico")
+
+Um zu prüfen, ob der IR-REC38 überhaupt sauber empfängt, bevor man den kompletten Shooter-Modus in Betrieb nimmt, gibt es eine winzige Standalone-Firmware im Projekt-Root: **[`shooter_receiver_test_main.py`](shooter_receiver_test_main.py)**. Sie braucht **nur** ein IR-REC38-Modul (kein Emitter, kein Rest der Firmware) auf einem zweiten/beliebigen Pico:
+
+1. `source/ir_receiver.py` **und** `shooter_receiver_test_main.py` auf den Test-Pico kopieren (z.B. per Thonny).
+2. `shooter_receiver_test_main.py` dort in `main.py` umbenennen.
+3. IR-REC38 wie oben verkabelt (Standard `GP17`), Pico neu starten.
+4. **LED-Verhalten:**
+   * Board-LED leuchtet **dauerhaft**, sobald der Empfänger erfolgreich erkannt wurde ("alles ok").
+   * Blinkt die LED stattdessen **schnell dauerhaft**, wurde kein Empfänger erkannt (Pin/Verkabelung prüfen).
+   * Bei jedem gültig empfangenen IR-Treffer (z.B. von einem "richtigen" Shooter-Pico, der abfeuert) blinkt die LED kurz **aus und wieder an** – zusätzlich wird jeder Treffer über die serielle Konsole (Thonny) protokolliert.
 
 ---
 
@@ -308,8 +357,9 @@ Hier ein kleiner Auszug, was unter der Haube schlummert:
 | `/admin-infection` | ☣️ Infection-Modus Verwaltung |
 | `/admin-koth` | ⛳ King-of-the-Hill Verwaltung (Gate/Hill-Rolle) |
 | `/admin-race` | 🏁 Race Verwaltung (Gate/Hill-Rolle) |
+| `/admin-shooter` | 🔫 Shooter-Verwaltung (IR-Emitter/Empfänger, AUX-Abzug, Trefferverlauf) |
 | `/admin-credits` | 🙏 Credits-Seite |
-| `/koth-*`, `/race-*` | ⛳🏁 Start/Stopp/Status der Spielmodi (z.B. `/koth-start`, `/race-data`) |
+| `/koth-*`, `/race-*`, `/shooter-*` | ⛳🏁🔫 Start/Stopp/Status der Spielmodi (z.B. `/koth-start`, `/race-data`, `/shooter-fire`) |
 | `/infection-*`, `/lobby-*` | ☣️ Steuer-/Datenrouten des Infection-Modus |
 | `/upload-chunk` / `/finalize-upload`| 📦 Firmware & HTML File Uploader |
 | `/simulate-trick` | 🎲 Synthetic Gyro Trigger (`?type=roll\|flip\|spin`) |
@@ -324,7 +374,7 @@ Hier ein kleiner Auszug, was unter der Haube schlummert:
 Damit du dich in diesem Projekt-Dschungel zurechtfindest, hier ein kleiner Wegweiser, was die einzelnen Skripte und Ordner eigentlich machen:
 
 ### 🏠 Root-Verzeichnis (Das Hauptverzeichnis des Repos)
-Im Root-Verzeichnis selbst liegen nur diese `README.md` sowie ein paar kleine PC-seitige Debug-Skripte (`test_github.py`, `test_modules.py`, `pico_webserver.py`) und die folgenden Projektordner:
+Im Root-Verzeichnis selbst liegen nur diese `README.md` sowie ein paar kleine PC-seitige Debug-Skripte (`test_github.py`, `test_modules.py`, `pico_webserver.py`), die eigenständige Test-Firmware [`shooter_receiver_test_main.py`](shooter_receiver_test_main.py) für einen zweiten "nur IR-Empfänger"-Test-Pico (siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen)) und die folgenden Projektordner:
 
 | Ordner | Zweck |
 |---|---|

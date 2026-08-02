@@ -3,7 +3,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Game Modes</title>
 <style>
-:root{--bg:#070b12;--panel:#111824;--panel2:#0d141f;--line:#26354a;--text:#eef4fb;--muted:#9fb4cb;--koth:#e6a23c;--race:#2980b9;--good:#2ecc71}
+:root{--bg:#070b12;--panel:#111824;--panel2:#0d141f;--line:#26354a;--text:#eef4fb;--muted:#9fb4cb;--koth:#e6a23c;--race:#2980b9;--shooter:#c0392b;--good:#2ecc71}
 *{box-sizing:border-box}
 body{margin:0;padding:18px;font-family:sans-serif;background:radial-gradient(circle at top,#10203a 0,#070b12 45%,#04070c 100%);color:var(--text)}
 .c{max-width:680px;margin:0 auto;background:linear-gradient(180deg,rgba(20,27,37,.96),rgba(12,18,28,.98));padding:22px;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 45px rgba(0,0,0,.45)}
@@ -23,6 +23,7 @@ h1{margin:0;color:var(--text);font-size:1.5em;letter-spacing:1px;text-transform:
 .btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
 .b{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:1 1 150px;background:var(--koth);color:#fff;border:none;border-radius:11px;padding:11px 14px;cursor:pointer;font-weight:700;text-decoration:none}
 .b.race{background:var(--race)}
+.b.shooter{background:var(--shooter)}
 .b:hover{filter:brightness(1.08)}
 .footer-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px}
 .ver{color:#89a7c4;font-size:.78em}
@@ -63,11 +64,27 @@ h1{margin:0;color:var(--text);font-size:1.5em;letter-spacing:1px;text-transform:
 <div id="r_laphistory"></div>
 </div>
 
+<div class="game" style="--gc:var(--shooter)">
+<h2><span class="dot" id="s_dot"></span> <span data-i18n="gamemodesView.shooterSection">&#128165; Shooter</span></h2>
+<div class="grid">
+<div class="st"><span data-i18n="shooter.state">Zustand</span><b id="s_state">-</b></div>
+<div class="st"><span data-i18n="shooter.hitsTaken">Treffer kassiert</span><b id="s_hits">-</b></div>
+<div class="st"><span data-i18n="shooter.shotsFired">Schuesse abgegeben</span><b id="s_shots">-</b></div>
+<div class="st"><span data-i18n="shooter.livesRemaining">Verbleibende Leben</span><b id="s_lives">-</b></div>
+<div class="st"><span data-i18n="shooter.event">Letztes Ereignis</span><b id="s_event">-</b></div>
+</div>
+<div class="hint" data-i18n="shooter.hitSourcesTitle">Treffer nach Schuetze</div>
+<div id="s_hitsources"></div>
+</div>
+
 <p class="hint" data-i18n="gamemodesView.hint">Werte aktualisieren sich automatisch. Einstellungen/Starten/Stoppen erfolgt in den jeweiligen Steuerbereichen.</p>
 
 <div class="btnrow">
 <a class="b" href="/admin-koth" data-i18n="gamemodesView.controlKothButton">&#128081; King of the Hill steuern</a>
 <a class="b race" href="/admin-race" data-i18n="gamemodesView.controlRaceButton">&#127937; Race steuern</a>
+</div>
+<div class="btnrow">
+<a class="b shooter" href="/admin-shooter" data-i18n="gamemodesView.controlShooterButton">&#128165; Shooter steuern</a>
 </div>
 <div class="btnrow">
 <a class="b" href="/" data-i18n="gamemodesView.homeButton">&#128029; Zur Startseite</a>
@@ -114,7 +131,20 @@ function updateRace(d){
 }
 function pollRace(){fetch('/race-data',{cache:'no-store'}).then(r=>r.json()).then(updateRace).catch(()=>{}).finally(()=>setTimeout(pollRace,500));}
 
+function showShooterHitSources(d){const list=document.getElementById('s_hitsources'),entries=Array.isArray(d.hit_sources)?d.hit_sources:[];list.replaceChildren();if(!entries.length){const row=document.createElement('div');row.className='hint';row.innerText=t('shooter.noHits','Noch keine Treffer registriert.');list.appendChild(row);return}entries.forEach(e=>{const row=document.createElement('div');row.className='lb';const label=document.createElement('span');label.innerText='Node '+e.id;const val=document.createElement('b');val.innerText=e.hits;row.append(label,val);list.appendChild(row);});}
+function updateShooter(d){
+ const running=!!d.running;
+ document.getElementById('s_dot').classList.toggle('on',running);
+ document.getElementById('s_state').innerText=running?t('shooter.active','Aktiv'):t('shooter.inactive','Inaktiv');
+ document.getElementById('s_hits').innerText=d.hits_taken||0;
+ document.getElementById('s_shots').innerText=d.shots_fired||0;
+ document.getElementById('s_lives').innerText=(d.config&&d.config.lives===0)?t('shooter.unlimited','Unbegrenzt'):d.lives_remaining;
+ document.getElementById('s_event').innerText=d.last_event||'-';
+ showShooterHitSources(d);
+}
+function pollShooter(){fetch('/shooter-data',{cache:'no-store'}).then(r=>r.json()).then(updateShooter).catch(()=>{}).finally(()=>setTimeout(pollShooter,700));}
+
 function loadVersion(){fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>document.getElementById('ver').innerText=d.firmware_version?'v'+d.firmware_version:'').catch(()=>{});}
-loadI18n().then(()=>{pollKoth();pollRace();loadVersion();});setInterval(loadI18n,5000);
+loadI18n().then(()=>{pollKoth();pollRace();pollShooter();loadVersion();});setInterval(loadI18n,5000);
 </script>
 </body></html>

@@ -65,7 +65,7 @@ select{width:100%;background:#0b1320;color:#e8f2ff;border:1px solid #355270;bord
 <p class="cc-text" id="infection_text" data-i18n="index.infectionText">Infizierten suchen, Rollen wechseln und Restzeit live verfolgen</p>
 </a>
 <a class="card gamemodes-card" href="/gamemodes-view">
-<div class="cc-top"><h2><span class="dot" id="gm_dot"></span> <span data-i18n="index.gamemodesTitle">&#127942; King of the Hill / Race</span></h2><span class="cc-arrow">&#8594;</span></div>
+<div class="cc-top"><h2><span class="dot" id="gm_dot"></span> <span data-i18n="index.gamemodesTitle">&#127942; King of the Hill / Race / Shooter</span></h2><span class="cc-arrow">&#8594;</span></div>
 <p class="cc-text" data-i18n="index.gamemodesText">Huegel-Punkte und Rundenzeiten live verfolgen</p>
 </a>
 <div class="btnrow"><button class="b" onclick="dl()" data-i18n="index.download">&#128229; Download</button><button class="b" onclick="dld()" data-i18n="index.debugLog">&#129514; Debug-Log</button></div>
@@ -142,8 +142,9 @@ function loadGameModesStatus(){
   Promise.all([
     fetch("/koth-data",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
     fetch("/race-data",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
-  ]).then(([koth,race])=>{
-    const active=!!(koth&&koth.running)||!!(race&&race.running);
+    fetch("/shooter-data",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+  ]).then(([koth,race,shooter])=>{
+    const active=!!(koth&&koth.running)||!!(race&&race.running)||!!(shooter&&shooter.running);
     const dot=document.getElementById("gm_dot");
     if(dot)dot.classList.toggle("on",active);
   }).catch(()=>0);

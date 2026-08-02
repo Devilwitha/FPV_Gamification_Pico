@@ -115,6 +115,13 @@ CRSF_FRAMETYPE_VARIO           = 0x07  # Sinkrate/Steigrate in cm/s (int16)
 CRSF_FRAMETYPE_BATTERY_SENSOR  = 0x08  # Spannung/Strom/verbrauchte Kapazitaet/Restladung
 CRSF_FRAMETYPE_GPS             = 0x02  # Lat/Lon/Geschwindigkeit/Kurs/Hoehe/Satelliten (fuer Speed-Run)
 CRSF_FRAMETYPE_LINK_STATISTICS = 0x14  # RSSI/Link-Qualitaet/SNR (fuer Signal-Helden)
+# 16 RC/AUX-Kanaele, je 11 Bit gepackt (22 Byte Payload) - fuer den
+# Shooter-Modus (siehe shooter_mode.py), der ueber einen frei waehlbaren
+# AUX-Kanal (Schalter am Sender) automatisch abfeuert. Nur vorhanden, wenn
+# der jeweilige CRSF-Aufbau Kanaldaten auf derselben mitgesniffter Leitung
+# ueberhaupt sendet - falls nicht, bleibt rc_channels_state einfach leer
+# (kein Crash, siehe shooter_mode.py's _read_aux_state()).
+CRSF_FRAMETYPE_RC_CHANNELS_PACKED = 0x16
 
 # CRSF Frame- und Plausibilitaetsgrenzen
 CRSF_MAX_FRAME_LEN        = 64
@@ -225,6 +232,10 @@ debug_log_file_enabled = True
 debug_log_file_bytes = 0
 debug_log_file_limit_reached = False
 highscore_data = {"score": 0, "timestamp": "Unbekannt", "player": DEFAULT_PILOT_NAME}
+# Letzter dekodierter RC/AUX-Kanalsatz (16 Rohwerte, 172-1811) + Zeitstempel
+# des letzten Updates - wird von shooter_mode.py gelesen, um automatisch
+# ueber einen konfigurierten AUX-Kanal abzufeuern (siehe telemetry_loop()).
+rc_channels_state = {"channels": [0] * 16, "updated_ms": 0}
 pending_highscore = {"active": False, "score": 0, "timestamp": "Unbekannt"}
 status_led = None
 status_led_available = False
@@ -658,6 +669,24 @@ def crc8_dvb_s2(data):
             else:
                 crc = (crc << 1) & 0xFF
     return crc
+
+
+def unpack_crsf_channels(payload):
+    """Entpackt 16 je 11-Bit-gepackte CRSF-Kanalwerte (Standard-Bitstream-
+    Layout, LSB zuerst) aus einem 22-Byte-Payload. Rohwertebereich 172-1811."""
+    channels = [0] * 16
+    bit_buffer = 0
+    bit_count = 0
+    byte_index = 0
+    for i in range(16):
+        while bit_count < 11:
+            bit_buffer |= payload[byte_index] << bit_count
+            bit_count += 8
+            byte_index += 1
+        channels[i] = bit_buffer & 0x7FF
+        bit_buffer >>= 11
+        bit_count -= 11
+    return channels
 
 
 def normalize_angle_deg(angle):
@@ -1619,6 +1648,10 @@ async def telemetry_loop():
                                 )
                                 speed_kmh = groundspeed_raw / 10.0
                                 challenges.update_gps(speed_kmh, time.ticks_ms())
+
+                            elif frame_type == CRSF_FRAMETYPE_RC_CHANNELS_PACKED and len(payload_buffer) == 22:
+                                rc_channels_state["channels"] = unpack_crsf_channels(payload_buffer)
+                                rc_channels_state["updated_ms"] = time.ticks_ms()
                         else:
                             crc_fail_count += 1
                             if ENABLE_SERIAL_DEBUG and (crc_fail_count % 40 == 0):

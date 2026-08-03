@@ -96,8 +96,8 @@ PRODUCTS = {
         "description": (
             "Digitale Firmware-Lizenz für den FPV Gamification Pico. Enthält "
             "Trick-Erkennung, Live-Highscore-System, Real-Time Mini-Games, "
-            "Infection-Modus (BLE) und OTA-Updates. Sofortige digitale "
-            "Freischaltung nach dem Kauf."
+            "Infection-Modus (BLE), Shooter-Modus (Infrarot-Laser-Tag) und "
+            "OTA-Updates. Sofortige digitale Freischaltung nach dem Kauf."
         ),
         "type": "digital",
         "price_cents": 495,

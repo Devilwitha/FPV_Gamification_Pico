@@ -44,8 +44,8 @@ Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen (nicht
 | `role_setup.py` & `device_role.json` | 🧭 Einmalige Ersteinrichtungsseite zur Wahl der Geräte-Rolle (Gamification vs. Gate/Hill). |
 | `main.py` (oder `main_LilyGo.py`) | 🚀 Hauptskript der Rolle "Gamification" (startet nach `boot.py`). |
 | `main_gatehill.py` & `index_gatehill.html` | ⛳ Hauptskript & Oberfläche der Rolle "Gate/Hill" (King-of-the-Hill-Hügel bzw. Race-Tor A/B). |
-| `gmr.py`, `koth_mode.py`, `race_mode.py`, `shooter_mode.py` | 🏁 Lazy-geladene Logik & Routen für die Spielmodi King of the Hill, Race (BLE-basiert) und Shooter (IR-basiert), von beiden Rollen genutzt. |
-| `ir_emitter.py` & `ir_receiver.py` | 🔫 Treiber für Grove-Infrarot-Emitter (Senden) und IR-REC38-Empfänger (Empfangen) – NEC-Protokoll, siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen). |
+| `gmr.py`, `koth_mode.py`, `race_mode.py` | 🏁 Lazy-geladene Logik & Routen für die Spielmodi King of the Hill und Race (BLE-basiert, von beiden Rollen genutzt). |
+| `shooter_mode.py`, `ir_emitter.py` & `ir_receiver.py` | 🔫 Shooter-Modus (IR-basiert) inkl. Treiber für Grove-Infrarot-Emitter (Senden) und IR-REC38-Empfänger (Empfangen) – nur von der Rolle "Gamification" genutzt, siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen). |
 | `hotspot_common.py`, `hotspot.conf` & `wlan.conf` | 📡 WLAN-Access-Point-Konfiguration (`hotspot.conf`) sowie Ziel-WLAN für die GitHub-Update-Suche (`wlan.conf`). |
 | `ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py`, `github_ota_helpers.py`, `update_manager.py` | 🛠️ OTA-, Upload- und "Nach Updates suchen"-Hilfsfunktionen für den Webserver. |
 | `license_verifier.py`, `license.lic` & `public_key.pem` | 🔒 Offline-Lizenzprüfung: signierte, hardware-gebundene Freischaltung (siehe [Lizenzsystem](#-lizenzsystem)). |
@@ -414,6 +414,7 @@ Hier liegen alle Dateien, die tatsächlich *auf* deinen Pico müssen (oder vom B
   * `main.py` 🚀: Die absolute Boss-Datei fuer die Geraete-Rolle "gamification". Startet den ganzen Zirkus (Webserver, Telemetrie, Tricks).
   * `main_gatehill.py` ⛳: Die Boss-Datei fuer die Geraete-Rolle "gatehill" (stationaerer King-of-the-Hill-Huegel/Race-Tor) - liegt neben `main.py` im selben Ordner, `boot.py` waehlt anhand der gespeicherten Rolle eines von beiden.
   * `gmr.py`, `koth_mode.py`, `race_mode.py` 🏁: Gemeinsame, lazy geladene Spielmodi-Logik (Routing, Admin-Seiten, BLE-Tasks) für King of the Hill & Race - von `main.py` UND `main_gatehill.py` genutzt.
+  * `shooter_mode.py`, `ir_emitter.py` & `ir_receiver.py` 🔫: IR-basierter Shooter-Modus (Treffer abfeuern & zählen, optional per AUX-Kanal ausgelöst) - nur von `main.py` (Rolle "gamification") genutzt, siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen).
   * `role_setup.py` 🧭: Die Ersteinrichtungs-Seite - laeuft NUR beim allerersten Start, solange noch keine Geraete-Rolle gewaehlt wurde (siehe Quick-Start-Abschnitt oben).
   * `boot.py` & `boot_runtime.py` 🥾: MicroPython startet diese Dateien beim Booten. Sie entscheiden, ob die Ersteinrichtung, der Notfall-Recovery-Modus oder `main.py`/`main_gatehill.py` geladen wird.
   * `ota_helpers.py`, `github_ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py`, `update_manager.py` 🛠️: Wichtige Helferlein für OTA-Updates (lokal & per GitHub-Suche), Datei-Uploads und spezielle Web-Routen, ausgelagert um RAM zu sparen.
@@ -427,7 +428,7 @@ Hier liegen alle Dateien, die tatsächlich *auf* deinen Pico müssen (oder vom B
 * **Web-Oberfläche (Die HTML-Seiten):**
   * `index.html`: Das Main-Dashboard für Piloten (Geraete-Rolle "gamification").
   * `index_gatehill.html`: Die kombinierte Konfigurationsseite für die Geraete-Rolle "gatehill" (King of the Hill & Race).
-  * `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html`: Alle Kontrollzentren im Backend.
+  * `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html`, `admin_shooter.html`: Alle Kontrollzentren im Backend.
   * `challenges_view.html`, `infection_view.html` & `gamemodes_view.html` 📺: Die hübschen, öffentlichen Ansichten für Zuschauer.
 * **Sprachpakete (.pak):**
   * `de.pak`, `en.pak`, `es.pak`, `fr.pak`, `it.pak`, `pt.pak`, `tr.pak` 🌍: Internationalisierung, Baby! Übersetzungsdateien für das Webinterface.

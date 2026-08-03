@@ -4,4 +4,9 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">192.168.4.1</domain>
     </domain-config>
+
+    <!-- Webshop-Store (HTTP auf Port 5000) fuer Plugin-Liste/Downloads -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">46.4.78.34</domain>
+    </domain-config>
 </network-security-config>

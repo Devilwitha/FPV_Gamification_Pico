@@ -45,6 +45,7 @@ class PluginsViewModel(
     fun refreshStore() {
         viewModelScope.launch {
             try {
+                // Gewuenschter Ablauf: Store-Liste immer direkt vom Webshop laden.
                 _storePlugins.value = webshopApi.getStorePlugins().plugins
             } catch (e: Exception) {
                 _statusMessage.value = "Webshop nicht erreichbar: ${e.message}"
@@ -77,6 +78,8 @@ class PluginsViewModel(
     fun triggerDownload(name: String) {
         viewModelScope.launch {
             try {
+                // Download wird auf dem Pico ausgefuehrt; daher erst Pico-Verbindung pruefen.
+                picoApi.getFirmwareStatus()
                 val result = picoApi.downloadPlugin(name)
                 _statusMessage.value = if (result.ok) {
                     "Download auf dem Pico gestartet für '$name'."
@@ -84,7 +87,7 @@ class PluginsViewModel(
                     "Fehler: ${result.error ?: "unbekannt"}"
                 }
             } catch (e: Exception) {
-                _statusMessage.value = "Download fehlgeschlagen: ${e.message}"
+                _statusMessage.value = "Download nur mit verbundenem Pico moeglich (Hotspot + WLAN am Pico). Details: ${e.message}"
             }
         }
     }

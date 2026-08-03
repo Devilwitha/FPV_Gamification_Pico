@@ -80,7 +80,9 @@ function Find-JdkHome {
     foreach ($candidate in ($candidates | Select-Object -Unique)) {
         $javaExe = Join-Path $candidate "bin\java.exe"
         if (Test-Path $javaExe) {
-            $verOutput = (& $javaExe -version 2>&1) -join "`n"
+            # java -version schreibt typischerweise nach STDERR; ueber cmd zusammenfuehren,
+            # damit dies nicht als PowerShell-Fehler (NativeCommandError) behandelt wird.
+            $verOutput = (cmd /c ('"{0}" -version 2>&1' -f $javaExe)) -join "`n"
             if ($verOutput -match 'version "(\d+)' -and [int]$Matches[1] -ge 17) {
                 return $candidate
             }
@@ -164,7 +166,24 @@ $sdkPathForward = $effectiveSdkRoot -replace '\\', '/'
 Set-Content -Path (Join-Path $root "local.properties") -Value "sdk.dir=$sdkPathForward" -Encoding ASCII
 
 # ---------------------------------------------------------------------------
-# 4. Build ueber den Gradle-Wrapper (gradlew.bat laedt die passende Gradle-
+# 4. Alte Build-Daten entfernen, damit immer ein kompletter Neu-Build erfolgt
+# ---------------------------------------------------------------------------
+Write-Step "Bereinige alte Build-Daten ..."
+
+$cleanupPaths = @(
+    (Join-Path $root "build"),
+    (Join-Path $root "app\\build")
+)
+
+foreach ($cleanupPath in $cleanupPaths) {
+    if (Test-Path $cleanupPath) {
+        Write-Host "   Loesche $cleanupPath" -ForegroundColor DarkGray
+        Remove-Item -Recurse -Force $cleanupPath
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 5. Build ueber den Gradle-Wrapper (gradlew.bat laedt die passende Gradle-
 #    Version beim ersten Aufruf selbststaendig herunter, falls noch nicht im
 #    globalen Wrapper-Cache vorhanden - kein eigener Download-Code noetig).
 # ---------------------------------------------------------------------------
@@ -174,7 +193,7 @@ Write-Step "Baue APK ($task) - erster Lauf laedt ggf. Gradle + Abhaengigkeiten n
 $gradlew = Join-Path $root "gradlew.bat"
 Push-Location $root
 try {
-    & $gradlew $task --console=plain
+    & $gradlew clean $task --console=plain
     if ($LASTEXITCODE -ne 0) {
         throw "Gradle-Build fehlgeschlagen (Exit code $LASTEXITCODE)."
     }

@@ -18,3 +18,4 @@ __pycache__/main.cpython-311.pyc
 # siehe webshop/db.py) - enthaelt Kundendaten, nicht ins Repo.
 /webshop/*.db
 /.venv
+android_app/tempCodeRunnerFile.ps1

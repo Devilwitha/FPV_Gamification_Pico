@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Webshop – Registrieren{% endblock %}
+
+{% block content %}
+  <section class="login-page">
+    <h1>Registrieren</h1>
+    <p class="license-intro">
+      Erstelle ein Konto, um Bestellungen einzusehen und eigene Plugins im
+      <a href="{{ url_for('plugins_store') }}">Plugin-Store</a> hochzuladen.
+    </p>
+
+    <div class="login-card">
+      {% if error %}
+        <div class="checkout-error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('register') }}">
+        <div class="form-field">
+          <label for="register-email">E-Mail-Adresse</label>
+          <input
+            type="email"
+            id="register-email"
+            name="email"
+            value="{{ values.get('email', '') }}"
+            placeholder="du@example.com"
+            autocomplete="email"
+            required
+          />
+        </div>
+        <div class="form-field">
+          <label for="register-password">Passwort (mind. 8 Zeichen)</label>
+          <input
+            type="password"
+            id="register-password"
+            name="password"
+            autocomplete="new-password"
+            minlength="8"
+            required
+          />
+        </div>
+        <div class="form-field">
+          <label for="register-full-name">Name</label>
+          <input
+            type="text"
+            id="register-full-name"
+            name="full_name"
+            value="{{ values.get('full_name', '') }}"
+            autocomplete="name"
+            required
+          />
+        </div>
+        <div class="form-field">
+          <label for="register-address">Adresse</label>
+          <input
+            type="text"
+            id="register-address"
+            name="address"
+            value="{{ values.get('address', '') }}"
+            autocomplete="street-address"
+            required
+          />
+        </div>
+        <div class="form-field">
+          <label for="register-phone">Telefon</label>
+          <input
+            type="tel"
+            id="register-phone"
+            name="phone"
+            value="{{ values.get('phone', '') }}"
+            autocomplete="tel"
+            required
+          />
+        </div>
+        <div class="form-field">
+          <label for="register-country">Land</label>
+          <input
+            type="text"
+            id="register-country"
+            name="country"
+            value="{{ values.get('country', '') }}"
+            autocomplete="country-name"
+            required
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-large">Konto erstellen</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

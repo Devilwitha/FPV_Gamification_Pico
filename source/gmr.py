@@ -1,11 +1,11 @@
-"""Gemeinsame Lazy-Wiring fuer die KOTH-, Race- und Shooter-Spielmodi (Game
-Modes Routes).
+"""Gemeinsame Lazy-Wiring fuer die KOTH- und Race-Spielmodi (Game Modes
+Routes).
 
 Buendelt Admin-Seiten-Auslieferung, Routing-Praefix-Dispatching und die
-Task-Erstellung fuer koth_mode.py/race_mode.py/shooter_mode.py in einem
-einzigen, schlanken Modul - main.py bindet dieses Modul nur per Lazy-Import
-ein (erst beim ersten Request bzw. beim Start der Async-Tasks), damit main.py
-selbst klein genug fuer den MicroPython-Compile-Schritt bleibt (siehe
+Task-Erstellung fuer koth_mode.py/race_mode.py in einem einzigen, schlanken
+Modul - main.py bindet dieses Modul nur per Lazy-Import ein (erst beim
+ersten Request bzw. beim Start der Async-Tasks), damit main.py selbst klein
+genug fuer den MicroPython-Compile-Schritt bleibt (siehe
 infection_mode.py/upload_helpers.py fuer das gleiche Muster). Kurzer
 Dateiname (gmr.py statt game_modes_routes.py) ist ABSICHTLICH gewaehlt:
 main.py referenziert diesen Modulnamen an 2 Stellen, jedes gesparte Zeichen
@@ -13,6 +13,13 @@ zaehlt fuer die ~85168-Byte Compile-Grenze. Importiert DEFAULT_PILOT_NAME/
 debug_log/send_html_file direkt aus main (bereits fertig geladen, da dieses
 Modul erst NACH `import main` lazy nachgeladen wird) statt sie bei jedem
 Aufruf als Parameter durchzureichen - spart main.py weitere Bytes.
+
+Der Shooter-Spielmodus ist bewusst NICHT mehr hier verdrahtet - er lebt
+komplett als eigenstaendiges Plugin (siehe source/mods/shooter/main.py) und
+wird ueber plugin_manager.py's generischen handle_plugin_route()-Dispatcher
+bedient (main.py ruft diesen direkt auf, unabhaengig von gmr.py). Referenz-
+Beispiel dafuer, wie ein eigener Spielmodus komplett als Mod statt fest in
+main.py/gmr.py gebaut wird, siehe template/README.md.
 """
 
 import asyncio
@@ -22,12 +29,10 @@ from main import DEFAULT_PILOT_NAME, debug_log, send_html_file
 
 ADMIN_KOTH_HTML_PATH = "admin_koth.html"
 ADMIN_RACE_HTML_PATH = "admin_race.html"
-ADMIN_SHOOTER_HTML_PATH = "admin_shooter.html"
 GAMEMODES_VIEW_HTML_PATH = "gamemodes_view.html"
 
 _koth_manager = None
 _race_manager = None
-_shooter_manager = None
 _tasks = []
 
 
@@ -49,21 +54,11 @@ def ensure_race_manager():
     return _race_manager
 
 
-def ensure_shooter_manager():
-    global _shooter_manager
-    if _shooter_manager is None:
-        gc.collect()
-        from shooter_mode import ShooterMode
-        _shooter_manager = ShooterMode(DEFAULT_PILOT_NAME, debug_log)
-    return _shooter_manager
-
-
 def start_tasks():
     if _tasks:
         return _tasks
     _tasks.append(asyncio.create_task(ensure_koth_manager().run()))
     _tasks.append(asyncio.create_task(ensure_race_manager().run()))
-    _tasks.append(asyncio.create_task(ensure_shooter_manager().run()))
     return _tasks
 
 
@@ -74,10 +69,6 @@ async def handle_admin_and_routes(writer, request_path, request_method, query_pa
 
     if request_path == '/admin-race':
         await send_html_file(writer, ADMIN_RACE_HTML_PATH)
-        return True
-
-    if request_path == '/admin-shooter':
-        await send_html_file(writer, ADMIN_SHOOTER_HTML_PATH)
         return True
 
     if request_path == '/gamemodes-view':
@@ -92,11 +83,6 @@ async def handle_admin_and_routes(writer, request_path, request_method, query_pa
     if request_path.startswith('/race-'):
         from race_mode import handle_race_route
         if await handle_race_route(writer, request_path, request_method, query_params, body_params, ensure_race_manager()):
-            return True
-
-    if request_path.startswith('/shooter-'):
-        from shooter_mode import handle_shooter_route
-        if await handle_shooter_route(writer, request_path, request_method, query_params, body_params, ensure_shooter_manager()):
             return True
 
     return False

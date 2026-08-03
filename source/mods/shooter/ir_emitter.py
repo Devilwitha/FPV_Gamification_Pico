@@ -9,12 +9,16 @@ CPU-Last dauerhaft im Hintergrund erzeugen) und schaltet dessen Tastgrad
 (duty) zwischen "an" und "aus", um NEC-kodierte Infrarot-Frames zu senden -
 das Standardprotokoll, das die allermeisten IR-Fernbedienungen/-Empfaenger
 (inkl. IR-REC38, siehe ir_receiver.py) verstehen. Ein IR-"Schuss" fuer den
-Shooter-Spielmodus (siehe shooter_mode.py) ist einfach ein NEC-Frame mit
-Adresse=Schuetzen-ID (1 Byte) und Kommando=Schaden (1 Byte).
+Shooter-Spielmodus (siehe main.py in diesem Plugin-Ordner) ist einfach ein
+NEC-Frame mit Adresse=Schuetzen-ID (1 Byte) und Kommando=Schaden (1 Byte).
 
 Blockierend: send() dauert bis zu ~68ms (Laenge eines vollen NEC-Frames) -
 das ist auf einem einzelnen "Abfeuern" voellig unproblematisch, siehe
-shooter_mode.py's fire().
+main.py's fire().
+
+Teil des shooter-Plugins (source/mods/shooter/) - Beispiel dafuer, wie ein
+Mod eigene Hardware-Treiber als co-lokalisierte Untermodule mitbringen kann
+(siehe plugin_manager.py's Docstring zum Import-Mechanismus).
 """
 
 import machine

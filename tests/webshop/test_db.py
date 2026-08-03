@@ -83,3 +83,45 @@ def test_get_customer_license_by_id(db_module):
     assert record["email"] == "kunde@example.com"
     assert db_module.get_customer_license(999) is None
     assert db_module.get_customer_license(None) is None
+
+
+def test_create_account_and_get_by_email(db_module):
+    db_module.create_account(
+        email="Kunde@Example.com",
+        password_hash="hashed-value",
+        full_name="Kunde Muster",
+        address="Musterstrasse 1",
+        phone="+41 79 000 00 00",
+        country="Schweiz",
+    )
+    account = db_module.get_account_by_email("kunde@example.com")
+    assert account is not None
+    assert account["email"] == "Kunde@Example.com"
+    assert account["password_hash"] == "hashed-value"
+    assert account["full_name"] == "Kunde Muster"
+
+
+def test_get_account_by_email_returns_none_when_missing(db_module):
+    assert db_module.get_account_by_email("nobody@example.com") is None
+
+
+def test_create_account_rejects_duplicate_email_case_insensitive(db_module):
+    import sqlite3
+
+    db_module.create_account(
+        email="kunde@example.com",
+        password_hash="hash1",
+        full_name="A",
+        address="A",
+        phone="A",
+        country="A",
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        db_module.create_account(
+            email="KUNDE@example.com",
+            password_hash="hash2",
+            full_name="B",
+            address="B",
+            phone="B",
+            country="B",
+        )

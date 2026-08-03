@@ -12,6 +12,27 @@ import struct
 import pytest
 
 
+def test_deploy_bundled_mods_via_serial_skips_example_plugin(build_firmware, monkeypatch):
+    """Die komplette (serielle) Firmware bringt alle mitgelieferten Mods aus
+    source/mods/ mit, AUSSER example_plugin (reine Lernvorlage) - siehe
+    build_and_flash_with_license()'s Aufruf von
+    _deploy_bundled_mods_via_serial()."""
+    import sys
+
+    sys.modules.pop("deploy_mod", None)
+    import deploy_mod  # noqa: E402 - bewusst erst hier, nach dem SOURCE_DIR-Patch der Fixture
+
+    calls = []
+    monkeypatch.setattr(deploy_mod, "deploy_via_serial", lambda mod_name, port=None, log=print: calls.append((mod_name, port)))
+
+    build_firmware._deploy_bundled_mods_via_serial(["mpremote"], "COM5")
+
+    deployed_names = [name for name, _port in calls]
+    assert "example_plugin" not in deployed_names
+    assert "shooter" in deployed_names
+    assert all(port == "COM5" for _name, port in calls)
+
+
 def test_mpy_device_name_converts_py_to_mpy(build_firmware):
     assert build_firmware._mpy_device_name("main.py") == "main.mpy"
 

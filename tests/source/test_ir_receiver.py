@@ -1,4 +1,4 @@
-import ir_receiver as irr
+import mods.shooter.ir_receiver as irr
 
 
 def test_receiver_available_under_simulator():
@@ -98,7 +98,7 @@ def test_end_to_end_emit_and_decode(monkeypatch):
     modules by design (see ir_receiver.py's docstring) - this proves they
     still agree on the wire format by literally feeding the emitter's
     recorded mark/space trace into the receiver's edge handler."""
-    import ir_emitter as ire
+    import mods.shooter.ir_emitter as ire
 
     tx = ire.IRTransmitter()
     trace = []

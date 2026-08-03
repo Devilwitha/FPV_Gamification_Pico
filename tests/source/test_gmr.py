@@ -48,14 +48,6 @@ async def test_handle_admin_and_routes_serves_admin_race_page(gmr):
 
 
 @pytest.mark.asyncio
-async def test_handle_admin_and_routes_serves_admin_shooter_page(gmr):
-    writer = FakeWriter()
-    handled = await gmr.handle_admin_and_routes(writer, "/admin-shooter", "GET", {}, {})
-    assert handled is True
-    assert gmr._sent == [(writer, gmr.ADMIN_SHOOTER_HTML_PATH)]
-
-
-@pytest.mark.asyncio
 async def test_handle_admin_and_routes_serves_gamemodes_view(gmr):
     writer = FakeWriter()
     handled = await gmr.handle_admin_and_routes(writer, "/gamemodes-view", "GET", {}, {})
@@ -96,19 +88,6 @@ async def test_handle_admin_and_routes_delegates_race_prefixed_routes(gmr, monke
     assert handled is True
 
 
-@pytest.mark.asyncio
-async def test_handle_admin_and_routes_delegates_shooter_prefixed_routes(gmr, monkeypatch):
-    import shooter_mode
-
-    async def fake_handle_shooter_route(writer, path, method, query, body, manager):
-        return True
-
-    monkeypatch.setattr(shooter_mode, "handle_shooter_route", fake_handle_shooter_route)
-    writer = FakeWriter()
-    handled = await gmr.handle_admin_and_routes(writer, "/shooter-data", "GET", {}, {})
-    assert handled is True
-
-
 def test_ensure_koth_manager_is_singleton(gmr):
     first = gmr.ensure_koth_manager()
     second = gmr.ensure_koth_manager()
@@ -121,20 +100,17 @@ def test_ensure_race_manager_is_singleton(gmr):
     assert first is second
 
 
-def test_ensure_shooter_manager_is_singleton(gmr):
-    first = gmr.ensure_shooter_manager()
-    second = gmr.ensure_shooter_manager()
-    assert first is second
-
-
 def test_start_tasks_is_idempotent(gmr):
+    """Nur 2 Tasks (koth+race): der Shooter-Spielmodus ist komplett aus
+    gmr.py entfernt - seine Schleife wird als Plugin (siehe
+    source/mods/shooter/main.py) von plugin_manager.run_loops() getrieben."""
     import asyncio
 
     async def _run():
         tasks_a = gmr.start_tasks()
         tasks_b = gmr.start_tasks()
         assert tasks_a is tasks_b
-        assert len(tasks_a) == 3
+        assert len(tasks_a) == 2
         for task in tasks_a:
             task.cancel()
 

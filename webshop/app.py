@@ -1,18 +1,21 @@
 """Webshop-Anwendung mit echter Stripe- und PayPal-Zahlungsanbindung."""
 
+import io
 import json
 import os
 import re
 import secrets
 import sys
 import time
-from datetime import datetime
+import zipfile
+from datetime import datetime, timezone
 from functools import wraps
 
 import requests
 import stripe
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, Response, flash, jsonify, redirect, render_template, request, send_file, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
 import orders_db
@@ -97,7 +100,13 @@ PRODUCTS = {
             "Digitale Firmware-Lizenz für den FPV Gamification Pico. Enthält "
             "Trick-Erkennung, Live-Highscore-System, Real-Time Mini-Games, "
             "Infection-Modus (BLE), Shooter-Modus (Infrarot-Laser-Tag) und "
-            "OTA-Updates. Sofortige digitale Freischaltung nach dem Kauf."
+            "OTA-Updates. Neu: erweiterbares Plugin-System - installiere "
+            "zusätzliche Mods direkt aus diesem Webshop-Store per Knopfdruck "
+            "auf dem Pico, inklusive automatischer Absturzerkennung pro Mod. "
+            "Dazu passend die kostenlose Android-App zur Verwaltung "
+            "installierter Plugins, Durchsuchen des Webshop-Stores und "
+            "Auslösen von Firmware-Updates direkt vom Smartphone aus. "
+            "Sofortige digitale Freischaltung nach dem Kauf."
         ),
         "type": "digital",
         "price_cents": 495,
@@ -110,7 +119,10 @@ PRODUCTS = {
         "description": (
             "Raspberry Pi Pico inklusive vorinstallierter FPV Gamification "
             "Firmware. Einfach per CRSF-UART am Flight Controller anschließen "
-            "(GND, CRSF TX auf GP1, optional 5V) und direkt lossfliegen."
+            "(GND, CRSF TX auf GP1, optional 5V) und direkt lossfliegen. "
+            "Inklusive erweiterbarem Plugin-System (Mods direkt aus dem "
+            "Webshop-Store installierbar) und kostenloser Android-App zur "
+            "Plugin-/Update-Verwaltung."
         ),
         "type": "physical",
         "price_cents": 1995,
@@ -132,6 +144,90 @@ PRODUCTS = {
         "image": "bilder/shop/Hardware/Gemini_Generated_Image_8jui9u8jui9u8jui.png",
     },
 }
+
+
+# ==================== Plugin-Store ====================
+# Verteilt Mods (siehe source/plugin_manager.py) an den Pico und die Android-
+# App: jedes Mod liegt als entpackter, FLACHER Ordner unter
+# static/plugins_store/<name>/ (manifest.json + main.py, siehe
+# template/README.md) und wird ueber Flasks eingebautes static-Serving
+# direkt ausgeliefert - kein eigener Download-Endpunkt noetig. /api/plugins
+# liefert dieselbe Liste inkl. Dateinamen als JSON (fuer
+# source/network_manager.py's Boot-Sync sowie die Android-App).
+PLUGINS_STORE_DIR = os.path.join(app.root_path, "static", "plugins_store")
+PLUGIN_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+# Namen der mit der Firmware mitgelieferten Standard-Mods (siehe
+# source/mods/) - ein oeffentlicher Kunden-Upload darf diese NIEMALS
+# ueberschreiben/loeschen, nur ein Admin-Upload darf das (bewusste
+# Ausnahme, siehe _process_plugin_zip_upload()'s allow_reserved_names).
+RESERVED_PLUGIN_NAMES = frozenset({"shooter", "example_plugin"})
+# MicroPython .mpy-Dateien beginnen immer mit dem Byte 'M' (0x4D), gefolgt
+# von Versions-/Feature-Bytes (siehe MicroPythons persistentcode-Format).
+# Das ist KEINE Ausfuehrungs-/Funktionspruefung (die ist auf dem Webshop-
+# Server unmoeglich - .mpy-Bytecode ist MicroPython-spezifisch, CPython
+# kann ihn nicht laden, und ein hochgeladenes Plugin serverseitig
+# tatsaechlich AUSZUFUEHREN waere ein Codeausfuehrungs-Sicherheitsrisiko,
+# das dieser Webshop bewusst nicht eingeht) - nur eine strukturelle
+# Plausibilitaetspruefung gegen offensichtlich falsche/leere Dateien.
+MPY_MAGIC_BYTE = 0x4D
+# Rohe Quellcode-Vorlage des mitgelieferten shooter-Plugins (.py, NICHT
+# .mpy-kompiliert) - dient als Lern-/Template-Download fuer eigene
+# Spielmodus-Plugins (siehe template/README.md), separat vom normalen
+# Plugin-Store (der ausschliesslich kompiliertes .mpy akzeptiert).
+SHOOTER_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "source", "mods", "shooter")
+SHOOTER_TEMPLATE_FILES = ("manifest.json", "main.py", "ir_emitter.py", "ir_receiver.py", "admin_shooter.html")
+
+
+def _list_store_plugins():
+    """Liest alle im Webshop hochgeladenen Mods aus static/plugins_store/
+    (jeder Unterordner mit einer manifest.json gilt als ein Mod)."""
+    plugins = []
+    try:
+        entries = sorted(os.listdir(PLUGINS_STORE_DIR))
+    except Exception:
+        entries = []
+    for name in entries:
+        plugin_dir = os.path.join(PLUGINS_STORE_DIR, name)
+        manifest_path = os.path.join(plugin_dir, "manifest.json")
+        if not os.path.isdir(plugin_dir) or not os.path.isfile(manifest_path):
+            continue
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as manifest_file:
+                manifest = json.load(manifest_file)
+        except Exception:
+            continue
+        files = sorted(
+            filename
+            for filename in os.listdir(plugin_dir)
+            if os.path.isfile(os.path.join(plugin_dir, filename))
+        )
+        uploaded_by = manifest.get("uploaded_by", "")
+        uploaded_by_account = db.get_account_by_email(uploaded_by) if uploaded_by else None
+        plugins.append(
+            {
+                "name": manifest.get("name", name),
+                "version": manifest.get("version", "0.0.0"),
+                "author": manifest.get("author", ""),
+                "description": manifest.get("description", ""),
+                "uploaded_by": uploaded_by,
+                # Zeigt den registrierten Namen statt der rohen E-Mail-Adresse,
+                # falls ein Konto existiert (siehe db.py's accounts-Tabelle) -
+                # faellt sonst auf die E-Mail-Adresse selbst zurueck (z.B. "admin").
+                "uploaded_by_display": uploaded_by_account["full_name"] if uploaded_by_account else uploaded_by,
+                "files": files,
+            }
+        )
+    return plugins
+
+
+def _is_safe_plugin_zip_member(member_name):
+    """Zip-Slip-Schutz: lehnt absolute Pfade und '..'-Segmente ab, bevor
+    ueberhaupt in die ZIP-Datei hineingelesen wird."""
+    normalized = member_name.replace("\\", "/")
+    if normalized.startswith("/") or ":" in normalized:
+        return False
+    parts = [part for part in normalized.split("/") if part]
+    return ".." not in parts
 
 
 def format_price(price_cents):
@@ -176,6 +272,78 @@ def index():
 def shop():
     """Shop-Übersicht mit allen verfügbaren Artikeln."""
     return render_template("shop.html", products=PRODUCTS.values())
+
+
+@app.route("/plugins")
+def plugins_store():
+    """Oeffentliche Plugin-Store-Seite - listet alle im Admin-Bereich
+    hochgeladenen Mods (siehe /admin/plugins/upload)."""
+    return render_template("plugins.html", plugins=_list_store_plugins())
+
+
+@app.route("/plugins/shooter-template.zip")
+def plugins_shooter_template():
+    """Stellt den ROHEN Quellcode des mitgelieferten shooter-Plugins (.py,
+    NICHT .mpy-kompiliert) als ZIP-Download bereit - eine Lern-Vorlage
+    dafuer, wie ein eigener Spielmodus komplett als Plugin gebaut wird
+    (Spiellogik + eigene Hardware-Treiber + eigene Weboberflaeche, siehe
+    source/mods/shooter/main.py's Docstring). Kein direkt installierbares
+    Store-Produkt - dafuer muss der Code zuerst per mpy-cross kompiliert
+    werden (siehe tools/plugin_packager.py), genau wie jeder andere
+    Kunden-Upload auch (_process_plugin_zip_upload() lehnt rohe .py-Dateien
+    im normalen Store konsequent ab)."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for filename in SHOOTER_TEMPLATE_FILES:
+            file_path = os.path.join(SHOOTER_TEMPLATE_DIR, filename)
+            if os.path.isfile(file_path):
+                archive.write(file_path, arcname=filename)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="shooter_plugin_template.zip",
+    )
+
+
+@app.route("/plugins/<name>/download")
+def plugins_download(name):
+    """Packt alle Dateien eines im Store hochgeladenen Mods (siehe
+    _list_store_plugins()) zu einer ZIP-Datei und bietet sie zum Download
+    an - fuer menschliche Besucher der /plugins-Seite im Browser (Pico und
+    Android-App laden dieselben Dateien stattdessen einzeln direkt ueber
+    Flasks static-Serving, siehe network_manager.download_plugin_via_wifi()).
+    404, falls der Mod nicht existiert (kein Ausnahmefehler bei unbekannter
+    ID, siehe webshop/CLAUDE.md Abschnitt 6)."""
+    plugin_dir = os.path.join(PLUGINS_STORE_DIR, name)
+    manifest_path = os.path.join(plugin_dir, "manifest.json")
+    if not os.path.isfile(manifest_path):
+        return render_template("cancel.html", message="Dieses Plugin existiert nicht."), 404
+
+    files = sorted(
+        filename
+        for filename in os.listdir(plugin_dir)
+        if os.path.isfile(os.path.join(plugin_dir, filename))
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for filename in files:
+            archive.write(os.path.join(plugin_dir, filename), arcname=filename)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"{name}.zip",
+    )
+
+
+@app.route("/api/plugins")
+def api_plugins():
+    """JSON-Mod-Liste fuer den Pico (source/network_manager.py's Boot-Sync
+    und WLAN-Download) sowie fuer die Android-App."""
+    return jsonify({"plugins": _list_store_plugins()})
 
 
 @app.route("/gatehill-install")
@@ -660,38 +828,63 @@ def license_setup_public_key():
     return send_file(PUBLIC_KEY_PATH, mimetype="application/x-pem-file", as_attachment=True, download_name="public_key.pem")
 
 
-def _has_any_order_for_email(email):
-    """Prüft, ob zu ``email`` irgendein Datensatz existiert - egal ob
-    offene/ausgestellte Lizenz (db.py, webshop.db) oder offene/abgeschlossene
-    Hardware-Bestellung (orders_db.py, komplett getrennte orders.db). Beide
-    Datenbanken müssen hier geprüft werden, sonst findet ein Kunde mit einer
-    reinen Hardware-Bestellung (noch ohne Lizenz-Kauf) beim Login nichts."""
-    return bool(
-        db.get_pending_licenses_for_email(email)
-        or db.get_customer_licenses_for_email(email)
-        or orders_db.get_pending_shipping_for_email(email)
-        or orders_db.get_shipping_orders_for_email(email)
-    )
+REQUIRED_ACCOUNT_FIELDS = ("full_name", "address", "phone", "country")
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    """Login-Seite für den Konto-Bereich: die Eingabe der E-Mail-Adresse ist
-    hier bewusst bereits der gesamte Login-Vorgang (kein zusätzlicher
-    Bestätigungslink/-code per Mail) - Voraussetzung ist lediglich, dass zu
-    der Adresse mindestens eine offene Bestellung oder bereits ausgestellte
-    Lizenz bzw. Hardware-Bestellung existiert."""
+    """Login-Seite für den Konto-Bereich: E-Mail-Adresse + Passwort gegen das
+    registrierte Konto (siehe db.py's accounts-Tabelle/register()) geprüft.
+    Wer noch kein Konto hat, muss sich zuerst über /register registrieren -
+    unabhängig davon, ob unter der E-Mail-Adresse bereits etwas gekauft
+    wurde (Bestellungen und Login-Konto sind bewusst getrennte Konzepte)."""
     error = None
     if request.method == "POST":
         email = (request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+        account = db.get_account_by_email(email) if "@" in email else None
+        if account is None or not check_password_hash(account["password_hash"], password):
+            error = "E-Mail-Adresse oder Passwort falsch."
+        else:
+            session["account_email"] = account["email"]
+            return redirect(url_for("account"))
+    return render_template("login.html", error=error)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    """Registrierung eines neuen Login-Kontos: E-Mail + Passwort + Name/
+    Adresse/Telefon/Land (siehe REQUIRED_ACCOUNT_FIELDS) - unabhängig davon,
+    ob unter der E-Mail-Adresse bereits eine Bestellung existiert. Loggt
+    nach erfolgreicher Registrierung direkt ein (kein separater Bestätigungs-
+    schritt), analog zum bisherigen Direkt-Login nach Kauf."""
+    error = None
+    form_values = {}
+    if request.method == "POST":
+        form_values = {key: (request.form.get(key) or "").strip() for key in ("email", "full_name", "address", "phone", "country")}
+        email = form_values["email"]
+        password = request.form.get("password") or ""
+
         if "@" not in email:
             error = "Bitte eine gültige E-Mail-Adresse eingeben."
-        elif _has_any_order_for_email(email):
+        elif len(password) < 8:
+            error = "Das Passwort muss mindestens 8 Zeichen lang sein."
+        elif any(not form_values[field] for field in REQUIRED_ACCOUNT_FIELDS):
+            error = "Bitte Name, Adresse, Telefon und Land vollständig ausfüllen."
+        elif db.get_account_by_email(email) is not None:
+            error = "Für diese E-Mail-Adresse existiert bereits ein Konto."
+        else:
+            db.create_account(
+                email=email,
+                password_hash=generate_password_hash(password),
+                full_name=form_values["full_name"],
+                address=form_values["address"],
+                phone=form_values["phone"],
+                country=form_values["country"],
+            )
             session["account_email"] = email
             return redirect(url_for("account"))
-        else:
-            error = "Für diese E-Mail-Adresse wurden keine Bestellungen gefunden."
-    return render_template("login.html", error=error)
+    return render_template("register.html", error=error, values=form_values)
 
 
 @app.route("/logout")
@@ -725,6 +918,7 @@ def account():
     return render_template(
         "account_licenses.html",
         email=email,
+        account=db.get_account_by_email(email),
         licenses=licenses,
         products=PRODUCTS,
         pending=pending_rows[0] if pending_rows else None,
@@ -858,6 +1052,7 @@ def admin_dashboard():
     unshipped_orders = orders_db.get_unshipped_orders()
     shipped_orders = orders_db.get_shipped_orders()
     all_sales = _build_all_sales_overview()
+    store_plugins = _list_store_plugins()
 
     return render_template(
         "admin_dashboard.html",
@@ -865,6 +1060,7 @@ def admin_dashboard():
         unshipped_orders=unshipped_orders,
         shipped_orders=shipped_orders,
         all_sales=all_sales,
+        store_plugins=store_plugins,
     )
 
 
@@ -919,6 +1115,148 @@ def admin_mark_shipped(order_id):
     Admin-Dashboard zurück (Tab "Offene Bestellungen")."""
     orders_db.mark_order_shipped(order_id)
     return redirect(url_for("admin_dashboard", _anchor="unshipped"))
+
+
+def _is_valid_mpy_bytes(content):
+    """Strukturelle Plausibilitaetspruefung einer .mpy-Datei (nicht leer,
+    beginnt mit dem MicroPython-.mpy-Magic-Byte) - siehe MPY_MAGIC_BYTE's
+    Docstring-Kommentar dazu, warum eine echte Ausfuehrungspruefung hier
+    bewusst NICHT stattfindet."""
+    return len(content) > 0 and content[0] == MPY_MAGIC_BYTE
+
+
+def _process_plugin_zip_upload(uploaded_file, uploaded_by=None, allow_reserved_names=False):
+    """Gemeinsame Validierung/Entpack-Logik fuer Admin- UND Kunden-Uploads
+    (siehe admin_plugins_upload()/plugins_upload() weiter unten) - entpackt
+    eine Mod-ZIP-Datei FLACH (Unterordner in der ZIP werden ignoriert) nach
+    static/plugins_store/<name>/. Die ZIP muss mindestens eine manifest.json
+    und eine main.mpy enthalten (siehe source/plugin_manager.py's Manifest-
+    Schema). <name> kommt aus manifest.json's "name"-Feld, nicht aus dem
+    ZIP-Dateinamen. Ein erneuter Upload mit gleichem Namen ueberschreibt das
+    bestehende Plugin - unabhaengig davon, wer es urspruenglich hochgeladen
+    hat (kein Besitzrechte-/Freigabekonzept in dieser Version) - AUSSER bei
+    den reservierten Standard-Mod-Namen (RESERVED_PLUGIN_NAMES), die nur ein
+    Admin-Upload (allow_reserved_names=True) ueberschreiben darf, damit ein
+    oeffentlicher Kunden-Upload niemals das mitgelieferte shooter-Plugin
+    loeschen/ersetzen kann.
+
+    WICHTIG: rohe .py-Dateien werden abgelehnt - der Store verteilt Mods
+    ausschließlich als per mpy-cross vorkompilierte .mpy-Dateien (Quellcode-
+    Schutz, gleiches Prinzip wie build_firmware.py's Firmware-Bundles). Jede
+    .mpy-Datei wird zusaetzlich strukturell auf Plausibilitaet geprueft
+    (siehe _is_valid_mpy_bytes()) - KEINE echte Ausfuehrung/Funktionspruefung,
+    das waere ein Codeausfuehrungs-Sicherheitsrisiko auf dem Server.
+    Kompilieren entweder manuell (mpy-cross) oder über
+    tools/plugin_packager.py, das genau diesen Schritt automatisiert.
+
+    uploaded_by (optional): E-Mail-Adresse bzw. Kennung des Hochladenden -
+    wird in manifest.json als zusaetzliches Feld "uploaded_by" abgelegt
+    (rein informativ, wird von source/plugin_manager.py ignoriert). Gibt
+    (ok: bool, message: str) zurueck - ruft NIE redirect()/flash() selbst
+    auf, das bleibt Sache der jeweiligen Route."""
+    if uploaded_file is None or not uploaded_file.filename:
+        return False, "Keine ZIP-Datei ausgewählt."
+
+    if not uploaded_file.filename.lower().endswith(".zip"):
+        return False, "Nur ZIP-Dateien werden akzeptiert."
+
+    try:
+        with zipfile.ZipFile(uploaded_file.stream) as archive:
+            names = archive.namelist()
+
+            for member in names:
+                if not _is_safe_plugin_zip_member(member):
+                    return False, f"Unsichere Datei in ZIP abgelehnt: {member}"
+
+            py_files = [os.path.basename(name) for name in names if name.lower().endswith(".py")]
+            if py_files:
+                return False, (
+                    "ZIP enthält unkompilierte .py-Dateien ("
+                    + ", ".join(sorted(set(py_files)))
+                    + "). Bitte zuerst mit mpy-cross zu .mpy kompilieren - manuell oder über "
+                    "tools/plugin_packager.py."
+                )
+
+            manifest_candidates = [name for name in names if os.path.basename(name) == "manifest.json"]
+            mpy_members = [name for name in names if os.path.basename(name).endswith(".mpy")]
+            has_main = any(os.path.basename(name) == "main.mpy" for name in names)
+            if not manifest_candidates or not has_main:
+                return False, "ZIP muss manifest.json und main.mpy enthalten."
+
+            for mpy_member in mpy_members:
+                if not _is_valid_mpy_bytes(archive.read(mpy_member)):
+                    return False, (
+                        f"'{os.path.basename(mpy_member)}' ist keine gültige .mpy-Datei "
+                        "(leer oder falsches Format) - bitte neu mit mpy-cross kompilieren."
+                    )
+
+            try:
+                manifest_data = json.loads(archive.read(manifest_candidates[0]).decode("utf-8"))
+            except Exception:
+                return False, "manifest.json konnte nicht gelesen werden (ungültiges JSON)."
+
+            plugin_name = str(manifest_data.get("name") or "").strip()
+            if not plugin_name or not PLUGIN_NAME_PATTERN.match(plugin_name):
+                return False, "manifest.json enthält keinen gültigen 'name' (nur Buchstaben/Zahlen/_/-)."
+
+            if plugin_name in RESERVED_PLUGIN_NAMES and not allow_reserved_names:
+                return False, (
+                    f"'{plugin_name}' ist ein mitgeliefertes Standard-Plugin und kann nicht per "
+                    "Kunden-Upload überschrieben werden. Bitte einen anderen Namen wählen."
+                )
+
+            target_dir = os.path.join(PLUGINS_STORE_DIR, plugin_name)
+            os.makedirs(target_dir, exist_ok=True)
+
+            for member in names:
+                if member.endswith("/"):
+                    continue
+                filename = os.path.basename(member)
+                if not filename:
+                    continue
+                with archive.open(member) as source_file, open(os.path.join(target_dir, filename), "wb") as dest_file:
+                    dest_file.write(source_file.read())
+
+            if uploaded_by:
+                manifest_data["uploaded_by"] = uploaded_by
+                manifest_data["uploaded_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                with open(os.path.join(target_dir, "manifest.json"), "w", encoding="utf-8") as manifest_file:
+                    json.dump(manifest_data, manifest_file)
+    except zipfile.BadZipFile:
+        return False, "Datei ist keine gültige ZIP-Datei."
+
+    return True, f"Plugin '{plugin_name}' erfolgreich hochgeladen."
+
+
+@app.route("/admin/plugins/upload", methods=["POST"])
+@admin_required
+def admin_plugins_upload():
+    """Admin-Upload im Dashboard - siehe _process_plugin_zip_upload(). Als
+    einzige Route darf der Admin auch reservierte Standard-Mod-Namen
+    (z.B. 'shooter') ueberschreiben, etwa um eine neue offizielle Version
+    bereitzustellen."""
+    ok, message = _process_plugin_zip_upload(
+        request.files.get("plugin_zip"), uploaded_by="admin", allow_reserved_names=True
+    )
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("admin_dashboard", _anchor="plugins"))
+
+
+@app.route("/plugins/upload", methods=["POST"])
+def plugins_upload():
+    """Oeffentlicher Kunden-Upload auf der Store-Seite (/plugins) - jeder
+    eingeloggte Kunde (normales Konto, siehe _current_account_email()) darf
+    eigene Mods hochladen; kein separates Freigabe-/Moderationskonzept in
+    dieser Version. Nicht eingeloggte Besucher werden zum Login
+    umgeleitet."""
+    account_email = _current_account_email()
+    if not account_email:
+        flash("Bitte zuerst einloggen, um ein Plugin hochzuladen.", "error")
+        return redirect(url_for("login"))
+
+    ok, message = _process_plugin_zip_upload(request.files.get("plugin_zip"), uploaded_by=account_email)
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("plugins_store"))
 
 
 if __name__ == "__main__":

@@ -253,20 +253,74 @@ def test_shipping_setup_post_success_moves_to_order_and_redirects(client, websho
 
 # ==================== login / logout / account ====================
 
-def test_login_invalid_email_shows_error(client):
-    resp = client.post("/login", data={"email": "not-an-email"})
+def _register(client, email="kunde@example.com", password="supersecret", **overrides):
+    data = {
+        "email": email,
+        "password": password,
+        "full_name": "Kunde Muster",
+        "address": "Musterstrasse 1, 8000 Zürich",
+        "phone": "+41 79 123 45 67",
+        "country": "Schweiz",
+    }
+    data.update(overrides)
+    return client.post("/register", data=data)
+
+
+def test_register_creates_account_and_logs_in(client, webshop_app):
+    resp = _register(client)
+    assert resp.status_code == 302
+    assert "/account" in resp.headers["Location"]
+
+    account = webshop_app.db.get_account_by_email("kunde@example.com")
+    assert account is not None
+    assert account["full_name"] == "Kunde Muster"
+    with client.session_transaction() as sess:
+        assert sess.get("account_email") == "kunde@example.com"
+
+
+def test_register_rejects_invalid_email(client):
+    resp = _register(client, email="not-an-email")
     assert b"g\xc3\xbcltige E-Mail" in resp.data
 
 
+def test_register_rejects_short_password(client):
+    resp = _register(client, password="short")
+    assert "mindestens 8 Zeichen" in resp.data.decode("utf-8")
+
+
+def test_register_rejects_missing_profile_fields(client):
+    resp = _register(client, full_name="")
+    assert "vollständig ausfüllen" in resp.data.decode("utf-8")
+
+
+def test_register_rejects_duplicate_email(client):
+    _register(client)
+    resp = _register(client)
+    assert "bereits ein Konto" in resp.data.decode("utf-8")
+
+
+def test_login_invalid_email_shows_error(client):
+    resp = client.post("/login", data={"email": "not-an-email", "password": "whatever1"})
+    assert "falsch" in resp.data.decode("utf-8")
+
+
 def test_login_unknown_email_shows_error(client):
-    resp = client.post("/login", data={"email": "unknown@example.com"})
+    resp = client.post("/login", data={"email": "unknown@example.com", "password": "whatever1"})
     assert resp.status_code == 200
-    assert "keine Bestellungen" in resp.data.decode("utf-8")
+    assert "falsch" in resp.data.decode("utf-8")
+
+
+def test_login_wrong_password_shows_error(client):
+    _register(client)
+    resp = client.post("/login", data={"email": "kunde@example.com", "password": "wrong-password"})
+    assert resp.status_code == 200
+    assert "falsch" in resp.data.decode("utf-8")
 
 
 def test_login_known_email_redirects_to_account(client, webshop_app):
-    webshop_app.db.add_pending_license("kunde@example.com", "software-lizenz", "dummy", "ref1")
-    resp = client.post("/login", data={"email": "kunde@example.com"})
+    _register(client)
+    client.get("/logout")
+    resp = client.post("/login", data={"email": "kunde@example.com", "password": "supersecret"})
     assert resp.status_code == 302
     assert "/account" in resp.headers["Location"]
 

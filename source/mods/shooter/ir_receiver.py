@@ -18,6 +18,10 @@ ok) empfangenen Frames aus einem kleinen Ringpuffer aus - dafuer wird kurz
 machine.disable_irq()/enable_irq() verwendet (Standardmuster fuer
 Interrupt-sicheren Zugriff in MicroPython), damit ein Frame nicht waehrend
 des Auslesens von einer laufenden ISR ueberschrieben werden kann.
+
+Teil des shooter-Plugins (source/mods/shooter/) - Beispiel dafuer, wie ein
+Mod eigene Hardware-Treiber als co-lokalisierte Untermodule mitbringen kann
+(siehe plugin_manager.py's Docstring zum Import-Mechanismus).
 """
 
 from array import array

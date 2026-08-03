@@ -1,0 +1,12 @@
+{
+    "name": "shooter",
+    "version": "1.0.0",
+    "author": "Nico Bollhalder",
+    "entry": "main.py",
+    "enabled": true,
+    "has_error": false,
+    "error_message": "",
+    "loop_interval_ms": 50,
+    "ui_slots": {},
+    "route_prefixes": ["/admin-shooter", "/shooter-"]
+}

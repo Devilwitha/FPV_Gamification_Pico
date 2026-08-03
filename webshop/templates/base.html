@@ -19,6 +19,7 @@
         <div class="nav-links">
           <a href="{{ url_for('index') }}">Start</a>
           <a href="{{ url_for('shop') }}">Shop</a>
+          <a href="{{ url_for('plugins_store') }}">Plugin-Store</a>
           {% if session.get('account_email') %}
             <a href="{{ url_for('account') }}">Mein Konto</a>
             <a href="{{ url_for('logout') }}">Logout</a>
@@ -30,6 +31,15 @@
     </header>
 
     <main class="site-main">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-messages">
+            {% for category, message in messages %}
+              <p class="flash-message flash-{{ category }}">{{ message }}</p>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
       {% block content %}{% endblock %}
     </main>
 

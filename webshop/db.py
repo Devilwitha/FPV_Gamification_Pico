@@ -1,14 +1,19 @@
 """Persistente Datenhaltung fuer den Login-/Konto-Bereich des Webshops.
 
-Zwei Tabellen in einer SQLite-Datei:
+Drei Tabellen in einer SQLite-Datei:
 
 - ``pending_licenses``: bezahlte, aber noch nicht eingeloeste digitale
   Bestellungen (E-Mail wartet auf Hardware-ID-Eingabe).
 - ``customer_licenses``: bereits ausgestellte Lizenzen je E-Mail-Adresse,
   verweist auf die Lizenzdatei in LICENSES_DIR (siehe app.py).
+- ``accounts``: Login-Konten (E-Mail + Passwort-Hash + Profildaten Name/
+  Adresse/Telefon/Land) - unabhaengig von Bestellungen: ein Konto kann
+  registriert werden, bevor oder nachdem ueberhaupt etwas gekauft wurde.
+  Das Passwort wird NIE im Klartext gespeichert (siehe app.py's
+  werkzeug.security.generate_password_hash/check_password_hash).
 
-Ein Datensatz "wandert" beim Erzeugen einer Lizenz atomar von der einen in
-die andere Tabelle (siehe move_pending_to_customer()).
+Ein Lizenz-Datensatz "wandert" beim Erzeugen einer Lizenz atomar von
+pending_licenses in customer_licenses (siehe move_pending_to_customer()).
 """
 
 import contextlib
@@ -72,6 +77,20 @@ def init_db():
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_customer_licenses_email ON customer_licenses (email)"
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                full_name TEXT NOT NULL,
+                address TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                country TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
         )
 
 
@@ -192,3 +211,27 @@ def move_pending_to_customer(pending_id, hardware_id, license_filename):
         )
         connection.execute("DELETE FROM pending_licenses WHERE id = ?", (pending_id,))
         return cursor.lastrowid
+
+
+def create_account(email, password_hash, full_name, address, phone, country):
+    """Legt ein neues Login-Konto an. Wirft sqlite3.IntegrityError, falls die
+    E-Mail-Adresse (case-insensitiv, siehe UNIQUE COLLATE NOCASE) bereits
+    registriert ist - der Aufrufer (app.py's register()) faengt das ab und
+    zeigt eine verstaendliche Fehlermeldung statt eines Servers-Fehlers."""
+    with _get_connection() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO accounts (email, password_hash, full_name, address, phone, country, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (email, password_hash, full_name, address, phone, country, _now_iso()),
+        )
+        return cursor.lastrowid
+
+
+def get_account_by_email(email):
+    """Liefert das Konto (sqlite3.Row) zu einer E-Mail-Adresse oder None."""
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT * FROM accounts WHERE email = ? COLLATE NOCASE", (email,)
+        ).fetchone()

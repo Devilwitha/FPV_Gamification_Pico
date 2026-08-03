@@ -1,13 +1,26 @@
-"""Shooter Spielmodus: Infrarot-"Laser-Tag" mit Grove IR-Emitter/IR-REC38.
+"""shooter - vollstaendiges Beispiel-Plugin: Infrarot-"Laser-Tag"-Spielmodus.
 
-Im Gegensatz zu koth_mode.py/race_mode.py (BLE-basiert) laeuft dieser Modus
-ueber echte, verkabelte Infrarot-Hardware (siehe ir_emitter.py/
-ir_receiver.py): jeder Pico sendet beim Abfeuern (fire()) einen NEC-Frame
+Referenz-Implementierung dafuer, wie ein eigener Spielmodus komplett als
+Plugin gebaut wird - Spiellogik (ShooterMode), eigene Hardware-Treiber
+(ir_emitter.py/ir_receiver.py, siehe dortige Docstrings) UND eigene
+Weboberflaeche (admin_shooter.html) leben alle hier im Mod-Ordner, nicht
+mehr in source/ selbst. Siehe template/README.md fuer die Schritt-fuer-
+Schritt-Anleitung, die dieses Plugin als Vorlage nutzt.
+
+Im Gegensatz zu koth_mode.py/race_mode.py (BLE-basiert, weiterhin fest in
+main.py/gmr.py verdrahtet) laeuft dieser Modus ueber echte, verkabelte
+Infrarot-Hardware: jeder Pico sendet beim Abfeuern (fire()) einen NEC-Frame
 mit der eigenen kurzen Node-ID + konfiguriertem Schaden, und zaehlt
 gleichzeitig eingehende Treffer anderer Picos ueber den IR-Empfaenger.
-Gleiches Konfig-/Log-/Routen-Muster wie koth_mode.py/race_mode.py (siehe
-dortige Docstrings) - _ticks_diff()/_clamp()/Config-Datei/JSON-Rundenlog/
-status()/configure()/run()/handle_*_route() folgen bewusst derselben Form.
+
+Lifecycle: setup() erstellt genau eine ShooterMode-Instanz (Modul-globaler
+Singleton _manager) und registriert deren IR-Empfaenger-IRQ. loop() ruft
+step() (Empfaenger pollen + AUX-Abzug pruefen) im von manifest.json
+vorgegebenen Intervall auf. handle_route() bedient sowohl die eigene
+Admin-Seite ("/admin-shooter") als auch die JSON-API ("/shooter-*") - siehe
+manifest.json's "route_prefixes". Ein Absturz in irgendeiner dieser
+Funktionen wird von plugin_manager.py abgefangen: das Plugin wird dann
+automatisch deaktiviert (has_error=True), main.py selbst bleibt unberuehrt.
 """
 
 import asyncio
@@ -16,19 +29,29 @@ import machine
 import os
 import time
 
-from ir_emitter import IRTransmitter
-from ir_receiver import IRReceiver
+from mods.shooter.ir_emitter import IRTransmitter
+from mods.shooter.ir_receiver import IRReceiver
 
 # main.py fuellt rc_channels_state mit den zuletzt dekodierten CRSF-RC/AUX-
 # Kanalwerten (siehe dortiger telemetry_loop()). Duenner Fallback fuer den
-# Fall, dass shooter_mode.py eigenstaendig importiert wird (z.B. Unittests,
-# siehe main.py's eigener hotspot_common-Fallback fuer dasselbe Muster) -
+# Fall, dass dieses Modul eigenstaendig importiert wird (z.B. Unittests) -
 # main.py ist zur Laufzeit auf dem Pico immer schon vollstaendig geladen,
-# da shooter_mode.py ausschliesslich lazy ueber gmr.py nachgeladen wird.
+# da dieses Plugin erst von plugin_manager.run_loops() nach main_async()'s
+# Start geladen wird.
 try:
     from main import rc_channels_state
 except Exception:
     rc_channels_state = {"channels": [0] * 16, "updated_ms": 0}
+
+try:
+    from main import DEFAULT_PILOT_NAME
+except Exception:
+    DEFAULT_PILOT_NAME = ""
+
+try:
+    from main import send_html_file as _send_html_file
+except Exception:
+    _send_html_file = None
 
 CONFIG_FILE = "shooter.conf"
 DEFAULT_LIVES = 5  # 0 = unbegrenzt (nur Trefferzaehler, kein Ausscheiden)
@@ -40,6 +63,8 @@ DEFAULT_AUX_THRESHOLD_US = 1700 # Kanalwert (988-2011us Konvention) ab dem "Scha
 AUX_CHANNEL_MIN_US = 988
 AUX_CHANNEL_MAX_US = 2011
 AUX_STALE_MS = 1000  # keine frischen RC-Kanaldaten seit so lange -> als "kein Signal" behandeln
+
+ADMIN_SHOOTER_HTML_PATH = "mods/shooter/admin_shooter.html"
 
 
 def _crsf_raw_to_us(raw):
@@ -335,25 +360,32 @@ class ShooterMode:
             "config": dict(self.config),
         }
 
+    def step(self):
+        """Eine Iteration der Empfaenger-/AUX-Abfrage - wird synchron aus
+        loop() (siehe unten) heraus von plugin_manager.run_loops() im
+        Intervall aus manifest.json aufgerufen."""
+        if not self.running:
+            return
+
+        now = time.ticks_ms()
+        for frame in self.receiver.poll():
+            self._apply_hit(frame["address"], frame["command"], now)
+
+        self.aux_available, self.aux_value_us = self._read_aux_state()
+        if self.aux_available and self.aux_value_us is not None and self.aux_value_us >= self.config["aux_threshold_us"]:
+            # fire() prueft Cooldown/Ausgeschieden-Status selbst - hier
+            # nur so lange wie der Schalter "high" steht wiederholt
+            # aufrufen, damit Halten = Dauerfeuer im Takt der
+            # Schuss-Abklingzeit ergibt (wie ein gehaltener Abzug).
+            self.fire()
+
     async def run(self):
+        """Duenner Standalone-Wrapper um step() - wird vom Plugin-System
+        selbst NICHT genutzt (siehe loop() unten), bleibt aber fuer
+        eigenstaendige Tests/Nutzung ausserhalb des Plugin-Systems nuetzlich."""
         while True:
-            if not self.running:
-                await asyncio.sleep_ms(200)
-                continue
-
-            now = time.ticks_ms()
-            for frame in self.receiver.poll():
-                self._apply_hit(frame["address"], frame["command"], now)
-
-            self.aux_available, self.aux_value_us = self._read_aux_state()
-            if self.aux_available and self.aux_value_us is not None and self.aux_value_us >= self.config["aux_threshold_us"]:
-                # fire() prueft Cooldown/Ausgeschieden-Status selbst - hier
-                # nur so lange wie der Schalter "high" steht wiederholt
-                # aufrufen, damit Halten = Dauerfeuer im Takt der
-                # Schuss-Abklingzeit ergibt (wie ein gehaltener Abzug).
-                self.fire()
-
-            await asyncio.sleep_ms(50)
+            self.step()
+            await asyncio.sleep_ms(50 if self.running else 200)
 
 
 async def send_json(writer, payload, status="200 OK"):
@@ -410,5 +442,50 @@ async def handle_shooter_route(writer, request_path, request_method, query_param
         manager.stop_round("Manuell beendet")
         await send_json(writer, manager.status())
         return True
+
+    return False
+
+
+# ==================== Plugin-Lifecycle (siehe plugin_manager.py) ====================
+
+_manager = None
+
+
+def setup(context):
+    """Erzeugt die einzige ShooterMode-Instanz dieses Prozesses (registriert
+    dabei den IR-Empfaenger-GPIO-IRQ, siehe ir_receiver.py) - ein Neustart
+    des Plugins (Deaktivieren+Aktivieren) erzeugt bewusst KEINE neue
+    Instanz mehr, siehe teardown()/is_active()-Verhalten."""
+    global _manager
+    if _manager is None:
+        _manager = ShooterMode(DEFAULT_PILOT_NAME, context["debug_log"])
+    context["debug_log"]("[shooter] Plugin aktiviert (node_id=%d)" % _manager.node_id)
+
+
+def loop():
+    if _manager is not None:
+        _manager.step()
+
+
+def teardown():
+    """Stoppt nur eine laufende Runde - siehe main.py-Docstring des
+    zugehoerigen setup(): kein Hardware-Teardown-Pfad fuer den IR-IRQ im
+    Projekt vorgesehen, die Instanz bleibt bestehen, ihr step() wird
+    lediglich nicht mehr aufgerufen, solange das Plugin deaktiviert ist."""
+    if _manager is not None:
+        try:
+            _manager.stop_round("Plugin deaktiviert")
+        except Exception:
+            pass
+
+
+async def handle_route(writer, request_path, request_method, query_params, body_params):
+    if request_path == "/admin-shooter":
+        if _send_html_file is not None:
+            await _send_html_file(writer, ADMIN_SHOOTER_HTML_PATH)
+        return True
+
+    if request_path.startswith("/shooter-") and _manager is not None:
+        return await handle_shooter_route(writer, request_path, request_method, query_params, body_params, _manager)
 
     return False

@@ -167,6 +167,7 @@ BOOT_STACK_FILES_TO_BUNDLE = [
 
 APP_FILES_TO_BUNDLE = [
     "firmware_version.txt",
+    "system_info.json",
     "hotspot.conf",
     "en.pak",
     "de.pak",
@@ -182,10 +183,10 @@ APP_FILES_TO_BUNDLE = [
     "infection_mode.py",
     "koth_mode.py",
     "race_mode.py",
-    "shooter_mode.py",
-    "ir_emitter.py",
-    "ir_receiver.py",
     "gmr.py",
+    "plugin_manager.py",
+    "network_manager.py",
+    "pico_web_api.py",
     "trick_profile_helpers.py",
     "main.py",
     "main_LilyGo.py",
@@ -203,7 +204,6 @@ APP_FILES_TO_BUNDLE = [
     "admin_infection.html",
     "admin_koth.html",
     "admin_race.html",
-    "admin_shooter.html",
     "admin_credits.html",
     "challenges_view.html",
     "infection_view.html",
@@ -1362,6 +1362,30 @@ def compile_sources_to_mpy(mpy_cross_cmd, source_dir, file_list, output_dir, pro
     return entries
 
 
+def _deploy_bundled_mods_via_serial(mpremote_cmd, port, progress_callback=None):
+    """Nach dem kompletten Firmware-Push zusaetzlich alle mitgelieferten
+    Mods (source/mods/<name>/, AUSSER example_plugin - reine Lernvorlage,
+    kein Produktions-Feature) auf den Pico kopieren, damit eine frisch
+    geflashte Karte sofort das Standard-Beispielplugin (shooter) mitbringt.
+    Nutzt bewusst dieselbe, bereits fuer den manuellen Workflow getestete
+    Logik wie tools/deploy_mod.py statt eine zweite Kopiermethode zu bauen -
+    das binaere firmware.nbo-Bundleformat/dessen Geraete-Entpackskript
+    unterstuetzen nur flache Dateinamen (Sicherheitspruefung gegen Path-
+    Traversal, siehe _build_device_unpack_script()) und werden hierfuer
+    bewusst NICHT erweitert. Nur Teil der KOMPLETTEN (seriellen) Firmware,
+    nicht des leichten/normalen OTA-Bundles - genau wie boot.py/recovery.py."""
+    import deploy_mod
+
+    for mod_name in deploy_mod.list_local_mods():
+        if mod_name == "example_plugin":
+            continue
+        if progress_callback:
+            progress_callback(0, 1, f"Kopiere mitgeliefertes Plugin '{mod_name}'...")
+        deploy_mod.deploy_via_serial(
+            mod_name, port=port, log=lambda msg: _debug(f"bundled-mod-deploy: {msg}")
+        )
+
+
 def build_and_flash_with_license(customer_id, regenerate_license=True, progress_callback=None):
     """Kompletter Ablauf des Haupt-Buttons "Komplette Firmware inkl. Lizenz
     bauen & installieren": Hardware-ID lesen, license.lic signieren, Quellcode
@@ -1505,6 +1529,9 @@ def build_and_flash_with_license(customer_id, regenerate_license=True, progress_
             progress_callback=serial_progress,
             trigger_restart_if_needed=False,
         )
+
+        progress(7, total_steps, "Kopiere mitgelieferte Plugins (mods/)...")
+        _deploy_bundled_mods_via_serial(mpremote_cmd, port, progress_callback=serial_progress)
 
     if not regenerate_license and backed_up_license:
         progress(8, total_steps, "Stelle vorherige license.lic wieder her...")

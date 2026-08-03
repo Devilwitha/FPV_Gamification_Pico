@@ -361,7 +361,8 @@ async def handle_misc_routes(
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path == '/admin-system':
-        await send_html_file(writer, admin_system_html_path)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, admin_system_html_path, "system")
         return True, trick_tuning_profile, developer_mode_enabled, language_code
 
     if request_path == '/system-info':

@@ -1,0 +1,13 @@
+{
+    "name": "example_plugin",
+    "version": "1.0.0",
+    "author": "FPV Gamification Team",
+    "entry": "main.py",
+    "enabled": true,
+    "has_error": false,
+    "error_message": "",
+    "loop_interval_ms": 5000,
+    "ui_slots": {
+        "system": "render_system_slot"
+    }
+}

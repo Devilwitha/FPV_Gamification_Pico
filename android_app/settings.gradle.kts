@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "FPV Gamification"
-include ':app'
+include(":app")

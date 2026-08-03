@@ -7,6 +7,15 @@
     <h1>Mein Konto</h1>
     <p class="license-intro">Eingeloggt als <strong>{{ email }}</strong>.</p>
 
+    {% if account %}
+      <div class="s">
+        <h2>Profil</h2>
+        <p><strong>{{ account.full_name }}</strong></p>
+        <p>{{ account.address }}, {{ account.country }}</p>
+        <p>Tel: {{ account.phone }}</p>
+      </div>
+    {% endif %}
+
     {% if shipping_saved %}
       <div class="license-success">
         Versandadresse gespeichert - deine Bestellung ist abgeschlossen und wird demnächst

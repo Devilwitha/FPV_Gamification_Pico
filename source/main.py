@@ -116,11 +116,12 @@ CRSF_FRAMETYPE_BATTERY_SENSOR  = 0x08  # Spannung/Strom/verbrauchte Kapazitaet/R
 CRSF_FRAMETYPE_GPS             = 0x02  # Lat/Lon/Geschwindigkeit/Kurs/Hoehe/Satelliten (fuer Speed-Run)
 CRSF_FRAMETYPE_LINK_STATISTICS = 0x14  # RSSI/Link-Qualitaet/SNR (fuer Signal-Helden)
 # 16 RC/AUX-Kanaele, je 11 Bit gepackt (22 Byte Payload) - fuer den
-# Shooter-Modus (siehe shooter_mode.py), der ueber einen frei waehlbaren
-# AUX-Kanal (Schalter am Sender) automatisch abfeuert. Nur vorhanden, wenn
-# der jeweilige CRSF-Aufbau Kanaldaten auf derselben mitgesniffter Leitung
-# ueberhaupt sendet - falls nicht, bleibt rc_channels_state einfach leer
-# (kein Crash, siehe shooter_mode.py's _read_aux_state()).
+# Shooter-Modus (Plugin, siehe source/mods/shooter/main.py), der ueber
+# einen frei waehlbaren AUX-Kanal (Schalter am Sender) automatisch
+# abfeuert. Nur vorhanden, wenn der jeweilige CRSF-Aufbau Kanaldaten auf
+# derselben mitgesniffter Leitung ueberhaupt sendet - falls nicht, bleibt
+# rc_channels_state einfach leer (kein Crash, siehe dortiger
+# _read_aux_state()).
 CRSF_FRAMETYPE_RC_CHANNELS_PACKED = 0x16
 
 # CRSF Frame- und Plausibilitaetsgrenzen
@@ -233,8 +234,9 @@ debug_log_file_bytes = 0
 debug_log_file_limit_reached = False
 highscore_data = {"score": 0, "timestamp": "Unbekannt", "player": DEFAULT_PILOT_NAME}
 # Letzter dekodierter RC/AUX-Kanalsatz (16 Rohwerte, 172-1811) + Zeitstempel
-# des letzten Updates - wird von shooter_mode.py gelesen, um automatisch
-# ueber einen konfigurierten AUX-Kanal abzufeuern (siehe telemetry_loop()).
+# des letzten Updates - wird vom shooter-Plugin (source/mods/shooter/main.py)
+# gelesen, um automatisch ueber einen konfigurierten AUX-Kanal abzufeuern
+# (siehe telemetry_loop()).
 rc_channels_state = {"channels": [0] * 16, "updated_ms": 0}
 pending_highscore = {"active": False, "score": 0, "timestamp": "Unbekannt"}
 status_led = None
@@ -249,6 +251,7 @@ _idcard_route_handler = None
 _misc_route_handler = None
 _challenge_route_handler = None
 _infection_route_handler = None
+_pico_api_route_handler = None
 _upload_helpers_module = None
 _github_ota_helpers_module = None
 _license_verifier_module = None
@@ -296,6 +299,9 @@ OTA_ALLOWED_TARGETS = (
     "upload_helpers.py",
     "challenge_helpers.py",
     "infection_mode.py",
+    "plugin_manager.py",
+    "network_manager.py",
+    "pico_web_api.py",
     "copil",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
@@ -909,6 +915,60 @@ def _build_github_ota_deps():
         "asset_name": GITHUB_OTA_ASSET_NAME,
         "staging_path": GITHUB_OTA_STAGING_PATH,
         "state": github_ota_state,
+    }
+
+
+SYSTEM_INFO_FILE = "system_info.json"
+
+
+def _write_system_info():
+    """Aktualisiert system_info.json mit den aktuellen Geraete-Eckdaten -
+    wird von network_manager.py beim Webshop-Mod-Sync mitgeschickt und von
+    pico_web_api.py fuer /api/firmware/status mitgelesen. Fehler hier duerfen
+    main.py niemals aufhalten (rein informativ)."""
+    try:
+        try:
+            device_id = _get_license_verifier().get_pico_id()
+        except Exception:
+            device_id = ""
+        try:
+            hardware = os.uname().machine
+        except Exception:
+            hardware = "unknown"
+        payload = json.dumps({
+            "device_id": device_id,
+            "firmware_version": FIRMWARE_VERSION,
+            "hardware": hardware,
+            "device_role": "gamification",
+        })
+        temp_path = SYSTEM_INFO_FILE + ".tmp"
+        with open(temp_path, "w") as f:
+            f.write(payload)
+        try:
+            os.remove(SYSTEM_INFO_FILE)
+        except Exception:
+            pass
+        os.rename(temp_path, SYSTEM_INFO_FILE)
+    except Exception as e:
+        debug_log(f"[NET] system_info.json Aktualisierung fehlgeschlagen: {e}")
+
+
+def _build_network_manager_deps():
+    """Baut das deps-Dict fuer network_manager.boot_network_check() - gleiches
+    Muster wie _build_github_ota_deps(), teilt sich bewusst dieselben
+    GitHub-Repo-/Firmware-Konstanten (der Firmware-Check laeuft ueber GitHub,
+    nicht ueber den Webshop-Server)."""
+    return {
+        "log": debug_log,
+        "feed_wdt": _boot_feed_watchdog,
+        "load_wlan_config": load_wlan_config,
+        "configure_hotspot": configure_hotspot,
+        "ap_ssid": AP_SSID,
+        "ap_password": AP_PASSWORD,
+        "firmware_version": FIRMWARE_VERSION,
+        "repo_owner": GITHUB_REPO_OWNER,
+        "repo_name": GITHUB_REPO_NAME,
+        "asset_name": GITHUB_OTA_ASSET_NAME,
     }
 
 
@@ -1737,10 +1797,11 @@ async def send_html_file(writer, file_path):
 async def _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
     global TRICK_TUNING_PROFILE, DEVELOPER_MODE_ENABLED, LANGUAGE_CODE
     global _idcard_route_handler, _misc_route_handler, _challenge_route_handler
-    global _infection_route_handler
+    global _infection_route_handler, _pico_api_route_handler
 
     if request_path == '/admin-idcard':
-        await send_html_file(writer, ADMIN_IDCARD_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_IDCARD_HTML_PATH, "idcard")
         return True
 
     if request_path == '/admin-challenges':
@@ -1771,6 +1832,15 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
 
     import gmr
     if await gmr.handle_admin_and_routes(writer, request_path, request_method, query_params, body_params): return True
+
+    # Generischer Plugin-Routen-Dispatcher (siehe plugin_manager.py's
+    # handle_plugin_route()): bedient z.B. "/admin-shooter"/"/shooter-*"
+    # ueber source/mods/shooter/main.py, ohne dass main.py/gmr.py den
+    # jeweiligen Pfad-Praefix kennen muessen (kommt aus manifest.json's
+    # "route_prefixes", datengetrieben statt hier fest verdrahtet).
+    import plugin_manager
+    if await plugin_manager.handle_plugin_route(writer, request_path, request_method, query_params, body_params):
+        return True
 
     if request_path == '/challenges-view':
         await send_html_file(writer, CHALLENGES_VIEW_HTML_PATH)
@@ -1807,6 +1877,13 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             url_decode,
             safe_base64_file_to_file,
         ):
+            return True
+
+    if request_path == '/admin-plugins' or request_path.startswith('/api/plugins') or request_path.startswith('/api/store') or request_path.startswith('/api/firmware'):
+        if _pico_api_route_handler is None:
+            from pico_web_api import handle_pico_api_route as _lazy_pico_api_route_handler
+            _pico_api_route_handler = _lazy_pico_api_route_handler
+        if await _pico_api_route_handler(writer, request_path, request_method, query_params, body_params):
             return True
 
     if _misc_route_handler is None:
@@ -2106,6 +2183,21 @@ async def handle_client(reader, writer):
 
 async def main_async():
     global system_ready, status_led_last_toggle_ms, infection_task
+    _write_system_info()
+    # Boot-Netzwerk-Check (network_manager.py) ganz am Anfang, VOR jedem
+    # weiteren Import/Server-Start: kurzer, bewusst blockierender STA-
+    # Verbindungsversuch (8-10s) fuer Firmware-Check (via GitHub) + Webshop-
+    # Mod-Sync, danach IMMER zurueck in den Access-Point-Betrieb - waehrend
+    # dieses Fensters ist der eigene Access Point ohnehin kurz weg, es gibt
+    # also niemanden zu bedienen (gleiche Begruendung wie bei
+    # github_ota_helpers.run_update_check()).
+    if ENABLE_HOTSPOT:
+        try:
+            import network_manager
+            network_manager.boot_network_check(_build_network_manager_deps())
+        except Exception as e:
+            debug_log(f"[NET] Boot-Netzwerk-Check fehlgeschlagen: {e}")
+        gc.collect()
     # Lazy-Import/Init von ChallengeManager (challenge_helpers.py) - ganz am
     # Anfang, damit dieser separate Kompilierschritt VOR dem Start des
     # HTTP-Servers/Telemetrie-Loops abgeschlossen ist, aber unabhaengig von
@@ -2136,6 +2228,9 @@ async def main_async():
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
     infection_task = asyncio.create_task(_ensure_infection_manager().run())
     gmr.start_tasks()
+    import plugin_manager
+    plugin_manager.load_all_plugins()
+    asyncio.create_task(plugin_manager.run_loops())
     _boot_mark_healthy_once()
     system_ready = True
     status_led_last_toggle_ms = time.ticks_ms()

@@ -1,4 +1,4 @@
-import ir_emitter as ire
+import mods.shooter.ir_emitter as ire
 
 
 def test_transmitter_available_under_simulator():

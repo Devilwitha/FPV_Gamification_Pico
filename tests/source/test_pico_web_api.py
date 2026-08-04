@@ -170,3 +170,28 @@ async def test_handle_pico_api_route_store_download_schedules_background_task(pi
 async def test_handle_pico_api_route_unknown_path_returns_false(pico_web_api, fake_writer):
     handled = await pico_web_api.handle_pico_api_route(fake_writer, "/does-not-exist", "GET", {}, {})
     assert handled is False
+
+
+@pytest.mark.asyncio
+async def test_handle_pico_api_route_plugin_ui_schema(pico_web_api, fake_writer, monkeypatch):
+    import plugin_manager
+
+    monkeypatch.setattr(
+        plugin_manager, "get_ui_schema", lambda name: {"title": "Demo"} if name == "shooter" else None
+    )
+
+    handled = await pico_web_api.handle_pico_api_route(fake_writer, "/api/plugin-ui/shooter", "GET", {}, {})
+    assert handled is True
+    assert fake_writer.json() == {"ok": True, "schema": {"title": "Demo"}}
+
+
+@pytest.mark.asyncio
+async def test_handle_pico_api_route_plugin_ui_schema_missing_returns_404(pico_web_api, fake_writer, monkeypatch):
+    import plugin_manager
+
+    monkeypatch.setattr(plugin_manager, "get_ui_schema", lambda name: None)
+
+    handled = await pico_web_api.handle_pico_api_route(fake_writer, "/api/plugin-ui/unknown", "GET", {}, {})
+    assert handled is True
+    assert b"404" in fake_writer.response
+    assert fake_writer.json()["ok"] is False

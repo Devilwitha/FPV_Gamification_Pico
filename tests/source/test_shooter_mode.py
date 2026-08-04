@@ -466,3 +466,45 @@ async def test_handle_route_unknown_path_returns_false(shooter_plugin):
     shooter_plugin.setup({"debug_log": lambda m: None, "plugin_dir": "mods/shooter"})
     handled = await shooter_plugin.handle_route(object(), "/does-not-exist", "GET", {}, {})
     assert handled is False
+
+
+def test_get_ui_schema_shape(shooter_plugin):
+    schema = shooter_plugin.get_ui_schema()
+    assert schema["title"] == "Shooter"
+    assert schema["poll_endpoint"] == "/shooter-data"
+    section_types = [section["type"] for section in schema["sections"]]
+    assert section_types == ["stats", "stats", "form", "actions", "list"]
+
+
+def test_get_ui_schema_form_fields_match_manager_config_keys(shooter_plugin):
+    """Jedes "form"-Feld muss ein Schluessel sein, den ShooterMode.configure()
+    tatsaechlich kennt (siehe _default_config()) - sonst wuerde die App ein
+    Feld anzeigen/senden, das der Server stillschweigend ignoriert."""
+    schema = shooter_plugin.get_ui_schema()
+    form_section = next(section for section in schema["sections"] if section["type"] == "form")
+    form_keys = {field["key"] for field in form_section["fields"]}
+
+    manager = shooter_plugin.ShooterMode("TestPilot")
+    assert form_keys == set(manager._default_config().keys())
+    assert form_section["submit_endpoint"] == "/shooter-config"
+
+
+def test_get_ui_schema_action_endpoints_are_shooter_routes(shooter_plugin):
+    schema = shooter_plugin.get_ui_schema()
+    actions_section = next(section for section in schema["sections"] if section["type"] == "actions")
+    endpoints = {button["endpoint"] for button in actions_section["buttons"]}
+    assert endpoints == {"/shooter-stop", "/shooter-fire"}
+
+
+def test_get_ui_schema_registered_via_plugin_manager(shooter_plugin, monkeypatch):
+    """Stellt sicher, dass manifest.json tatsaechlich auf die vorhandene
+    Funktion zeigt (Tippfehler in "ui_pages" wuerden sonst erst zur Laufzeit
+    auf dem echten Geraet auffallen)."""
+    import json
+    import os
+
+    manifest_path = os.path.join(os.path.dirname(shooter_plugin.__file__), "manifest.json")
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    fn_name = manifest["ui_pages"]["main"]
+    assert getattr(shooter_plugin, fn_name)() == shooter_plugin.get_ui_schema()

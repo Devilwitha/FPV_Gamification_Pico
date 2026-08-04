@@ -1879,7 +1879,13 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
         ):
             return True
 
-    if request_path == '/admin-plugins' or request_path.startswith('/api/plugins') or request_path.startswith('/api/store') or request_path.startswith('/api/firmware'):
+    if (
+        request_path == '/admin-plugins'
+        or request_path.startswith('/api/plugins')
+        or request_path.startswith('/api/store')
+        or request_path.startswith('/api/firmware')
+        or request_path.startswith('/api/plugin-ui')
+    ):
         if _pico_api_route_handler is None:
             from pico_web_api import handle_pico_api_route as _lazy_pico_api_route_handler
             _pico_api_route_handler = _lazy_pico_api_route_handler

@@ -8,5 +8,8 @@
     "error_message": "",
     "loop_interval_ms": 50,
     "ui_slots": {},
+    "ui_pages": {
+        "main": "get_ui_schema"
+    },
     "route_prefixes": ["/admin-shooter", "/shooter-"]
 }

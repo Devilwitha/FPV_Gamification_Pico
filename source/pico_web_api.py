@@ -3,9 +3,16 @@
 Buendelt (gleiches Auslagerungs-Muster wie gmr.py/idcard_helpers.py, siehe
 dortige Docstrings): die "/admin-plugins"-Seite (zwei Unter-Tabs:
 Installierte Plugins / Webshop Store & Updates), die zugehoerigen
-"/api/plugins*"-, "/api/store*"- und "/api/firmware*"-JSON-Endpunkte, sowie
-send_admin_html_with_slot() fuer die Plugin-Tab-Erweiterung (siehe
-admin_system.html/admin_idcard.html's <!--PLUGIN_SLOT:...--> Marker).
+"/api/plugins*"-, "/api/store*"-, "/api/firmware*"- und "/api/plugin-ui/*"-
+JSON-Endpunkte, sowie send_admin_html_with_slot() fuer die Plugin-Tab-
+Erweiterung (siehe admin_system.html/admin_idcard.html's
+<!--PLUGIN_SLOT:...--> Marker).
+
+"/api/plugin-ui/<name>" liefert das von plugin_manager.get_ui_schema()
+gebaute JSON-Schema fuer die native Android-App (siehe android_app/.../
+ui/plugins/PluginUiScreen.kt) - komplett getrennt von den PLUGIN_SLOT-HTML-
+Fragmenten oben, die weiterhin ausschliesslich fuer die Browser-Oberflaeche
+gedacht sind.
 
 Die "/admin-plugins"-Seite existiert bewusst NUR als Python-String (kein
 zusaetzliches .html-File) - anders als die uebrigen Admin-Seiten, die alle
@@ -311,6 +318,15 @@ async def handle_pico_api_route(writer, request_path, request_method, query_para
             return True
         asyncio.create_task(_run_store_download(name))
         await _send_json(writer, {"ok": True})
+        return True
+
+    if request_path.startswith("/api/plugin-ui/"):
+        name = request_path[len("/api/plugin-ui/"):]
+        schema = plugin_manager.get_ui_schema(name)
+        if schema is None:
+            await _send_json(writer, {"ok": False, "error": "Kein natives UI-Schema fuer dieses Plugin"}, "404 Not Found")
+        else:
+            await _send_json(writer, {"ok": True, "schema": schema})
         return True
 
     return False

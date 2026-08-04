@@ -111,6 +111,20 @@ def render_system_slot():
     return "<div>hello from plugin</div>"
 """
 
+UI_SCHEMA_PLUGIN_SOURCE = """
+def setup(context):
+    pass
+
+def loop():
+    pass
+
+def get_ui_schema():
+    return {"title": "Demo", "sections": []}
+
+def get_ui_schema_crashing():
+    raise RuntimeError("boom in get_ui_schema")
+"""
+
 ROUTE_PLUGIN_SOURCE = """
 def setup(context):
     pass
@@ -236,6 +250,48 @@ def test_get_ui_slot_html_empty_when_no_plugin_uses_slot(plugin_manager):
     _write_plugin("demo", SIMPLE_PLUGIN_SOURCE)
     plugin_manager.load_all_plugins()
     assert plugin_manager.get_ui_slot_html("system") == ""
+
+
+def test_get_ui_schema_returns_declared_schema_for_active_plugin(plugin_manager):
+    _write_plugin("ui_demo", UI_SCHEMA_PLUGIN_SOURCE, {"ui_pages": {"main": "get_ui_schema"}})
+    plugin_manager.load_all_plugins()
+
+    schema = plugin_manager.get_ui_schema("ui_demo")
+    assert schema == {"title": "Demo", "sections": []}
+
+
+def test_get_ui_schema_none_when_not_declared(plugin_manager):
+    _write_plugin("demo", SIMPLE_PLUGIN_SOURCE)
+    plugin_manager.load_all_plugins()
+    assert plugin_manager.get_ui_schema("demo") is None
+
+
+def test_get_ui_schema_none_when_plugin_not_active(plugin_manager):
+    _write_plugin("ui_demo", UI_SCHEMA_PLUGIN_SOURCE, {"ui_pages": {"main": "get_ui_schema"}, "enabled": False})
+    plugin_manager.load_all_plugins()
+    assert plugin_manager.get_ui_schema("ui_demo") is None
+
+
+def test_get_ui_schema_crash_marks_plugin_crashed(plugin_manager):
+    _write_plugin(
+        "ui_demo", UI_SCHEMA_PLUGIN_SOURCE, {"ui_pages": {"main": "get_ui_schema_crashing"}}
+    )
+    plugin_manager.load_all_plugins()
+
+    assert plugin_manager.get_ui_schema("ui_demo") is None
+    assert plugin_manager.is_active("ui_demo") is False
+    manifest = plugin_manager._load_manifest("ui_demo")
+    assert manifest["has_error"] is True
+
+
+def test_list_plugins_reports_has_ui_flag(plugin_manager):
+    _write_plugin("ui_demo", UI_SCHEMA_PLUGIN_SOURCE, {"ui_pages": {"main": "get_ui_schema"}})
+    _write_plugin("demo", SIMPLE_PLUGIN_SOURCE)
+    plugin_manager.load_all_plugins()
+
+    by_name = {entry["name"]: entry for entry in plugin_manager.list_plugins()}
+    assert by_name["ui_demo"]["has_ui"] is True
+    assert by_name["demo"]["has_ui"] is False
 
 
 @pytest.mark.asyncio

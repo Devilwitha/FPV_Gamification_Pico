@@ -86,6 +86,7 @@ def _default_manifest(name):
         "error_message": "",
         "loop_interval_ms": DEFAULT_LOOP_INTERVAL_MS,
         "ui_slots": {},
+        "ui_pages": {},
         "route_prefixes": [],
     }
 
@@ -105,6 +106,8 @@ def _normalize_manifest(name, values):
         manifest["loop_interval_ms"] = DEFAULT_LOOP_INTERVAL_MS
     if not isinstance(manifest.get("ui_slots"), dict):
         manifest["ui_slots"] = {}
+    if not isinstance(manifest.get("ui_pages"), dict):
+        manifest["ui_pages"] = {}
     if not isinstance(manifest.get("route_prefixes"), list):
         manifest["route_prefixes"] = []
     return manifest
@@ -387,6 +390,36 @@ def get_ui_slot_html(slot_name):
     return "".join(fragments)
 
 
+def get_ui_schema(name):
+    """Liefert die native UI-Beschreibung eines Plugins fuer dessen
+    "main"-Seite (siehe manifest.json's "ui_pages", z.B.
+    source/mods/shooter/main.py's get_ui_schema()) als JSON-serialisierbares
+    dict, oder None, falls das Plugin keine deklariert/nicht aktiv ist.
+
+    Analog zu get_ui_slot_html(), aber fuer die App (siehe android_app/.../
+    PluginUiScreen) statt fuer eingebettete HTML-Fragmente: die App rendert
+    dieses Schema vollstaendig nativ (Compose-Widgets), OHNE dass fuer jedes
+    Plugin eigener Kotlin-Code noetig waere - das Schema beschreibt nur
+    Felder/Buttons/Endpunkte, die eigentlichen Daten kommen weiterhin ueber
+    die vom Plugin selbst registrierten Routen (siehe handle_plugin_route()),
+    z.B. shooter's "/shooter-data"/"/shooter-config"."""
+    entry = _active_plugins.get(name)
+    if entry is None:
+        return None
+    fn_name = entry["manifest"].get("ui_pages", {}).get("main")
+    if not fn_name:
+        return None
+    fn = getattr(entry["module"], fn_name, None)
+    if fn is None:
+        return None
+    try:
+        schema = fn()
+        return schema if isinstance(schema, dict) else None
+    except Exception as e:
+        _mark_crashed(name, e)
+        return None
+
+
 def list_plugins():
     result = []
     for name in list_plugin_names():
@@ -399,5 +432,6 @@ def list_plugins():
             "has_error": manifest["has_error"],
             "error_message": manifest["error_message"],
             "active": is_active(name),
+            "has_ui": bool(manifest.get("ui_pages", {}).get("main")),
         })
     return result

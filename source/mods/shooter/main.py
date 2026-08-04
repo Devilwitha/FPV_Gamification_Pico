@@ -446,6 +446,90 @@ async def handle_shooter_route(writer, request_path, request_method, query_param
     return False
 
 
+def get_ui_schema():
+    """Native UI-Beschreibung fuer die Android-App (siehe manifest.json's
+    "ui_pages" und plugin_manager.get_ui_schema()) - inhaltlich das native
+    Pendant zu admin_shooter.html, aber ohne eigenen HTML/JS-Code: die App
+    rendert dieses Schema generisch (siehe android_app/.../ui/plugins/
+    PluginUiScreen.kt) und spricht dabei dieselben Endpunkte an wie die
+    Browser-Seite (/shooter-data/-config/-fire/-stop, siehe
+    handle_shooter_route() oben). "form"-Felder lesen ihren aktuellen Wert
+    aus dem Poll-Ergebnis unter config.<key> und senden beim Absenden
+    denselben <key> als Formularfeld an submit_endpoint - exakt wie
+    admin_shooter.html's body()/show()-Funktionen."""
+    return {
+        "title": "Shooter",
+        "poll_endpoint": "/shooter-data",
+        "poll_interval_ms": 700,
+        "sections": [
+            {
+                "type": "stats",
+                "title": "Live-Status",
+                "fields": [
+                    {"key": "running", "label": "Zustand", "kind": "bool_text", "true_text": "Aktiv", "false_text": "Inaktiv"},
+                    {"key": "hits_taken", "label": "Treffer kassiert", "kind": "text"},
+                    {"key": "shots_fired", "label": "Schuesse abgegeben", "kind": "text"},
+                    {"key": "lives_remaining", "label": "Verbleibende Leben", "kind": "lives_remaining"},
+                    {"key": "last_event", "label": "Letztes Ereignis", "kind": "text"},
+                    {"key": "last_hit_from", "label": "Letzter Treffer von", "kind": "node_ref"},
+                    {"key": "node_id", "label": "Node ID", "kind": "text"},
+                    {"key": "eliminated", "label": "Ausgeschieden", "kind": "bool_text", "true_text": "Ja", "false_text": "Nein"},
+                ],
+            },
+            {
+                "type": "stats",
+                "title": "Hardware-Status",
+                "fields": [
+                    {"key": "hardware.emitter_available", "label": "IR-Sender (Grove)", "kind": "bool_dot"},
+                    {"key": "hardware.receiver_available", "label": "IR-Empfaenger (IR-REC38)", "kind": "bool_dot"},
+                    {"key": "aux", "label": "AUX-Abzug", "kind": "aux_dot"},
+                    {"key": "aux", "label": "AUX-Kanalwert", "kind": "aux_value"},
+                ],
+            },
+            {
+                "type": "form",
+                "title": "Rundeneinstellungen",
+                "submit_endpoint": "/shooter-config",
+                "submit_label": "Speichern & Runde starten",
+                "hint": (
+                    "Jeder Pico braucht einen Grove-Infrarot-Emitter (Sender) und ein "
+                    "IR-REC38-Empfangsmodul. Abfeuern sendet die eigene Node-ID per "
+                    "Infrarot; treffende Picos zaehlen den Treffer automatisch. Bei "
+                    '"Leben" > 0 scheidet ein Geraet nach genuegend Treffern aus, bei 0 '
+                    "zaehlt nur der Trefferzaehler ohne Ausscheiden. Optional: ein "
+                    "AUX-Kanal (RC-Schalter) kann als automatischer Abzug dienen (0 = "
+                    "deaktiviert, nur der Test-Knopf feuert dann)."
+                ),
+                "fields": [
+                    {"key": "enabled", "label": "Modus aktivieren", "kind": "toggle"},
+                    {"key": "lives", "label": "Leben (0 = unbegrenzt)", "kind": "number", "min": 0, "max": 99},
+                    {"key": "damage", "label": "Schaden pro Treffer", "kind": "number", "min": 1, "max": 9},
+                    {"key": "hit_cooldown_ms", "label": "Trefferabklingzeit (ms)", "kind": "number", "min": 50, "max": 5000, "step": 50},
+                    {"key": "fire_cooldown_ms", "label": "Schuss-Abklingzeit (ms)", "kind": "number", "min": 50, "max": 5000, "step": 50},
+                    {"key": "aux_channel", "label": "AUX-Kanal (0 = aus)", "kind": "number", "min": 0, "max": 16},
+                    {"key": "aux_threshold_us", "label": "AUX-Schwelle (988-2011us)", "kind": "number", "min": 988, "max": 2011, "step": 10},
+                ],
+            },
+            {
+                "type": "actions",
+                "buttons": [
+                    {"label": "Runde stoppen", "endpoint": "/shooter-stop", "style": "muted"},
+                    {"label": "\U0001f4a5 Abfeuern (Test)", "endpoint": "/shooter-fire", "style": "accent"},
+                ],
+            },
+            {
+                "type": "list",
+                "title": "Treffer nach Schuetze",
+                "source_key": "hit_sources",
+                "item_label_key": "id",
+                "item_label_prefix": "Node ",
+                "item_value_key": "hits",
+                "empty_text": "Noch keine Treffer registriert.",
+            },
+        ],
+    }
+
+
 # ==================== Plugin-Lifecycle (siehe plugin_manager.py) ====================
 
 _manager = None

@@ -62,10 +62,18 @@ h3 {
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--color-text);
   text-decoration: none;
+}
+
+.brand-logo {
+  border-radius: 8px;
+  display: block;
 }
 
 .nav-links a {

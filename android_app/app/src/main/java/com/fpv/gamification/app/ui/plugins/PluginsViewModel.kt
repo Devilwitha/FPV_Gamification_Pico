@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
  * Webshop) - siehe [PicoShopApi] fuer die beiden getrennten API-Clients.
  */
 class PluginsViewModel(
-    picoBaseUrl: String = DEFAULT_PICO_BASE_URL,
+    picoBaseUrl: String = PicoShopApi.DEFAULT_PICO_BASE_URL,
     webshopBaseUrl: String = PicoShopApi.DEFAULT_WEBSHOP_BASE_URL,
 ) : ViewModel() {
 
@@ -32,23 +32,46 @@ class PluginsViewModel(
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
+    // Getrennt vom Snackbar-statusMessage: haelt fest, WARUM eine Liste
+    // gerade leer ist (noch nie geladen / laedt / Fehler), damit die UI
+    // einen leeren Bildschirm nie einfach unkommentiert stehen laesst.
+    private val _isLoadingInstalled = MutableStateFlow(false)
+    val isLoadingInstalled: StateFlow<Boolean> = _isLoadingInstalled.asStateFlow()
+
+    private val _installedError = MutableStateFlow<String?>(null)
+    val installedError: StateFlow<String?> = _installedError.asStateFlow()
+
+    private val _isLoadingStore = MutableStateFlow(false)
+    val isLoadingStore: StateFlow<Boolean> = _isLoadingStore.asStateFlow()
+
+    private val _storeError = MutableStateFlow<String?>(null)
+    val storeError: StateFlow<String?> = _storeError.asStateFlow()
+
     fun refreshInstalled() {
         viewModelScope.launch {
+            _isLoadingInstalled.value = true
             try {
                 _installedPlugins.value = picoApi.getInstalledPlugins()
+                _installedError.value = null
             } catch (e: Exception) {
-                _statusMessage.value = "Pico nicht erreichbar: ${e.message}"
+                _installedError.value = "Pico nicht erreichbar: ${e.message}"
+            } finally {
+                _isLoadingInstalled.value = false
             }
         }
     }
 
     fun refreshStore() {
         viewModelScope.launch {
+            _isLoadingStore.value = true
             try {
                 // Gewuenschter Ablauf: Store-Liste immer direkt vom Webshop laden.
                 _storePlugins.value = webshopApi.getStorePlugins().plugins
+                _storeError.value = null
             } catch (e: Exception) {
-                _statusMessage.value = "Webshop nicht erreichbar: ${e.message}"
+                _storeError.value = "Webshop nicht erreichbar: ${e.message}"
+            } finally {
+                _isLoadingStore.value = false
             }
         }
     }
@@ -94,10 +117,5 @@ class PluginsViewModel(
 
     fun clearStatusMessage() {
         _statusMessage.value = null
-    }
-
-    companion object {
-        /** Standard-Access-Point-IP des Pico (siehe strings.xml's webapp_base_url). */
-        const val DEFAULT_PICO_BASE_URL = "http://192.168.4.1/"
     }
 }

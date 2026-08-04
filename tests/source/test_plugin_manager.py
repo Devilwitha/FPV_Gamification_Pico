@@ -284,6 +284,37 @@ def test_get_ui_schema_crash_marks_plugin_crashed(plugin_manager):
     assert manifest["has_error"] is True
 
 
+def test_list_plugins_reports_description(plugin_manager):
+    _write_plugin("demo", SIMPLE_PLUGIN_SOURCE, {"description": "Ein Testmod"})
+    _write_plugin("nodesc", SIMPLE_PLUGIN_SOURCE)
+    plugin_manager.load_all_plugins()
+
+    by_name = {entry["name"]: entry for entry in plugin_manager.list_plugins()}
+    assert by_name["demo"]["description"] == "Ein Testmod"
+    assert by_name["nodesc"]["description"] == ""
+
+
+def test_load_manifest_truncates_overlong_description(plugin_manager):
+    _write_plugin("demo", SIMPLE_PLUGIN_SOURCE, {"description": "x" * 500})
+    manifest = plugin_manager._load_manifest("demo")
+    assert len(manifest["description"]) == 200
+
+
+def test_load_manifest_defaults_missing_description_to_empty_string(plugin_manager, tmp_path):
+    """manifest.json ohne "description" (z.B. aeltere, vor diesem Feld
+    hochgeladene Plugins) darf nicht crashen - _normalize_manifest() muss
+    einen leeren String defaulten."""
+    plugin_dir = os.path.join("mods", "legacy")
+    os.makedirs(plugin_dir, exist_ok=True)
+    with open(os.path.join(plugin_dir, "manifest.json"), "w") as f:
+        json.dump({"name": "legacy", "entry": "main.py"}, f)
+    with open(os.path.join(plugin_dir, "main.py"), "w") as f:
+        f.write(SIMPLE_PLUGIN_SOURCE)
+
+    manifest = plugin_manager._load_manifest("legacy")
+    assert manifest["description"] == ""
+
+
 def test_list_plugins_reports_has_ui_flag(plugin_manager):
     _write_plugin("ui_demo", UI_SCHEMA_PLUGIN_SOURCE, {"ui_pages": {"main": "get_ui_schema"}})
     _write_plugin("demo", SIMPLE_PLUGIN_SOURCE)

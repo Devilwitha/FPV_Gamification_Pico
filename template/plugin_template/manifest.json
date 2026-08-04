@@ -2,6 +2,7 @@
     "name": "my_plugin",
     "version": "0.1.0",
     "author": "Dein Name",
+    "description": "Kurze Beschreibung, die im Webshop-Store und in der Plugin-Liste angezeigt wird.",
     "entry": "main.py",
     "enabled": true,
     "has_error": false,

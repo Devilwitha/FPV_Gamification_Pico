@@ -1801,19 +1801,22 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
 
     if request_path == '/admin-idcard':
         import pico_web_api
-        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_IDCARD_HTML_PATH, "idcard")
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_IDCARD_HTML_PATH, ["idcard", "dashboard_nav"])
         return True
 
     if request_path == '/admin-challenges':
-        await send_html_file(writer, ADMIN_CHALLENGES_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_CHALLENGES_HTML_PATH, "dashboard_nav")
         return True
 
     if request_path == '/admin-infection':
-        await send_html_file(writer, ADMIN_INFECTION_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_INFECTION_HTML_PATH, "dashboard_nav")
         return True
 
     if request_path == '/admin-credits':
-        await send_html_file(writer, ADMIN_CREDITS_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_CREDITS_HTML_PATH, "dashboard_nav")
         return True
 
     if request_path.startswith('/infection-') or request_path.startswith('/lobby-'):
@@ -2094,13 +2097,25 @@ async def handle_client(reader, writer):
                 body_params = {}
                 
         if request_path == '/admin':
-            await send_html_file(writer, ADMIN_DASHBOARD_HTML_PATH)
+            # Dashboard-Nav/-Karte/-Statistikkachel fuer Plugins (z.B. Shooter)
+            # sind NICHT mehr fest in admin_dashboard.html verdrahtet, sondern
+            # werden ueber PLUGIN_SLOT-Marker + ui_slots dynamisch eingeblendet
+            # - ein deaktiviertes Plugin verschwindet dadurch automatisch aus
+            # dem Dashboard, ohne dass main.py es namentlich kennen muss
+            # (siehe pico_web_api.send_admin_html_with_slot()-Docstring).
+            import pico_web_api
+            await pico_web_api.send_admin_html_with_slot(
+                writer, ADMIN_DASHBOARD_HTML_PATH,
+                ["dashboard_nav", "dashboard_card", "dashboard_stat", "dashboard_script"],
+            )
 
         elif request_path == '/admin-update':
-            await send_html_file(writer, ADMIN_UPDATE_HTML_PATH)
+            import pico_web_api
+            await pico_web_api.send_admin_html_with_slot(writer, ADMIN_UPDATE_HTML_PATH, "dashboard_nav")
 
         elif request_path == '/admin-simulate':
-            await send_html_file(writer, ADMIN_SIMULATE_HTML_PATH)
+            import pico_web_api
+            await pico_web_api.send_admin_html_with_slot(writer, ADMIN_SIMULATE_HTML_PATH, "dashboard_nav")
 
         elif request_path == '/prepare-upload':
             await _get_upload_helpers().handle_prepare_upload(writer, query_params, body_params, ota_state, _build_upload_deps())

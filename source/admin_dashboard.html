@@ -66,7 +66,7 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 <a href="/admin-infection" data-i18n="nav.infection">Infection</a>
 <a href="/admin-koth" data-i18n="nav.koth">King of the Hill</a>
 <a href="/admin-race" data-i18n="nav.race">Race</a>
-<a href="/admin-shooter" data-i18n="nav.shooter">Shooter</a>
+<!--PLUGIN_SLOT:dashboard_nav-->
 <a href="/admin-plugins" data-i18n="nav.plugins">Plugins</a>
 <a href="/admin-credits" data-i18n="nav.credits">Credits</a>
 <a href="/" data-i18n="nav.home">Home</a>
@@ -93,7 +93,7 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 <div class="stile" style="--sc:#e6a23c"><div class="sticon">&#128081;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statKothLabel">King of the Hill</div><div class="stval" id="st_koth_val">-</div><div class="stsub" id="st_koth_sub"></div></div></div>
 <div class="stile" style="--sc:#2980b9"><div class="sticon">&#127937;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statRaceLabel">Race</div><div class="stval" id="st_race_val">-</div><div class="stsub" id="st_race_sub"></div></div></div>
 <div class="stile" style="--sc:#d4473f"><div class="sticon">&#9763;&#65039;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statInfectionLabel">Infection</div><div class="stval" id="st_infection_val">-</div><div class="stsub" id="st_infection_sub"></div></div></div>
-<div class="stile" style="--sc:#c0392b"><div class="sticon">&#128165;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statShooterLabel">Shooter</div><div class="stval" id="st_shooter_val">-</div><div class="stsub" id="st_shooter_sub"></div></div></div>
+<!--PLUGIN_SLOT:dashboard_stat-->
 </div>
 </div>
 
@@ -112,14 +112,16 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 <a class="card" href="/admin-infection"><h3 data-i18n="dashboard.card.infectionTitle">Infection Modus</h3><p data-i18n="dashboard.card.infectionText">Zwei Picos als Infizierter und Sucher spielen</p></a>
 <a class="card koth" href="/admin-koth"><h3 data-i18n="dashboard.card.kothTitle">&#128081; King of the Hill</h3><p data-i18n="dashboard.card.kothText">Punkte sammeln, solange Empfang zum Huegel-Pico besteht</p></a>
 <a class="card race" href="/admin-race"><h3 data-i18n="dashboard.card.raceTitle">&#127937; Race Modus</h3><p data-i18n="dashboard.card.raceText">Rundenzeit zwischen 2 Toren mit einstellbarer Rundenzahl messen</p></a>
-<a class="card shooter" href="/admin-shooter"><h3 data-i18n="dashboard.card.shooterTitle">&#128165; Shooter Modus</h3><p data-i18n="dashboard.card.shooterText">Infrarot-Treffer per Grove-Emitter/IR-REC38 abfeuern und zaehlen</p></a>
+<!--PLUGIN_SLOT:dashboard_card-->
 <a class="card" href="/admin-plugins"><h3 data-i18n="dashboard.card.pluginsTitle">&#129513; Plugins</h3><p data-i18n="dashboard.card.pluginsText">Mods verwalten, Webshop-Store durchsuchen und Firmware-Updates pruefen</p></a>
 <a class="card cred" href="/admin-credits"><h3 data-i18n="dashboard.card.creditsTitle">&#8505;&#65039; Credits</h3><p data-i18n="dashboard.card.creditsText">Firma, Entwickler, Version und Links zum Projekt</p></a>
 </div>
 </div>
+<!--PLUGIN_SLOT:dashboard_script-->
 <script>
 let I18N={strings:{}};
 function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+window.t=t;
 function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const s=t(el.getAttribute('data-i18n'),'');if(s)el.innerHTML=s;});document.title=t('dashboard.pageTitle','Admin');}
 function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n();}).catch(()=>{});}
 function upd(){
@@ -133,7 +135,7 @@ document.getElementById('v_mem').innerText=(d.mem_free>=0)?(d.mem_free/1024).toF
 }).catch(e=>0);
 }
 function rhs(){if(confirm(t('index.resetConfirm','Highscore loeschen?'))){fetch('/reset-highscore?web=1').then(()=>upd()).catch(e=>0)}}
-const GAME_COLORS={trick:'#e74c3c',challenges:'#8e44ad',koth:'#e6a23c',race:'#2980b9',infection:'#d4473f',shooter:'#c0392b'};
+const GAME_COLORS={trick:'#e74c3c',challenges:'#8e44ad',koth:'#e6a23c',race:'#2980b9',infection:'#d4473f'};
 function fmtMs(ms){
 if(ms===null||ms===undefined)return '-';
 const total=Math.round(ms),m=Math.floor(total/60000),s=Math.floor((total%60000)/1000),r=total%1000;
@@ -146,6 +148,11 @@ if(r==='stopped')return t('dashboard.resultStopped','Abgebrochen');
 return r||'';
 }
 function fetchLog(url){return fetch(url,{cache:'no-store'}).then(r=>r.json()).then(d=>d.log||[]).catch(()=>[]);}
+// Plugins (z.B. Shooter, siehe mods/shooter/main.py's render_dashboard_script_slot())
+// registrieren sich selbst hier, statt fest hier verdrahtet zu sein - jeder
+// Hook liefert eine Liste von Activity-Items ({ts,time,color,text}) und
+// kuemmert sich selbst um seine eigene Statistikkachel.
+window.DASHBOARD_HOOKS=window.DASHBOARD_HOOKS||[];
 function loadStats(){
 Promise.all([
 fetchLog('/trick-highscore-log'),
@@ -153,13 +160,14 @@ fetchLog('/challenge-log'),
 fetchLog('/koth-log'),
 fetchLog('/race-log'),
 fetchLog('/infection-log'),
-fetchLog('/shooter-log'),
-]).then(([trick,challenges,koth,race,infection,shooter])=>{
-renderStats(trick,challenges,koth,race,infection,shooter);
-renderActivity(trick,challenges,koth,race,infection,shooter);
+]).then(([trick,challenges,koth,race,infection])=>{
+renderStats(trick,challenges,koth,race,infection);
+Promise.all(window.DASHBOARD_HOOKS.map(h=>{try{return Promise.resolve(h())}catch(e){return []}})).then(extraLists=>{
+renderActivity(trick,challenges,koth,race,infection,[].concat(...extraLists));
+});
 });
 }
-function renderStats(trick,challenges,koth,race,infection,shooter){
+function renderStats(trick,challenges,koth,race,infection){
 const noRounds=t('dashboard.noRounds','Noch keine Runde');
 if(trick.length){
 const best=trick.reduce((a,b)=>(b.score||0)>(a.score||0)?b:a,trick[0]);
@@ -186,20 +194,15 @@ const wins=infection.filter(e=>e.result==='won').length;
 document.getElementById('st_infection_val').innerText=wins+'/'+infection.length;
 document.getElementById('st_infection_sub').innerText=t('dashboard.wins','Siege');
 }else{document.getElementById('st_infection_val').innerText=noRounds;document.getElementById('st_infection_sub').innerText='';}
-if(shooter.length){
-const sum=shooter.reduce((a,s)=>a+(s.hits_taken||0),0);
-document.getElementById('st_shooter_val').innerText=sum+' '+t('dashboard.hits','Treffer');
-document.getElementById('st_shooter_sub').innerText=shooter.length+' '+t('dashboard.rounds','Runden');
-}else{document.getElementById('st_shooter_val').innerText=noRounds;document.getElementById('st_shooter_sub').innerText='';}
 }
-function renderActivity(trick,challenges,koth,race,infection,shooter){
+function renderActivity(trick,challenges,koth,race,infection,extraItems){
 let items=[];
 trick.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.trick,text:'&#127942; '+t('dashboard.actTrick','Neuer Highscore')+': '+(e.score||0)+' Pkt ('+(e.player||'')+')'}));
 challenges.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.challenges,text:'&#127919; '+(e.description||'')+' (+'+(e.points||0)+')'}));
 koth.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.koth,text:'&#128081; '+t('dashboard.actKoth','KOTH-Runde beendet')+': '+(e.score||0)+' Pkt'}));
 race.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.race,text:'&#127937; '+t('dashboard.actRace','Rennen beendet')+': '+fmtMs(e.total_ms)}));
 infection.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.infection,text:'&#9763;&#65039; '+t('dashboard.actInfection','Infection-Runde')+': '+resultLabel(e.result)}));
-shooter.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.shooter,text:'&#128165; '+t('dashboard.actShooter','Shooter-Runde beendet')+': '+(e.hits_taken||0)+' '+t('dashboard.hitsTakenShort','Treffer kassiert')+', '+(e.shots_fired||0)+' '+t('dashboard.shotsFiredShort','Schuesse')}));
+(extraItems||[]).forEach(it=>items.push(it));
 items.sort((a,b)=>b.ts-a.ts);
 items=items.slice(0,20);
 const box=document.getElementById('activityList');

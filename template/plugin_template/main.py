@@ -64,9 +64,23 @@ def render_system_slot():
     <!--PLUGIN_SLOT:system--> Marker). Analog gibt es den Slot "idcard" fuer
     den "Ausweis"-Tab (admin_idcard.html). Das Fragment ist ein
     eigenstaendiges HTML-Snippet - es gibt keine gemeinsame CSS/JS-Basis mit
-    dem Rest der Seite, bei Bedarf ein eigenes <style>/<script> einbetten."""
+    dem Rest der Seite, bei Bedarf ein eigenes <style>/<script> einbetten.
+
+    Baut dein Plugin einen eigenen Spielmodus mit eigener Admin-Seite (siehe
+    handle_route() unten), soll er meist auch im Dashboard (/admin) und in
+    der Zuschauer-Ansicht (/gamemodes-view) auftauchen - dafuer gibt es die
+    Slots "dashboard_nav"/"dashboard_card"/"dashboard_stat"/
+    "dashboard_script"/"gamemodes_button" weiter unten (auskommentiert, da
+    sie nur zusammen mit einer eigenen Admin-Seite Sinn ergeben)."""
     return '<div class="plugin-setting">my_plugin ist aktiv</div>'
 
+
+# ==================== Eigener Spielmodus mit eigener Admin-Seite (optional) ====================
+# Alles ab hier ist NUR noetig, wenn dein Plugin (wie source/mods/shooter/)
+# einen eigenstaendigen Spielmodus mit eigener Admin-Unterseite baut, statt
+# nur ein Info-Fragment wie render_system_slot() oben zu liefern. Zum
+# Aktivieren: Funktionen unten einkommentieren UND die jeweiligen Eintraege
+# in manifest.json ergaenzen (siehe Kommentare je Funktion).
 
 # async def handle_route(writer, request_path, request_method, query_params, body_params):
 #     """Optional: nur noetig, wenn dein Plugin EIGENE HTTP-Routen bedienen
@@ -88,3 +102,68 @@ def render_system_slot():
 #     if request_path == "/admin-my_plugin":
 #         return False  # eigene Seite ausliefern, siehe shooter-Beispiel
 #     return False
+
+
+# def render_dashboard_nav_slot():
+#     """Slot "dashboard_nav" - Nav-Link im Dashboard (/admin) und auf JEDER
+#     anderen Admin-Unterseite (admin_update.html, admin_system.html, ...),
+#     die alle denselben <!--PLUGIN_SLOT:dashboard_nav--> Marker teilen.
+#     manifest.json's "ui_slots" braucht dafuer:
+#         "dashboard_nav": "render_dashboard_nav_slot"
+#     Erscheint NUR, solange dieses Plugin aktiv ist (get_ui_slot_html()
+#     iteriert ausschliesslich ueber aktive Plugins) - kein Sonderfall noetig,
+#     um den Link beim Deaktivieren wieder auszublenden."""
+#     return '<a href="/admin-my_plugin">My Plugin</a>'
+
+
+# def render_dashboard_card_slot():
+#     """Slot "dashboard_card" - Kachel im Dashboard-Grid (admin_dashboard.html's
+#     <!--PLUGIN_SLOT:dashboard_card--> Marker). manifest.json: "dashboard_card":
+#     "render_dashboard_card_slot"."""
+#     return (
+#         '<a class="card" href="/admin-my_plugin">'
+#         '<h3>My Plugin</h3><p>Kurzbeschreibung, was dieser Modus macht.</p>'
+#         '</a>'
+#     )
+
+
+# def render_dashboard_stat_slot():
+#     """Slot "dashboard_stat" - Statistikkachel im Dashboard (<!--PLUGIN_SLOT:
+#     dashboard_stat--> Marker). Eigene Element-IDs verwenden (hier
+#     st_my_plugin_val/-sub) - render_dashboard_script_slot() unten befuellt
+#     sie per JS. manifest.json: "dashboard_stat": "render_dashboard_stat_slot"."""
+#     return (
+#         '<div class="stile" style="--sc:#2980b9"><div class="sticon">&#127919;</div>'
+#         '<div class="stbody"><div class="stlabel">My Plugin</div>'
+#         '<div class="stval" id="st_my_plugin_val">-</div><div class="stsub" id="st_my_plugin_sub"></div></div></div>'
+#     )
+
+
+# def render_dashboard_script_slot():
+#     """Slot "dashboard_script" - eigenes <script>-Fragment (<!--PLUGIN_SLOT:
+#     dashboard_script--> Marker), das sich selbst in
+#     window.DASHBOARD_HOOKS eintraegt: jeder Hook wird bei jedem
+#     loadStats()-Zyklus des Dashboards aufgerufen, aktualisiert seine eigene
+#     Statistikkachel per document.getElementById() UND liefert (als Promise)
+#     eine Liste von Activity-Feed-Eintraegen ({ts, time, color, text})
+#     zurueck - das Dashboard-Kernskript kennt "my_plugin" dabei an keiner
+#     Stelle namentlich. manifest.json: "dashboard_script":
+#     "render_dashboard_script_slot". Vollstaendiges Beispiel (inkl. eigenem
+#     JSON-Log-Endpunkt) siehe source/mods/shooter/main.py."""
+#     return """<script>
+# (function(){
+# window.DASHBOARD_HOOKS=window.DASHBOARD_HOOKS||[];
+# window.DASHBOARD_HOOKS.push(function(){
+# var valEl=document.getElementById('st_my_plugin_val');
+# if(valEl)valEl.innerText='aktiv';
+# return [];
+# });
+# })();
+# </script>"""
+
+
+# def render_gamemodes_button_slot():
+#     """Slot "gamemodes_button" - Steuer-Button auf der oeffentlichen
+#     Zuschauer-Ansicht gamemodes_view.html (<!--PLUGIN_SLOT:gamemodes_button-->
+#     Marker). manifest.json: "gamemodes_button": "render_gamemodes_button_slot"."""
+#     return '<a class="b" href="/admin-my_plugin">My Plugin steuern</a>'

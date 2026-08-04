@@ -41,6 +41,7 @@ ganzen Ordner nach `source/mods/<dein_name>/` und passe ihn an.
     "name": "my_plugin",
     "version": "0.1.0",
     "author": "Dein Name",
+    "description": "Kurze Beschreibung, die im Webshop-Store und in der Plugin-Liste angezeigt wird.",
     "entry": "main.py",
     "enabled": true,
     "has_error": false,
@@ -55,6 +56,7 @@ ganzen Ordner nach `source/mods/<dein_name>/` und passe ihn an.
 |---|---|
 | `name` | Eindeutiger Mod-Name (nur Buchstaben/Zahlen/`_`/`-`), muss zum Ordnernamen passen. |
 | `version` / `author` | Nur zur Anzeige (Weboberfläche, Webshop-Store, Android-App) - z.B. `"1.0.0"` und `"Code by Nico Bollhalder"`. |
+| `description` | Optional, max. 200 Zeichen: Kurzbeschreibung, die im Webshop-Store (`webshop/templates/plugins.html`) UND in der Pico-eigenen "Plugins"-Seite (installierte Liste + Store-Tab) angezeigt wird. Leer = "Keine Beschreibung vorhanden." im Webshop bzw. keine Zeile auf dem Pico. |
 | `entry` | Name der Einstiegsdatei (üblich: `"main.py"`). Der Plugin-Manager importiert sie per Python-Import - existiert nur eine kompilierte `main.mpy` (siehe unten), wird die transparent geladen, ohne dass sich an diesem Feld etwas ändert. |
 | `enabled` | Ob das Plugin beim Boot aktiviert werden soll. Wird bei einem Absturz automatisch auf `false` gesetzt. |
 | `has_error` / `error_message` | Wird vom Plugin-System selbst verwaltet (Crash-Status) - beim ersten Deploy immer `false`/`""`. |
@@ -78,13 +80,44 @@ und entfernt es aus der aktiven Schleife - `main.py` selbst crasht dabei
 
 ## Tabs erweitern (`ui_slots`)
 
-Verfügbare Slot-Namen: `system` (System-Tab) und `idcard` (Ausweis-Tab).
-Die genannte Funktion (z.B. `render_system_slot()`) gibt einen HTML-String
-zurück, der an der Stelle des `<!--PLUGIN_SLOT:system-->`-Markers in
-`admin_system.html` eingefügt wird. Es gibt keine gemeinsame CSS/JS-Basis -
-das Fragment muss sich selbst stylen/verhalten (eigenes `<style>`/`<script>`
-bei Bedarf). Ist kein Plugin für einen Slot aktiv, bleibt er einfach leer
-(keine Änderung am normalen Seitenaufbau).
+Verfügbare Slot-Namen: `system` (System-Tab), `idcard` (Ausweis-Tab) sowie
+`dashboard_nav`/`dashboard_card`/`dashboard_stat`/`dashboard_script`
+(Dashboard, siehe unten). Die genannte Funktion (z.B. `render_system_slot()`)
+gibt einen HTML-String zurück, der an der Stelle des jeweiligen
+`<!--PLUGIN_SLOT:...-->`-Markers eingefügt wird. Es gibt keine gemeinsame
+CSS/JS-Basis - das Fragment muss sich selbst stylen/verhalten (eigenes
+`<style>`/`<script>` bei Bedarf). Ist kein Plugin für einen Slot aktiv,
+bleibt er einfach leer (keine Änderung am normalen Seitenaufbau) - **das ist
+der Mechanismus, der ein deaktiviertes Plugin automatisch aus der
+Oberfläche verschwinden lässt**, ohne dass die jeweilige Seite das Plugin
+namentlich kennen muss.
+
+### Ins Dashboard einklinken (`admin_dashboard.html`)
+
+Ein eigener Spielmodus mit eigener Admin-Seite (wie `source/mods/shooter/`)
+soll üblicherweise auch im Dashboard (`/admin`) auftauchen - Nav-Link,
+Dashboard-Kachel und Statistikkachel sind dort NICHT fest verdrahtet,
+sondern kommen (falls vorhanden) aus vier ui_slots:
+
+| Slot | Marker in `admin_dashboard.html` | Inhalt |
+|---|---|---|
+| `dashboard_nav` | `<!--PLUGIN_SLOT:dashboard_nav-->` | ein `<a href="/admin-...">`-Nav-Link |
+| `dashboard_card` | `<!--PLUGIN_SLOT:dashboard_card-->` | eine `<a class="card ...">`-Kachel |
+| `dashboard_stat` | `<!--PLUGIN_SLOT:dashboard_stat-->` | eine `<div class="stile">`-Statistikkachel (mit eigenen Element-IDs) |
+| `dashboard_script` | `<!--PLUGIN_SLOT:dashboard_script-->` | ein `<script>`-Fragment, das sich selbst um die Statistikkachel/Activity-Einträge kümmert |
+
+Das Dashboard-Kernskript kennt keine Spielmodi namentlich mehr - für
+`dashboard_script` gilt die Konvention: `window.DASHBOARD_HOOKS =
+window.DASHBOARD_HOOKS || []` initialisieren, dann eine Funktion pushen, die
+(a) die eigene Statistikkachel per `document.getElementById(...)` befüllt und
+(b) ein `Promise`, das eine Liste von Activity-Items (`{ts, time, color,
+text}`) auflöst, zurückgibt - das Kernskript ruft alle Hooks bei jedem
+`loadStats()`-Zyklus auf und mischt deren Items in den gemeinsamen
+Activity-Feed. `window.t(key, fallback)` steht für eigene Übersetzungen zur
+Verfügung. Siehe `source/mods/shooter/main.py`'s
+`render_dashboard_nav_slot()`/`render_dashboard_card_slot()`/
+`render_dashboard_stat_slot()`/`render_dashboard_script_slot()` für ein
+vollständiges Beispiel.
 
 ## Eigene HTTP-Routen (`route_prefixes` + `handle_route()`)
 

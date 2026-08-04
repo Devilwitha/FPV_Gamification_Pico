@@ -51,12 +51,65 @@ def test_send_admin_html_with_slot_replaces_marker(pico_web_api, fake_writer, mo
     assert b"PLUGIN_SLOT" not in fake_writer.response
 
 
+def test_send_admin_html_with_slot_replaces_multiple_markers(pico_web_api, fake_writer, monkeypatch, isolated_cwd):
+    """admin_dashboard.html braucht mehrere unabhaengige Slots (nav/card/
+    stat/script) auf derselben Seite - jeder Marker bekommt nur sein eigenes
+    Plugin-HTML, unbenutzte Marker bleiben als harmlose Kommentare stehen."""
+    import plugin_manager
+
+    with open("admin_dashboard.html", "w") as f:
+        f.write(
+            "<!--PLUGIN_SLOT:dashboard_nav--><!--PLUGIN_SLOT:dashboard_card-->"
+            "<!--PLUGIN_SLOT:dashboard_stat-->"
+        )
+
+    fragments = {"dashboard_nav": "<a>Shooter</a>", "dashboard_card": "<a class=card>Shooter</a>"}
+    monkeypatch.setattr(plugin_manager, "get_ui_slot_html", lambda slot: fragments.get(slot, ""))
+
+    asyncio.run(pico_web_api.send_admin_html_with_slot(
+        fake_writer, "admin_dashboard.html", ["dashboard_nav", "dashboard_card", "dashboard_stat"],
+    ))
+
+    assert pico_web_api._test_sent_html_calls == []
+    assert b"<a>Shooter</a>" in fake_writer.response
+    assert b"<a class=card>Shooter</a>" in fake_writer.response
+    assert b"<!--PLUGIN_SLOT:dashboard_stat-->" in fake_writer.response  # unbenutzter Slot bleibt als Kommentar
+
+
+def test_send_admin_html_with_slot_falls_back_when_no_plugin_uses_any_of_multiple_slots(
+    pico_web_api, fake_writer, monkeypatch, isolated_cwd
+):
+    import plugin_manager
+
+    monkeypatch.setattr(plugin_manager, "get_ui_slot_html", lambda slot: "")
+
+    asyncio.run(pico_web_api.send_admin_html_with_slot(
+        fake_writer, "admin_dashboard.html", ["dashboard_nav", "dashboard_card"],
+    ))
+
+    assert pico_web_api._test_sent_html_calls == ["admin_dashboard.html"]
+
+
 @pytest.mark.asyncio
 async def test_handle_pico_api_route_serves_admin_plugins_page(pico_web_api, fake_writer):
     handled = await pico_web_api.handle_pico_api_route(fake_writer, "/admin-plugins", "GET", {}, {})
     assert handled is True
     assert b"200 OK" in fake_writer.response
     assert b"PLUGINS" in fake_writer.response
+
+
+def test_admin_plugins_html_renders_plugin_description_and_escapes_it(pico_web_api):
+    """Sowohl die "Installierte Plugins"- als auch die Store-Liste sollen
+    p.description anzeigen (siehe plugin_manager.list_plugins()/webshop
+    _list_store_plugins(), beide liefern jetzt ein "description"-Feld) -
+    und dabei ueber die gemeinsame esc()-Hilfsfunktion escapen, da
+    description freier Text aus einem hochgeladenen/heruntergeladenen
+    manifest.json ist (nicht vertrauenswuerdig)."""
+    assert "p.description" in pico_web_api.ADMIN_PLUGINS_HTML
+    assert "pdesc" in pico_web_api.ADMIN_PLUGINS_HTML
+    assert "function esc(" in pico_web_api.ADMIN_PLUGINS_HTML
+    assert "esc(p.description)" in pico_web_api.ADMIN_PLUGINS_HTML
+    assert "esc(p.name)" in pico_web_api.ADMIN_PLUGINS_HTML
 
 
 @pytest.mark.asyncio

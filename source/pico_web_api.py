@@ -5,7 +5,7 @@ dortige Docstrings): die "/admin-plugins"-Seite (zwei Unter-Tabs:
 Installierte Plugins / Webshop Store & Updates), die zugehoerigen
 "/api/plugins*"-, "/api/store*"-, "/api/firmware*"- und "/api/plugin-ui/*"-
 JSON-Endpunkte, sowie send_admin_html_with_slot() fuer die Plugin-Tab-
-Erweiterung (siehe admin_system.html/admin_idcard.html's
+Erweiterung (siehe admin_system.html/admin_idcard.html/admin_dashboard.html's
 <!--PLUGIN_SLOT:...--> Marker).
 
 "/api/plugin-ui/<name>" liefert das von plugin_manager.get_ui_schema()
@@ -40,23 +40,37 @@ async def _send_json(writer, payload, status="200 OK"):
     await writer.drain()
 
 
-async def send_admin_html_with_slot(writer, file_path, slot_name):
-    """Wie main.send_html_file(), ersetzt aber zusaetzlich den
-    <!--PLUGIN_SLOT:slot_name--> Marker durch von Plugins bereitgestelltes
-    HTML (siehe plugin_manager.get_ui_slot_html()). Faellt auf das
-    unveraenderte, chunked-gestreamte send_html_file() zurueck, wenn kein
-    Plugin diesen Slot nutzt - Null-Overhead im Normalfall."""
+async def send_admin_html_with_slot(writer, file_path, slot_names):
+    """Wie main.send_html_file(), ersetzt aber zusaetzlich <!--PLUGIN_SLOT:x-->
+    Marker durch von Plugins bereitgestelltes HTML (siehe
+    plugin_manager.get_ui_slot_html()). slot_names ist entweder ein einzelner
+    Slot-Name (String, z.B. "system"/"idcard") oder eine Liste mehrerer
+    Slot-Namen auf derselben Seite (z.B. admin_dashboard.html's
+    "dashboard_nav"/"dashboard_card"/"dashboard_stat"/"dashboard_script" -
+    so kann JEDES Plugin, das einen dieser Slots belegt, sich selbst in Nav/
+    Karten/Statistik einklinken, OHNE dass admin_dashboard.html es kennen
+    muss). Faellt auf das unveraenderte, chunked-gestreamte send_html_file()
+    zurueck, wenn kein Plugin einen der Slots nutzt - Null-Overhead im
+    Normalfall."""
     import plugin_manager
 
-    slot_html = plugin_manager.get_ui_slot_html(slot_name)
-    if not slot_html:
+    if isinstance(slot_names, str):
+        slot_names = [slot_names]
+
+    slot_html_by_name = {}
+    for slot_name in slot_names:
+        html = plugin_manager.get_ui_slot_html(slot_name)
+        if html:
+            slot_html_by_name[slot_name] = html
+
+    if not slot_html_by_name:
         await send_html_file(writer, file_path)
         return
 
-    marker = "<!--PLUGIN_SLOT:{}-->".format(slot_name)
     with open(file_path, "r") as f:
         content = f.read()
-    content = content.replace(marker, slot_html)
+    for slot_name, html in slot_html_by_name.items():
+        content = content.replace("<!--PLUGIN_SLOT:{}-->".format(slot_name), html)
     data = content.encode("utf-8")
 
     writer.write(b"HTTP/1.1 200 OK\r\n")
@@ -91,6 +105,7 @@ h1{color:#1abc9c;font-size:1.3em;margin:0 0 10px}
 .plugin:last-child{border-bottom:0}
 .pname{font-weight:bold}
 .pver{color:#9fb4cb;font-size:.78em;margin-left:6px}
+.pdesc{color:#9fb4cb;font-size:.8em;margin-top:3px}
 .perr{color:#e74c3c;font-size:.8em;margin-top:3px}
 .crashed{color:#e74c3c;font-weight:bold}
 .btns{display:flex;gap:6px;flex-shrink:0}
@@ -151,6 +166,8 @@ function showTab(name){
   document.getElementById('panel_store').classList.toggle('on', name==='store');
 }
 
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
 function loadPlugins(){
   fetch('/api/plugins',{cache:'no-store'}).then(r=>r.json()).then(list=>{
     const el=document.getElementById('pluginList');
@@ -160,8 +177,9 @@ function loadPlugins(){
       const row=document.createElement('div');
       row.className='plugin';
       const info=document.createElement('div');
-      info.innerHTML='<span class="pname'+(p.has_error?' crashed':'')+'">'+p.name+'</span><span class="pver">v'+p.version+(p.author?' &middot; Code by '+p.author:'')+'</span>'+
-        (p.has_error?'<div class="perr">CRASHED / FEHLER: '+p.error_message+'</div>':'');
+      info.innerHTML='<span class="pname'+(p.has_error?' crashed':'')+'">'+esc(p.name)+'</span><span class="pver">v'+esc(p.version)+(p.author?' &middot; Code by '+esc(p.author):'')+'</span>'+
+        (p.description?'<div class="pdesc">'+esc(p.description)+'</div>':'')+
+        (p.has_error?'<div class="perr">CRASHED / FEHLER: '+esc(p.error_message)+'</div>':'');
       const btns=document.createElement('div');
       btns.className='btns';
       const label=document.createElement('label');
@@ -207,7 +225,8 @@ function loadStoreList(){
     plugins.forEach(p=>{
       const row=document.createElement('div');
       row.className='plugin';
-      row.innerHTML='<div><span class="pname">'+p.name+'</span><span class="pver">v'+p.version+(p.author?' &middot; Code by '+p.author:'')+'</span></div>';
+      row.innerHTML='<div><span class="pname">'+esc(p.name)+'</span><span class="pver">v'+esc(p.version)+(p.author?' &middot; Code by '+esc(p.author):'')+'</span>'+
+        (p.description?'<div class="pdesc">'+esc(p.description)+'</div>':'')+'</div>';
       const btn=document.createElement('button');
       btn.className='b dl';
       btn.innerText='Download';

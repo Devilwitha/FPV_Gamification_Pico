@@ -80,6 +80,7 @@ def _default_manifest(name):
         "name": name,
         "version": "0.0.0",
         "author": "",
+        "description": "",
         "entry": "main.py",
         "enabled": True,
         "has_error": False,
@@ -96,6 +97,7 @@ def _normalize_manifest(name, values):
     if isinstance(values, dict):
         manifest.update(values)
     manifest["name"] = name
+    manifest["description"] = str(manifest.get("description") or "")[:200]
     manifest["entry"] = str(manifest.get("entry") or "main.py")
     manifest["enabled"] = bool(manifest.get("enabled", True))
     manifest["has_error"] = bool(manifest.get("has_error", False))
@@ -428,6 +430,7 @@ def list_plugins():
             "name": manifest["name"],
             "version": manifest["version"],
             "author": manifest["author"],
+            "description": manifest["description"],
             "enabled": manifest["enabled"],
             "has_error": manifest["has_error"],
             "error_message": manifest["error_message"],

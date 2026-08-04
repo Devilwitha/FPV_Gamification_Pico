@@ -2,6 +2,7 @@
     "name": "shooter",
     "version": "1.0.0",
     "author": "Nico Bollhalder",
+    "description": "Infrarot-Lasertag-Spielmodus: per Grove-IR-Emitter abfeuern, Treffer per IR-REC38-Empfaenger zaehlen.",
     "entry": "main.py",
     "enabled": true,
     "has_error": false,

@@ -2,6 +2,7 @@
     "name": "example_plugin",
     "version": "1.0.0",
     "author": "FPV Gamification Team",
+    "description": "Minimalbeispiel: zaehlt Heartbeats und zeigt sie im System-Tab an.",
     "entry": "main.py",
     "enabled": true,
     "has_error": false,

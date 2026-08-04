@@ -38,12 +38,23 @@ def shooter_plugin(install_stub_module):
         rc_channels_state={"channels": [0] * 16, "updated_ms": 0},
     )
 
+    # handle_route() importiert pico_web_api lazy (siehe dortiger
+    # send_admin_html_with_slot()-Aufruf) - pico_web_api bindet SEIN EIGENES
+    # "from main import send_html_file" beim EIGENEN ersten Import fest an
+    # den zu dem Zeitpunkt aktiven main-Stub. Ohne diese Purges wuerde ein
+    # bereits (von einem frueheren Test) importiertes pico_web_api/
+    # plugin_manager an dessen laengst verworfenem Stub haengen bleiben
+    # (gleiches Muster wie test_gmr.py's gmr-Fixture).
+    sys.modules.pop("pico_web_api", None)
+    sys.modules.pop("plugin_manager", None)
     _purge_mods_modules()
     import importlib
     module = importlib.import_module("mods.shooter.main")
     module._test_sent_html = sent_html
     yield module
     _purge_mods_modules()
+    sys.modules.pop("pico_web_api", None)
+    sys.modules.pop("plugin_manager", None)
 
 
 def test_derive_node_id_xors_all_bytes(shooter_plugin):
@@ -508,3 +519,49 @@ def test_get_ui_schema_registered_via_plugin_manager(shooter_plugin, monkeypatch
         manifest = json.load(f)
     fn_name = manifest["ui_pages"]["main"]
     assert getattr(shooter_plugin, fn_name)() == shooter_plugin.get_ui_schema()
+
+
+def test_dashboard_ui_slots_registered_via_plugin_manager(shooter_plugin):
+    """Wie test_get_ui_schema_registered_via_plugin_manager(), aber fuer die
+    vier Dashboard-Slots (manifest.json's "ui_slots") - ein Tippfehler dort
+    wuerde sonst dazu fuehren, dass Shooter im Dashboard (/admin) unsichtbar
+    bleibt, obwohl das Plugin aktiv ist (siehe admin_dashboard.html's
+    PLUGIN_SLOT-Marker)."""
+    import json
+    import os
+
+    manifest_path = os.path.join(os.path.dirname(shooter_plugin.__file__), "manifest.json")
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+
+    ui_slots = manifest["ui_slots"]
+    assert set(ui_slots) == {
+        "dashboard_nav", "dashboard_card", "dashboard_stat", "dashboard_script", "gamemodes_button",
+    }
+    for slot_name, fn_name in ui_slots.items():
+        fn = getattr(shooter_plugin, fn_name)
+        html = fn()
+        assert isinstance(html, str) and html
+
+
+def test_dashboard_nav_and_card_link_to_admin_shooter(shooter_plugin):
+    assert '/admin-shooter' in shooter_plugin.render_dashboard_nav_slot()
+    assert '/admin-shooter' in shooter_plugin.render_dashboard_card_slot()
+
+
+def test_gamemodes_button_slot_links_to_admin_shooter(shooter_plugin):
+    assert '/admin-shooter' in shooter_plugin.render_gamemodes_button_slot()
+
+
+def test_dashboard_stat_slot_declares_ids_used_by_dashboard_script_slot(shooter_plugin):
+    """render_dashboard_script_slot()'s <script> greift per getElementById auf
+    st_shooter_val/-sub zu - diese IDs muessen exakt aus
+    render_dashboard_stat_slot() stammen, sonst bleibt die Kachel stumm."""
+    stat_html = shooter_plugin.render_dashboard_stat_slot()
+    script_html = shooter_plugin.render_dashboard_script_slot()
+    assert 'id="st_shooter_val"' in stat_html
+    assert 'id="st_shooter_sub"' in stat_html
+    assert "st_shooter_val" in script_html
+    assert "st_shooter_sub" in script_html
+    assert "/shooter-log" in script_html
+    assert "DASHBOARD_HOOKS" in script_html

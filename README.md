@@ -45,7 +45,7 @@ Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen (nicht
 | `main.py` (oder `main_LilyGo.py`) | 🚀 Hauptskript der Rolle "Gamification" (startet nach `boot.py`). |
 | `main_gatehill.py` & `index_gatehill.html` | ⛳ Hauptskript & Oberfläche der Rolle "Gate/Hill" (King-of-the-Hill-Hügel bzw. Race-Tor A/B). |
 | `gmr.py`, `koth_mode.py`, `race_mode.py` | 🏁 Lazy-geladene Logik & Routen für die Spielmodi King of the Hill und Race (BLE-basiert, von beiden Rollen genutzt). |
-| `shooter_mode.py`, `ir_emitter.py` & `ir_receiver.py` | 🔫 Shooter-Modus (IR-basiert) inkl. Treiber für Grove-Infrarot-Emitter (Senden) und IR-REC38-Empfänger (Empfangen) – nur von der Rolle "Gamification" genutzt, siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen). |
+| `plugin_manager.py` & `mods/` | 🧩 Generische Plugin-Engine + Ordner der installierten Mods (u.a. `mods/shooter/` – IR-Laser-Tag inkl. `ir_emitter.py`/`ir_receiver.py`/`admin_shooter.html`), siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen) & [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen). |
 | `hotspot_common.py`, `hotspot.conf` & `wlan.conf` | 📡 WLAN-Access-Point-Konfiguration (`hotspot.conf`) sowie Ziel-WLAN für die GitHub-Update-Suche (`wlan.conf`). |
 | `ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py`, `github_ota_helpers.py`, `update_manager.py` | 🛠️ OTA-, Upload- und "Nach Updates suchen"-Hilfsfunktionen für den Webserver. |
 | `license_verifier.py`, `license.lic` & `public_key.pem` | 🔒 Offline-Lizenzprüfung: signierte, hardware-gebundene Freischaltung (siehe [Lizenzsystem](#-lizenzsystem)). |
@@ -53,7 +53,7 @@ Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen (nicht
 | `infection_mode.py` & `idcard_helpers.py` | ☣️ Logik für den Bluetooth-Infection-Modus und Spieler-Verwaltung. |
 | `*.pak` Dateien (z.B. `en.pak`, `de.pak`) | 🌍 Sprachpakete für die Internationalisierung des Webinterfaces. |
 | `index.html` | 📱 Hauptseite der Rolle "Gamification" (Scoreboard, Live-Feed, Historie, Downloads für Session/Debug). |
-| `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html`, `admin_shooter.html` | 🎛️ Alle Admin-Unterseiten (Update, Simulation, System-Info, Challenges, Spielmodi, Credits, etc.). |
+| `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html` | 🎛️ Alle Admin-Unterseiten (Update, Simulation, System-Info, Challenges, Spielmodi, Credits, etc.) – Shooter/Plugins haben eigene Seiten (`mods/shooter/admin_shooter.html` bzw. die dynamisch generierte `/admin-plugins`). |
 | `challenges_view.html`, `infection_view.html` & `gamemodes_view.html` | 📺 Öffentliche Live-Visualisierungen für Zuschauer. |
 | `firmware_version.txt` & `version.json` | 🏷️ Versionstag (z.B. `1.3.3`). Wird bei jedem Release **automatisch** hochgezählt. Nicht manuell bearbeiten! |
 
@@ -109,7 +109,7 @@ Für den **Shooter-Modus** (`/admin-shooter`) braucht **jeder** mitspielende Pic
 
 > ⚠️ **Wichtig:**
 > - **Grove-Infrarot-Emitter-Pinbeschriftung:** Auf der Platine steht meist `NC / TX / VCC / GND` (4-poliger Grove-Stecker) statt eines generischen "SIG" - **TX** ist der Signalpin (an GP16), **NC** ("Not Connected") bleibt frei/unbeschaltet.
-> - Pin-Nummern sind Konstanten am Anfang von `source/ir_emitter.py` (`DEFAULT_IR_EMITTER_PIN`) bzw. `source/ir_receiver.py` (`DEFAULT_IR_RECEIVER_PIN`) – bei Bedarf dort anpassen, bevor die Firmware gebaut wird.
+> - Pin-Nummern sind Konstanten am Anfang von `source/mods/shooter/ir_emitter.py` (`DEFAULT_IR_EMITTER_PIN`) bzw. `source/mods/shooter/ir_receiver.py` (`DEFAULT_IR_RECEIVER_PIN`) – bei Bedarf dort anpassen, bevor die Firmware gebaut wird. Der komplette Shooter-Modus lebt als eigenständiges **Plugin** unter `source/mods/shooter/` (siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen)) und lässt sich über `/admin-plugins` einzeln deaktivieren.
 > - Der IR-REC38 braucht **3V3**, keine 5V!
 > - Ohne angeschlossene Hardware meldet `/shooter-data` (bzw. die Hardware-Status-Zeile auf `/admin-shooter`) einfach `emitter_available: false` / `receiver_available: false` – kein Crash, der restliche Modus bleibt nutzbar.
 
@@ -123,7 +123,7 @@ Das setzt voraus, dass dein Flight Controller/ELRS-Aufbau `RC_CHANNELS_PACKED`-C
 
 Um zu prüfen, ob der IR-REC38 überhaupt sauber empfängt, bevor man den kompletten Shooter-Modus in Betrieb nimmt, gibt es eine winzige Standalone-Firmware im Projekt-Root: **[`shooter_receiver_test_main.py`](shooter_receiver_test_main.py)**. Sie braucht **nur** ein IR-REC38-Modul (kein Emitter, kein Rest der Firmware) auf einem zweiten/beliebigen Pico:
 
-1. `source/ir_receiver.py` **und** `shooter_receiver_test_main.py` auf den Test-Pico kopieren (z.B. per Thonny).
+1. `source/mods/shooter/ir_receiver.py` (umbenannt zu `ir_receiver.py`) **und** `shooter_receiver_test_main.py` auf den Test-Pico kopieren (z.B. per Thonny).
 2. `shooter_receiver_test_main.py` dort in `main.py` umbenennen.
 3. IR-REC38 wie oben verkabelt (Standard `GP17`), Pico neu starten.
 4. **LED-Verhalten:**
@@ -196,6 +196,17 @@ Zwei zusätzliche Spielmodi, die **komplett unabhängig vom CRSF-Datenstrom** fu
 
 * ⛳ **King of the Hill:** Ein Pico ist der "Hügel" (Rolle `hill`) und sendet einen BLE-Anker-Beacon. Spieler-Picos sammeln Punkte pro Sekunde, solange ihr Empfangspegel (RSSI) über einer konfigurierbaren Schwelle liegt. Jeder Spieler broadcastet zusätzlich seinen aktuellen Punktestand, sodass alle Geräte eine gemeinsame Bestenliste anzeigen können. Konfiguration in `koth.conf` (Rundendauer, RSSI-Schwelle, Punkte/Sekunde).
 * 🏁 **Race:** Zwei Picos werden als feste Tore (Rolle `gate_a` / `gate_b`) aufgestellt und senden nur einen kurzen Identitäts-Beacon. Ein dritter Pico (Rolle `racer`) scannt fortlaufend: Kommt Tor A in Reichweite, startet der Rundentimer; kommt danach Tor B in Reichweite, wird die Runde abgeschlossen. Wiederholt sich über die konfigurierte Rundenzahl. Konfiguration in `race.conf` (Rundenzahl, RSSI-Schwelle, Cooldown zwischen Toren).
+
+---
+
+## 🧩 Plugin-System (eigene Mods/Spielmodi bauen)
+
+Neben den fest eingebauten Modi gibt es eine generische, crash-sichere Plugin-Engine (`source/plugin_manager.py`): eigene Mods leben unter `source/mods/<name>/` (eine `manifest.json` + `main.py`), lassen sich einzeln über `/admin-plugins` aktivieren/deaktivieren und können bei einem Absturz NIE die restliche Firmware mitreißen – `main.py` bleibt garantiert am Leben, das betroffene Plugin wird automatisch deaktiviert (`CRASHED`-Status samt Fehlermeldung in der Oberfläche).
+
+* **Referenz-Implementierung:** Der komplette Shooter-Modus (`source/mods/shooter/`) ist selbst so ein Plugin – inklusive eigener Hardware-Treiber (`ir_emitter.py`/`ir_receiver.py`), eigener Admin-Unterseite (`admin_shooter.html`) und eigener Android-App-Integration. `source/mods/example_plugin/` zeigt die minimale Variante (nur ein Heartbeat-Zähler + Info-Fragment).
+* **Eigenes Plugin bauen:** `template/plugin_template/` nach `source/mods/<dein_name>/` kopieren und ausfüllen – die vollständige Schritt-für-Schritt-Anleitung (Manifest-Felder, Lifecycle-Hooks `setup()`/`loop()`/`teardown()`/`handle_route()`, Dashboard-Einbindung, Upload in den Webshop-Store) steht in [`template/README.md`](template/README.md).
+* **Dynamische Oberfläche (`ui_slots`):** Ein Plugin kann sich selbst in bestehende Seiten einklinken, statt dass main.py/die HTML-Seiten es namentlich kennen müssen – u.a. Nav-Leiste, Dashboard-Kachel & Statistik im Haupt-Dashboard (`/admin`, gilt automatisch auf JEDER Admin-Unterseite), ein Info-Block im System-Tab, oder ein Steuer-Button in der Zuschauer-Ansicht (`/gamemodes-view`). Wird das Plugin deaktiviert, verschwinden diese Elemente automatisch wieder – kein Sonderfall im restlichen Code nötig.
+* **Webshop-Store:** `manifest.json`'s `description` (max. 200 Zeichen) wird sowohl im eigenständigen Webshop-Store (`webshop/`) als auch auf der Pico-eigenen "Plugins"-Seite (`/admin-plugins`) angezeigt.
 
 ---
 
@@ -359,8 +370,10 @@ Hier ein kleiner Auszug, was unter der Haube schlummert:
 | `/admin-infection` | ☣️ Infection-Modus Verwaltung |
 | `/admin-koth` | ⛳ King-of-the-Hill Verwaltung (Gate/Hill-Rolle) |
 | `/admin-race` | 🏁 Race Verwaltung (Gate/Hill-Rolle) |
-| `/admin-shooter` | 🔫 Shooter-Verwaltung (IR-Emitter/Empfänger, AUX-Abzug, Trefferverlauf) |
+| `/admin-shooter` | 🔫 Shooter-Verwaltung (IR-Emitter/Empfänger, AUX-Abzug, Trefferverlauf) - vom Shooter-**Plugin** selbst bereitgestellt (siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen)) |
 | `/admin-credits` | 🙏 Credits-Seite |
+| `/admin-plugins`, `/api/plugins*` | 🧩 Installierte Plugins verwalten (Liste/Aktivieren/Deaktivieren/Löschen) |
+| `/api/store*` | 🛒 Plugin-Store durchsuchen & per WLAN herunterladen (spiegelt den Webshop-Store, siehe `network_manager.py`) |
 | `/koth-*`, `/race-*`, `/shooter-*` | ⛳🏁🔫 Start/Stopp/Status der Spielmodi (z.B. `/koth-start`, `/race-data`, `/shooter-fire`) |
 | `/infection-*`, `/lobby-*` | ☣️ Steuer-/Datenrouten des Infection-Modus |
 | `/upload-chunk` / `/finalize-upload`| 📦 Firmware & HTML File Uploader |
@@ -382,6 +395,7 @@ Im Root-Verzeichnis selbst liegen nur diese `README.md` sowie ein paar kleine PC
 |---|---|
 | `source/` | 📁 Alle Dateien, die tatsächlich *auf* den Pico müssen (siehe unten) – die Quelle der Wahrheit für Firmware-Builds. |
 | `tools/` | 🛠️ PC-Helfer-Skripte (Build, Lizenzierung, Profile, LilyGO, ...) – siehe unten. |
+| `template/` | 🧩 Vorlage (`plugin_template/`) + [`template/README.md`](template/README.md) zum Bauen eigener Plugins, siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen). |
 | `pico_simulator/` | 🧪 CPython-Simulator der Firmware zum Testen am PC ohne Hardware (siehe [🖥️ Windows Installer & PC-Tools](#-windows-installer--pc-tools)). Klont `source` beim ersten Start schreibbar nach `data/`. |
 | `windows/` | 🖥️ Quellcode & Build-Skript des eigenständigen Windows-Installers ("Gamification Installer.exe"). |
 | `webshop/` | 🛒 Eigenständiger Flask-Webshop (Stripe/PayPal) zum Lizenzverkauf – unabhängig von der Firmware, eigene Regeln in `webshop/CLAUDE.md`. |
@@ -414,7 +428,7 @@ Hier liegen alle Dateien, die tatsächlich *auf* deinen Pico müssen (oder vom B
   * `main.py` 🚀: Die absolute Boss-Datei fuer die Geraete-Rolle "gamification". Startet den ganzen Zirkus (Webserver, Telemetrie, Tricks).
   * `main_gatehill.py` ⛳: Die Boss-Datei fuer die Geraete-Rolle "gatehill" (stationaerer King-of-the-Hill-Huegel/Race-Tor) - liegt neben `main.py` im selben Ordner, `boot.py` waehlt anhand der gespeicherten Rolle eines von beiden.
   * `gmr.py`, `koth_mode.py`, `race_mode.py` 🏁: Gemeinsame, lazy geladene Spielmodi-Logik (Routing, Admin-Seiten, BLE-Tasks) für King of the Hill & Race - von `main.py` UND `main_gatehill.py` genutzt.
-  * `shooter_mode.py`, `ir_emitter.py` & `ir_receiver.py` 🔫: IR-basierter Shooter-Modus (Treffer abfeuern & zählen, optional per AUX-Kanal ausgelöst) - nur von `main.py` (Rolle "gamification") genutzt, siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen).
+  * `plugin_manager.py` 🧩: Generische, crash-sichere Plugin-Engine - laedt/verwaltet alles unter `mods/` (siehe unten), dazugehoerige Web-Routen (`/admin-plugins`, `/api/plugins*`, `/api/store*`) leben in `pico_web_api.py`. Details siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen).
   * `role_setup.py` 🧭: Die Ersteinrichtungs-Seite - laeuft NUR beim allerersten Start, solange noch keine Geraete-Rolle gewaehlt wurde (siehe Quick-Start-Abschnitt oben).
   * `boot.py` & `boot_runtime.py` 🥾: MicroPython startet diese Dateien beim Booten. Sie entscheiden, ob die Ersteinrichtung, der Notfall-Recovery-Modus oder `main.py`/`main_gatehill.py` geladen wird.
   * `ota_helpers.py`, `github_ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py`, `update_manager.py` 🛠️: Wichtige Helferlein für OTA-Updates (lokal & per GitHub-Suche), Datei-Uploads und spezielle Web-Routen, ausgelagert um RAM zu sparen.
@@ -425,10 +439,11 @@ Hier liegen alle Dateien, die tatsächlich *auf* deinen Pico müssen (oder vom B
   * `challenge_helpers.py` 🎮: Die Logik hinter den Real-Time Mini-Games (Limbo, Eco, Touch & Go).
   * `infection_mode.py` / `.mpy` ☣️: Der Code für den gnadenlosen Bluetooth Infection-Modus (das `.mpy` ist kompiliert für mehr Speed & RAM).
   * `idcard_helpers.py` 🪪: Helfer für die Verwaltung von Spieler-IDs im Infection-Modus.
+  * `mods/shooter/` 🔫: Der IR-basierte Shooter-Modus (`main.py`, `ir_emitter.py`, `ir_receiver.py`, `admin_shooter.html`, `manifest.json`) - laeuft NICHT mehr fest verdrahtet in `main.py`, sondern als eigenstaendiges Plugin ueber `plugin_manager.py`, per `/admin-plugins` einzeln (de)aktivierbar. Details siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen) & [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen).
 * **Web-Oberfläche (Die HTML-Seiten):**
   * `index.html`: Das Main-Dashboard für Piloten (Geraete-Rolle "gamification").
   * `index_gatehill.html`: Die kombinierte Konfigurationsseite für die Geraete-Rolle "gatehill" (King of the Hill & Race).
-  * `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html`, `admin_shooter.html`: Alle Kontrollzentren im Backend.
+  * `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html`: Alle Kontrollzentren im Backend - Nav-Leiste/Dashboard-Kachel/Statistik fuer Plugins (z.B. Shooter) sind darin NICHT fest verdrahtet, sondern kommen dynamisch ueber `<!--PLUGIN_SLOT:...-->`-Marker (siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen)).
   * `challenges_view.html`, `infection_view.html` & `gamemodes_view.html` 📺: Die hübschen, öffentlichen Ansichten für Zuschauer.
 * **Sprachpakete (.pak):**
   * `de.pak`, `en.pak`, `es.pak`, `fr.pak`, `it.pak`, `pt.pak`, `tr.pak` 🌍: Internationalisierung, Baby! Übersetzungsdateien für das Webinterface.

@@ -530,6 +530,85 @@ def get_ui_schema():
     }
 
 
+def render_dashboard_nav_slot():
+    """ui_slots-Ziel "dashboard_nav" (siehe manifest.json): Nav-Link fuer
+    admin_dashboard.html's <!--PLUGIN_SLOT:dashboard_nav--> Marker. Wird nur
+    eingeblendet, solange dieses Plugin aktiv ist (get_ui_slot_html() iteriert
+    ausschliesslich ueber aktive Plugins) - ein deaktiviertes Shooter-Plugin
+    verschwindet dadurch automatisch aus dem Dashboard, ohne dass
+    admin_dashboard.html/main.py "shooter" namentlich kennen muessen."""
+    return '<a href="/admin-shooter" data-i18n="nav.shooter">Shooter</a>'
+
+
+def render_dashboard_card_slot():
+    """ui_slots-Ziel "dashboard_card" - Dashboard-Kachel fuer
+    admin_dashboard.html's <!--PLUGIN_SLOT:dashboard_card--> Marker (gleiches
+    Markup wie zuvor fest verdrahtet, jetzt nur noch bei aktivem Plugin)."""
+    return (
+        '<a class="card shooter" href="/admin-shooter">'
+        '<h3 data-i18n="dashboard.card.shooterTitle">&#128165; Shooter Modus</h3>'
+        '<p data-i18n="dashboard.card.shooterText">Infrarot-Treffer per Grove-Emitter/IR-REC38 abfeuern und zaehlen</p>'
+        '</a>'
+    )
+
+
+def render_dashboard_stat_slot():
+    """ui_slots-Ziel "dashboard_stat" - Statistikkachel fuer
+    admin_dashboard.html's <!--PLUGIN_SLOT:dashboard_stat--> Marker. Die
+    st_shooter_val/-sub-Werte werden von render_dashboard_script_slot()'s
+    eigenem DASHBOARD_HOOKS-Eintrag befuellt, NICHT mehr vom Dashboard-
+    Kern-Skript (das kennt "shooter" nicht mehr)."""
+    return (
+        '<div class="stile" style="--sc:#c0392b"><div class="sticon">&#128165;</div>'
+        '<div class="stbody"><div class="stlabel" data-i18n="dashboard.statShooterLabel">Shooter</div>'
+        '<div class="stval" id="st_shooter_val">-</div><div class="stsub" id="st_shooter_sub"></div></div></div>'
+    )
+
+
+def render_dashboard_script_slot():
+    """ui_slots-Ziel "dashboard_script" - eigenstaendiges <script>-Fragment
+    fuer admin_dashboard.html's <!--PLUGIN_SLOT:dashboard_script--> Marker:
+    registriert sich selbst in window.DASHBOARD_HOOKS (siehe dortiges
+    loadStats()), pollt "/shooter-log" im gleichen Rhythmus wie die
+    Kern-Statistik, befuellt die eigene Kachel (render_dashboard_stat_slot())
+    und liefert seine Runden als Activity-Feed-Eintraege zurueck. So bindet
+    sich das Plugin komplett selbst ein - admin_dashboard.html braucht dafuer
+    keinerlei shooter-spezifischen Code mehr."""
+    return """<script>
+(function(){
+window.DASHBOARD_HOOKS=window.DASHBOARD_HOOKS||[];
+var COLOR='#c0392b';
+window.DASHBOARD_HOOKS.push(function(){
+return fetch('/shooter-log',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+var log=d.log||[];
+var tr=window.t||function(k,f){return f;};
+var valEl=document.getElementById('st_shooter_val'),subEl=document.getElementById('st_shooter_sub');
+if(log.length){
+var sum=log.reduce(function(a,s){return a+(s.hits_taken||0);},0);
+if(valEl)valEl.innerText=sum+' '+tr('dashboard.hits','Treffer');
+if(subEl)subEl.innerText=log.length+' '+tr('dashboard.rounds','Runden');
+}else{
+if(valEl)valEl.innerText=tr('dashboard.noRounds','Noch keine Runde');
+if(subEl)subEl.innerText='';
+}
+return log.map(function(e){
+return {ts:e.ts_s||0,time:e.timestamp||'',color:COLOR,text:'&#128165; '+tr('dashboard.actShooter','Shooter-Runde beendet')+': '+(e.hits_taken||0)+' '+tr('dashboard.hitsTakenShort','Treffer kassiert')+', '+(e.shots_fired||0)+' '+tr('dashboard.shotsFiredShort','Schuesse')};
+});
+}).catch(function(){return [];});
+});
+})();
+</script>"""
+
+
+def render_gamemodes_button_slot():
+    """ui_slots-Ziel "gamemodes_button" - Steuer-Button fuer die oeffentliche
+    Zuschauer-Ansicht gamemodes_view.html's <!--PLUGIN_SLOT:gamemodes_button-->
+    Marker (gleiches Markup wie zuvor dort fest verdrahtet, jetzt nur noch
+    bei aktivem Plugin - siehe render_dashboard_nav_slot()-Docstring fuer die
+    Begruendung des Mechanismus)."""
+    return '<a class="b shooter" href="/admin-shooter" data-i18n="gamemodesView.controlShooterButton">&#128165; Shooter steuern</a>'
+
+
 # ==================== Plugin-Lifecycle (siehe plugin_manager.py) ====================
 
 _manager = None
@@ -565,8 +644,12 @@ def teardown():
 
 async def handle_route(writer, request_path, request_method, query_params, body_params):
     if request_path == "/admin-shooter":
-        if _send_html_file is not None:
-            await _send_html_file(writer, ADMIN_SHOOTER_HTML_PATH)
+        try:
+            import pico_web_api
+            await pico_web_api.send_admin_html_with_slot(writer, ADMIN_SHOOTER_HTML_PATH, "dashboard_nav")
+        except ImportError:
+            if _send_html_file is not None:
+                await _send_html_file(writer, ADMIN_SHOOTER_HTML_PATH)
         return True
 
     if request_path.startswith("/shooter-") and _manager is not None:

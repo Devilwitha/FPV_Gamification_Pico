@@ -62,6 +62,14 @@ async def handle_route(writer, request_path, request_method, query_params, body_
         })
         return True
 
+    if request_path == "/shooter2-data":
+        # Datenquelle fuer render_gamemodes_script_slot()'s Poll - eigener,
+        # winziger Endpunkt statt /shooter2-log wiederzuverwenden, weil die
+        # Zuschauer-Ansicht (anders als das Dashboard) laufend pollt statt
+        # nur beim Laden einmal abzufragen.
+        await _send_json(writer, {"ticks": _counter["ticks"]})
+        return True
+
     return False
 
 
@@ -88,6 +96,31 @@ def render_dashboard_stat_slot():
 
 def render_gamemodes_button_slot():
     return '<a class="b" style="border-left:3px solid #9b59b6" href="/admin-shooter2">&#129514; Shooter2 (Test) steuern</a>'
+
+
+def render_gamemodes_card_slot():
+    return (
+        '<div class="game" style="--gc:#9b59b6">'
+        '<h2><span class="dot on" id="s2_dot"></span> &#129514; Shooter2 (Test)</h2>'
+        '<div class="grid">'
+        '<div class="st"><span>Ticks seit Aktivierung</span><b id="s2_ticks">-</b></div>'
+        '</div>'
+        '<div class="hint">Reines Test-Plugin zur Kontrolle der generischen Zuschauer-Karte.</div>'
+        '</div>'
+    )
+
+
+def render_gamemodes_script_slot():
+    return """<script>
+(function(){
+window.GAMEMODES_HOOKS=window.GAMEMODES_HOOKS||[];
+function poll(){fetch('/shooter2-data',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+var el=document.getElementById('s2_ticks');
+if(el)el.innerText=d.ticks||0;
+}).catch(function(){}).finally(function(){setTimeout(poll,1000);});}
+window.GAMEMODES_HOOKS.push(poll);
+})();
+</script>"""
 
 
 def render_dashboard_script_slot():

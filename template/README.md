@@ -80,9 +80,11 @@ und entfernt es aus der aktiven Schleife - `main.py` selbst crasht dabei
 
 ## Tabs erweitern (`ui_slots`)
 
-Verfügbare Slot-Namen: `system` (System-Tab), `idcard` (Ausweis-Tab) sowie
+Verfügbare Slot-Namen: `system` (System-Tab), `idcard` (Ausweis-Tab),
 `dashboard_nav`/`dashboard_card`/`dashboard_stat`/`dashboard_script`
-(Dashboard, siehe unten). Die genannte Funktion (z.B. `render_system_slot()`)
+(Dashboard, siehe unten) sowie `gamemodes_button`/`gamemodes_card`/
+`gamemodes_script` (öffentliche Zuschauer-Ansicht, siehe unten). Die
+genannte Funktion (z.B. `render_system_slot()`)
 gibt einen HTML-String zurück, der an der Stelle des jeweiligen
 `<!--PLUGIN_SLOT:...-->`-Markers eingefügt wird. Es gibt keine gemeinsame
 CSS/JS-Basis - das Fragment muss sich selbst stylen/verhalten (eigenes
@@ -118,6 +120,32 @@ Verfügung. Siehe `source/mods/shooter/main.py`'s
 `render_dashboard_nav_slot()`/`render_dashboard_card_slot()`/
 `render_dashboard_stat_slot()`/`render_dashboard_script_slot()` für ein
 vollständiges Beispiel.
+
+### In die öffentliche Zuschauer-Ansicht einklinken (`gamemodes_view.html`)
+
+`/gamemodes-view` ist die Seite, die z.B. auf einem Zuschauer-Bildschirm
+laufen kann - auch dort sind die Spielmodi-Karten NICHT fest verdrahtet
+(nur King of the Hill/Race Modus bleiben Kernbestandteil), sondern kommen
+(falls vorhanden) aus drei ui_slots:
+
+| Slot | Marker in `gamemodes_view.html` | Inhalt |
+|---|---|---|
+| `gamemodes_button` | `<!--PLUGIN_SLOT:gamemodes_button-->` | ein `<a class="b">`-Steuer-Button (führt zur eigenen Admin-Seite) |
+| `gamemodes_card` | `<!--PLUGIN_SLOT:gamemodes_card-->` | eine `<div class="game">`-Live-Status-Karte (eigene Element-IDs) |
+| `gamemodes_script` | `<!--PLUGIN_SLOT:gamemodes_script-->` | ein `<script>`-Fragment, das die Karte selbst pollt/befüllt |
+
+Gleiches Prinzip wie bei `dashboard_script`, nur mit eigenem Hook-Array:
+`window.GAMEMODES_HOOKS = window.GAMEMODES_HOOKS || []` initialisieren,
+dann eine eigene `poll()`-Funktion pushen, die sich selbst per
+`setTimeout()` wiederholt aufruft und die eigene Karte per
+`document.getElementById(...)` befüllt - das Kernskript ruft jeden Hook nur
+EINMAL auf (direkt nachdem die Übersetzungen geladen sind), anders als
+`DASHBOARD_HOOKS`, das bei jedem Zyklus neu aufgerufen wird. Die Kartenfarbe
+wird per Inline-Style (`style="--gc:#hex"`) gesetzt, nicht über eine im
+Kern fest definierte Variable. Vollständiges Beispiel:
+`source/mods/shooter/main.py`'s `render_gamemodes_card_slot()`/
+`render_gamemodes_script_slot()` (minimales Beispiel:
+`source/mods/shooter2/main.py`).
 
 ## Eigene HTTP-Routen (`route_prefixes` + `handle_route()`)
 

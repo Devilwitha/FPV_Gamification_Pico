@@ -70,8 +70,9 @@ def render_system_slot():
     handle_route() unten), soll er meist auch im Dashboard (/admin) und in
     der Zuschauer-Ansicht (/gamemodes-view) auftauchen - dafuer gibt es die
     Slots "dashboard_nav"/"dashboard_card"/"dashboard_stat"/
-    "dashboard_script"/"gamemodes_button" weiter unten (auskommentiert, da
-    sie nur zusammen mit einer eigenen Admin-Seite Sinn ergeben)."""
+    "dashboard_script"/"gamemodes_button"/"gamemodes_card"/
+    "gamemodes_script" weiter unten (auskommentiert, da sie nur zusammen mit
+    einer eigenen Admin-Seite Sinn ergeben)."""
     return '<div class="plugin-setting">my_plugin ist aktiv</div>'
 
 
@@ -167,3 +168,46 @@ def render_system_slot():
 #     Zuschauer-Ansicht gamemodes_view.html (<!--PLUGIN_SLOT:gamemodes_button-->
 #     Marker). manifest.json: "gamemodes_button": "render_gamemodes_button_slot"."""
 #     return '<a class="b" href="/admin-my_plugin">My Plugin steuern</a>'
+
+
+# def render_gamemodes_card_slot():
+#     """Slot "gamemodes_card" - eigene Live-Status-Karte auf derselben
+#     Zuschauer-Ansicht (<!--PLUGIN_SLOT:gamemodes_card--> Marker), direkt
+#     unter den Karten von King of the Hill/Race Modus. manifest.json:
+#     "gamemodes_card": "render_gamemodes_card_slot". Nutze die bereits
+#     vorhandenen Klassen ".game"/".grid"/".st"/".hint" (siehe
+#     gamemodes_view.html), die Kartenfarbe kommt per Inline-Style
+#     ("--gc:#hex"), nicht ueber eine im Kern definierte Variable. Eigene
+#     Element-IDs verwenden (hier my_plugin_state) -
+#     render_gamemodes_script_slot() unten befuellt sie per JS."""
+#     return (
+#         '<div class="game" style="--gc:#2980b9">'
+#         '<h2><span class="dot" id="my_plugin_dot"></span> My Plugin</h2>'
+#         '<div class="grid">'
+#         '<div class="st"><span>Zustand</span><b id="my_plugin_state">-</b></div>'
+#         '</div>'
+#         '</div>'
+#     )
+
+
+# def render_gamemodes_script_slot():
+#     """Slot "gamemodes_script" - eigenes <script>-Fragment (<!--PLUGIN_SLOT:
+#     gamemodes_script--> Marker), das sich selbst in window.GAMEMODES_HOOKS
+#     eintraegt: das Kernskript ruft nach dem ersten i18n-Laden einmalig JEDEN
+#     registrierten Hook auf (im Gegensatz zu window.DASHBOARD_HOOKS, das bei
+#     jedem loadStats()-Zyklus neu aufgerufen wird) - dein eigener poll()
+#     kuemmert sich selbst per setTimeout() um wiederholtes Nachfragen.
+#     manifest.json: "gamemodes_script": "render_gamemodes_script_slot".
+#     window.t(key, fallback) steht fuer eigene Uebersetzungen zur Verfuegung.
+#     Vollstaendiges Beispiel siehe source/mods/shooter/main.py's
+#     render_gamemodes_card_slot()/render_gamemodes_script_slot()."""
+#     return """<script>
+# (function(){
+# window.GAMEMODES_HOOKS=window.GAMEMODES_HOOKS||[];
+# function poll(){fetch('/my_plugin-data',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+# document.getElementById('my_plugin_dot').classList.toggle('on',!!d.running);
+# document.getElementById('my_plugin_state').innerText=d.running?'Aktiv':'Inaktiv';
+# }).catch(function(){}).finally(function(){setTimeout(poll,1000);});}
+# window.GAMEMODES_HOOKS.push(poll);
+# })();
+# </script>"""

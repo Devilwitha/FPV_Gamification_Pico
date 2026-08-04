@@ -13,7 +13,9 @@
         "dashboard_card": "render_dashboard_card_slot",
         "dashboard_stat": "render_dashboard_stat_slot",
         "dashboard_script": "render_dashboard_script_slot",
-        "gamemodes_button": "render_gamemodes_button_slot"
+        "gamemodes_button": "render_gamemodes_button_slot",
+        "gamemodes_card": "render_gamemodes_card_slot",
+        "gamemodes_script": "render_gamemodes_script_slot"
     },
     "route_prefixes": ["/admin-shooter2", "/shooter2-"]
 }

@@ -75,7 +75,9 @@ async def handle_admin_and_routes(writer, request_path, request_method, query_pa
 
     if request_path == '/gamemodes-view':
         import pico_web_api
-        await pico_web_api.send_admin_html_with_slot(writer, GAMEMODES_VIEW_HTML_PATH, "gamemodes_button")
+        await pico_web_api.send_admin_html_with_slot(
+            writer, GAMEMODES_VIEW_HTML_PATH, ["gamemodes_button", "gamemodes_card", "gamemodes_script"]
+        )
         return True
 
     if request_path.startswith('/koth-'):

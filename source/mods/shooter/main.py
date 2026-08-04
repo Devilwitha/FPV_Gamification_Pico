@@ -609,6 +609,67 @@ def render_gamemodes_button_slot():
     return '<a class="b shooter" href="/admin-shooter" data-i18n="gamemodesView.controlShooterButton">&#128165; Shooter steuern</a>'
 
 
+def render_gamemodes_card_slot():
+    """ui_slots-Ziel "gamemodes_card" - Live-Status-Karte fuer die
+    oeffentliche Zuschauer-Ansicht gamemodes_view.html's
+    <!--PLUGIN_SLOT:gamemodes_card--> Marker (gleiches Markup wie zuvor dort
+    fest verdrahtet, jetzt nur noch bei aktivem Plugin eingeblendet - siehe
+    render_dashboard_card_slot()-Docstring fuer die Begruendung). Nutzt die
+    generischen ".game"/".grid"/".st"/".hint"-Klassen, die gamemodes_view.html
+    bereits fuer King of the Hill/Race Modus definiert, liefert die Kartenfarbe
+    aber selbst per Inline-Style statt sich auf eine im Kern hart codierte
+    "--shooter"-Variable zu verlassen."""
+    return (
+        '<div class="game" style="--gc:#c0392b">'
+        '<h2><span class="dot" id="s_dot"></span> <span data-i18n="gamemodesView.shooterSection">&#128165; Shooter</span></h2>'
+        '<div class="grid">'
+        '<div class="st"><span data-i18n="shooter.state">Zustand</span><b id="s_state">-</b></div>'
+        '<div class="st"><span data-i18n="shooter.hitsTaken">Treffer kassiert</span><b id="s_hits">-</b></div>'
+        '<div class="st"><span data-i18n="shooter.shotsFired">Schuesse abgegeben</span><b id="s_shots">-</b></div>'
+        '<div class="st"><span data-i18n="shooter.livesRemaining">Verbleibende Leben</span><b id="s_lives">-</b></div>'
+        '<div class="st"><span data-i18n="shooter.event">Letztes Ereignis</span><b id="s_event">-</b></div>'
+        '</div>'
+        '<div class="hint" data-i18n="shooter.hitSourcesTitle">Treffer nach Schuetze</div>'
+        '<div id="s_hitsources"></div>'
+        '</div>'
+    )
+
+
+def render_gamemodes_script_slot():
+    """ui_slots-Ziel "gamemodes_script" - eigenstaendiges <script>-Fragment
+    fuer gamemodes_view.html's <!--PLUGIN_SLOT:gamemodes_script--> Marker:
+    registriert sich selbst in window.GAMEMODES_HOOKS (vom Kern-Skript nach
+    dem Laden von i18n einmalig aufgerufen, siehe gamemodes_view.html) und
+    pollt/befuellt ab dann eigenstaendig render_gamemodes_card_slot()'s
+    Karte - gleiches Muster wie render_dashboard_script_slot() fuer das
+    Dashboard. gamemodes_view.html selbst kennt "shooter" dadurch an keiner
+    Stelle mehr namentlich."""
+    return """<script>
+(function(){
+window.GAMEMODES_HOOKS=window.GAMEMODES_HOOKS||[];
+function tr(k,f){return (window.t||function(_k,fallback){return fallback;})(k,f);}
+function showHitSources(d){
+var list=document.getElementById('s_hitsources'),entries=Array.isArray(d.hit_sources)?d.hit_sources:[];
+list.replaceChildren();
+if(!entries.length){var row=document.createElement('div');row.className='hint';row.innerText=tr('shooter.noHits','Noch keine Treffer registriert.');list.appendChild(row);return;}
+entries.forEach(function(e){var row=document.createElement('div');row.className='lb';var label=document.createElement('span');label.innerText='Node '+e.id;var val=document.createElement('b');val.innerText=e.hits;row.append(label,val);list.appendChild(row);});
+}
+function update(d){
+var running=!!d.running;
+document.getElementById('s_dot').classList.toggle('on',running);
+document.getElementById('s_state').innerText=running?tr('shooter.active','Aktiv'):tr('shooter.inactive','Inaktiv');
+document.getElementById('s_hits').innerText=d.hits_taken||0;
+document.getElementById('s_shots').innerText=d.shots_fired||0;
+document.getElementById('s_lives').innerText=(d.config&&d.config.lives===0)?tr('shooter.unlimited','Unbegrenzt'):d.lives_remaining;
+document.getElementById('s_event').innerText=d.last_event||'-';
+showHitSources(d);
+}
+function poll(){fetch('/shooter-data',{cache:'no-store'}).then(function(r){return r.json();}).then(update).catch(function(){}).finally(function(){setTimeout(poll,700);});}
+window.GAMEMODES_HOOKS.push(poll);
+})();
+</script>"""
+
+
 # ==================== Plugin-Lifecycle (siehe plugin_manager.py) ====================
 
 _manager = None

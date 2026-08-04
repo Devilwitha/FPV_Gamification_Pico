@@ -536,7 +536,8 @@ def test_dashboard_ui_slots_registered_via_plugin_manager(shooter_plugin):
 
     ui_slots = manifest["ui_slots"]
     assert set(ui_slots) == {
-        "dashboard_nav", "dashboard_card", "dashboard_stat", "dashboard_script", "gamemodes_button",
+        "dashboard_nav", "dashboard_card", "dashboard_stat", "dashboard_script",
+        "gamemodes_button", "gamemodes_card", "gamemodes_script",
     }
     for slot_name, fn_name in ui_slots.items():
         fn = getattr(shooter_plugin, fn_name)
@@ -551,6 +552,21 @@ def test_dashboard_nav_and_card_link_to_admin_shooter(shooter_plugin):
 
 def test_gamemodes_button_slot_links_to_admin_shooter(shooter_plugin):
     assert '/admin-shooter' in shooter_plugin.render_gamemodes_button_slot()
+
+
+def test_gamemodes_card_slot_contains_status_ids(shooter_plugin):
+    """Die generische Karte muss dieselben Element-IDs liefern, die
+    render_gamemodes_script_slot()'s Poll-Skript per getElementById()
+    anspricht - sonst bliebe die Zuschauer-Ansicht stumm."""
+    html = shooter_plugin.render_gamemodes_card_slot()
+    for element_id in ("s_dot", "s_state", "s_hits", "s_shots", "s_lives", "s_event", "s_hitsources"):
+        assert 'id="{}"'.format(element_id) in html
+
+
+def test_gamemodes_script_slot_registers_gamemodes_hook(shooter_plugin):
+    html = shooter_plugin.render_gamemodes_script_slot()
+    assert "window.GAMEMODES_HOOKS" in html
+    assert "/shooter-data" in html
 
 
 def test_dashboard_stat_slot_declares_ids_used_by_dashboard_script_slot(shooter_plugin):

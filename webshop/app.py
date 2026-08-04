@@ -176,6 +176,13 @@ MPY_MAGIC_BYTE = 0x4D
 # Plugin-Store (der ausschliesslich kompiliertes .mpy akzeptiert).
 SHOOTER_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "source", "mods", "shooter")
 SHOOTER_TEMPLATE_FILES = ("manifest.json", "main.py", "ir_emitter.py", "ir_receiver.py", "admin_shooter.html")
+# Leeres Boilerplate fuer ein komplett neues, eigenes Plugin (siehe
+# template/README.md) - anders als SHOOTER_TEMPLATE_* (voll funktionsfaehiges
+# Beispiel-Plugin) enthaelt dieser Ordner nur auskommentierte Hooks/Slots
+# ohne echte Spiellogik, gedacht als Startpunkt zum Kopieren nach
+# source/mods/<eigener_name>/.
+PLUGIN_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "template", "plugin_template")
+PLUGIN_TEMPLATE_FILES = ("manifest.json", "main.py")
 
 
 def _list_store_plugins():
@@ -304,6 +311,30 @@ def plugins_shooter_template():
         mimetype="application/zip",
         as_attachment=True,
         download_name="shooter_plugin_template.zip",
+    )
+
+
+@app.route("/plugins/plugin-template.zip")
+def plugins_plugin_template():
+    """Stellt das leere Plugin-Boilerplate aus template/plugin_template/ als
+    ZIP-Download bereit - Startpunkt fuer ein komplett eigenes Plugin (siehe
+    template/README.md), im Gegensatz zu plugins_shooter_template() oben
+    (vollstaendiges, funktionierendes Beispiel-Plugin). Liest die Dateien bei
+    jedem Request frisch von der Platte, bleibt also automatisch aktuell,
+    sobald sich template/plugin_template/ aendert - kein separater Build-
+    Schritt noetig."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for filename in PLUGIN_TEMPLATE_FILES:
+            file_path = os.path.join(PLUGIN_TEMPLATE_DIR, filename)
+            if os.path.isfile(file_path):
+                archive.write(file_path, arcname=filename)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="plugin_template.zip",
     )
 
 

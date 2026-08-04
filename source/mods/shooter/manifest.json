@@ -1,8 +1,8 @@
 {
     "name": "shooter",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "Nico Bollhalder",
-    "description": "Infrarot-Lasertag-Spielmodus: per Grove-IR-Emitter abfeuern, Treffer per IR-REC38-Empfaenger zaehlen.",
+    "description": "Bugfix (v1.0.1): Zuschauer-Ansicht (/gamemodes-view) zeigt Shooter jetzt ueber eine eigene, generische Karte an statt fest im Kern-Template zu stecken. Infrarot-Lasertag-Spielmodus: per Grove-IR-Emitter abfeuern, Treffer per IR-REC38-Empfaenger zaehlen.",
     "entry": "main.py",
     "enabled": true,
     "has_error": false,

@@ -23,7 +23,7 @@
 <a href="/admin-infection" data-i18n="nav.infection">Infection</a>
 <a href="/admin-koth" data-i18n="nav.koth">King of the Hill</a>
 <a href="/admin-race" data-i18n="nav.race">Race</a>
-<a href="/admin-shooter" class="on" data-i18n="nav.shooter">Shooter</a>
+<!--PLUGIN_SLOT:dashboard_nav-->
 <a href="/admin-plugins" data-i18n="nav.plugins">Plugins</a>
 <a href="/admin-credits" data-i18n="nav.credits">Credits</a>
 <a href="/" data-i18n="nav.home">Home</a>
@@ -86,6 +86,7 @@ function body(){const p=new URLSearchParams();p.set('lives',document.getElementB
 document.getElementById('config').onsubmit=e=>{e.preventDefault();document.getElementById('msg').innerText=t('shooter.saving','Speichere...');fetch('/shooter-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body()}).then(r=>r.json()).then(d=>{if(!d.ok)throw new Error(d.error||'Error');show(d);document.getElementById('msg').innerText=t('shooter.saved','Gespeichert.')}).catch(e=>document.getElementById('msg').innerText=e.message)};
 function stopRound(){fetch('/shooter-stop',{method:'POST'}).then(r=>r.json()).then(show).catch(()=>{});document.getElementById('enabled').checked=false;document.getElementById('msg').innerText=t('shooter.stopped','Runde beendet.')}
 function fire(){fetch('/shooter-fire',{method:'POST'}).then(r=>r.json()).then(d=>{show(d);document.getElementById('msg').innerText=d.ok?t('shooter.fired','Schuss abgegeben.'):(d.error||'Error')}).catch(()=>{})}
+const navSelf=document.querySelector('.nv a[href="/admin-shooter"]');if(navSelf)navSelf.classList.add('on');
 loadI18n().then(poll);
 </script>
 </body>

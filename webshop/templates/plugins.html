@@ -28,6 +28,23 @@
         </a>
       </div>
     </article>
+
+    <article class="product-card">
+      <div class="product-card-body">
+        <h2 class="product-name">Plugin-Vorlage – Leeres Boilerplate</h2>
+        <p class="product-type">Roher Quellcode (.py) – kein fertiges Store-Plugin</p>
+        <p class="product-description">
+          Leerer Startpunkt für ein komplett eigenes Plugin: alle Hooks/Tab-Erweiterungen
+          (System/Ausweis/Dashboard/Zuschauer-Ansicht) sind vorhanden, aber auskommentiert.
+          Ordner nach <code>source/mods/&lt;eigener_name&gt;/</code> kopieren, Namen in
+          <code>manifest.json</code> anpassen. Muss vor der Installation ebenfalls erst mit
+          mpy-cross zu <code>.mpy</code> kompiliert werden.
+        </p>
+        <a class="btn btn-primary" href="{{ url_for('plugins_plugin_template') }}">
+          Vorlage herunterladen (.zip)
+        </a>
+      </div>
+    </article>
   </section>
 
   <section class="s" style="margin-top: 1.5rem">

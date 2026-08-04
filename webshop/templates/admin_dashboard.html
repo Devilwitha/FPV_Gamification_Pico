@@ -19,6 +19,9 @@
       <button type="button" class="admin-tab-button" data-tab-target="sales">
         Alle verkauften Produkte <span class="admin-tab-count">{{ all_sales|length }}</span>
       </button>
+      <button type="button" class="admin-tab-button" data-tab-target="plugins">
+        Plugins <span class="admin-tab-count">{{ store_plugins|length }}</span>
+      </button>
     </div>
 
     <div id="tab-unshipped" class="admin-tab-panel active">
@@ -159,6 +162,52 @@
         </div>
       {% else %}
         <p class="admin-empty-hint">Es wurden noch keine Produkte verkauft.</p>
+      {% endif %}
+    </div>
+
+    <div id="tab-plugins" class="admin-tab-panel">
+      <h2>Neues Plugin hochladen</h2>
+      <p class="admin-empty-hint">
+        ZIP-Datei mit mindestens <code>manifest.json</code> und <code>main.mpy</code> auf
+        oberster Ebene (siehe <code>template/README.md</code>). <strong>Keine rohen
+        <code>.py</code>-Dateien</strong> - vorher mit mpy-cross zu <code>.mpy</code> kompilieren,
+        manuell oder über <code>tools/plugin_packager.py</code>. Der Mod-Name kommt aus
+        <code>manifest.json</code>'s <code>"name"</code>-Feld, nicht aus dem ZIP-Dateinamen -
+        ein erneuter Upload mit gleichem Namen überschreibt das bestehende Plugin.
+      </p>
+      <form method="post" action="{{ url_for('admin_plugins_upload') }}" enctype="multipart/form-data">
+        <input type="file" name="plugin_zip" accept=".zip" required />
+        <button type="submit" class="btn btn-primary">Hochladen</button>
+      </form>
+
+      <h2 style="margin-top: 1.5rem">Verfügbare Plugins im Store</h2>
+      {% if store_plugins %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table" id="table-plugins">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Version</th>
+                <th>Autor</th>
+                <th>Beschreibung</th>
+                <th>Dateien</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for plugin in store_plugins %}
+                <tr>
+                  <td>{{ plugin.name }}</td>
+                  <td>{{ plugin.version }}</td>
+                  <td>{{ plugin.author or "-" }}</td>
+                  <td>{{ plugin.description or "-" }}</td>
+                  <td>{{ plugin.files | join(", ") }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-empty-hint">Noch keine Plugins im Store.</p>
       {% endif %}
     </div>
   </section>

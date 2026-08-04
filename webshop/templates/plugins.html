@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}FPV Gamification Pico – Plugin-Store{% endblock %}
+
+{% block content %}
+  <section class="shop-header">
+    <h1>Plugin-Store</h1>
+    <p>
+      Erweitere deinen FPV Gamification Pico um zusätzliche Mods. Installation direkt auf dem
+      Pico über die Weboberfläche (Tab "Plugins" → "Webshop Store &amp; Updates") oder bequem
+      über die Android-App.
+    </p>
+  </section>
+
+  <section class="product-grid">
+    <article class="product-card">
+      <div class="product-card-body">
+        <h2 class="product-name">Shooter-Plugin – Quellcode-Vorlage</h2>
+        <p class="product-type">Roher Quellcode (.py) – kein fertiges Store-Plugin</p>
+        <p class="product-description">
+          Lern-Vorlage dafür, wie ein eigener Spielmodus komplett als Plugin gebaut wird
+          (Spiellogik, eigene IR-Hardware-Treiber und eigene Weboberfläche in einem Ordner).
+          Muss vor der Installation erst mit mpy-cross zu <code>.mpy</code> kompiliert werden –
+          manuell oder über <code>tools/plugin_packager.py</code>.
+        </p>
+        <a class="btn btn-primary" href="{{ url_for('plugins_shooter_template') }}">
+          Vorlage herunterladen (.zip)
+        </a>
+      </div>
+    </article>
+
+    <article class="product-card">
+      <div class="product-card-body">
+        <h2 class="product-name">Plugin-Vorlage – Leeres Boilerplate</h2>
+        <p class="product-type">Roher Quellcode (.py) – kein fertiges Store-Plugin</p>
+        <p class="product-description">
+          Leerer Startpunkt für ein komplett eigenes Plugin: alle Hooks/Tab-Erweiterungen
+          (System/Ausweis/Dashboard/Zuschauer-Ansicht) sind vorhanden, aber auskommentiert.
+          Ordner nach <code>source/mods/&lt;eigener_name&gt;/</code> kopieren, Namen in
+          <code>manifest.json</code> anpassen. Muss vor der Installation ebenfalls erst mit
+          mpy-cross zu <code>.mpy</code> kompiliert werden.
+        </p>
+        <a class="btn btn-primary" href="{{ url_for('plugins_plugin_template') }}">
+          Vorlage herunterladen (.zip)
+        </a>
+      </div>
+    </article>
+  </section>
+
+  <section class="s" style="margin-top: 1.5rem">
+    <h2>Plugin hochladen</h2>
+    {% if session.get('account_email') %}
+      <p class="admin-empty-hint">
+        Eingeloggt als {{ session.get('account_email') }}. ZIP-Datei mit mindestens
+        <code>manifest.json</code> und <code>main.mpy</code> (keine rohen <code>.py</code>-Dateien –
+        siehe Vorlage oben).
+      </p>
+      <form method="post" action="{{ url_for('plugins_upload') }}" enctype="multipart/form-data">
+        <input type="file" name="plugin_zip" accept=".zip" required />
+        <button type="submit" class="btn btn-primary">Hochladen</button>
+      </form>
+    {% else %}
+      <p class="admin-empty-hint">
+        <a href="{{ url_for('login') }}">Einloggen</a>, um ein eigenes Plugin hochzuladen.
+      </p>
+    {% endif %}
+  </section>
+
+  <section class="product-grid" style="margin-top: 1.5rem">
+    {% for plugin in plugins %}
+      <article class="product-card">
+        <div class="product-card-body">
+          <h2 class="product-name">{{ plugin.name }}</h2>
+          <p class="product-type">Version {{ plugin.version }}{% if plugin.author %} · Code by {{ plugin.author }}{% endif %}</p>
+          <p class="product-description">{{ plugin.description or "Keine Beschreibung vorhanden." }}</p>
+          {% if plugin.uploaded_by_display %}
+            <p class="product-type">Hochgeladen von {{ plugin.uploaded_by_display }}</p>
+          {% endif %}
+          <a class="btn btn-primary" href="{{ url_for('plugins_download', name=plugin.name) }}">
+            Herunterladen (.zip)
+          </a>
+        </div>
+      </article>
+    {% else %}
+      <p class="admin-empty-hint">Aktuell sind keine Plugins im Store verfügbar.</p>
+    {% endfor %}
+  </section>
+{% endblock %}

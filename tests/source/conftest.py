@@ -79,9 +79,20 @@ def import_entry_module():
 
 @pytest.fixture
 def install_stub_module():
+    """Registriert ein Platzhaltermodul in sys.modules. Stellt beim
+    Aufraeumen den JEWEILS VORHERIGEN Zustand wieder her (statt den Eintrag
+    einfach zu loeschen) - wichtig fuer name="main": das Root-conftest.py
+    hinterlegt dort session-weit einen harmlosen Sicherheitsnetz-Stub, damit
+    sys.modules["main"] zu keinem Zeitpunkt der gesamten Test-Session fehlt
+    (siehe dortiger Docstring) - ein simples sys.modules.pop() wuerde dieses
+    Sicherheitsnetz nach dem ersten Test, der "main" gezielt ueberschreibt,
+    wieder entfernen."""
+    originals = {}
     installed = []
 
     def _install(name, **attrs):
+        if name not in originals:
+            originals[name] = sys.modules.get(name)
         mod = types.ModuleType(name)
         for key, value in attrs.items():
             setattr(mod, key, value)
@@ -91,7 +102,11 @@ def install_stub_module():
 
     yield _install
     for name in installed:
-        sys.modules.pop(name, None)
+        previous = originals.get(name)
+        if previous is not None:
+            sys.modules[name] = previous
+        else:
+            sys.modules.pop(name, None)
 
 
 class FakeWriter:

@@ -1,23 +1,31 @@
-"""Gemeinsame Lazy-Wiring fuer die KOTH- und Race-Spielmodi (Game Modes Routes).
+"""Gemeinsame Lazy-Wiring fuer die KOTH- und Race-Spielmodi (Game Modes
+Routes).
 
 Buendelt Admin-Seiten-Auslieferung, Routing-Praefix-Dispatching und die
 Task-Erstellung fuer koth_mode.py/race_mode.py in einem einzigen, schlanken
-Modul - main.py bindet dieses Modul nur per Lazy-Import ein (erst beim ersten
-Request bzw. beim Start der Async-Tasks), damit main.py selbst klein genug
-fuer den MicroPython-Compile-Schritt bleibt (siehe infection_mode.py/
-upload_helpers.py fuer das gleiche Muster). Kurzer Dateiname (gmr.py statt
-game_modes_routes.py) ist ABSICHTLICH gewaehlt: main.py referenziert diesen
-Modulnamen an 2 Stellen, jedes gesparte Zeichen zaehlt fuer die ~85168-Byte
-Compile-Grenze. Importiert DEFAULT_PILOT_NAME/debug_log/send_html_file direkt
-aus main (bereits fertig geladen, da dieses Modul erst NACH `import main`
-lazy nachgeladen wird) statt sie bei jedem Aufruf als Parameter
-durchzureichen - spart main.py weitere Bytes.
+Modul - main.py bindet dieses Modul nur per Lazy-Import ein (erst beim
+ersten Request bzw. beim Start der Async-Tasks), damit main.py selbst klein
+genug fuer den MicroPython-Compile-Schritt bleibt (siehe
+infection_mode.py/upload_helpers.py fuer das gleiche Muster). Kurzer
+Dateiname (gmr.py statt game_modes_routes.py) ist ABSICHTLICH gewaehlt:
+main.py referenziert diesen Modulnamen an 2 Stellen, jedes gesparte Zeichen
+zaehlt fuer die ~85168-Byte Compile-Grenze. Importiert DEFAULT_PILOT_NAME/
+debug_log direkt aus main (bereits fertig geladen, da dieses
+Modul erst NACH `import main` lazy nachgeladen wird) statt sie bei jedem
+Aufruf als Parameter durchzureichen - spart main.py weitere Bytes.
+
+Der Shooter-Spielmodus ist bewusst NICHT mehr hier verdrahtet - er lebt
+komplett als eigenstaendiges Plugin (siehe source/mods/shooter/main.py) und
+wird ueber plugin_manager.py's generischen handle_plugin_route()-Dispatcher
+bedient (main.py ruft diesen direkt auf, unabhaengig von gmr.py). Referenz-
+Beispiel dafuer, wie ein eigener Spielmodus komplett als Mod statt fest in
+main.py/gmr.py gebaut wird, siehe template/README.md.
 """
 
 import asyncio
 import gc
 
-from main import DEFAULT_PILOT_NAME, debug_log, send_html_file
+from main import DEFAULT_PILOT_NAME, debug_log
 
 ADMIN_KOTH_HTML_PATH = "admin_koth.html"
 ADMIN_RACE_HTML_PATH = "admin_race.html"
@@ -56,15 +64,20 @@ def start_tasks():
 
 async def handle_admin_and_routes(writer, request_path, request_method, query_params, body_params):
     if request_path == '/admin-koth':
-        await send_html_file(writer, ADMIN_KOTH_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_KOTH_HTML_PATH, "dashboard_nav")
         return True
 
     if request_path == '/admin-race':
-        await send_html_file(writer, ADMIN_RACE_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_RACE_HTML_PATH, "dashboard_nav")
         return True
 
     if request_path == '/gamemodes-view':
-        await send_html_file(writer, GAMEMODES_VIEW_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(
+            writer, GAMEMODES_VIEW_HTML_PATH, ["gamemodes_button", "gamemodes_card", "gamemodes_script"]
+        )
         return True
 
     if request_path.startswith('/koth-'):

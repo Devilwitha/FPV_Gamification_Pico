@@ -71,3 +71,14 @@ def license_issuer(build_firmware):
     Fixture frisch importiert werden, sonst wuerde issue_license() intern noch
     auf das alte, ungepatchte Modul (mit echten Repo-Pfaden!) zugreifen."""
     return _fresh_import("license_issuer")
+
+
+@pytest.fixture
+def deploy_mod(build_firmware, fresh_import):
+    """deploy_mod.py berechnet MODS_SOURCE_DIR = build_firmware.SOURCE_DIR +
+    '/mods' beim eigenen Modul-Import - muss daher NACH dem gepatchten
+    build_firmware-Fixture frisch importiert werden, sonst wuerde es auf
+    das echte source/mods/ statt die tmp_path-Kopie zeigen. Wird von
+    test_deploy_mod.py UND test_plugin_packager.py (baut auf deploy_mod
+    auf) genutzt."""
+    return _fresh_import("deploy_mod")

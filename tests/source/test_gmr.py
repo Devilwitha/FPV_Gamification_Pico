@@ -1,11 +1,22 @@
 """Tests fuer source/gmr.py.
 
 gmr.py importiert am Modul-Top-Level `from main import DEFAULT_PILOT_NAME,
-debug_log, send_html_file` - main.py selbst ist zu gross/hardwarenah, um es
-hier zu importieren, daher wird ein winziges Stub-Modul namens "main" in
-sys.modules registriert, das exakt die drei von gmr.py benoetigten Namen
+debug_log` - main.py selbst ist zu gross/hardwarenah, um es hier zu
+importieren, daher wird ein winziges Stub-Modul namens "main" in
+sys.modules registriert, das exakt die von gmr.py benoetigten Namen
 bereitstellt.
-"""
+
+Die Admin-Seiten-Routen (/admin-koth, /admin-race, /gamemodes-view) laufen
+seit der dynamischen Dashboard-Nav (siehe admin_dashboard.html's
+PLUGIN_SLOT-Marker) ueber pico_web_api.send_admin_html_with_slot() statt
+main.send_html_file() direkt - pico_web_api.py bindet SEIN EIGENES
+`from main import send_html_file` beim EIGENEN ersten Import fest an den zu
+dem Zeitpunkt aktiven main-Stub. Ohne die sys.modules-Purges unten wuerde
+ein bereits (von einem frueheren Test) importiertes pico_web_api/
+plugin_manager quer durch alle Tests an dessen laengst verworfenem Stub
+haengen bleiben, statt am main-Stub DIESES Tests."""
+import sys
+
 import pytest
 
 
@@ -22,9 +33,13 @@ def gmr(install_stub_module, fresh_import):
         debug_log=lambda message: None,
         send_html_file=fake_send_html_file,
     )
+    sys.modules.pop("pico_web_api", None)
+    sys.modules.pop("plugin_manager", None)
     module = fresh_import("gmr")
     module._sent = sent
-    return module
+    yield module
+    sys.modules.pop("pico_web_api", None)
+    sys.modules.pop("plugin_manager", None)
 
 
 class FakeWriter:
@@ -101,6 +116,9 @@ def test_ensure_race_manager_is_singleton(gmr):
 
 
 def test_start_tasks_is_idempotent(gmr):
+    """Nur 2 Tasks (koth+race): der Shooter-Spielmodus ist komplett aus
+    gmr.py entfernt - seine Schleife wird als Plugin (siehe
+    source/mods/shooter/main.py) von plugin_manager.run_loops() getrieben."""
     import asyncio
 
     async def _run():

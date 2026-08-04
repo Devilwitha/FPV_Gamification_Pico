@@ -249,6 +249,10 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
                 true
             }
+            R.id.action_plugins -> {
+                startActivity(Intent(this, PluginsActivity::class.java))
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - Shooter</title>
+<style>
+:root{--bg:#0a0c12;--panel:#141b25;--section:#1a2637;--line:#335174;--text:#e8f0f8;--muted:#9fb4cb;--red:#c0392b;--green:#2cb67d;--amber:#e6a23c}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--text);margin:0;padding:12px;font-family:monospace}.c{max-width:760px;margin:0 auto;background:var(--panel);padding:20px;border:2px solid var(--red);border-radius:8px}h1{color:var(--red);font-size:1.3em;margin:0 0 10px}.nv{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}.nv a{flex:1 1 80px;text-align:center;padding:8px 4px;background:var(--section);color:var(--muted);border-radius:6px;text-decoration:none;font-size:.78em;border:1px solid #2a3b52}.nv a.on{background:var(--red);color:#fff;border-color:var(--red);font-weight:bold}.s{background:var(--section);padding:15px;border:1px solid var(--line);border-radius:8px;margin:10px 0}.s h2{color:#d8e5f4;margin:0 0 10px;font-size:1em}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}.st{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.88em}.st b{text-align:right;overflow-wrap:anywhere}.dot{width:10px;height:10px;border-radius:50%;background:#677;display:inline-block;margin-right:6px}.dot.on{background:var(--green);box-shadow:0 0 10px var(--green)}.dot.off{background:var(--red);box-shadow:0 0 10px var(--red)}.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.field{display:flex;flex-direction:column;gap:5px;font-size:.8em;color:var(--muted)}input,select{width:100%;background:#0b1320;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:9px;font-family:monospace}.toggleline{display:flex;justify-content:space-between;align-items:center;gap:12px}.toggle{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}.toggle input{opacity:0;width:0;height:0}.slider{position:absolute;inset:0;background:var(--line);transition:.2s;border-radius:24px}.slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:var(--text);transition:.2s;border-radius:50%}.toggle input:checked+.slider{background:var(--green)}.toggle input:checked+.slider:before{transform:translateX(20px)}.hint{color:var(--muted);font-size:.78em;margin-top:8px;line-height:1.4}.buttons{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}.b{flex:1 1 auto;background:var(--red);color:#fff;border:none;border-radius:6px;padding:11px;font-family:monospace;font-weight:bold;cursor:pointer;font-size:.9em}.b.stop{background:#3a4a63}.b.fire{background:var(--amber)}.msg{min-height:1.2em;font-size:.82em;color:var(--amber);margin-top:8px}.lb{padding:7px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.85em;display:flex;justify-content:space-between;gap:10px}.lb b{color:var(--amber)}
+</style>
+</head>
+<body>
+<div class="c">
+<h1 data-i18n="shooter.title">SHOOTER</h1>
+<div class="nv">
+<a href="/admin" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" data-i18n="nav.profiles">Profile</a>
+<a href="/admin-system" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
+<a href="/admin-challenges" data-i18n="nav.challenges">Challenges</a>
+<a href="/admin-infection" data-i18n="nav.infection">Infection</a>
+<a href="/admin-koth" data-i18n="nav.koth">King of the Hill</a>
+<a href="/admin-race" data-i18n="nav.race">Race</a>
+<!--PLUGIN_SLOT:dashboard_nav-->
+<a href="/admin-plugins" data-i18n="nav.plugins">Plugins</a>
+<a href="/admin-credits" data-i18n="nav.credits">Credits</a>
+<a href="/" data-i18n="nav.home">Home</a>
+</div>
+<div class="s">
+<h2 data-i18n="shooter.live">Live-Status</h2>
+<div class="grid">
+<div class="st"><span data-i18n="shooter.state">Zustand</span><b id="state">-</b></div>
+<div class="st"><span data-i18n="shooter.hitsTaken">Treffer kassiert</span><b id="hits">0</b></div>
+<div class="st"><span data-i18n="shooter.shotsFired">Schuesse abgegeben</span><b id="shots">0</b></div>
+<div class="st"><span data-i18n="shooter.livesRemaining">Verbleibende Leben</span><b id="lives">-</b></div>
+<div class="st"><span data-i18n="shooter.event">Letztes Ereignis</span><b id="event">-</b></div>
+<div class="st"><span data-i18n="shooter.lastHitFrom">Letzter Treffer von</span><b id="lasthit">-</b></div>
+<div class="st"><span>Node ID</span><b id="node">-</b></div>
+<div class="st"><span data-i18n="shooter.eliminated">Ausgeschieden</span><b id="eliminated">-</b></div>
+</div>
+</div>
+<div class="s">
+<h2 data-i18n="shooter.hardwareTitle">Hardware-Status</h2>
+<div class="grid">
+<div class="st"><span data-i18n="shooter.emitter">IR-Sender (Grove)</span><b><i class="dot" id="emitter_dot"></i><span id="emitter_state">-</span></b></div>
+<div class="st"><span data-i18n="shooter.receiver">IR-Empfaenger (IR-REC38)</span><b><i class="dot" id="receiver_dot"></i><span id="receiver_state">-</span></b></div>
+<div class="st"><span data-i18n="shooter.auxState">AUX-Abzug</span><b><i class="dot" id="aux_dot"></i><span id="aux_state">-</span></b></div>
+<div class="st"><span data-i18n="shooter.auxValue">AUX-Kanalwert</span><b id="aux_value">-</b></div>
+</div>
+</div>
+<form id="config" class="s">
+<h2 data-i18n="shooter.settings">Rundeneinstellungen</h2>
+<div class="toggleline"><span data-i18n="shooter.enabled">Modus aktivieren</span><label class="toggle"><input id="enabled" type="checkbox"><span class="slider"></span></label></div>
+<div class="fields" style="margin-top:12px">
+<label class="field"><span data-i18n="shooter.livesLabel">Leben (0 = unbegrenzt)</span><input id="lives_cfg" type="number" min="0" max="99"></label>
+<label class="field"><span data-i18n="shooter.damageLabel">Schaden pro Treffer</span><input id="damage" type="number" min="1" max="9"></label>
+<label class="field"><span data-i18n="shooter.hitCooldownLabel">Trefferabklingzeit (ms)</span><input id="hit_cooldown_ms" type="number" min="50" max="5000" step="50"></label>
+<label class="field"><span data-i18n="shooter.fireCooldownLabel">Schuss-Abklingzeit (ms)</span><input id="fire_cooldown_ms" type="number" min="50" max="5000" step="50"></label>
+<label class="field"><span data-i18n="shooter.auxChannelLabel">AUX-Kanal (0 = aus)</span><input id="aux_channel" type="number" min="0" max="16"></label>
+<label class="field"><span data-i18n="shooter.auxThresholdLabel">AUX-Schwelle (988-2011us)</span><input id="aux_threshold_us" type="number" min="988" max="2011" step="10"></label>
+</div>
+<div class="hint" data-i18n="shooter.hint">Jeder Pico braucht einen Grove-Infrarot-Emitter (Sender) und ein IR-REC38-Empfangsmodul. Abfeuern sendet die eigene Node-ID per Infrarot; treffende Picos zaehlen den Treffer automatisch. Bei "Leben" &gt; 0 scheidet ein Geraet nach genuegend Treffern aus, bei 0 zaehlt nur der Trefferzaehler ohne Ausscheiden.</div>
+<div class="hint" data-i18n="shooter.auxHint">Optional: einen Fernbedienungs-Schalter (AUX-Kanal, per CRSF passiv mitgesniffte RC-Kanaldaten) als Abzug nutzen. Steht der gewaehlte Kanal ueber der Schwelle, feuert der Pico automatisch (mehrfach, solange der Schalter oben bleibt). 0 = deaktiviert, nur der Test-Knopf oben feuert dann.</div>
+<div class="buttons"><button class="b" type="submit" data-i18n="shooter.saveStart">Speichern &amp; Runde starten</button><button class="b stop" type="button" onclick="stopRound()" data-i18n="shooter.stop">Runde stoppen</button></div>
+<div class="buttons"><button class="b fire" type="button" onclick="fire()" data-i18n="shooter.fire">&#128165; Abfeuern (Test)</button></div>
+<div id="msg" class="msg"></div>
+</form>
+<section class="s">
+<h2 data-i18n="shooter.hitSourcesTitle">Treffer nach Schuetze</h2>
+<div id="hitsources"></div>
+</section>
+</div>
+<script>
+let I18N={strings:{}},loaded=false;
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f}
+function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const v=t(el.dataset.i18n,'');if(v)el.innerHTML=v});document.title=t('shooter.pageTitle','Admin - Shooter')}
+function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n()}).catch(()=>{})}
+function showHitSources(d){const list=document.getElementById('hitsources'),entries=Array.isArray(d.hit_sources)?d.hit_sources:[];list.replaceChildren();if(!entries.length){const row=document.createElement('div');row.className='hint';row.innerText=t('shooter.noHits','Noch keine Treffer registriert.');list.appendChild(row);return}entries.forEach(e=>{const row=document.createElement('div');row.className='lb';const label=document.createElement('span');label.innerText='Node '+e.id;const val=document.createElement('b');val.innerText=e.hits;row.append(label,val);list.appendChild(row)})}
+function hw(available,dotId,stateId){document.getElementById(dotId).className='dot '+(available?'on':'off');document.getElementById(stateId).innerText=available?t('shooter.available','Verfuegbar'):t('shooter.unavailable','Nicht verfuegbar')}
+function showAux(d){const aux=d.aux||{},dot=document.getElementById('aux_dot'),state=document.getElementById('aux_state'),val=document.getElementById('aux_value');if(!aux.channel){dot.className='dot';state.innerText=t('shooter.auxOff','Deaktiviert');val.innerText='-';return}if(!aux.available){dot.className='dot off';state.innerText=t('shooter.auxNoSignal','Kein Signal');val.innerText='-';return}const active=aux.value_us>=aux.threshold_us;dot.className='dot '+(active?'on':'off');state.innerText=active?t('shooter.auxHigh','Ausgeloest'):t('shooter.auxLow','Unter Schwelle');val.innerText=aux.value_us+' us (Kanal '+aux.channel+', Schwelle '+aux.threshold_us+' us)'}
+function show(d){document.getElementById('state').innerText=d.running?t('shooter.active','Aktiv'):t('shooter.inactive','Inaktiv');document.getElementById('hits').innerText=d.hits_taken||0;document.getElementById('shots').innerText=d.shots_fired||0;document.getElementById('lives').innerText=d.lives_remaining===0&&d.config&&d.config.lives===0?t('shooter.unlimited','Unbegrenzt'):d.lives_remaining;document.getElementById('event').innerText=d.last_event||'-';document.getElementById('lasthit').innerText=d.last_hit_from===null||d.last_hit_from===undefined?'-':'Node '+d.last_hit_from;document.getElementById('node').innerText=d.node_id===undefined?'-':d.node_id;document.getElementById('eliminated').innerText=d.eliminated?t('common.yes','Ja'):t('common.no','Nein');const hwd=d.hardware||{};hw(!!hwd.emitter_available,'emitter_dot','emitter_state');hw(!!hwd.receiver_available,'receiver_dot','receiver_state');showAux(d);showHitSources(d);if(!loaded&&d.config){document.getElementById('enabled').checked=!!d.config.enabled;document.getElementById('lives_cfg').value=d.config.lives;document.getElementById('damage').value=d.config.damage;document.getElementById('hit_cooldown_ms').value=d.config.hit_cooldown_ms;document.getElementById('fire_cooldown_ms').value=d.config.fire_cooldown_ms;document.getElementById('aux_channel').value=d.config.aux_channel;document.getElementById('aux_threshold_us').value=d.config.aux_threshold_us;loaded=true}}
+function poll(){fetch('/shooter-data',{cache:'no-store'}).then(r=>r.json()).then(show).catch(()=>{}).finally(()=>setTimeout(poll,700))}
+function body(){const p=new URLSearchParams();p.set('lives',document.getElementById('lives_cfg').value);p.set('damage',document.getElementById('damage').value);p.set('hit_cooldown_ms',document.getElementById('hit_cooldown_ms').value);p.set('fire_cooldown_ms',document.getElementById('fire_cooldown_ms').value);p.set('aux_channel',document.getElementById('aux_channel').value);p.set('aux_threshold_us',document.getElementById('aux_threshold_us').value);p.set('enabled',document.getElementById('enabled').checked?'1':'0');return p}
+document.getElementById('config').onsubmit=e=>{e.preventDefault();document.getElementById('msg').innerText=t('shooter.saving','Speichere...');fetch('/shooter-config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body()}).then(r=>r.json()).then(d=>{if(!d.ok)throw new Error(d.error||'Error');show(d);document.getElementById('msg').innerText=t('shooter.saved','Gespeichert.')}).catch(e=>document.getElementById('msg').innerText=e.message)};
+function stopRound(){fetch('/shooter-stop',{method:'POST'}).then(r=>r.json()).then(show).catch(()=>{});document.getElementById('enabled').checked=false;document.getElementById('msg').innerText=t('shooter.stopped','Runde beendet.')}
+function fire(){fetch('/shooter-fire',{method:'POST'}).then(r=>r.json()).then(d=>{show(d);document.getElementById('msg').innerText=d.ok?t('shooter.fired','Schuss abgegeben.'):(d.error||'Error')}).catch(()=>{})}
+const navSelf=document.querySelector('.nv a[href="/admin-shooter"]');if(navSelf)navSelf.classList.add('on');
+loadI18n().then(poll);
+</script>
+</body>
+</html>

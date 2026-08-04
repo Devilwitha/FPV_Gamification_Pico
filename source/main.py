@@ -115,6 +115,14 @@ CRSF_FRAMETYPE_VARIO           = 0x07  # Sinkrate/Steigrate in cm/s (int16)
 CRSF_FRAMETYPE_BATTERY_SENSOR  = 0x08  # Spannung/Strom/verbrauchte Kapazitaet/Restladung
 CRSF_FRAMETYPE_GPS             = 0x02  # Lat/Lon/Geschwindigkeit/Kurs/Hoehe/Satelliten (fuer Speed-Run)
 CRSF_FRAMETYPE_LINK_STATISTICS = 0x14  # RSSI/Link-Qualitaet/SNR (fuer Signal-Helden)
+# 16 RC/AUX-Kanaele, je 11 Bit gepackt (22 Byte Payload) - fuer den
+# Shooter-Modus (Plugin, siehe source/mods/shooter/main.py), der ueber
+# einen frei waehlbaren AUX-Kanal (Schalter am Sender) automatisch
+# abfeuert. Nur vorhanden, wenn der jeweilige CRSF-Aufbau Kanaldaten auf
+# derselben mitgesniffter Leitung ueberhaupt sendet - falls nicht, bleibt
+# rc_channels_state einfach leer (kein Crash, siehe dortiger
+# _read_aux_state()).
+CRSF_FRAMETYPE_RC_CHANNELS_PACKED = 0x16
 
 # CRSF Frame- und Plausibilitaetsgrenzen
 CRSF_MAX_FRAME_LEN        = 64
@@ -225,6 +233,11 @@ debug_log_file_enabled = True
 debug_log_file_bytes = 0
 debug_log_file_limit_reached = False
 highscore_data = {"score": 0, "timestamp": "Unbekannt", "player": DEFAULT_PILOT_NAME}
+# Letzter dekodierter RC/AUX-Kanalsatz (16 Rohwerte, 172-1811) + Zeitstempel
+# des letzten Updates - wird vom shooter-Plugin (source/mods/shooter/main.py)
+# gelesen, um automatisch ueber einen konfigurierten AUX-Kanal abzufeuern
+# (siehe telemetry_loop()).
+rc_channels_state = {"channels": [0] * 16, "updated_ms": 0}
 pending_highscore = {"active": False, "score": 0, "timestamp": "Unbekannt"}
 status_led = None
 status_led_available = False
@@ -238,6 +251,7 @@ _idcard_route_handler = None
 _misc_route_handler = None
 _challenge_route_handler = None
 _infection_route_handler = None
+_pico_api_route_handler = None
 _upload_helpers_module = None
 _github_ota_helpers_module = None
 _license_verifier_module = None
@@ -285,6 +299,9 @@ OTA_ALLOWED_TARGETS = (
     "upload_helpers.py",
     "challenge_helpers.py",
     "infection_mode.py",
+    "plugin_manager.py",
+    "network_manager.py",
+    "pico_web_api.py",
     "copil",
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
@@ -660,6 +677,24 @@ def crc8_dvb_s2(data):
     return crc
 
 
+def unpack_crsf_channels(payload):
+    """Entpackt 16 je 11-Bit-gepackte CRSF-Kanalwerte (Standard-Bitstream-
+    Layout, LSB zuerst) aus einem 22-Byte-Payload. Rohwertebereich 172-1811."""
+    channels = [0] * 16
+    bit_buffer = 0
+    bit_count = 0
+    byte_index = 0
+    for i in range(16):
+        while bit_count < 11:
+            bit_buffer |= payload[byte_index] << bit_count
+            bit_count += 8
+            byte_index += 1
+        channels[i] = bit_buffer & 0x7FF
+        bit_buffer >>= 11
+        bit_count -= 11
+    return channels
+
+
 def normalize_angle_deg(angle):
     while angle > 180.0:
         angle -= 360.0
@@ -880,6 +915,60 @@ def _build_github_ota_deps():
         "asset_name": GITHUB_OTA_ASSET_NAME,
         "staging_path": GITHUB_OTA_STAGING_PATH,
         "state": github_ota_state,
+    }
+
+
+SYSTEM_INFO_FILE = "system_info.json"
+
+
+def _write_system_info():
+    """Aktualisiert system_info.json mit den aktuellen Geraete-Eckdaten -
+    wird von network_manager.py beim Webshop-Mod-Sync mitgeschickt und von
+    pico_web_api.py fuer /api/firmware/status mitgelesen. Fehler hier duerfen
+    main.py niemals aufhalten (rein informativ)."""
+    try:
+        try:
+            device_id = _get_license_verifier().get_pico_id()
+        except Exception:
+            device_id = ""
+        try:
+            hardware = os.uname().machine
+        except Exception:
+            hardware = "unknown"
+        payload = json.dumps({
+            "device_id": device_id,
+            "firmware_version": FIRMWARE_VERSION,
+            "hardware": hardware,
+            "device_role": "gamification",
+        })
+        temp_path = SYSTEM_INFO_FILE + ".tmp"
+        with open(temp_path, "w") as f:
+            f.write(payload)
+        try:
+            os.remove(SYSTEM_INFO_FILE)
+        except Exception:
+            pass
+        os.rename(temp_path, SYSTEM_INFO_FILE)
+    except Exception as e:
+        debug_log(f"[NET] system_info.json Aktualisierung fehlgeschlagen: {e}")
+
+
+def _build_network_manager_deps():
+    """Baut das deps-Dict fuer network_manager.boot_network_check() - gleiches
+    Muster wie _build_github_ota_deps(), teilt sich bewusst dieselben
+    GitHub-Repo-/Firmware-Konstanten (der Firmware-Check laeuft ueber GitHub,
+    nicht ueber den Webshop-Server)."""
+    return {
+        "log": debug_log,
+        "feed_wdt": _boot_feed_watchdog,
+        "load_wlan_config": load_wlan_config,
+        "configure_hotspot": configure_hotspot,
+        "ap_ssid": AP_SSID,
+        "ap_password": AP_PASSWORD,
+        "firmware_version": FIRMWARE_VERSION,
+        "repo_owner": GITHUB_REPO_OWNER,
+        "repo_name": GITHUB_REPO_NAME,
+        "asset_name": GITHUB_OTA_ASSET_NAME,
     }
 
 
@@ -1619,6 +1708,10 @@ async def telemetry_loop():
                                 )
                                 speed_kmh = groundspeed_raw / 10.0
                                 challenges.update_gps(speed_kmh, time.ticks_ms())
+
+                            elif frame_type == CRSF_FRAMETYPE_RC_CHANNELS_PACKED and len(payload_buffer) == 22:
+                                rc_channels_state["channels"] = unpack_crsf_channels(payload_buffer)
+                                rc_channels_state["updated_ms"] = time.ticks_ms()
                         else:
                             crc_fail_count += 1
                             if ENABLE_SERIAL_DEBUG and (crc_fail_count % 40 == 0):
@@ -1704,22 +1797,26 @@ async def send_html_file(writer, file_path):
 async def _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
     global TRICK_TUNING_PROFILE, DEVELOPER_MODE_ENABLED, LANGUAGE_CODE
     global _idcard_route_handler, _misc_route_handler, _challenge_route_handler
-    global _infection_route_handler
+    global _infection_route_handler, _pico_api_route_handler
 
     if request_path == '/admin-idcard':
-        await send_html_file(writer, ADMIN_IDCARD_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_IDCARD_HTML_PATH, ["idcard", "dashboard_nav"])
         return True
 
     if request_path == '/admin-challenges':
-        await send_html_file(writer, ADMIN_CHALLENGES_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_CHALLENGES_HTML_PATH, "dashboard_nav")
         return True
 
     if request_path == '/admin-infection':
-        await send_html_file(writer, ADMIN_INFECTION_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_INFECTION_HTML_PATH, "dashboard_nav")
         return True
 
     if request_path == '/admin-credits':
-        await send_html_file(writer, ADMIN_CREDITS_HTML_PATH)
+        import pico_web_api
+        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_CREDITS_HTML_PATH, "dashboard_nav")
         return True
 
     if request_path.startswith('/infection-') or request_path.startswith('/lobby-'):
@@ -1738,6 +1835,15 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
 
     import gmr
     if await gmr.handle_admin_and_routes(writer, request_path, request_method, query_params, body_params): return True
+
+    # Generischer Plugin-Routen-Dispatcher (siehe plugin_manager.py's
+    # handle_plugin_route()): bedient z.B. "/admin-shooter"/"/shooter-*"
+    # ueber source/mods/shooter/main.py, ohne dass main.py/gmr.py den
+    # jeweiligen Pfad-Praefix kennen muessen (kommt aus manifest.json's
+    # "route_prefixes", datengetrieben statt hier fest verdrahtet).
+    import plugin_manager
+    if await plugin_manager.handle_plugin_route(writer, request_path, request_method, query_params, body_params):
+        return True
 
     if request_path == '/challenges-view':
         await send_html_file(writer, CHALLENGES_VIEW_HTML_PATH)
@@ -1774,6 +1880,19 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             url_decode,
             safe_base64_file_to_file,
         ):
+            return True
+
+    if (
+        request_path == '/admin-plugins'
+        or request_path.startswith('/api/plugins')
+        or request_path.startswith('/api/store')
+        or request_path.startswith('/api/firmware')
+        or request_path.startswith('/api/plugin-ui')
+    ):
+        if _pico_api_route_handler is None:
+            from pico_web_api import handle_pico_api_route as _lazy_pico_api_route_handler
+            _pico_api_route_handler = _lazy_pico_api_route_handler
+        if await _pico_api_route_handler(writer, request_path, request_method, query_params, body_params):
             return True
 
     if _misc_route_handler is None:
@@ -1978,13 +2097,25 @@ async def handle_client(reader, writer):
                 body_params = {}
                 
         if request_path == '/admin':
-            await send_html_file(writer, ADMIN_DASHBOARD_HTML_PATH)
+            # Dashboard-Nav/-Karte/-Statistikkachel fuer Plugins (z.B. Shooter)
+            # sind NICHT mehr fest in admin_dashboard.html verdrahtet, sondern
+            # werden ueber PLUGIN_SLOT-Marker + ui_slots dynamisch eingeblendet
+            # - ein deaktiviertes Plugin verschwindet dadurch automatisch aus
+            # dem Dashboard, ohne dass main.py es namentlich kennen muss
+            # (siehe pico_web_api.send_admin_html_with_slot()-Docstring).
+            import pico_web_api
+            await pico_web_api.send_admin_html_with_slot(
+                writer, ADMIN_DASHBOARD_HTML_PATH,
+                ["dashboard_nav", "dashboard_card", "dashboard_stat", "dashboard_script"],
+            )
 
         elif request_path == '/admin-update':
-            await send_html_file(writer, ADMIN_UPDATE_HTML_PATH)
+            import pico_web_api
+            await pico_web_api.send_admin_html_with_slot(writer, ADMIN_UPDATE_HTML_PATH, "dashboard_nav")
 
         elif request_path == '/admin-simulate':
-            await send_html_file(writer, ADMIN_SIMULATE_HTML_PATH)
+            import pico_web_api
+            await pico_web_api.send_admin_html_with_slot(writer, ADMIN_SIMULATE_HTML_PATH, "dashboard_nav")
 
         elif request_path == '/prepare-upload':
             await _get_upload_helpers().handle_prepare_upload(writer, query_params, body_params, ota_state, _build_upload_deps())
@@ -2073,6 +2204,21 @@ async def handle_client(reader, writer):
 
 async def main_async():
     global system_ready, status_led_last_toggle_ms, infection_task
+    _write_system_info()
+    # Boot-Netzwerk-Check (network_manager.py) ganz am Anfang, VOR jedem
+    # weiteren Import/Server-Start: kurzer, bewusst blockierender STA-
+    # Verbindungsversuch (8-10s) fuer Firmware-Check (via GitHub) + Webshop-
+    # Mod-Sync, danach IMMER zurueck in den Access-Point-Betrieb - waehrend
+    # dieses Fensters ist der eigene Access Point ohnehin kurz weg, es gibt
+    # also niemanden zu bedienen (gleiche Begruendung wie bei
+    # github_ota_helpers.run_update_check()).
+    if ENABLE_HOTSPOT:
+        try:
+            import network_manager
+            network_manager.boot_network_check(_build_network_manager_deps())
+        except Exception as e:
+            debug_log(f"[NET] Boot-Netzwerk-Check fehlgeschlagen: {e}")
+        gc.collect()
     # Lazy-Import/Init von ChallengeManager (challenge_helpers.py) - ganz am
     # Anfang, damit dieser separate Kompilierschritt VOR dem Start des
     # HTTP-Servers/Telemetrie-Loops abgeschlossen ist, aber unabhaengig von
@@ -2103,6 +2249,9 @@ async def main_async():
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
     infection_task = asyncio.create_task(_ensure_infection_manager().run())
     gmr.start_tasks()
+    import plugin_manager
+    plugin_manager.load_all_plugins()
+    asyncio.create_task(plugin_manager.run_loops())
     _boot_mark_healthy_once()
     system_ready = True
     status_led_last_toggle_ms = time.ticks_ms()

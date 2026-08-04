@@ -17,4 +17,6 @@
     <string name="menu_reload">Neu laden</string>
     <string name="menu_browser">Im Browser öffnen</string>
     <string name="menu_wifi">WLAN-Einstellungen</string>
+    <string name="menu_plugins">Dashboard</string>
+    <string name="plugins_activity_title">Dashboard</string>
 </resources>

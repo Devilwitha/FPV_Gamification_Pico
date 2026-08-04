@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}FPV Gamification Pico – Shop{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32.png') }}" />
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16.png') }}" />
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
     {% block head %}{% endblock %}
   </head>
@@ -15,10 +19,14 @@
     {% endif %}
     <header class="site-header">
       <nav class="navbar">
-        <a class="brand" href="{{ url_for('index') }}">FPV Gamification Pico</a>
+        <a class="brand" href="{{ url_for('index') }}">
+          <img class="brand-logo" src="{{ url_for('static', filename='bilder/branding/logo-64.png') }}" alt="" width="32" height="32" />
+          FPV Gamification Pico
+        </a>
         <div class="nav-links">
           <a href="{{ url_for('index') }}">Start</a>
           <a href="{{ url_for('shop') }}">Shop</a>
+          <a href="{{ url_for('plugins_store') }}">Plugin-Store</a>
           {% if session.get('account_email') %}
             <a href="{{ url_for('account') }}">Mein Konto</a>
             <a href="{{ url_for('logout') }}">Logout</a>
@@ -30,6 +38,15 @@
     </header>
 
     <main class="site-main">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-messages">
+            {% for category, message in messages %}
+              <p class="flash-message flash-{{ category }}">{{ message }}</p>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
       {% block content %}{% endblock %}
     </main>
 

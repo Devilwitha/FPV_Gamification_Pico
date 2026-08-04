@@ -101,11 +101,30 @@ async def call_route(fake_writer, path, method, query, body_text, body_params, d
 
 
 @pytest.mark.asyncio
-async def test_admin_pages_are_served(fake_writer):
-    deps = make_deps()
-    handled, *_ = await call_route(fake_writer, "/admin-profiles", "GET", {}, "", {}, deps)
-    assert handled is True
-    assert b"admin_profiles.html" in fake_writer.response
+async def test_admin_pages_are_served(fake_writer, install_stub_module, fresh_import):
+    """/admin-profiles laeuft (wie /admin-system) seit der dynamischen
+    Dashboard-Nav ueber pico_web_api.send_admin_html_with_slot() statt
+    deps["send_html_file"] direkt - braucht daher einen frischen
+    pico_web_api-Import gegen einen kontrollierten "main"-Stub, sonst wuerde
+    ein evtl. schon von einem anderen Testmodul importiertes pico_web_api an
+    dessen laengst verworfenem send_html_file haengen bleiben (siehe
+    test_gmr.py's gmr-Fixture fuer dasselbe Muster)."""
+    import sys
+
+    async def fake_send_html_file(writer, path):
+        writer.write(("HTTP/1.1 200 OK\r\n\r\nHTML:" + path).encode())
+
+    install_stub_module("main", send_html_file=fake_send_html_file, debug_log=lambda message: None)
+    sys.modules.pop("pico_web_api", None)
+    sys.modules.pop("plugin_manager", None)
+    try:
+        deps = make_deps()
+        handled, *_ = await call_route(fake_writer, "/admin-profiles", "GET", {}, "", {}, deps)
+        assert handled is True
+        assert b"admin_profiles.html" in fake_writer.response
+    finally:
+        sys.modules.pop("pico_web_api", None)
+        sys.modules.pop("plugin_manager", None)
 
 
 @pytest.mark.asyncio

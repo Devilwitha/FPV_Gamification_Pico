@@ -1,0 +1,15 @@
+{
+    "name": "my_plugin",
+    "version": "0.1.0",
+    "author": "Dein Name",
+    "description": "Kurze Beschreibung, die im Webshop-Store und in der Plugin-Liste angezeigt wird.",
+    "entry": "main.py",
+    "enabled": true,
+    "has_error": false,
+    "error_message": "",
+    "loop_interval_ms": 1000,
+    "ui_slots": {
+        "system": "render_system_slot"
+    },
+    "route_prefixes": []
+}

@@ -223,6 +223,13 @@ code {
   padding: 14px 36px;
 }
 
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+}
+
 /* Features */
 
 .features {

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}Live-Test wird gestartet …{% endblock %}
+
+{% block head %}
+  <meta http-equiv="refresh" content="2" />
+{% endblock %}
+
+{% block content %}
+  <section class="status-page">
+    <div class="status-icon">&#9203;</div>
+    <h1>Dein Live-Test wird gestartet …</h1>
+    <p>
+      Wir richten gerade deine eigene, unabhängige Test-Instanz der
+      Firmware-Weboberfläche ein. Das dauert normalerweise nur ein paar
+      Sekunden - diese Seite lädt automatisch neu.
+    </p>
+  </section>
+{% endblock %}

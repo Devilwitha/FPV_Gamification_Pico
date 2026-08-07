@@ -7,6 +7,9 @@ __pycache__/main.cpython-311.pyc
 /build
 *.device
 /data2
+# Pro-Besucher-Datenordner der isolierten "Jetzt Testen"-Simulator-Instanzen
+# im Webshop (siehe webshop/simulator_manager.py) - rein zur Laufzeit erzeugt.
+/simulator_instances
 # RSA-Schluesselpaar fuer das Lizenzsystem (tools/license_generator.py) -
 # private_key.pem darf NIE ins Repo/geteilt werden.
 /keys

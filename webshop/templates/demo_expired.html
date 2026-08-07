@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Live-Test abgelaufen{% endblock %}
+
+{% block content %}
+  <section class="status-page status-cancel">
+    <div class="status-icon">&#9203;</div>
+    <h1>Dieser Live-Test ist abgelaufen</h1>
+    <p>
+      Deine Test-Instanz wurde beendet (z. B. wegen Inaktivität). Du kannst
+      jederzeit eine neue, wieder komplett unabhängige Instanz starten.
+    </p>
+    <a class="btn btn-primary btn-large" href="{{ url_for('jetzt_testen') }}">Erneut testen</a>
+  </section>
+{% endblock %}

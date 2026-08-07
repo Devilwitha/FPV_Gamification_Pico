@@ -1,5 +1,6 @@
 """Webshop-Anwendung mit echter Stripe- und PayPal-Zahlungsanbindung."""
 
+import atexit
 import io
 import json
 import os
@@ -20,6 +21,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
 import orders_db
+import simulator_manager
 
 load_dotenv()
 
@@ -69,6 +71,11 @@ if TRUST_PROXY_COUNT:
         x_proto=TRUST_PROXY_COUNT,
         x_host=TRUST_PROXY_COUNT,
     )
+
+# Beendet alle noch laufenden "Jetzt Testen"-Simulator-Kindprozesse (siehe
+# simulator_manager.py), wenn der Webshop-Prozess selbst herunterfaehrt -
+# sonst blieben deren Kindprozesse/Datenordner verwaist zurueck.
+atexit.register(simulator_manager.shutdown_all)
 
 # Offline-Lizenzsystem (siehe tools/license_generator.py und
 # source/license_verifier.py): der Webshop-Server signiert license.lic-Dateien
@@ -317,6 +324,113 @@ def index():
 def webshop_home():
     """Startseite des FPV-Gamification-Webshops."""
     return render_template("index.html")
+
+
+@app.route("/jetzt-testen")
+def jetzt_testen():
+    """"Jetzt Testen"-Button (siehe index.html): startet (oder findet die
+    bereits laufende) isolierte Simulator-Instanz dieses Besuchers - jeder
+    Website-Besucher bekommt ueber sein eigenes Session-Cookie seine eigene,
+    komplett unabhaengige Kopie der echten Firmware-Weboberflaeche (siehe
+    simulator_manager.py). Leitet danach zu deren Oberflaeche weiter."""
+    try:
+        instance = simulator_manager.get_or_create_instance(session.get("demo_token"))
+    except simulator_manager.SimulatorBusyError:
+        flash(
+            "Der Live-Test ist gerade stark ausgelastet - bitte in ein paar Minuten erneut versuchen.",
+            "error",
+        )
+        return redirect(url_for("webshop_home"))
+    session["demo_token"] = instance.token
+    return redirect(url_for("demo_proxy", token=instance.token, subpath=""))
+
+
+# Absichtlich gezielte Attribut-/JS-Aufruf-Ersetzung statt einer globalen
+# Ersetzung aller "/" in der HTML-Antwort, um Fliesstext/JSON nicht
+# versehentlich zu beschaedigen - deckt alle in source/*.html verwendeten
+# Arten von absoluten Wurzelpfaden ab (Links/Formulare/Skript-Tags via
+# href/src/action, sowie fetch()/window.open()-Aufrufe und
+# "location.href = ..."-Weiterleitungen im eingebetteten JavaScript).
+_DEMO_ABS_PATH_PATTERNS = tuple(
+    re.compile(pattern)
+    for quote in ("\"", "'")
+    for pattern in (
+        rf"((?:href|src|action)={quote})/(?!/|demo/)",
+        rf"((?:fetch|open)\(\s*{quote})/(?!/|demo/)",
+        rf"(location\.href\s*=\s*{quote})/(?!/|demo/)",
+    )
+)
+
+_DEMO_HOP_BY_HOP_RESPONSE_HEADERS = {"content-length", "transfer-encoding", "connection", "content-encoding"}
+
+
+def _rewrite_demo_html(html_text, token):
+    """Schreibt absolute Wurzelpfade ("/data", "/admin", ...) in der vom
+    Pico-Simulator gelieferten HTML/JS-Antwort auf den Proxy-Praefix
+    "/demo/<token>/" um. Noetig, weil die Firmware-Weboberflaeche (siehe
+    source/*.html) fuer den Betrieb direkt auf dem Pico (dort IMMER an der
+    Wurzel "/") mit absoluten Pfaden arbeitet - ohne Umschreiben wuerde z.B.
+    "fetch('/data')" im Browser gegen die Webshop-Wurzel statt gegen die
+    eigene Simulator-Instanz dieses Besuchers gehen."""
+    prefix = f"/demo/{token}/"
+    for pattern in _DEMO_ABS_PATH_PATTERNS:
+        html_text = pattern.sub(lambda m: m.group(1) + prefix, html_text)
+    return html_text
+
+
+@app.route("/demo/<token>/", defaults={"subpath": ""}, methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@app.route("/demo/<token>/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+def demo_proxy(token, subpath):
+    """Reicht die Anfrage an die isolierte Simulator-Instanz dieses Besuchers
+    weiter (127.0.0.1:<eigener Port>, siehe simulator_manager.py) und liefert
+    deren Antwort unter derselben Webshop-Domain zurueck - dadurch braucht es
+    weder zusaetzliche oeffentliche Ports noch eigene Subdomains/TLS-
+    Zertifikate pro Besucher."""
+    instance = simulator_manager.get_instance(token)
+    if instance is None:
+        return render_template("demo_expired.html"), 404
+
+    target_url = f"http://127.0.0.1:{instance.port}/{subpath}"
+    forward_headers = {
+        key: value for key, value in request.headers.items()
+        if key.lower() not in {"host", "content-length"}
+    }
+
+    upstream = None
+    last_error = None
+    # Bis zu ~6s Wiederholversuche: eine frisch erzeugte Instanz (siehe
+    # simulator_manager._spawn_instance()) braucht nach dem Prozessstart noch
+    # einen Moment, bis main.py tatsaechlich auf ihrem Port lauscht.
+    for _attempt in range(15):
+        try:
+            upstream = requests.request(
+                request.method,
+                target_url,
+                params=request.args,
+                data=request.get_data(),
+                headers=forward_headers,
+                timeout=10,
+                allow_redirects=False,
+            )
+            break
+        except requests.exceptions.RequestException as e:
+            last_error = e
+            time.sleep(0.4)
+
+    if upstream is None:
+        app.logger.info("Simulator-Instanz %s antwortet noch nicht (%s) - zeige Warteseite.", token, last_error)
+        return render_template("demo_starting.html"), 200
+
+    body = upstream.content
+    content_type = upstream.headers.get("Content-Type", "")
+    if "text/html" in content_type:
+        body = _rewrite_demo_html(upstream.text, token).encode("utf-8")
+
+    response_headers = [
+        (key, value) for key, value in upstream.headers.items()
+        if key.lower() not in _DEMO_HOP_BY_HOP_RESPONSE_HEADERS
+    ]
+    return Response(body, status=upstream.status_code, headers=response_headers)
 
 
 @app.route("/shop")

@@ -1,6 +1,9 @@
-"""Tests fuer tools/plugin_packager.py - Paketieren (.py -> .mpy via
+"""Tests fuer windows/source2/plugin_packager.py - Paketieren (.py -> .mpy via
 mpy-cross) und Hoch-/Herunterladen eines Mod-Ordners zum/vom Webshop-
-Plugin-Store.
+Plugin-Store. Liegt bewusst weiterhin unter tests/tools/ (nicht
+tests/windows/) - testet ausschliesslich die reinen Hilfsfunktionen, nicht
+die Tk-GUI, siehe tests/tools/conftest.py fuer den sys.path-Eintrag auf
+windows/source2/.
 
 Netzwerkfunktionen (webshop_login/upload_plugin_zip/fetch_store_plugins/
 download_plugin) werden ueber Fake-Objekte getestet statt gegen einen

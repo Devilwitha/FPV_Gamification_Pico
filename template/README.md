@@ -190,7 +190,7 @@ python tools/deploy_mod.py --mod <name> --mode serial --port COM5
 python tools/deploy_mod.py --mod <name> --mode wifi --host 192.168.4.1 --password geheim123
 
 # Für den Webshop-Store paketieren (.py -> .mpy) und hochladen (GUI)
-python tools/plugin_packager.py
+python windows/source2/plugin_packager.py
 ```
 
 Auf der Pico-Weboberfläche (`/admin-plugins`) lässt sich jedes installierte
@@ -205,5 +205,5 @@ temporären WLAN-Download direkt auf dem Pico auslöst.
 |---|---|
 | `tools/deploy_mod.py` (seriell/USB) | Entwicklung/Debugging - schnellster Weg, rohe `.py`-Dateien. |
 | `tools/deploy_mod.py` (WLAN/WebREPL) | Wie oben, ohne USB-Kabel - WebREPL muss vorher einmalig manuell aktiviert werden (`import webrepl; webrepl.start()`), dieses Projekt startet es nicht automatisch. |
-| Webshop-Store (`/plugins`) + Pico-Weboberfläche | Verteilung an Endnutzer - erfordert `.mpy`-kompiliertes Paket (`tools/plugin_packager.py`), Download läuft direkt vom Pico aus per temporärer WLAN-Verbindung. |
+| Webshop-Store (`/plugins`) + Pico-Weboberfläche | Verteilung an Endnutzer - erfordert `.mpy`-kompiliertes Paket (`windows/source2/plugin_packager.py`), Download läuft direkt vom Pico aus per temporärer WLAN-Verbindung. |
 | Android-App | Gleicher Store-Download-Mechanismus, bequem vom Smartphone aus (Tab "Webshop Store"). |

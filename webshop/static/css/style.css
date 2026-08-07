@@ -1,16 +1,30 @@
 :root {
-  --color-primary: #2563eb;
-  --color-primary-dark: #1d4ed8;
-  --color-success: #16a34a;
-  --color-error: #dc2626;
-  --color-text: #1f2937;
-  --color-text-muted: #6b7280;
-  --color-background: #f9fafb;
-  --color-surface: #ffffff;
-  --color-border: #e5e7eb;
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  /* Einheitliches dunkles Bollisoft-Design (vormals nur auf der echten
+     Startseite /, .company-page, siehe unten) - gilt jetzt fuer den
+     kompletten Webshop, damit Shop/Checkout/Login/Konto/Admin/Plugin-Store
+     optisch derselben Seite angehoeren wie die Startseite. */
+  --color-bg: #080b0d;
+  --color-surface: #101518;
+  --color-surface-alt: #151b1f;
+  --color-line: #263137;
+  --color-text: #f0f4f2;
+  --color-muted: #9aaba5;
+  --color-accent: #58f0a8;
+  --color-accent-dark: #33cf86;
+  --color-accent-soft: rgba(88, 240, 168, 0.14);
+  --color-warning: #f39c12;
+  --color-warning-soft: rgba(243, 156, 18, 0.14);
+  --color-success: #4ade80;
+  --color-success-soft: rgba(74, 222, 128, 0.14);
+  --color-error: #f87171;
+  --color-error-soft: rgba(248, 113, 113, 0.14);
+  --color-info: #60a5fa;
+  --color-info-soft: rgba(96, 165, 250, 0.14);
+  --shadow-card: 0 14px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.35);
   --radius-medium: 8px;
-  --radius-large: 16px;
+  --radius-large: 18px;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
 }
 
 * {
@@ -21,13 +35,13 @@ body {
   margin: 0;
   padding: 0;
   font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--color-background);
+  background-color: var(--color-bg);
   color: var(--color-text);
   line-height: 1.6;
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-accent);
   text-decoration: none;
 }
 
@@ -40,13 +54,30 @@ h2,
 h3 {
   line-height: 1.3;
   margin-top: 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+}
+
+code {
+  font-family: var(--font-mono);
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.9em;
+}
+
+::selection {
+  background-color: var(--color-accent-soft);
+  color: var(--color-text);
 }
 
 /* Header */
 
 .site-header {
-  background-color: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background-color: rgba(8, 11, 13, 0.92);
+  border-bottom: 1px solid var(--color-line);
+  backdrop-filter: blur(14px);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -67,6 +98,7 @@ h3 {
   gap: 10px;
   font-size: 1.4rem;
   font-weight: 700;
+  font-family: var(--font-serif);
   color: var(--color-text);
   text-decoration: none;
 }
@@ -85,10 +117,11 @@ h3 {
   margin-left: 24px;
   color: var(--color-text);
   font-weight: 500;
+  font-size: 0.95rem;
 }
 
 .nav-links a:hover {
-  color: var(--color-primary);
+  color: var(--color-accent);
   text-decoration: none;
 }
 
@@ -104,10 +137,11 @@ h3 {
 /* Footer */
 
 .site-footer {
-  border-top: 1px solid var(--color-border);
+  background-color: #050708;
+  border-top: 1px solid var(--color-line);
   padding: 24px;
   text-align: center;
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   font-size: 0.9rem;
 }
 
@@ -117,12 +151,12 @@ h3 {
   display: inline-block;
   padding: 10px 20px;
   border-radius: var(--radius-medium);
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
   font-size: 1rem;
   font-weight: 600;
   text-align: center;
-  transition: background-color 0.15s ease-in-out, transform 0.05s ease-in-out;
+  transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, transform 0.05s ease-in-out;
 }
 
 .btn:hover {
@@ -130,13 +164,18 @@ h3 {
   transform: translateY(-1px);
 }
 
+.btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 .btn-primary {
-  background-color: var(--color-primary);
-  color: #ffffff;
+  background-color: var(--color-accent);
+  color: #07100b;
 }
 
 .btn-primary:hover {
-  background-color: var(--color-primary-dark);
+  background-color: var(--color-accent-dark);
 }
 
 .btn-large {
@@ -146,13 +185,14 @@ h3 {
 }
 
 .btn-secondary {
-  background-color: var(--color-background);
-  color: var(--color-primary);
-  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-line);
 }
 
 .btn-secondary:hover {
-  background-color: var(--color-border);
+  background-color: var(--color-surface-alt);
+  border-color: var(--color-accent);
 }
 
 /* Hero */
@@ -160,20 +200,21 @@ h3 {
 .hero {
   text-align: center;
   padding: 64px 24px;
-  background: linear-gradient(135deg, #eff6ff 0%, #f9fafb 100%);
+  background: radial-gradient(circle at 50% 0%, rgba(88, 240, 168, 0.1) 0%, rgba(8, 11, 13, 0) 60%), var(--color-surface);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-large);
   margin-bottom: 48px;
 }
 
 .hero h1 {
-  font-size: 2.4rem;
+  font-size: 2.6rem;
   margin-bottom: 16px;
 }
 
 .hero-subtitle {
   max-width: 640px;
   margin: 0 auto 32px auto;
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   font-size: 1.1rem;
 }
 
@@ -191,7 +232,7 @@ h3 {
 .features h2 {
   text-align: center;
   margin-bottom: 32px;
-  font-size: 1.8rem;
+  font-size: 1.9rem;
 }
 
 .feature-grid {
@@ -202,7 +243,7 @@ h3 {
 
 .feature-card {
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
   padding: 24px;
   box-shadow: var(--shadow-card);
@@ -210,11 +251,14 @@ h3 {
 
 .feature-card h3 {
   margin-bottom: 8px;
-  color: var(--color-primary);
+  color: var(--color-accent);
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
 }
 
 .feature-card p {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   margin-bottom: 0;
 }
 
@@ -227,11 +271,11 @@ h3 {
 .screenshots h2 {
   text-align: center;
   margin-bottom: 8px;
-  font-size: 1.8rem;
+  font-size: 1.9rem;
 }
 
 .screenshots-intro {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   max-width: 620px;
   margin: 0 auto 32px auto;
   text-align: center;
@@ -247,7 +291,8 @@ h3 {
   overflow: hidden;
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
-  background-color: #0f172a;
+  background-color: #04070a;
+  border: 1px solid var(--color-line);
 }
 
 .screenshot-track {
@@ -272,16 +317,18 @@ h3 {
 .screenshot-slide figcaption {
   padding: 16px 20px 20px 20px;
   background-color: var(--color-surface);
+  border-top: 1px solid var(--color-line);
 }
 
 .screenshot-slide figcaption h3 {
   font-size: 1.05rem;
   margin-bottom: 4px;
-  color: var(--color-primary);
+  color: var(--color-accent);
+  font-family: inherit;
 }
 
 .screenshot-slide figcaption p {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   font-size: 0.9rem;
   margin: 0;
 }
@@ -292,7 +339,7 @@ h3 {
   transform: translateY(-50%);
   width: 40px;
   height: 40px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: 50%;
   background-color: var(--color-surface);
   color: var(--color-text);
@@ -303,7 +350,8 @@ h3 {
 }
 
 .screenshot-nav:hover {
-  background-color: var(--color-background);
+  background-color: var(--color-surface-alt);
+  border-color: var(--color-accent);
 }
 
 .screenshot-prev {
@@ -327,8 +375,9 @@ h3 {
 .screenshot-counter {
   text-align: center;
   margin: 12px 0 0 0;
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   font-size: 0.9rem;
+  font-family: var(--font-mono);
 }
 
 .screenshot-dots {
@@ -345,56 +394,18 @@ h3 {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background-color: var(--color-border);
+  background-color: var(--color-line);
   cursor: pointer;
 }
 
 .screenshot-dot.active {
-  background-color: var(--color-primary);
+  background-color: var(--color-accent);
 }
 
-/* Bollisoft Unternehmensseite */
+/* Bollisoft Unternehmensseite (echte Startseite "/", siehe app.py's index()) */
 
 .company-page {
-  --company-bg: #080b0d;
-  --company-surface: #101518;
-  --company-line: #263137;
-  --company-text: #f0f4f2;
-  --company-muted: #9aaba5;
-  --company-accent: #58f0a8;
-  background: var(--company-bg);
-  color: var(--company-text);
-  font-family: Bahnschrift, "Aptos Display", sans-serif;
-}
-
-.company-page .site-header {
-  background: rgba(8, 11, 13, 0.92);
-  border-color: var(--company-line);
-  backdrop-filter: blur(14px);
-}
-
-.company-page .navbar {
-  max-width: 1240px;
-}
-
-.company-page .brand,
-.company-page .nav-links a {
-  color: var(--company-text);
-}
-
-.company-page .nav-links a:hover {
-  color: var(--company-accent);
-}
-
-.company-page .site-main {
-  max-width: none;
-  padding: 0;
-}
-
-.company-page .site-footer {
-  background: #050708;
-  border-color: var(--company-line);
-  color: var(--company-muted);
+  font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .company-home {
@@ -412,6 +423,15 @@ h3 {
   padding-right: 32px;
 }
 
+.company-page .navbar {
+  max-width: 1240px;
+}
+
+.company-page .site-main {
+  max-width: none;
+  padding: 0;
+}
+
 .company-hero {
   min-height: min(780px, calc(100vh - 73px));
   position: relative;
@@ -420,8 +440,8 @@ h3 {
   justify-content: center;
   padding-top: 100px;
   padding-bottom: 52px;
-  border-left: 1px solid var(--company-line);
-  border-right: 1px solid var(--company-line);
+  border-left: 1px solid var(--color-line);
+  border-right: 1px solid var(--color-line);
 }
 
 .company-hero-grid {
@@ -429,8 +449,8 @@ h3 {
   inset: 0;
   opacity: 0.45;
   pointer-events: none;
-  background-image: linear-gradient(var(--company-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--company-line) 1px, transparent 1px);
+  background-image: linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
   background-size: 72px 72px;
   mask-image: linear-gradient(to bottom, #000, transparent 90%);
 }
@@ -457,8 +477,8 @@ h3 {
 
 .company-kicker,
 .company-index {
-  color: var(--company-accent);
-  font-family: "Cascadia Code", Consolas, monospace;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0;
@@ -468,14 +488,12 @@ h3 {
 .company-hero h1 {
   max-width: 920px;
   margin: 22px 0 26px;
-  font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(3.25rem, 7.4vw, 7rem);
-  font-weight: 400;
   line-height: 0.96;
 }
 
 .company-hero h1 span {
-  color: var(--company-accent);
+  color: var(--color-accent);
 }
 
 .company-lead {
@@ -498,7 +516,7 @@ h3 {
   justify-content: center;
   min-height: 48px;
   padding: 12px 22px;
-  border: 1px solid var(--company-accent);
+  border: 1px solid var(--color-accent);
   border-radius: 4px;
   font-weight: 700;
   transition: background-color 0.2s ease, color 0.2s ease;
@@ -509,7 +527,7 @@ h3 {
 }
 
 .company-button-primary {
-  background: var(--company-accent);
+  background: var(--color-accent);
   color: #07100b;
 }
 
@@ -519,22 +537,22 @@ h3 {
 }
 
 .company-button-secondary {
-  color: var(--company-text);
-  border-color: var(--company-line);
+  color: var(--color-text);
+  border-color: var(--color-line);
   background: rgba(16, 21, 24, 0.75);
 }
 
 .company-button-secondary:hover {
-  border-color: var(--company-muted);
-  color: var(--company-text);
+  border-color: var(--color-muted);
+  color: var(--color-text);
 }
 
 .company-proof {
   max-width: 580px;
   margin: auto 0 0 auto;
   padding-top: 70px;
-  color: var(--company-muted);
-  font-family: "Cascadia Code", Consolas, monospace;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
   font-size: 0.84rem;
 }
 
@@ -544,27 +562,25 @@ h3 {
   gap: 9vw;
   padding-top: 130px;
   padding-bottom: 130px;
-  border-top: 1px solid var(--company-line);
+  border-top: 1px solid var(--color-line);
 }
 
 .company-section h2,
 .company-contact h2 {
   margin: 16px 0 0;
-  font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(2.5rem, 5vw, 4.8rem);
-  font-weight: 400;
   line-height: 1.05;
 }
 
 .company-section-copy {
   align-self: end;
-  color: var(--company-muted);
+  color: var(--color-muted);
   font-size: 1.05rem;
 }
 
 .company-large-copy {
   margin-top: 0;
-  color: var(--company-text);
+  color: var(--color-text);
   font-size: clamp(1.35rem, 2.2vw, 1.8rem);
   line-height: 1.45;
 }
@@ -578,32 +594,33 @@ h3 {
 .company-values article {
   min-height: 250px;
   padding: 26px;
-  border: 1px solid var(--company-line);
+  border: 1px solid var(--color-line);
   border-right: 0;
-  background: var(--company-surface);
+  background: var(--color-surface);
 }
 
 .company-values article:last-child {
-  border-right: 1px solid var(--company-line);
+  border-right: 1px solid var(--color-line);
 }
 
 .company-values span,
 .company-service-list > article > span,
 .company-process-list li > span {
-  color: var(--company-accent);
-  font-family: "Cascadia Code", Consolas, monospace;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   font-size: 0.78rem;
 }
 
 .company-values h3 {
   margin: 64px 0 12px;
   font-size: 1.15rem;
+  font-family: inherit;
 }
 
 .company-values p,
 .company-service-list p,
 .company-process-list p {
-  color: var(--company-muted);
+  color: var(--color-muted);
 }
 
 .company-services {
@@ -620,16 +637,17 @@ h3 {
   grid-template-columns: 44px 1fr;
   gap: 18px;
   padding: 32px 0;
-  border-top: 1px solid var(--company-line);
+  border-top: 1px solid var(--color-line);
 }
 
 .company-service-list article:last-child {
-  border-bottom: 1px solid var(--company-line);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .company-service-list h3 {
   margin-bottom: 8px;
   font-size: 1.4rem;
+  font-family: inherit;
 }
 
 .company-service-list p {
@@ -637,8 +655,8 @@ h3 {
 }
 
 .company-service-list small {
-  color: var(--company-accent);
-  font-family: "Cascadia Code", Consolas, monospace;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
   line-height: 1.6;
 }
 
@@ -650,8 +668,8 @@ h3 {
 
 .company-metrics div {
   padding: 28px 24px;
-  border-top: 1px solid var(--company-line);
-  border-bottom: 1px solid var(--company-line);
+  border-top: 1px solid var(--color-line);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .company-metrics strong,
@@ -660,8 +678,8 @@ h3 {
 }
 
 .company-metrics strong {
-  color: var(--company-accent);
-  font-family: Georgia, "Times New Roman", serif;
+  color: var(--color-accent);
+  font-family: var(--font-serif);
   font-size: clamp(2rem, 3.8vw, 3.5rem);
   font-weight: 400;
   white-space: nowrap;
@@ -669,7 +687,7 @@ h3 {
 
 .company-metrics span {
   margin-top: 8px;
-  color: var(--company-muted);
+  color: var(--color-muted);
   font-size: 0.85rem;
 }
 
@@ -684,12 +702,13 @@ h3 {
   grid-template-columns: 44px 1fr;
   gap: 18px;
   padding: 24px 0;
-  border-top: 1px solid var(--company-line);
+  border-top: 1px solid var(--color-line);
 }
 
 .company-process-list h3,
 .company-process-list p {
   margin: 0;
+  font-family: inherit;
 }
 
 .company-process-list p {
@@ -699,7 +718,7 @@ h3 {
 .company-contact {
   padding-top: 110px;
   padding-bottom: 110px;
-  border-top: 1px solid var(--company-line);
+  border-top: 1px solid var(--color-line);
 }
 
 .company-contact h2 {
@@ -720,7 +739,7 @@ h3 {
 }
 
 .company-contact-row span {
-  color: var(--company-muted);
+  color: var(--color-muted);
   font-size: 0.8rem;
 }
 
@@ -760,7 +779,7 @@ h3 {
   }
 
   .company-values article:nth-child(2) {
-    border-right: 1px solid var(--company-line);
+    border-right: 1px solid var(--color-line);
   }
 
   .company-contact-row {
@@ -810,12 +829,12 @@ h3 {
   .company-values article,
   .company-values article:nth-child(2) {
     min-height: 210px;
-    border-right: 1px solid var(--company-line);
+    border-right: 1px solid var(--color-line);
     border-bottom: 0;
   }
 
   .company-values article:last-child {
-    border-bottom: 1px solid var(--company-line);
+    border-bottom: 1px solid var(--color-line);
   }
 
   .company-values h3 {
@@ -831,7 +850,7 @@ h3 {
   }
 
   .company-metrics div:last-child {
-    border-bottom: 1px solid var(--company-line);
+    border-bottom: 1px solid var(--color-line);
   }
 
   .company-contact-row {
@@ -848,11 +867,11 @@ h3 {
 
 .wiring h2 {
   margin-bottom: 12px;
-  font-size: 1.8rem;
+  font-size: 1.9rem;
 }
 
 .wiring-intro {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   max-width: 560px;
   margin: 0 auto 24px auto;
 }
@@ -860,11 +879,12 @@ h3 {
 .wiring-box {
   display: inline-block;
   text-align: left;
-  background-color: #111827;
-  color: #e5e7eb;
+  background-color: #04070a;
+  color: #d7e2dd;
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
   padding: 20px 24px;
-  font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 0.9rem;
   overflow-x: auto;
   max-width: 100%;
@@ -872,7 +892,7 @@ h3 {
 }
 
 .wiring-note {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   max-width: 560px;
   margin: 20px auto 0 auto;
   font-size: 0.9rem;
@@ -884,7 +904,7 @@ h3 {
   text-align: center;
   padding: 48px 24px;
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-large);
 }
 
@@ -909,7 +929,7 @@ h3 {
 
 .product-card {
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-large);
   overflow: hidden;
   box-shadow: var(--shadow-card);
@@ -937,15 +957,16 @@ h3 {
 }
 
 .product-type {
-  color: var(--color-text-muted);
-  font-size: 0.9rem;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 12px;
 }
 
 .product-description {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   flex: 1;
   margin-bottom: 16px;
 }
@@ -953,7 +974,8 @@ h3 {
 .product-price {
   font-size: 1.6rem;
   font-weight: 700;
-  color: var(--color-primary);
+  font-family: var(--font-serif);
+  color: var(--color-accent);
   margin-bottom: 16px;
 }
 
@@ -983,7 +1005,7 @@ h3 {
 
 .order-summary-card {
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
   overflow: hidden;
   box-shadow: var(--shadow-card);
@@ -1003,12 +1025,13 @@ h3 {
 .order-summary-price {
   font-size: 1.4rem;
   font-weight: 700;
-  color: var(--color-primary);
+  font-family: var(--font-serif);
+  color: var(--color-accent);
 }
 
 .checkout-payment {
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
   padding: 24px;
   box-shadow: var(--shadow-card);
@@ -1016,10 +1039,12 @@ h3 {
 
 .payment-option h3 {
   margin-bottom: 4px;
+  font-size: 1.05rem;
+  font-family: inherit;
 }
 
 .payment-option p {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   margin-bottom: 16px;
   font-size: 0.95rem;
 }
@@ -1028,7 +1053,7 @@ h3 {
   display: flex;
   align-items: center;
   text-align: center;
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   margin: 24px 0;
 }
 
@@ -1036,7 +1061,7 @@ h3 {
 .payment-divider::after {
   content: "";
   flex: 1;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .payment-divider span {
@@ -1045,7 +1070,7 @@ h3 {
 }
 
 .checkout-error {
-  background-color: #fef2f2;
+  background-color: var(--color-error-soft);
   border: 1px solid var(--color-error);
   color: var(--color-error);
   border-radius: var(--radius-medium);
@@ -1073,18 +1098,19 @@ h3 {
 }
 
 .status-success .status-icon {
-  background-color: #dcfce7;
+  background-color: var(--color-success-soft);
   color: var(--color-success);
 }
 
 .status-cancel .status-icon {
-  background-color: #fee2e2;
+  background-color: var(--color-error-soft);
   color: var(--color-error);
 }
 
 .status-detail {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   font-size: 0.9rem;
+  font-family: var(--font-mono);
   word-break: break-all;
 }
 
@@ -1110,23 +1136,23 @@ h3 {
 }
 
 .flash-message.flash-success {
-  background-color: #dcfce7;
-  color: #166534;
-  border: 1px solid #86efac;
+  background-color: var(--color-success-soft);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
 }
 
 .flash-message.flash-error {
-  background-color: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fca5a5;
+  background-color: var(--color-error-soft);
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
 }
 
 /* Dummy-Modus (nur lokaler Dev-Schalter, siehe CLAUDE.md) */
 
 .dummy-banner {
-  background-color: #fef3c7;
-  color: #92400e;
-  border-bottom: 1px solid #fcd34d;
+  background-color: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-bottom: 1px solid var(--color-warning);
   text-align: center;
   padding: 10px 16px;
   font-weight: 600;
@@ -1134,17 +1160,17 @@ h3 {
 }
 
 .btn-dummy {
-  background-color: #92400e;
-  color: #ffffff;
+  background-color: var(--color-warning);
+  color: #1a1203;
 }
 
 .btn-dummy:hover {
-  background-color: #78350f;
+  background-color: #d98a0f;
 }
 
 .payment-option-dummy {
-  background-color: #fffbeb;
-  border: 1px dashed #fcd34d;
+  background-color: var(--color-warning-soft);
+  border: 1px dashed var(--color-warning);
   border-radius: var(--radius-medium);
   padding: 16px;
 }
@@ -1183,14 +1209,26 @@ h3 {
 .form-field input[type="password"] {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
+  color: var(--color-text);
   font-size: 1rem;
   font-family: inherit;
 }
 
+.form-field input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.form-field input[readonly] {
+  color: var(--color-muted);
+}
+
 .form-hint {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   font-size: 0.85rem;
   margin: 6px 0 0 0;
 }
@@ -1204,19 +1242,19 @@ h3 {
 }
 
 .license-setup-page .status-icon {
-  background-color: #dcfce7;
+  background-color: var(--color-success-soft);
   color: var(--color-success);
 }
 
 .license-intro {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   margin-bottom: 40px;
 }
 
 .license-step {
   text-align: left;
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
   box-shadow: var(--shadow-card);
   padding: 24px;
@@ -1226,6 +1264,7 @@ h3 {
 .license-step h2 {
   font-size: 1.2rem;
   margin-bottom: 12px;
+  font-family: inherit;
 }
 
 .license-step ol {
@@ -1241,9 +1280,9 @@ h3 {
 }
 
 .license-success {
-  background-color: #dcfce7;
+  background-color: var(--color-success-soft);
   border: 1px solid var(--color-success);
-  color: #166534;
+  color: var(--color-success);
   border-radius: var(--radius-medium);
   padding: 12px 16px;
   margin-bottom: 20px;
@@ -1264,9 +1303,9 @@ h3 {
 }
 
 .license-warning {
-  background-color: #fffbeb;
-  border: 1px solid #fcd34d;
-  color: #92400e;
+  background-color: var(--color-warning-soft);
+  border: 1px solid var(--color-warning);
+  color: var(--color-warning);
   border-radius: var(--radius-medium);
   padding: 12px 16px;
   margin-bottom: 16px;
@@ -1274,9 +1313,9 @@ h3 {
 }
 
 .license-info-box {
-  background-color: #eff6ff;
-  border: 1px solid #93c5fd;
-  color: #1e3a8a;
+  background-color: var(--color-info-soft);
+  border: 1px solid var(--color-info);
+  color: var(--color-info);
   border-radius: var(--radius-medium);
   padding: 12px 16px;
   margin-bottom: 16px;
@@ -1302,7 +1341,7 @@ h3 {
 
 .login-card {
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
   box-shadow: var(--shadow-card);
   padding: 24px;
@@ -1321,7 +1360,7 @@ h3 {
 
 .license-list-item {
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
   box-shadow: var(--shadow-card);
   padding: 20px 24px;
@@ -1334,11 +1373,12 @@ h3 {
 
 .license-list-details h3 {
   margin-bottom: 4px;
+  font-family: inherit;
 }
 
 .license-list-details p {
   margin: 4px 0 0 0;
-  color: var(--color-text-muted);
+  color: var(--color-muted);
 }
 
 .license-list-actions {
@@ -1354,8 +1394,8 @@ h3 {
 /* Hinweis-Banner fuer eine noch offene Lizenz-Einrichtung (siehe /account) */
 
 .pending-license-banner {
-  background-color: #eff6ff;
-  border: 1px solid #93c5fd;
+  background-color: var(--color-accent-soft);
+  border: 1px solid var(--color-accent);
   border-radius: var(--radius-medium);
   padding: 20px 24px;
   margin-bottom: 32px;
@@ -1363,24 +1403,24 @@ h3 {
 }
 
 .pending-license-banner p {
-  color: #1e3a8a;
+  color: var(--color-text);
   margin: 0 0 16px 0;
 }
 
 @keyframes btn-pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.55);
+    box-shadow: 0 0 0 0 rgba(88, 240, 168, 0.55);
   }
   70% {
-    box-shadow: 0 0 0 14px rgba(37, 99, 235, 0);
+    box-shadow: 0 0 0 14px rgba(88, 240, 168, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+    box-shadow: 0 0 0 0 rgba(88, 240, 168, 0);
   }
 }
 
 .btn-pulse {
-  border: 2px solid var(--color-primary-dark);
+  border: 2px solid var(--color-accent-dark);
   animation: btn-pulse-ring 1.8s ease-out infinite;
 }
 
@@ -1396,7 +1436,7 @@ h3 {
   text-align: center;
   border-radius: 50%;
   font-size: 0.85rem;
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   opacity: 0.35;
   text-decoration: none;
   z-index: 20;
@@ -1405,7 +1445,7 @@ h3 {
 
 .admin-corner-link:hover {
   opacity: 1;
-  background-color: var(--color-border);
+  background-color: var(--color-surface-alt);
   text-decoration: none;
 }
 
@@ -1423,14 +1463,14 @@ h3 {
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 24px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-line);
   padding-bottom: 16px;
 }
 
 .admin-tab-button {
   padding: 10px 18px;
   border-radius: var(--radius-medium);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   background-color: var(--color-surface);
   color: var(--color-text);
   font-weight: 600;
@@ -1438,10 +1478,14 @@ h3 {
   font-size: 0.95rem;
 }
 
+.admin-tab-button:hover {
+  border-color: var(--color-accent);
+}
+
 .admin-tab-button.active {
-  background-color: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #ffffff;
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #07100b;
 }
 
 .admin-tab-count {
@@ -1449,14 +1493,15 @@ h3 {
   margin-left: 6px;
   padding: 1px 7px;
   border-radius: 999px;
-  background-color: var(--color-background);
-  color: var(--color-text-muted);
+  background-color: var(--color-surface-alt);
+  color: var(--color-muted);
   font-size: 0.8rem;
+  font-family: var(--font-mono);
 }
 
 .admin-tab-button.active .admin-tab-count {
-  background-color: rgba(255, 255, 255, 0.25);
-  color: #ffffff;
+  background-color: rgba(7, 16, 11, 0.25);
+  color: #07100b;
 }
 
 .admin-tab-panel {
@@ -1472,16 +1517,23 @@ h3 {
   max-width: 360px;
   padding: 10px 12px;
   margin-bottom: 16px;
-  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
+  color: var(--color-text);
   font-size: 0.95rem;
   font-family: inherit;
+}
+
+.admin-search:focus {
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 .admin-table-wrapper {
   overflow-x: auto;
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-medium);
   box-shadow: var(--shadow-card);
 }
@@ -1496,8 +1548,17 @@ h3 {
 .admin-table td {
   text-align: left;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-line);
   white-space: nowrap;
+}
+
+.admin-table th {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
 }
 
 .admin-table tbody tr:last-child td {
@@ -1505,7 +1566,7 @@ h3 {
 }
 
 .admin-table tbody tr:hover {
-  background-color: var(--color-background);
+  background-color: var(--color-surface-alt);
 }
 
 .admin-table .btn {
@@ -1515,7 +1576,7 @@ h3 {
 }
 
 .admin-empty-hint {
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   padding: 20px;
   text-align: center;
 }
@@ -1529,11 +1590,29 @@ h3 {
 }
 
 .admin-badge-digital {
-  background-color: #eff6ff;
-  color: #1e3a8a;
+  background-color: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 .admin-badge-physical {
-  background-color: #fef3c7;
-  color: #92400e;
+  background-color: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+/* Generischer Inhaltsblock (z.B. Profil-Kachel in account_licenses.html,
+   Upload-Bereich in plugins.html) - selbe Kartenoptik wie .license-step,
+   ohne deren linksbuendige Schritt-spezifische Zusatzregeln. */
+
+.s {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-medium);
+  box-shadow: var(--shadow-card);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.s h2 {
+  font-size: 1.2rem;
+  margin-bottom: 12px;
 }

@@ -159,7 +159,7 @@ def test_admin_plugins_upload_flattens_subfolders(client, webshop_app, store_dir
 def test_admin_plugins_upload_rejects_zip_containing_py_files(client, webshop_app, store_dir):
     """Der Store verteilt Mods ausschliesslich als per mpy-cross vorkompilierte
     .mpy-Dateien (Quellcode-Schutz) - rohe .py-Dateien muessen abgelehnt
-    werden, mit einem Hinweis auf mpy-cross/tools/plugin_packager.py."""
+    werden, mit einem Hinweis auf mpy-cross/windows/source2/plugin_packager.py."""
     _login_admin(client)
     zip_buffer = _make_plugin_zip(
         {"manifest.json": json.dumps({"name": "rawsource"}), "main.py": "def setup(context):\n    pass\n"}

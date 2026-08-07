@@ -1,9 +1,10 @@
 name: Firmware bauen & releasen
 
 # Baut firmware.nbo mit build_firmware.py (Kommandozeilen-Modus, kein GUI
-# noetig), den Windows Installer (windows/build_exe.py) und die Android-App
-# (android_app/) und veroeffentlicht alle Ergebnisse in EINER gemeinsamen
-# GitHub Release als:
+# noetig), BEIDE Windows-Programme in einem Rutsch (windows/build_exe.py -
+# Gamification Installer UND PluginPackager, siehe dortiger Docstring) und
+# die Android-App (android_app/) und veroeffentlicht alle Ergebnisse in
+# EINER gemeinsamen GitHub Release als:
 #   1. Download-Artefakt des Workflow-Laufs (Actions-Tab, ~90 Tage gueltig)
 #   2. Anhang derselben GitHub Release mit automatisch generierter
 #      Versionsnummer (Datum + Lauf-Nummer)
@@ -14,7 +15,9 @@ on:
     paths:
       - "source/**"
       - "tools/build_firmware.py"
+      - "tools/deploy_mod.py"
       - "windows/**"
+      - "branding/**"
       - "android_app/**"
   workflow_dispatch: {}
     # Manuelles Ausloesen ueber den "Run workflow"-Button im Actions-Tab.
@@ -141,26 +144,32 @@ jobs:
       - name: Python-Abhaengigkeiten installieren
         run: pip install -r windows/requirements.txt
 
-      - name: Windows-Installer bauen (Ordner-Modus + ZIP)
-        # build_exe.py baut bewusst im --onedir- statt --onefile-Modus und
-        # packt das Ergebnis selbst zu einer .zip (siehe Kommentar dort):
-        # der --onefile-Selbstentpack-Mechanismus wird von Windows Defenders
-        # Cloud-Heuristik als Trojan:Win32/Wacatac.B!ml fehlerkannt und fuehrt
-        # zur sofortigen automatischen Quarantaene direkt beim Download.
+      - name: Windows-Programme bauen (Ordner-Modus + ZIP, beide auf einmal)
+        # build_exe.py baut in einem Durchlauf sowohl den Gamification
+        # Installer als auch den PluginPackager, bewusst im --onedir- statt
+        # --onefile-Modus, und packt beide Ergebnisse selbst zu je einer .zip
+        # (siehe Kommentar dort): der --onefile-Selbstentpack-Mechanismus
+        # wird von Windows Defenders Cloud-Heuristik als
+        # Trojan:Win32/Wacatac.B!ml fehlerkannt und fuehrt zur sofortigen
+        # automatischen Quarantaene direkt beim Download.
         run: python windows/build_exe.py
 
-      - name: Windows-Installer als Download-Artefakt hochladen
+      - name: Windows-Programme als Download-Artefakte hochladen
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
-          path: windows/dist/Gamification Installer.zip
+          name: windows-programs
+          path: |
+            windows/dist/Gamification Installer.zip
+            windows/dist/PluginPackager.zip
           retention-days: 90
 
-      - name: Windows-Installer an bestehende GitHub Release anhaengen
+      - name: Windows-Programme an bestehende GitHub Release anhaengen
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build-and-release.outputs.tag }}
-          files: windows/dist/Gamification Installer.zip
+          files: |
+            windows/dist/Gamification Installer.zip
+            windows/dist/PluginPackager.zip
 
   build-android-app:
     needs: build-and-release

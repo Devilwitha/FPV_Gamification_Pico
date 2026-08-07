@@ -340,7 +340,7 @@ def plugins_shooter_template():
     (Spiellogik + eigene Hardware-Treiber + eigene Weboberflaeche, siehe
     source/mods/shooter/main.py's Docstring). Kein direkt installierbares
     Store-Produkt - dafuer muss der Code zuerst per mpy-cross kompiliert
-    werden (siehe tools/plugin_packager.py), genau wie jeder andere
+    werden (siehe windows/source2/plugin_packager.py), genau wie jeder andere
     Kunden-Upload auch (_process_plugin_zip_upload() lehnt rohe .py-Dateien
     im normalen Store konsequent ab)."""
     buffer = io.BytesIO()
@@ -1222,7 +1222,7 @@ def _process_plugin_zip_upload(uploaded_file, uploaded_by=None, allow_reserved_n
     (siehe _is_valid_mpy_bytes()) - KEINE echte Ausfuehrung/Funktionspruefung,
     das waere ein Codeausfuehrungs-Sicherheitsrisiko auf dem Server.
     Kompilieren entweder manuell (mpy-cross) oder über
-    tools/plugin_packager.py, das genau diesen Schritt automatisiert.
+    windows/source2/plugin_packager.py, das genau diesen Schritt automatisiert.
 
     uploaded_by (optional): E-Mail-Adresse bzw. Kennung des Hochladenden -
     wird in manifest.json als zusaetzliches Feld "uploaded_by" abgelegt
@@ -1249,7 +1249,7 @@ def _process_plugin_zip_upload(uploaded_file, uploaded_by=None, allow_reserved_n
                     "ZIP enthält unkompilierte .py-Dateien ("
                     + ", ".join(sorted(set(py_files)))
                     + "). Bitte zuerst mit mpy-cross zu .mpy kompilieren - manuell oder über "
-                    "tools/plugin_packager.py."
+                    "windows/source2/plugin_packager.py."
                 )
 
             manifest_candidates = [name for name in names if os.path.basename(name) == "manifest.json"]

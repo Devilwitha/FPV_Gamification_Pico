@@ -52,8 +52,23 @@ import threading
 import time
 import tkinter as tk
 from datetime import datetime
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog
 from urllib import request
+
+from kivy.app import App
+from kivy.metrics import dp, sp
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.widget import Widget
+
+# windows/kivy_theme.py liegt eine Ebene ueber windows/source/ (siehe dessen
+# Modul-Docstring) - Laufzeit-sys.path.insert() wie bei plugin_packager.py's
+# Import von tools/build_firmware.py, windows/build_exe.py macht das Modul
+# per "--paths" zusaetzlich fuer PyInstallers Import-Analyse sichtbar.
+WINDOWS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if WINDOWS_DIR not in sys.path:
+    sys.path.insert(0, WINDOWS_DIR)
+import kivy_theme as kt  # noqa: E402
 
 try:
     from serial.tools import list_ports
@@ -847,198 +862,168 @@ def flash_bootsel_pico(progress_cb=None, log=lambda *_a: None, cancel_event=None
     return variant
 
 
-# ==================== GUI ====================
+# ==================== GUI (Kivy, dunkles Theme siehe windows/kivy_theme.py) ====================
+#
+# Reine GUI-Schicht - die eigentliche Hardware-/Netzwerklogik oben in dieser
+# Datei (Pico-Suche, Bundle-Uebertragung, GitHub-Download, BOOTSEL-Flash)
+# bleibt komplett unveraendert und framework-unabhaengig. tkinter wird nur
+# noch fuer den nativen "Datei oeffnen"-Dialog verwendet (Kivy hat keinen
+# eigenen OS-Dateidialog) - ein einziges verstecktes Tk-Root dafuer, siehe
+# InstallerApp.build(). UI-Updates aus Worker-Threads laufen ueber
+# kivy.clock.mainthread (kt.mainthread) statt tkinter's self.after(0, ...).
 
-class AssetChoiceDialog(tk.Toplevel):
-    """Modaler Dialog zur Auswahl eines Release-Assets (firmware.nbo,
-    firmware-light.nbo, ...)."""
-
-    def __init__(self, parent, tag_name, assets):
-        super().__init__(parent)
-        self.title(f"Release {tag_name} - Datei waehlen")
-        self.resizable(False, False)
-        self.transient(parent)
-        self.grab_set()
-        self.result = None
-
-        tk.Label(self, text=f"Verfuegbare Dateien in Release {tag_name}:", padx=12, pady=8).pack(anchor="w")
-
-        self.selected = tk.StringVar(value=assets[0]["name"] if assets else "")
-        for asset in assets:
-            label = ASSET_LABELS.get(asset["name"], asset["name"])
-            size_kb = (asset.get("size") or 0) / 1024
-            text = f"{asset['name']}  -  {label}  ({size_kb:.0f} KB)"
-            tk.Radiobutton(self, text=text, variable=self.selected, value=asset["name"], padx=24, anchor="w").pack(fill="x")
-
-        btn_row = tk.Frame(self, pady=10)
-        btn_row.pack(fill="x")
-        tk.Button(btn_row, text="Abbrechen", command=self._cancel).pack(side="right", padx=12)
-        tk.Button(btn_row, text="Herunterladen", command=self._ok, default="active").pack(side="right")
-
-        self.assets_by_name = {a["name"]: a for a in assets}
-        self.protocol("WM_DELETE_WINDOW", self._cancel)
-        self.wait_window(self)
-
-    def _ok(self):
-        self.result = self.assets_by_name.get(self.selected.get())
-        self.destroy()
-
-    def _cancel(self):
-        self.result = None
-        self.destroy()
-
-
-class InstallerApp(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title(APP_TITLE)
-        self.geometry("620x700")
-        self.minsize(560, 620)
+class InstallerApp(App):
+    def build(self):
+        kt.apply_window_theme(APP_TITLE, size=(760, 860), min_size=(660, 680))
+        self.title = APP_TITLE
 
         self.pico_port = None
         self.selected_file = None
         # Wird von _set_busy() bei jeder neuen Aktion neu erzeugt/geklaert und
         # von den Worker-Threads regelmaessig geprueft (siehe _check_cancelled()
-        # in gamification_installer.py) - erlaubt dem Nutzer, eine laufende,
-        # lang dauernde Aktion (z.B. Pico-Suche ueber viele COM-Ports) sofort
-        # abzubrechen, statt bis zum Ende warten zu muessen, um danach eine
-        # andere Aktion zu starten.
+        # oben in dieser Datei) - erlaubt dem Nutzer, eine laufende, lang
+        # dauernde Aktion (z.B. Pico-Suche ueber viele COM-Ports) sofort
+        # abzubrechen, statt bis zum Ende warten zu muessen.
         self._cancel_event = threading.Event()
+        self._tk_root = tk.Tk()
+        self._tk_root.withdraw()
 
-        self._build_widgets()
+        return self._build_widgets()
 
     # ---------- UI Aufbau ----------
 
     def _build_widgets(self):
-        pad = {"padx": 12, "pady": 6}
+        root = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(12))
 
-        top_bar = tk.Frame(self)
-        top_bar.pack(fill="x", padx=12, pady=(10, 0))
-        self.busy_status_var = tk.StringVar(value="Bereit - alle Aktionen sind verfuegbar.")
-        tk.Label(top_bar, textvariable=self.busy_status_var, anchor="w").pack(side="left", fill="x", expand=True)
-        self.cancel_button = tk.Button(top_bar, text="Laufende Aktion abbrechen", command=self._on_cancel, state="disabled")
-        self.cancel_button.pack(side="right")
+        top_bar = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(12))
+        self.busy_status_label = kt.StatusLabel(text="Bereit - alle Aktionen sind verfuegbar.")
+        top_bar.add_widget(self.busy_status_label)
+        self.cancel_button = kt.ThemedButton(text="Laufende Aktion abbrechen", variant="danger", size_hint_x=None, width=dp(230))
+        self.cancel_button.disabled = True
+        self.cancel_button.bind(on_release=lambda *_a: self._on_cancel())
+        top_bar.add_widget(self.cancel_button)
+        root.add_widget(top_bar)
 
-        step0 = tk.LabelFrame(self, text="0. Pico im Bootloader-Modus (BOOTSEL) komplett neu flashen", padx=10, pady=8)
-        step0.pack(fill="x", **pad)
-        tk.Label(
-            step0,
-            text=(
-                "Fuer einen Pico, der mit gedrueckter BOOTSEL-Taste eingesteckt wurde "
-                "und als USB-Laufwerk erscheint: loescht zuerst den kompletten "
-                "Flash-Speicher (passende nuke-UF2 fuer Pico 1/RP2040 bzw. "
-                "Pico 2/RP2350 wird automatisch erkannt) und installiert danach "
-                "automatisch die passende MicroPython-Firmware. "
-                "ACHTUNG: loescht alle vorhandenen Daten auf dem Pico!"
-            ),
-            anchor="w", wraplength=560, justify="left",
-        ).pack(fill="x", pady=(0, 6))
-        row0 = tk.Frame(step0)
-        row0.pack(fill="x")
-        self.bootsel_flash_button = tk.Button(
-            row0, text="Bootloader-Pico erkennen & komplett neu flashen", command=self._on_bootsel_flash
+        steps = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(14))
+        steps.bind(minimum_height=steps.setter("height"))
+
+        step0 = kt.SectionCard(heading="0. Pico im Bootloader-Modus (BOOTSEL) komplett neu flashen")
+        step0.add_body(kt.BodyLabel(
+            "Fuer einen Pico, der mit gedrueckter BOOTSEL-Taste eingesteckt wurde und als "
+            "USB-Laufwerk erscheint: loescht zuerst den kompletten Flash-Speicher (passende "
+            "nuke-UF2 fuer Pico 1/RP2040 bzw. Pico 2/RP2350 wird automatisch erkannt) und "
+            "installiert danach automatisch die passende MicroPython-Firmware. ACHTUNG: "
+            "loescht alle vorhandenen Daten auf dem Pico!"
+        ))
+        self.bootsel_flash_button = kt.ThemedButton(
+            text="Bootloader-Pico erkennen & komplett neu flashen", variant="warning",
+            size_hint=(None, None), size=(dp(430), dp(38)),
         )
-        self.bootsel_flash_button.pack(side="left")
-        self.bootsel_progress = ttk.Progressbar(step0, orient="horizontal", mode="determinate", maximum=100)
-        self.bootsel_progress.pack(fill="x", pady=(8, 4))
-        self.bootsel_status_var = tk.StringVar(value="Bereit.")
-        tk.Label(step0, textvariable=self.bootsel_status_var, anchor="w").pack(fill="x")
+        self.bootsel_flash_button.bind(on_release=lambda *_a: self._on_bootsel_flash())
+        step0.add_body(self.bootsel_flash_button)
+        self.bootsel_progress = kt.ThemedProgressBar()
+        step0.add_body(self.bootsel_progress)
+        self.bootsel_status_label = kt.StatusLabel(text="Bereit.")
+        step0.add_body(self.bootsel_status_label)
+        steps.add_widget(step0)
 
-        step1 = tk.LabelFrame(self, text="1. Pico verbinden", padx=10, pady=8)
-        step1.pack(fill="x", **pad)
-        row1 = tk.Frame(step1)
-        row1.pack(fill="x")
-        self.pico_status_var = tk.StringVar(value="Noch nicht gesucht - auf 'Pico suchen' klicken.")
-        tk.Label(row1, textvariable=self.pico_status_var, anchor="w").pack(side="left", fill="x", expand=True)
-        self.find_button = tk.Button(row1, text="Pico suchen", command=self._on_find_pico)
-        self.find_button.pack(side="right")
-        self.uid_button = tk.Button(row1, text="UID anzeigen", command=self._on_show_uid)
-        self.uid_button.pack(side="right", padx=(0, 8))
+        step1 = kt.SectionCard(heading="1. Pico verbinden")
+        row1 = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(10))
+        self.pico_status_label = kt.StatusLabel(text="Noch nicht gesucht - auf 'Pico suchen' klicken.")
+        row1.add_widget(self.pico_status_label)
+        self.find_button = kt.ThemedButton(text="Pico suchen", variant="primary", size_hint_x=None, width=dp(150))
+        self.find_button.bind(on_release=lambda *_a: self._on_find_pico())
+        row1.add_widget(self.find_button)
+        self.uid_button = kt.ThemedButton(text="UID anzeigen", variant="secondary", size_hint_x=None, width=dp(150))
+        self.uid_button.bind(on_release=lambda *_a: self._on_show_uid())
+        row1.add_widget(self.uid_button)
+        step1.add_body(row1)
 
-        row1b = tk.Frame(step1)
-        row1b.pack(fill="x", pady=(4, 0))
-        self.uid_status_var = tk.StringVar(value="")
-        tk.Label(row1b, textvariable=self.uid_status_var, anchor="w").pack(side="left")
-        self.uid_value_var = tk.StringVar(value="")
-        # state="readonly" statt "disabled": readonly Entries lassen sich per
-        # Maus/Tastatur markieren und mit Strg+C kopieren, nur die Eingabe ist
-        # gesperrt - "disabled" wuerde auch das Markieren verhindern.
-        self.uid_entry = tk.Entry(row1b, textvariable=self.uid_value_var, width=20, justify="left", state="readonly")
-        self.uid_entry.pack(side="left", padx=(6, 6))
-        self.uid_entry.bind("<FocusIn>", lambda _e: self.uid_entry.select_range(0, "end"))
-        self.uid_entry.bind("<Button-1>", lambda _e: self.after(1, lambda: self.uid_entry.select_range(0, "end")))
-        self.uid_copy_button = tk.Button(row1b, text="Kopieren", command=self._on_copy_uid, state="disabled")
-        self.uid_copy_button.pack(side="left")
+        row1b = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(10))
+        self.uid_status_label = kt.StatusLabel(text="", size_hint_x=None, width=dp(150))
+        row1b.add_widget(self.uid_status_label)
+        # readonly=True statt disabled: laesst sich per Maus/Tastatur markieren
+        # und mit Strg+C kopieren, nur die Eingabe ist gesperrt.
+        self.uid_input = kt.ThemedTextInput(text="", readonly=True, size_hint_x=0.55)
+        row1b.add_widget(self.uid_input)
+        self.uid_copy_button = kt.ThemedButton(text="Kopieren", variant="secondary", size_hint_x=None, width=dp(120))
+        self.uid_copy_button.disabled = True
+        self.uid_copy_button.bind(on_release=lambda *_a: self._on_copy_uid())
+        row1b.add_widget(self.uid_copy_button)
+        step1.add_body(row1b)
+        steps.add_widget(step1)
 
-        step2 = tk.LabelFrame(self, text="2. Firmware-Datei waehlen", padx=10, pady=8)
-        step2.pack(fill="x", **pad)
-        row2 = tk.Frame(step2)
-        row2.pack(fill="x")
-        self.browse_button = tk.Button(row2, text="Datei auswaehlen...", command=self._on_browse_file)
-        self.browse_button.pack(side="left")
-        self.github_button = tk.Button(row2, text="Von GitHub herunterladen...", command=self._on_github_download)
-        self.github_button.pack(side="left", padx=8)
-        self.file_status_var = tk.StringVar(value="Keine Datei ausgewaehlt.")
-        tk.Label(step2, textvariable=self.file_status_var, anchor="w", wraplength=560, justify="left").pack(fill="x", pady=(6, 0))
+        step2 = kt.SectionCard(heading="2. Firmware-Datei waehlen")
+        row2 = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(10))
+        self.browse_button = kt.ThemedButton(text="Datei auswaehlen...", variant="secondary", size_hint_x=None, width=dp(190))
+        self.browse_button.bind(on_release=lambda *_a: self._on_browse_file())
+        row2.add_widget(self.browse_button)
+        self.github_button = kt.ThemedButton(text="Von GitHub herunterladen...", variant="secondary", size_hint_x=None, width=dp(230))
+        self.github_button.bind(on_release=lambda *_a: self._on_github_download())
+        row2.add_widget(self.github_button)
+        row2.add_widget(Widget())
+        step2.add_body(row2)
+        self.file_status_label = kt.BodyLabel("Keine Datei ausgewaehlt.")
+        step2.add_body(self.file_status_label)
+        steps.add_widget(step2)
 
-        step3 = tk.LabelFrame(self, text="3. Installieren", padx=10, pady=8)
-        step3.pack(fill="x", **pad)
-        self.install_button = tk.Button(step3, text="Jetzt installieren", command=self._on_install, state="disabled")
-        self.install_button.pack(anchor="w")
-        self.progress = ttk.Progressbar(step3, orient="horizontal", mode="determinate", maximum=100)
-        self.progress.pack(fill="x", pady=(8, 4))
-        self.status_var = tk.StringVar(value="Bereit.")
-        tk.Label(step3, textvariable=self.status_var, anchor="w").pack(fill="x")
+        step3 = kt.SectionCard(heading="3. Installieren")
+        self.install_button = kt.ThemedButton(text="Jetzt installieren", variant="primary", size_hint=(None, None), size=(dp(210), dp(38)))
+        self.install_button.disabled = True
+        self.install_button.bind(on_release=lambda *_a: self._on_install())
+        step3.add_body(self.install_button)
+        self.progress = kt.ThemedProgressBar()
+        step3.add_body(self.progress)
+        self.status_label = kt.StatusLabel(text="Bereit.")
+        step3.add_body(self.status_label)
+        steps.add_widget(step3)
 
-        log_frame = tk.LabelFrame(self, text="Protokoll", padx=6, pady=6)
-        log_frame.pack(fill="both", expand=True, **pad)
-        self.log_text = tk.Text(log_frame, height=10, state="disabled", wrap="word")
-        self.log_text.pack(fill="both", expand=True)
+        root.add_widget(steps)
+
+        log_card = kt.SectionCard(heading="Protokoll", expand=True)
+        self.log_panel = kt.LogPanel()
+        log_card.add_body(self.log_panel)
+        root.add_widget(log_card)
+
+        return root
 
     # ---------- Hilfsfunktionen ----------
 
     def log(self, message):
         write_log_line(message)
+        self._append_log(message)
 
-        def append():
-            self.log_text.configure(state="normal")
-            self.log_text.insert("end", message + "\n")
-            self.log_text.see("end")
-            self.log_text.configure(state="disabled")
-
-        self.after(0, append)
+    @kt.mainthread
+    def _append_log(self, message):
+        self.log_panel.write(message)
 
     def _set_busy(self, busy):
-        state = "disabled" if busy else "normal"
-        self.bootsel_flash_button.config(state=state)
-        self.find_button.config(state=state)
-        self.uid_button.config(state=state)
-        self.browse_button.config(state=state)
-        self.github_button.config(state=state)
-        self.install_button.config(state="disabled" if busy else ("normal" if (self.pico_port and self.selected_file) else "disabled"))
+        for widget in (self.bootsel_flash_button, self.find_button, self.uid_button, self.browse_button, self.github_button):
+            widget.disabled = busy
+        self.install_button.disabled = busy or not (self.pico_port and self.selected_file)
         if busy:
             self._cancel_event.clear()
-            self.cancel_button.config(state="normal")
+            self.cancel_button.disabled = False
         else:
-            self.cancel_button.config(state="disabled")
-            self.busy_status_var.set("Bereit - alle Aktionen sind verfuegbar.")
+            self.cancel_button.disabled = True
+            self.busy_status_label.text = "Bereit - alle Aktionen sind verfuegbar."
 
     def _update_install_button(self):
-        self.install_button.config(state="normal" if (self.pico_port and self.selected_file) else "disabled")
+        self.install_button.disabled = not (self.pico_port and self.selected_file)
 
     # ---------- Abbrechen ----------
 
     def _on_cancel(self):
         self._cancel_event.set()
-        self.cancel_button.config(state="disabled")
-        self.busy_status_var.set("Breche ab ... (kann noch einen Moment dauern, laeuft im Hintergrund weiter bis zum naechsten sicheren Zwischenschritt)")
+        self.cancel_button.disabled = True
+        self.busy_status_label.text = "Breche ab ... (kann noch einen Moment dauern, laeuft im Hintergrund weiter bis zum naechsten sicheren Zwischenschritt)"
         self.log("Abbruch angefordert.")
 
     # ---------- Pico suchen ----------
 
     def _on_find_pico(self):
         self._set_busy(True)
-        self.pico_status_var.set("Suche nach Pico ...")
+        self.pico_status_label.text = "Suche nach Pico ..."
         threading.Thread(target=self._find_pico_worker, daemon=True).start()
 
     def _find_pico_worker(self):
@@ -1050,25 +1035,25 @@ class InstallerApp(tk.Tk):
         except Exception as e:
             port = None
             self.log(f"Fehler bei der Pico-Suche: {e}")
+        self._find_pico_finish(port)
 
-        def finish():
-            self.pico_port = port
-            if port:
-                self.pico_status_var.set(f"Verbunden: {port}")
-            else:
-                self.pico_status_var.set("Kein Pico gefunden. USB-Kabel pruefen und erneut suchen.")
-            self._set_busy(False)
-            self._update_install_button()
-
-        self.after(0, finish)
+    @kt.mainthread
+    def _find_pico_finish(self, port):
+        self.pico_port = port
+        if port:
+            self.pico_status_label.text = f"Verbunden: {port}"
+        else:
+            self.pico_status_label.text = "Kein Pico gefunden. USB-Kabel pruefen und erneut suchen."
+        self._set_busy(False)
+        self._update_install_button()
 
     # ---------- UID anzeigen ----------
 
     def _on_show_uid(self):
         self._set_busy(True)
-        self.uid_status_var.set("Lese UID ...")
-        self.uid_value_var.set("")
-        self.uid_copy_button.config(state="disabled")
+        self.uid_status_label.text = "Lese UID ..."
+        self.uid_input.text = ""
+        self.uid_copy_button.disabled = True
         threading.Thread(target=self._show_uid_worker, args=(self.pico_port,), daemon=True).start()
 
     def _show_uid_worker(self, port):
@@ -1081,94 +1066,108 @@ class InstallerApp(tk.Tk):
                     raise RuntimeError("Kein Pico gefunden. Bitte USB-Kabel pruefen und erneut versuchen.")
         except OperationCancelled:
             self.log("UID-Suche abgebrochen.")
-            self.after(0, self._show_uid_cancelled)
+            self._show_uid_cancelled()
             return
         except Exception as e:
             self.log(f"Fehler beim Lesen der UID: {e}")
-            self.after(0, lambda: self._show_uid_failed(e))
+            self._show_uid_failed(e)
             return
-        self.after(0, lambda: self._show_uid_done(port, uid))
+        self._show_uid_done(port, uid)
 
+    @kt.mainthread
     def _show_uid_cancelled(self):
         self._set_busy(False)
-        self.uid_status_var.set("Abgebrochen.")
+        self.uid_status_label.text = "Abgebrochen."
 
+    @kt.mainthread
     def _show_uid_failed(self, error):
         self._set_busy(False)
-        self.uid_status_var.set("Fehler beim Lesen der UID.")
-        messagebox.showerror("UID konnte nicht gelesen werden", str(error))
+        self.uid_status_label.text = "Fehler beim Lesen der UID."
+        kt.show_error("UID konnte nicht gelesen werden", str(error))
 
+    @kt.mainthread
     def _show_uid_done(self, port, uid):
         self.pico_port = port
-        self.pico_status_var.set(f"Verbunden: {port}")
+        self.pico_status_label.text = f"Verbunden: {port}"
         self._set_busy(False)
-        self.uid_status_var.set("Pico-UID:")
-        self.uid_value_var.set(uid)
-        self.uid_copy_button.config(state="normal")
+        self.uid_status_label.text = "Pico-UID:"
+        self.uid_input.text = uid
+        self.uid_copy_button.disabled = False
         self._update_install_button()
 
     def _on_copy_uid(self):
-        uid = self.uid_value_var.get()
+        uid = self.uid_input.text
         if not uid:
             return
-        self.clipboard_clear()
-        self.clipboard_append(uid)
-        self.uid_status_var.set("Pico-UID (in Zwischenablage kopiert):")
+        kt.Clipboard.copy(uid)
+        self.uid_status_label.text = "Pico-UID (in Zwischenablage kopiert):"
 
     # ---------- Bootloader-Modus: nuke + MicroPython flashen ----------
 
     def _on_bootsel_flash(self):
-        if not messagebox.askyesno(
+        kt.confirm(
             "Kompletten Flash-Speicher loeschen?",
             "Dies loescht ALLE Daten auf dem im Bootloader-Modus (BOOTSEL) "
             "angeschlossenen Pico und installiert danach eine frische "
             "MicroPython-Firmware. Fortfahren?",
-        ):
-            return
+            on_yes=self._start_bootsel_flash,
+            yes_text="Loeschen & flashen", danger=True,
+        )
+
+    def _start_bootsel_flash(self):
         self._set_busy(True)
-        self.bootsel_progress["value"] = 0
-        self.bootsel_status_var.set("Suche Pico im Bootloader-Modus ...")
+        self.bootsel_progress.value = 0
+        self.bootsel_status_label.text = "Suche Pico im Bootloader-Modus ..."
         threading.Thread(target=self._bootsel_flash_worker, daemon=True).start()
 
     def _bootsel_flash_worker(self):
         def progress_cb(copied, total):
-            pct = int(copied * 100 / total) if total else 0
-            self.after(0, lambda: self.bootsel_progress.configure(value=pct))
+            self._set_bootsel_progress(int(copied * 100 / total) if total else 0)
 
         try:
             variant = flash_bootsel_pico(progress_cb=progress_cb, log=self.log, cancel_event=self._cancel_event)
         except OperationCancelled:
             self.log("Bootloader-Flash abgebrochen.")
-            self.after(0, self._bootsel_flash_cancelled)
+            self._bootsel_flash_cancelled()
             return
         except Exception as e:
             self.log(f"Fehler beim Bootloader-Flash: {e}")
-            self.after(0, lambda: self._bootsel_flash_failed(e))
+            self._bootsel_flash_failed(e)
             return
-        self.after(0, lambda: self._bootsel_flash_done(variant))
+        self._bootsel_flash_done(variant)
 
+    @kt.mainthread
+    def _set_bootsel_progress(self, pct):
+        self.bootsel_progress.value = pct
+
+    @kt.mainthread
     def _bootsel_flash_cancelled(self):
         self._set_busy(False)
-        self.bootsel_progress["value"] = 0
-        self.bootsel_status_var.set("Abgebrochen.")
+        self.bootsel_progress.value = 0
+        self.bootsel_status_label.text = "Abgebrochen."
 
+    @kt.mainthread
     def _bootsel_flash_failed(self, error):
         self._set_busy(False)
-        self.bootsel_status_var.set("Fehler beim Bootloader-Flash.")
-        messagebox.showerror("Bootloader-Flash fehlgeschlagen", str(error))
+        self.bootsel_status_label.text = "Fehler beim Bootloader-Flash."
+        kt.show_error("Bootloader-Flash fehlgeschlagen", str(error))
 
+    @kt.mainthread
     def _bootsel_flash_done(self, variant):
         self._set_busy(False)
-        self.bootsel_progress["value"] = 100
+        self.bootsel_progress.value = 100
         label = PICO_VARIANT_LABELS[variant]
-        self.bootsel_status_var.set(f"{label}: MicroPython erfolgreich installiert.")
-        messagebox.showinfo(
+        self.bootsel_status_label.text = f"{label}: MicroPython erfolgreich installiert."
+        kt.show_info(
             "Fertig", f"{label} wurde geloescht und mit MicroPython neu geflasht. Der Pico startet automatisch neu."
         )
 
     # ---------- Datei auswaehlen ----------
 
     def _on_browse_file(self):
+        # Kivy hat keinen nativen Dateidialog - der versteckte Tk-Root aus
+        # build() liefert hier den gewohnten Windows-Explorer-Dialog, siehe
+        # Kommentar am Anfang dieses GUI-Abschnitts.
         path = filedialog.askopenfilename(
             title="Firmware-Datei auswaehlen",
             filetypes=[("Firmware-Bundle / Sprachpaket", "*.nbo *.pak"), ("Alle Dateien", "*.*")],
@@ -1182,11 +1181,11 @@ class InstallerApp(tk.Tk):
             names = read_bundle_entries(path)
             remote_target_for(path)
         except Exception as e:
-            messagebox.showerror("Ungueltige Datei", str(e))
+            kt.show_error("Ungueltige Datei", str(e))
             return
         self.selected_file = path
         size_kb = os.path.getsize(path) / 1024
-        self.file_status_var.set(f"{os.path.basename(path)}  ({size_kb:.0f} KB, {len(names)} Datei(en) im Bundle)")
+        self.file_status_label.text = f"{os.path.basename(path)}  ({size_kb:.0f} KB, {len(names)} Datei(en) im Bundle)"
         self.log(f"Datei ausgewaehlt: {path}")
         self._update_install_button()
 
@@ -1194,7 +1193,7 @@ class InstallerApp(tk.Tk):
 
     def _on_github_download(self):
         self._set_busy(True)
-        self.status_var.set("Suche neueste Version auf GitHub ...")
+        self.status_label.text = "Suche neueste Version auf GitHub ..."
         threading.Thread(target=self._github_fetch_worker, daemon=True).start()
 
     def _github_fetch_worker(self):
@@ -1203,97 +1202,116 @@ class InstallerApp(tk.Tk):
             tag_name, assets = fetch_latest_release()
         except OperationCancelled:
             self.log("GitHub-Abfrage abgebrochen.")
-            self.after(0, self._github_fetch_cancelled)
+            self._github_fetch_cancelled()
             return
         except Exception as e:
-            self.after(0, lambda: self._github_fetch_failed(e))
+            self._github_fetch_failed(e)
             return
-        self.after(0, lambda: self._github_fetch_done(tag_name, assets))
+        self._github_fetch_done(tag_name, assets)
 
+    @kt.mainthread
     def _github_fetch_cancelled(self):
         self._set_busy(False)
-        self.status_var.set("Bereit.")
+        self.status_label.text = "Bereit."
 
+    @kt.mainthread
     def _github_fetch_failed(self, error):
         self._set_busy(False)
-        self.status_var.set("Bereit.")
-        messagebox.showerror("GitHub-Fehler", f"Konnte Releases nicht abrufen:\n{error}")
+        self.status_label.text = "Bereit."
+        kt.show_error("GitHub-Fehler", f"Konnte Releases nicht abrufen:\n{error}")
 
+    @kt.mainthread
     def _github_fetch_done(self, tag_name, assets):
         self._set_busy(False)
-        self.status_var.set("Bereit.")
+        self.status_label.text = "Bereit."
         if not assets:
-            messagebox.showinfo("Keine Dateien", f"Release {tag_name} enthaelt keine .nbo/.pak Dateien.")
+            kt.show_info("Keine Dateien", f"Release {tag_name} enthaelt keine .nbo/.pak Dateien.")
             return
-        dialog = AssetChoiceDialog(self, tag_name, assets)
-        if not dialog.result:
-            return
-        self._start_download(dialog.result)
+        options = []
+        assets_by_name = {}
+        for asset in assets:
+            label = ASSET_LABELS.get(asset["name"], asset["name"])
+            size_kb = (asset.get("size") or 0) / 1024
+            options.append((asset["name"], f"{asset['name']}  -  {label}  ({size_kb:.0f} KB)"))
+            assets_by_name[asset["name"]] = asset
+        kt.ChoicePopup(
+            f"Release {tag_name} - Datei waehlen", options,
+            on_confirm=lambda name: self._start_download(assets_by_name[name]),
+            confirm_text="Herunterladen",
+        ).open()
 
     def _start_download(self, asset):
         self._set_busy(True)
-        self.status_var.set(f"Lade {asset['name']} herunter ...")
-        self.progress["value"] = 0
+        self.status_label.text = f"Lade {asset['name']} herunter ..."
+        self.progress.value = 0
         threading.Thread(target=self._download_worker, args=(asset,), daemon=True).start()
 
     def _download_worker(self, asset):
         dest_path = os.path.join(get_downloads_dir(), asset["name"])
 
         def progress_cb(received, total):
-            pct = int(received * 100 / total) if total else 0
-            self.after(0, lambda: self.progress.configure(value=pct))
+            self._set_progress(int(received * 100 / total) if total else 0)
 
         try:
             download_asset(asset["url"], dest_path, progress_cb=progress_cb, cancel_event=self._cancel_event)
             self.log(f"Heruntergeladen: {dest_path}")
         except OperationCancelled:
             self.log("Download abgebrochen.")
-            self.after(0, self._download_cancelled)
+            self._download_cancelled()
             return
         except Exception as e:
-            self.after(0, lambda: self._download_failed(e))
+            self._download_failed(e)
             return
-        self.after(0, lambda: self._download_done(dest_path))
+        self._download_done(dest_path)
 
+    @kt.mainthread
+    def _set_progress(self, pct):
+        self.progress.value = pct
+
+    @kt.mainthread
     def _download_cancelled(self):
         self._set_busy(False)
-        self.status_var.set("Bereit.")
-        self.progress["value"] = 0
+        self.status_label.text = "Bereit."
+        self.progress.value = 0
 
+    @kt.mainthread
     def _download_failed(self, error):
         self._set_busy(False)
-        self.status_var.set("Bereit.")
-        messagebox.showerror("Download-Fehler", f"Download fehlgeschlagen:\n{error}")
+        self.status_label.text = "Bereit."
+        kt.show_error("Download-Fehler", f"Download fehlgeschlagen:\n{error}")
 
+    @kt.mainthread
     def _download_done(self, dest_path):
         self._set_busy(False)
-        self.status_var.set("Bereit.")
-        self.progress["value"] = 0
+        self.status_label.text = "Bereit."
+        self.progress.value = 0
         self._set_selected_file(dest_path)
-        if self.pico_port and messagebox.askyesno(
-            "Herunterladen abgeschlossen", "Jetzt auf den verbundenen Pico installieren?"
-        ):
-            self._on_install()
+        if self.pico_port:
+            kt.confirm(
+                "Herunterladen abgeschlossen", "Jetzt auf den verbundenen Pico installieren?",
+                on_yes=self._on_install, yes_text="Installieren",
+            )
 
     # ---------- Installieren ----------
 
     def _on_install(self):
         if not self.pico_port:
-            messagebox.showerror("Kein Pico", "Es wurde kein Pico gefunden. Bitte zuerst 'Pico suchen' verwenden.")
+            kt.show_error("Kein Pico", "Es wurde kein Pico gefunden. Bitte zuerst 'Pico suchen' verwenden.")
             return
         if not self.selected_file:
-            messagebox.showerror("Keine Datei", "Bitte zuerst eine Firmware-Datei auswaehlen.")
+            kt.show_error("Keine Datei", "Bitte zuerst eine Firmware-Datei auswaehlen.")
             return
-        if not messagebox.askyesno(
+        kt.confirm(
             "Installation bestaetigen",
             f"{os.path.basename(self.selected_file)} jetzt auf {self.pico_port} installieren?\n\n"
             "Das Geraet startet nach erfolgreicher Installation automatisch neu.",
-        ):
-            return
+            on_yes=self._start_install, yes_text="Installieren",
+        )
 
+    def _start_install(self):
         self._set_busy(True)
-        self.progress["value"] = 0
-        self.status_var.set("Installation laeuft ...")
+        self.progress.value = 0
+        self.status_label.text = "Installation laeuft ..."
         threading.Thread(target=self._install_worker, daemon=True).start()
 
     def _install_worker(self):
@@ -1301,49 +1319,53 @@ class InstallerApp(tk.Tk):
         path = self.selected_file
 
         def progress_cb(sent, total):
-            pct = int(sent * 100 / total) if total else 0
-            self.after(0, lambda: self.progress.configure(value=pct))
+            self._set_progress(int(sent * 100 / total) if total else 0)
 
         try:
             upload_and_apply(port, path, progress_cb=progress_cb, log=self.log, cancel_event=self._cancel_event)
         except OperationCancelled:
             self.log("Installation abgebrochen.")
-            self.after(0, self._install_cancelled)
+            self._install_cancelled()
             return
         except Exception as e:
             self.log(f"Fehler bei der Installation: {e}")
-            self.after(0, lambda: self._install_failed(e))
+            self._install_failed(e)
             return
-        self.after(0, self._install_done)
+        self._install_done()
 
+    @kt.mainthread
     def _install_cancelled(self):
         self._set_busy(False)
-        self.progress["value"] = 0
-        self.status_var.set("Abgebrochen.")
+        self.progress.value = 0
+        self.status_label.text = "Abgebrochen."
 
+    @kt.mainthread
     def _install_failed(self, error):
         self._set_busy(False)
-        self.status_var.set("Fehler bei der Installation.")
-        messagebox.showerror("Installation fehlgeschlagen", str(error))
+        self.status_label.text = "Fehler bei der Installation."
+        kt.show_error("Installation fehlgeschlagen", str(error))
 
+    @kt.mainthread
     def _install_done(self):
         self._set_busy(False)
-        self.progress["value"] = 100
-        self.status_var.set("Installation erfolgreich abgeschlossen.")
-        messagebox.showinfo("Fertig", "Die Installation war erfolgreich. Der Pico startet neu.")
+        self.progress.value = 100
+        self.status_label.text = "Installation erfolgreich abgeschlossen."
+        kt.show_info("Fertig", "Die Installation war erfolgreich. Der Pico startet neu.")
         # Nach einem Neustart des Pico ist der Raw-REPL-Handshake erst wieder
         # zuverlaessig moeglich, wenn main.py/recovery.py vollstaendig
         # hochgefahren ist - der Nutzer muss daher bei Bedarf manuell erneut
         # suchen, statt dass wir hier sofort automatisch weitersuchen.
-        self.pico_status_var.set(f"{self.pico_port} (Neustart laeuft - bei Bedarf 'Pico suchen' erneut klicken)")
+        self.pico_status_label.text = f"{self.pico_port} (Neustart laeuft - bei Bedarf 'Pico suchen' erneut klicken)"
 
 
 def main():
     if SerialTransport is None or list_ports is None:
         # tkinter allein reicht, um wenigstens eine verstaendliche Fehlermeldung
-        # anzuzeigen, statt dass die .exe kommentarlos abstuerzt.
+        # anzuzeigen, statt dass die .exe kommentarlos abstuerzt (Kivy ist an
+        # dieser Stelle noch nicht initialisiert).
         root = tk.Tk()
         root.withdraw()
+        from tkinter import messagebox
         messagebox.showerror(
             APP_TITLE,
             "Die Pakete 'pyserial' und/oder 'mpremote' fehlen. Bitte "
@@ -1352,8 +1374,7 @@ def main():
         )
         sys.exit(1)
 
-    app = InstallerApp()
-    app.mainloop()
+    InstallerApp().run()
 
 
 if __name__ == "__main__":

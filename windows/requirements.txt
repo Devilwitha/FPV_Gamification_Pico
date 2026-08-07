@@ -1,3 +1,11 @@
 pyinstaller>=6.0
 pyserial>=3.5
 mpremote>=1.20
+# GUI-Toolkit fuer beide Tools (gamification_installer.py/plugin_packager.py),
+# siehe windows/kivy_theme.py. "kivy[base]" zieht auf Windows automatisch
+# kivy_deps.sdl2/glew/angle (SDL2/OpenGL-Bindings) mit.
+kivy[base]>=2.3.0,<3.0
+# Ab hier fuer windows/source2/plugin_packager.py (baut auf
+# tools/build_firmware.py/deploy_mod.py auf, siehe dessen Docstring).
+requests>=2.32.3
+mpy-cross>=1.22.0

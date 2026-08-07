@@ -213,7 +213,7 @@ class LicenseUploaderApp(tk.Tk):
             build_firmware.ensure_device_raw_repl_ready(mpremote_cmd, port)
             hardware_id = build_firmware.read_hardware_id(mpremote_cmd, port)
         except Exception as e:
-            self.after(0, lambda: self._find_pico_failed(e))
+            self.after(0, lambda e=e: self._find_pico_failed(e))
             return
         self.after(0, lambda: self._find_pico_done(mpremote_cmd, port, hardware_id))
 
@@ -306,7 +306,7 @@ class LicenseUploaderApp(tk.Tk):
         try:
             upload_license(self.pico_port_info, self.selected_license_content, progress=report)
         except Exception as e:
-            self.after(0, lambda: self._upload_failed(e))
+            self.after(0, lambda e=e: self._upload_failed(e))
             return
         self.after(0, self._upload_done)
 

@@ -3,3 +3,7 @@ build_tmp/
 spec_tmp/
 __pycache__/
 *.pyc
+# source2/plugin_packager.py's lokale Ausgabeordner (siehe dortiges
+# DOWNLOADS_DIR/PACKAGES_DIR) - reine Laufzeitartefakte, nicht ins Repo.
+plugin_downloads/
+plugin_packages/

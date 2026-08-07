@@ -15,9 +15,15 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 TOOLS_DIR = ROOT / "tools"
+# plugin_packager.py liegt unter windows/source2/ (baut zusammen mit
+# gamification_installer.py ueber windows/build_exe.py), importiert aber
+# build_firmware.py/deploy_mod.py aus tools/ - fuer test_plugin_packager.py
+# muessen daher BEIDE Verzeichnisse auf sys.path liegen.
+WINDOWS_SOURCE2_DIR = ROOT / "windows" / "source2"
 
-if str(TOOLS_DIR) not in sys.path:
-    sys.path.insert(0, str(TOOLS_DIR))
+for _extra_dir in (TOOLS_DIR, WINDOWS_SOURCE2_DIR):
+    if str(_extra_dir) not in sys.path:
+        sys.path.insert(0, str(_extra_dir))
 
 
 def _fresh_import(name):

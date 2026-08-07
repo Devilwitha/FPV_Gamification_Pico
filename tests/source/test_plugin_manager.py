@@ -174,7 +174,7 @@ def test_load_all_plugins_creates_init_files_automatically(plugin_manager):
 def test_ensure_init_files_does_not_duplicate_when_compiled_init_exists(plugin_manager):
     """Reproduziert einen real beobachteten Absturz: der Webshop-Store
     liefert Mods ausschliesslich vorkompiliert (siehe
-    tools/plugin_packager.py's pack_mod_to_zip() - jede .py-Datei, auch ein
+    windows/source2/plugin_packager.py's pack_mod_to_zip() - jede .py-Datei, auch ein
     vom Autor mitgeliefertes __init__.py, wird zu __init__.mpy kompiliert).
     Landet so ein Mod mit bereits vorhandenem __init__.mpy in mods/<name>/
     (Webshop-Download oder ZIP-Upload, siehe zip_helpers.py), darf

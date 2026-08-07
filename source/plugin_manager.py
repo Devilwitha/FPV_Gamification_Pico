@@ -165,7 +165,7 @@ def _ensure_init_files(name):
 
     WICHTIG: die .mpy-Pruefung ist kein Nice-to-have, sondern verhindert
     einen real beobachteten Absturz - der Webshop-Store liefert Mods
-    ausschliesslich vorkompiliert aus (siehe tools/plugin_packager.py's
+    ausschliesslich vorkompiliert aus (siehe windows/source2/plugin_packager.py's
     pack_mod_to_zip(): JEDE .py-Datei des Mods, auch ein vom Autor
     mitgeliefertes __init__.py, wird zu __init__.mpy kompiliert). Ohne diese
     Pruefung wuerde hier trotz bereits vorhandenem __init__.mpy zusaetzlich

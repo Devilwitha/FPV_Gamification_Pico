@@ -21,7 +21,7 @@
           Lern-Vorlage dafür, wie ein eigener Spielmodus komplett als Plugin gebaut wird
           (Spiellogik, eigene IR-Hardware-Treiber und eigene Weboberfläche in einem Ordner).
           Muss vor der Installation erst mit mpy-cross zu <code>.mpy</code> kompiliert werden –
-          manuell oder über <code>tools/plugin_packager.py</code>.
+          manuell oder über den Plugin-Packager (siehe unten).
         </p>
         <a class="btn btn-primary" href="{{ url_for('plugins_shooter_template') }}">
           Vorlage herunterladen (.zip)
@@ -64,6 +64,15 @@
         <a href="{{ url_for('login') }}">Einloggen</a>, um ein eigenes Plugin hochzuladen.
       </p>
     {% endif %}
+    <p class="admin-empty-hint" style="margin-top: 1rem">
+      Zum Kompilieren (mpy-cross) und Hochladen gibt es ein Windows-Werkzeug mit
+      grafischer Oberfläche – kein Terminal/Python-Installation nötig:
+    </p>
+    <a
+      class="btn btn-secondary"
+      href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/PluginPackager.zip"
+      >Plugin-Packager herunterladen (.zip)</a
+    >
   </section>
 
   <section class="product-grid" style="margin-top: 1.5rem">

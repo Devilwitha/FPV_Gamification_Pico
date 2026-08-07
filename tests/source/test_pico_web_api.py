@@ -90,6 +90,89 @@ def test_send_admin_html_with_slot_falls_back_when_no_plugin_uses_any_of_multipl
     assert pico_web_api._test_sent_html_calls == ["admin_dashboard.html"]
 
 
+def test_send_admin_html_with_slot_static_slots_supplement_plugin_slots(
+    pico_web_api, fake_writer, monkeypatch, isolated_cwd
+):
+    """static_slots (siehe send_index_html()'s "index_gamemodes_hub") wird
+    genau wie ein normaler Plugin-Slot per Marker ersetzt, auch wenn KEIN
+    Plugin ueberhaupt einen der slot_names belegt."""
+    import plugin_manager
+
+    with open("index.html", "w") as f:
+        f.write("<!--PLUGIN_SLOT:index_card--><!--PLUGIN_SLOT:index_gamemodes_hub-->")
+
+    monkeypatch.setattr(plugin_manager, "get_ui_slot_html", lambda slot: "")
+
+    asyncio.run(pico_web_api.send_admin_html_with_slot(
+        fake_writer, "index.html", ["index_card"],
+        static_slots={"index_gamemodes_hub": "<a>Game Mods</a>"},
+    ))
+
+    assert pico_web_api._test_sent_html_calls == []
+    assert b"<a>Game Mods</a>" in fake_writer.response
+    assert b"PLUGIN_SLOT:index_card" in fake_writer.response  # unbenutzter Plugin-Slot bleibt Kommentar
+
+
+def test_send_admin_html_with_slot_falls_back_when_static_slots_all_empty(
+    pico_web_api, fake_writer, monkeypatch, isolated_cwd
+):
+    import plugin_manager
+
+    monkeypatch.setattr(plugin_manager, "get_ui_slot_html", lambda slot: "")
+
+    asyncio.run(pico_web_api.send_admin_html_with_slot(
+        fake_writer, "index.html", ["index_card"], static_slots={"index_gamemodes_hub": ""},
+    ))
+
+    assert pico_web_api._test_sent_html_calls == ["index.html"]
+
+
+def test_render_gamemodes_hub_card_empty_when_no_plugin_uses_gamemodes_button(pico_web_api, monkeypatch):
+    import plugin_manager
+
+    monkeypatch.setattr(plugin_manager, "get_ui_slot_html", lambda slot: "")
+
+    assert pico_web_api._render_gamemodes_hub_card() == ""
+
+
+def test_render_gamemodes_hub_card_renders_once_when_any_plugin_active(pico_web_api, monkeypatch):
+    """Der Hub-Karte ist egal WELCHES/wie viele Spielmodus-Plugins aktiv
+    sind - sie fragt nur, ob gamemodes_button ueberhaupt Inhalt hat, und
+    rendert dann GENAU EINE Karte (keine Duplizierung pro Plugin)."""
+    import plugin_manager
+
+    monkeypatch.setattr(
+        plugin_manager, "get_ui_slot_html",
+        lambda slot: "<a>Admin KOTH</a><a>Admin Race</a>" if slot == "gamemodes_button" else "",
+    )
+
+    html = pico_web_api._render_gamemodes_hub_card()
+    assert '/gamemodes-view' in html
+    assert 'index.gamemodesTitle' in html
+
+
+@pytest.mark.asyncio
+async def test_send_index_html_includes_hub_card_when_gamemodes_plugin_active(
+    pico_web_api, fake_writer, monkeypatch, isolated_cwd
+):
+    import plugin_manager
+
+    with open("index.html", "w") as f:
+        f.write("<!--PLUGIN_SLOT:index_card--><!--PLUGIN_SLOT:index_gamemodes_hub-->")
+
+    monkeypatch.setattr(
+        plugin_manager, "get_ui_slot_html",
+        lambda slot: "<a>Infection Karte</a>" if slot == "index_card" else (
+            "<a>Admin KOTH</a>" if slot == "gamemodes_button" else ""
+        ),
+    )
+
+    await pico_web_api.send_index_html(fake_writer, "index.html")
+
+    assert b"Infection Karte" in fake_writer.response
+    assert b"/gamemodes-view" in fake_writer.response
+
+
 @pytest.mark.asyncio
 async def test_handle_pico_api_route_serves_admin_plugins_page(pico_web_api, fake_writer):
     handled = await pico_web_api.handle_pico_api_route(fake_writer, "/admin-plugins", "GET", {}, {})

@@ -63,9 +63,6 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 <a href="/admin-system" data-i18n="nav.system">System</a>
 <a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
 <a href="/admin-challenges" data-i18n="nav.challenges">Challenges</a>
-<a href="/admin-infection" data-i18n="nav.infection">Infection</a>
-<a href="/admin-koth" data-i18n="nav.koth">King of the Hill</a>
-<a href="/admin-race" data-i18n="nav.race">Race</a>
 <!--PLUGIN_SLOT:dashboard_nav-->
 <a href="/admin-plugins" data-i18n="nav.plugins">Plugins</a>
 <a href="/admin-credits" data-i18n="nav.credits">Credits</a>
@@ -90,9 +87,6 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 <div class="stattiles" id="stattiles">
 <div class="stile" style="--sc:#e74c3c"><div class="sticon">&#127942;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statTrickLabel">Trick-Highscore</div><div class="stval" id="st_trick_val">-</div><div class="stsub" id="st_trick_sub"></div></div></div>
 <div class="stile" style="--sc:#8e44ad"><div class="sticon">&#127919;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statChallengesLabel">Challenges</div><div class="stval" id="st_challenges_val">-</div><div class="stsub" id="st_challenges_sub"></div></div></div>
-<div class="stile" style="--sc:#e6a23c"><div class="sticon">&#128081;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statKothLabel">King of the Hill</div><div class="stval" id="st_koth_val">-</div><div class="stsub" id="st_koth_sub"></div></div></div>
-<div class="stile" style="--sc:#2980b9"><div class="sticon">&#127937;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statRaceLabel">Race</div><div class="stval" id="st_race_val">-</div><div class="stsub" id="st_race_sub"></div></div></div>
-<div class="stile" style="--sc:#d4473f"><div class="sticon">&#9763;&#65039;</div><div class="stbody"><div class="stlabel" data-i18n="dashboard.statInfectionLabel">Infection</div><div class="stval" id="st_infection_val">-</div><div class="stsub" id="st_infection_sub"></div></div></div>
 <!--PLUGIN_SLOT:dashboard_stat-->
 </div>
 </div>
@@ -109,9 +103,6 @@ h1{color:#f39c12;font-size:1.3em;margin:0 0 10px}
 <a class="card prof" href="/admin-profiles"><h3 data-i18n="dashboard.card.profileTitle">&#127919; Profile</h3><p data-i18n="dashboard.card.profileText">Trick-Tuning-Profile verwalten und anwenden</p></a>
 <a class="card sys" href="/admin-system"><h3 data-i18n="dashboard.card.systemTitle">&#128295; System</h3><p data-i18n="dashboard.card.systemText">Speicher/Netzwerk-Info, manueller Restart</p></a>
 <a class="card chl" href="/admin-challenges"><h3 data-i18n="dashboard.card.challengesTitle">&#127942; Challenges</h3><p data-i18n="dashboard.card.challengesText">Touch &amp; Go, Altitude-Hold/Limbo und Eco-Challenge starten</p></a>
-<a class="card" href="/admin-infection"><h3 data-i18n="dashboard.card.infectionTitle">Infection Modus</h3><p data-i18n="dashboard.card.infectionText">Zwei Picos als Infizierter und Sucher spielen</p></a>
-<a class="card koth" href="/admin-koth"><h3 data-i18n="dashboard.card.kothTitle">&#128081; King of the Hill</h3><p data-i18n="dashboard.card.kothText">Punkte sammeln, solange Empfang zum Huegel-Pico besteht</p></a>
-<a class="card race" href="/admin-race"><h3 data-i18n="dashboard.card.raceTitle">&#127937; Race Modus</h3><p data-i18n="dashboard.card.raceText">Rundenzeit zwischen 2 Toren mit einstellbarer Rundenzahl messen</p></a>
 <!--PLUGIN_SLOT:dashboard_card-->
 <a class="card" href="/admin-plugins"><h3 data-i18n="dashboard.card.pluginsTitle">&#129513; Plugins</h3><p data-i18n="dashboard.card.pluginsText">Mods verwalten, Webshop-Store durchsuchen und Firmware-Updates pruefen</p></a>
 <a class="card cred" href="/admin-credits"><h3 data-i18n="dashboard.card.creditsTitle">&#8505;&#65039; Credits</h3><p data-i18n="dashboard.card.creditsText">Firma, Entwickler, Version und Links zum Projekt</p></a>
@@ -135,7 +126,7 @@ document.getElementById('v_mem').innerText=(d.mem_free>=0)?(d.mem_free/1024).toF
 }).catch(e=>0);
 }
 function rhs(){if(confirm(t('index.resetConfirm','Highscore loeschen?'))){fetch('/reset-highscore?web=1').then(()=>upd()).catch(e=>0)}}
-const GAME_COLORS={trick:'#e74c3c',challenges:'#8e44ad',koth:'#e6a23c',race:'#2980b9',infection:'#d4473f'};
+const GAME_COLORS={trick:'#e74c3c',challenges:'#8e44ad'};
 function fmtMs(ms){
 if(ms===null||ms===undefined)return '-';
 const total=Math.round(ms),m=Math.floor(total/60000),s=Math.floor((total%60000)/1000),r=total%1000;
@@ -157,17 +148,14 @@ function loadStats(){
 Promise.all([
 fetchLog('/trick-highscore-log'),
 fetchLog('/challenge-log'),
-fetchLog('/koth-log'),
-fetchLog('/race-log'),
-fetchLog('/infection-log'),
-]).then(([trick,challenges,koth,race,infection])=>{
-renderStats(trick,challenges,koth,race,infection);
+]).then(([trick,challenges])=>{
+renderStats(trick,challenges);
 Promise.all(window.DASHBOARD_HOOKS.map(h=>{try{return Promise.resolve(h())}catch(e){return []}})).then(extraLists=>{
-renderActivity(trick,challenges,koth,race,infection,[].concat(...extraLists));
+renderActivity(trick,challenges,[].concat(...extraLists));
 });
 });
 }
-function renderStats(trick,challenges,koth,race,infection){
+function renderStats(trick,challenges){
 const noRounds=t('dashboard.noRounds','Noch keine Runde');
 if(trick.length){
 const best=trick.reduce((a,b)=>(b.score||0)>(a.score||0)?b:a,trick[0]);
@@ -179,29 +167,11 @@ const sum=challenges.reduce((a,c)=>a+(c.points||0),0);
 document.getElementById('st_challenges_val').innerText=sum+' Pkt';
 document.getElementById('st_challenges_sub').innerText=challenges.length+' '+t('dashboard.passed','bestanden');
 }else{document.getElementById('st_challenges_val').innerText=noRounds;document.getElementById('st_challenges_sub').innerText='';}
-if(koth.length){
-const best=koth.reduce((a,b)=>(b.score||0)>(a.score||0)?b:a,koth[0]);
-document.getElementById('st_koth_val').innerText=(best.score||0)+' Pkt';
-document.getElementById('st_koth_sub').innerText=koth.length+' '+t('dashboard.rounds','Runden');
-}else{document.getElementById('st_koth_val').innerText=noRounds;document.getElementById('st_koth_sub').innerText='';}
-if(race.length){
-const best=race.reduce((a,b)=>(b.total_ms||Infinity)<(a.total_ms||Infinity)?b:a,race[0]);
-document.getElementById('st_race_val').innerText=fmtMs(best.total_ms);
-document.getElementById('st_race_sub').innerText=race.length+' '+t('dashboard.rounds','Runden');
-}else{document.getElementById('st_race_val').innerText=noRounds;document.getElementById('st_race_sub').innerText='';}
-if(infection.length){
-const wins=infection.filter(e=>e.result==='won').length;
-document.getElementById('st_infection_val').innerText=wins+'/'+infection.length;
-document.getElementById('st_infection_sub').innerText=t('dashboard.wins','Siege');
-}else{document.getElementById('st_infection_val').innerText=noRounds;document.getElementById('st_infection_sub').innerText='';}
 }
-function renderActivity(trick,challenges,koth,race,infection,extraItems){
+function renderActivity(trick,challenges,extraItems){
 let items=[];
 trick.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.trick,text:'&#127942; '+t('dashboard.actTrick','Neuer Highscore')+': '+(e.score||0)+' Pkt ('+(e.player||'')+')'}));
 challenges.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.challenges,text:'&#127919; '+(e.description||'')+' (+'+(e.points||0)+')'}));
-koth.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.koth,text:'&#128081; '+t('dashboard.actKoth','KOTH-Runde beendet')+': '+(e.score||0)+' Pkt'}));
-race.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.race,text:'&#127937; '+t('dashboard.actRace','Rennen beendet')+': '+fmtMs(e.total_ms)}));
-infection.forEach(e=>items.push({ts:e.ts_s||0,time:e.timestamp||'',color:GAME_COLORS.infection,text:'&#9763;&#65039; '+t('dashboard.actInfection','Infection-Runde')+': '+resultLabel(e.result)}));
 (extraItems||[]).forEach(it=>items.push(it));
 items.sort((a,b)=>b.ts-a.ts);
 items=items.slice(0,20);

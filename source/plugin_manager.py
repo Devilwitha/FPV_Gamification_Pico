@@ -371,6 +371,25 @@ def is_active(name):
     return name in _active_plugins
 
 
+def get_plugin_module(name):
+    """Gibt das geladene Modul-Objekt eines AKTIVEN Plugins zurueck (oder
+    None), damit Kernfirmware-Code (main.py) optional Zusatzdaten von einem
+    Plugin abfragen kann, ohne es fest zu importieren - z.B. main.py's
+    Infection-Live-Status fuer /data bzw. die Rundenzusammenfassung fuer den
+    Arcade-Sitzungs-Export (siehe source/mods/infection/main.py's
+    get_status()/get_session_summary_text())."""
+    entry = _active_plugins.get(name)
+    return entry["module"] if entry else None
+
+
+def load_single_plugin(name):
+    """Oeffentlicher Wrapper um _load_single_plugin() (siehe dort) - fuer
+    main.py, das z.B. das infection-Plugin bereits VOR AP-/HTTP-Server-Start
+    laden muss (RAM-Fragmentierungs-Grund, siehe main.py's main_async()).
+    load_all_plugins() ueberspringt danach bereits aktive Plugins."""
+    return _load_single_plugin(name)
+
+
 def get_ui_slot_html(slot_name):
     fragments = []
     for name in list(_active_plugins.keys()):

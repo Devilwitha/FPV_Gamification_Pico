@@ -250,7 +250,6 @@ boot_health_marked = False
 _idcard_route_handler = None
 _misc_route_handler = None
 _challenge_route_handler = None
-_infection_route_handler = None
 _pico_api_route_handler = None
 _upload_helpers_module = None
 _github_ota_helpers_module = None
@@ -260,8 +259,6 @@ _license_verifier_module = None
 # waere). Nach einem Lizenz-Upload wird der Cache explizit invalidiert
 # (siehe _refresh_license_status()), damit die Sperre ohne Neustart faellt.
 _LICENSE_STATUS = None
-infection_manager = None
-infection_task = None
 # Developer-Modus (Schiebeschalter auf der System-Seite): standardmaessig AUS,
 # dann akzeptiert OTA nur komplette firmware.nbo Bundles. Erst wenn aktiviert,
 # duerfen auch einzelne .py/.html Dateien per OTA hochgeladen werden.
@@ -306,8 +303,8 @@ OTA_ALLOWED_TARGETS = (
     "main.py", "index.html",
     "admin_dashboard.html", "admin_update.html", "admin_simulate.html",
     "admin_profiles.html", "admin_system.html", "admin_idcard.html", "admin_challenges.html",
-    "admin_infection.html", "admin_credits.html",
-    "challenges_view.html", "infection_view.html",
+    "admin_credits.html",
+    "challenges_view.html",
     "de.pak", "en.pak", "es.pak", "fr.pak", "it.pak", "pt.pak", "tr.pak",
     FIRMWARE_VERSION_FILE,
 )
@@ -1047,8 +1044,14 @@ def build_session_txt_content():
     else:
         txt_content += f"- {tx('session.noTricks', 'Keine Tricks aufgezeichnet')} -\n"
 
-    if infection_manager is not None:
-        infection_summary = infection_manager.session_summary_text()
+    # Infection lebt als Plugin (siehe source/mods/infection/main.py) - der
+    # generische plugin_manager.get_plugin_module()-Zugriff vermeidet einen
+    # festen Import/Abhaengigkeit von main.py auf das Plugin (siehe dortigen
+    # Modul-Docstring fuer das gleiche Muster wie Shooter/Race/KOTH).
+    import plugin_manager
+    infection_module = plugin_manager.get_plugin_module("infection")
+    if infection_module is not None:
+        infection_summary = infection_module.get_session_summary_text()
         if infection_summary:
             txt_content += "\n----------------------------------------\n" + infection_summary
 
@@ -1531,13 +1534,15 @@ def _ensure_challenges():
     return challenges
 
 
-def _ensure_infection_manager():
-    global infection_manager
-    if infection_manager is None:
-        gc.collect()
-        from infection_mode import InfectionMode
-        infection_manager = InfectionMode(AP_SSID, AP_PASSWORD, DEFAULT_PILOT_NAME, debug_log)
-    return infection_manager
+def _infection_status_hook():
+    """Wird als "infection_status"-Dependency an misc_routes_helpers.py
+    durchgereicht (siehe dortiges /data). Infection lebt als Plugin (siehe
+    source/mods/infection/main.py) - generischer plugin_manager.
+    get_plugin_module()-Zugriff statt fester main.py-Abhaengigkeit auf das
+    Plugin. Wirft AttributeError, wenn das Plugin (noch) nicht aktiv ist -
+    der Aufrufer faengt das bereits ab und liefert einen Standardwert."""
+    import plugin_manager
+    return plugin_manager.get_plugin_module("infection").get_status()
 
 
 async def simulate_trick(trick_kind="roll"):
@@ -1753,13 +1758,11 @@ ADMIN_PROFILES_HTML_PATH = "admin_profiles.html"
 ADMIN_SYSTEM_HTML_PATH = "admin_system.html"
 ADMIN_IDCARD_HTML_PATH = "admin_idcard.html"
 ADMIN_CHALLENGES_HTML_PATH = "admin_challenges.html"
-ADMIN_INFECTION_HTML_PATH = "admin_infection.html"
 ADMIN_CREDITS_HTML_PATH = "admin_credits.html"
 # Oeffentliche, huebsch gestaltete Live-Visualisierung der Challenges (kein
 # Login noetig, gleiche Zielgruppe wie index.html - im Gegensatz zu
 # admin_challenges.html, das die technischen Start/Stopp-Controls enthaelt).
 CHALLENGES_VIEW_HTML_PATH = "challenges_view.html"
-INFECTION_VIEW_HTML_PATH = "infection_view.html"
 
 
 async def send_html_file(writer, file_path):
@@ -1797,7 +1800,7 @@ async def send_html_file(writer, file_path):
 async def _handle_misc_routes(writer, request_path, request_method, query_params, body_text, body_params):
     global TRICK_TUNING_PROFILE, DEVELOPER_MODE_ENABLED, LANGUAGE_CODE
     global _idcard_route_handler, _misc_route_handler, _challenge_route_handler
-    global _infection_route_handler, _pico_api_route_handler
+    global _pico_api_route_handler
 
     if request_path == '/admin-idcard':
         import pico_web_api
@@ -1809,29 +1812,10 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
         await pico_web_api.send_admin_html_with_slot(writer, ADMIN_CHALLENGES_HTML_PATH, "dashboard_nav")
         return True
 
-    if request_path == '/admin-infection':
-        import pico_web_api
-        await pico_web_api.send_admin_html_with_slot(writer, ADMIN_INFECTION_HTML_PATH, "dashboard_nav")
-        return True
-
     if request_path == '/admin-credits':
         import pico_web_api
         await pico_web_api.send_admin_html_with_slot(writer, ADMIN_CREDITS_HTML_PATH, "dashboard_nav")
         return True
-
-    if request_path.startswith('/infection-') or request_path.startswith('/lobby-'):
-        if _infection_route_handler is None:
-            from infection_mode import handle_infection_route as _lazy_infection_route_handler
-            _infection_route_handler = _lazy_infection_route_handler
-        if await _infection_route_handler(
-            writer,
-            request_path,
-            request_method,
-            query_params,
-            body_params,
-            _ensure_infection_manager(),
-        ):
-            return True
 
     import gmr
     if await gmr.handle_admin_and_routes(writer, request_path, request_method, query_params, body_params): return True
@@ -1847,10 +1831,6 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
 
     if request_path == '/challenges-view':
         await send_html_file(writer, CHALLENGES_VIEW_HTML_PATH)
-        return True
-
-    if request_path == '/infection-view':
-        await send_html_file(writer, INFECTION_VIEW_HTML_PATH)
         return True
 
     if request_path.startswith('/challenge') or request_path.startswith('/mission') or request_path == '/missions-list':
@@ -1999,7 +1979,7 @@ async def _handle_misc_routes(writer, request_path, request_method, query_params
             "simulate_trick": simulate_trick,
             "perform_emergency_delete_main": _perform_emergency_delete_main,
             "perform_emergency_delete_boot": _perform_emergency_delete_boot,
-            "infection_status": _ensure_infection_manager().status,
+            "infection_status": _infection_status_hook,
             "trick_highscore_log_entries": trick_highscore_log_entries,
             "device_role": "gamification",
             "boot_runtime": boot_runtime,
@@ -2177,7 +2157,8 @@ async def handle_client(reader, writer):
             pass
 
         else:
-            await send_html_file(writer, INDEX_HTML_PATH)
+            import pico_web_api
+            await pico_web_api.send_index_html(writer, INDEX_HTML_PATH)
             
         await writer.drain()
     except OSError as e:
@@ -2203,7 +2184,7 @@ async def handle_client(reader, writer):
 
 
 async def main_async():
-    global system_ready, status_led_last_toggle_ms, infection_task
+    global system_ready, status_led_last_toggle_ms
     _write_system_info()
     # Boot-Netzwerk-Check (network_manager.py) ganz am Anfang, VOR jedem
     # weiteren Import/Server-Start: kurzer, bewusst blockierender STA-
@@ -2224,14 +2205,17 @@ async def main_async():
     # HTTP-Servers/Telemetrie-Loops abgeschlossen ist, aber unabhaengig von
     # main.py's eigenem `import main`-Schritt in boot.py laeuft.
     _ensure_challenges()
-    # infection_mode.py/gmr.py hier lazy importieren, SOLANGE der Heap noch
+    # infection-Plugin (source/mods/infection/main.py, importiert
+    # infection_mode.py) hier EXPLIZIT VORAB laden, SOLANGE der Heap noch
     # sauber ist - AP-Start und asyncio.start_server() unten belegen danach
     # WLAN-Treiber-/Socket-Puffer, die den Heap fragmentieren. Wurde dieser
     # Import erst NACH AP+HTTP-Server ausgefuehrt, schlug das Kompilieren von
     # infection_mode.py auf dem Pico W schon bei einer kleinen Allokation
-    # (2344 Bytes) mit "memory allocation failed" fehl.
-    _ensure_infection_manager()
-    import gmr
+    # (2344 Bytes) mit "memory allocation failed" fehl. plugin_manager.
+    # load_all_plugins() weiter unten ueberspringt "infection" danach einfach
+    # (bereits in _active_plugins), laedt aber Shooter/Race/KOTH ganz normal.
+    import plugin_manager
+    plugin_manager.load_single_plugin("infection")
     if ENABLE_HOTSPOT:
         boot_present = False
         try:
@@ -2247,9 +2231,6 @@ async def main_async():
             start_access_point()
 
         await asyncio.start_server(handle_client, "0.0.0.0", 80)
-    infection_task = asyncio.create_task(_ensure_infection_manager().run())
-    gmr.start_tasks()
-    import plugin_manager
     plugin_manager.load_all_plugins()
     asyncio.create_task(plugin_manager.run_loops())
     _boot_mark_healthy_once()

@@ -33,45 +33,10 @@ h1{margin:0;color:var(--text);font-size:1.5em;letter-spacing:1px;text-transform:
 <div class="c">
 <div class="top"><h1 data-i18n="gamemodesView.title">&#127942; GAME MODES</h1><div class="badge" data-i18n="gamemodesView.liveBadge">LIVE</div></div>
 
-<div class="game" style="--gc:var(--koth)">
-<h2><span class="dot" id="k_dot"></span> <span data-i18n="gamemodesView.kothSection">&#128081; King of the Hill</span></h2>
-<div class="grid">
-<div class="st"><span data-i18n="koth.state">Zustand</span><b id="k_role">-</b></div>
-<div class="st"><span data-i18n="koth.remaining">Restzeit</span><b id="k_remaining">-</b></div>
-<div class="st"><span data-i18n="koth.event">Letztes Ereignis</span><b id="k_event">-</b></div>
-<div class="st"><span data-i18n="koth.rssi">Signalstaerke</span><b id="k_rssi">-</b></div>
-<div class="st"><span data-i18n="koth.inRange">Empfang zum Huegel</span><b id="k_inrange">-</b></div>
-<div class="st"><span data-i18n="koth.score">Punktestand</span><b id="k_score">0</b></div>
-</div>
-<div class="hint" data-i18n="koth.leaderboardTitle">Bestenliste</div>
-<div id="k_leaderboard"></div>
-</div>
-
-<div class="game" style="--gc:var(--race)">
-<h2><span class="dot" id="r_dot"></span> <span data-i18n="gamemodesView.raceSection">&#127937; Race Modus</span></h2>
-<div class="grid">
-<div class="st"><span data-i18n="race.state">Zustand</span><b id="r_role">-</b></div>
-<div class="st"><span data-i18n="race.event">Letztes Ereignis</span><b id="r_event">-</b></div>
-<div class="st"><span data-i18n="race.waitingFor">Wartet auf</span><b id="r_waiting">-</b></div>
-<div class="st"><span data-i18n="race.lapProgress">Runde</span><b id="r_lapprogress">-</b></div>
-<div class="st"><span data-i18n="race.gateA">Tor A</span><b id="r_gatea">-</b></div>
-<div class="st"><span data-i18n="race.gateB">Tor B</span><b id="r_gateb">-</b></div>
-<div class="st"><span data-i18n="race.lastLap">Letzte Runde</span><b id="r_lastlap">-</b></div>
-<div class="st"><span data-i18n="race.bestLap">Beste Runde</span><b id="r_bestlap">-</b></div>
-<div class="st"><span data-i18n="race.totalTime">Gesamtzeit</span><b id="r_total">-</b></div>
-</div>
-<div class="hint" data-i18n="race.lapHistoryTitle">Rundenzeiten</div>
-<div id="r_laphistory"></div>
-</div>
-
 <!--PLUGIN_SLOT:gamemodes_card-->
 
 <p class="hint" data-i18n="gamemodesView.hint">Werte aktualisieren sich automatisch. Einstellungen/Starten/Stoppen erfolgt in den jeweiligen Steuerbereichen.</p>
 
-<div class="btnrow">
-<a class="b" href="/admin-koth" data-i18n="gamemodesView.controlKothButton">&#128081; King of the Hill steuern</a>
-<a class="b race" href="/admin-race" data-i18n="gamemodesView.controlRaceButton">&#127937; Race steuern</a>
-</div>
 <div class="btnrow">
 <!--PLUGIN_SLOT:gamemodes_button-->
 </div>
@@ -90,39 +55,7 @@ function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json
 function fmt(sec){sec=Math.max(0,Number(sec)||0);const m=Math.floor(sec/60),s=sec%60;return m+':'+String(s).padStart(2,'0');}
 function fmtMs(ms){if(ms===null||ms===undefined)return '-';return (Number(ms)/1000).toFixed(2)+'s';}
 
-function showKothLeaderboard(d){const list=document.getElementById('k_leaderboard'),entries=Array.isArray(d.leaderboard)?d.leaderboard:[];list.replaceChildren();if(!entries.length){const row=document.createElement('div');row.className='hint';row.innerText=t('koth.noPlayers','Noch keine Spieler erkannt.');list.appendChild(row);return}entries.forEach((e,i)=>{const row=document.createElement('div');row.className='lb';const label=document.createElement('span');label.innerText=(i+1)+'. '+(e.name||('node-'+e.id));const score=document.createElement('b');score.innerText=e.score;row.append(label,score);list.appendChild(row);});}
-function updateKoth(d){
- const running=!!d.running,role=running?d.role:'inactive';
- document.getElementById('k_dot').classList.toggle('on',running);
- document.getElementById('k_role').innerText=role==='hill'?t('koth.roleHill','Huegel'):role==='player'?t('koth.rolePlayer','Spieler'):t('koth.inactive','Inaktiv');
- document.getElementById('k_remaining').innerText=fmt(d.remaining_seconds);
- document.getElementById('k_event').innerText=d.last_event||'-';
- document.getElementById('k_rssi').innerText=d.last_rssi===null||d.last_rssi===undefined?'-':d.last_rssi+' dBm';
- document.getElementById('k_inrange').innerText=d.in_range?t('common.yes','Ja'):t('common.no','Nein');
- document.getElementById('k_score').innerText=d.score||0;
- showKothLeaderboard(d);
-}
-function pollKoth(){fetch('/koth-data',{cache:'no-store'}).then(r=>r.json()).then(updateKoth).catch(()=>{}).finally(()=>setTimeout(pollKoth,1000));}
-
-function showRaceLapHistory(d){const list=document.getElementById('r_laphistory'),laps=Array.isArray(d.lap_times_ms)?d.lap_times_ms:[];list.replaceChildren();if(!laps.length){const row=document.createElement('div');row.className='hint';row.innerText=t('race.noLaps','Noch keine Runde abgeschlossen.');list.appendChild(row);return}laps.forEach((ms,i)=>{const row=document.createElement('div');row.className='lap';const label=document.createElement('span');label.innerText=t('race.lap','Runde')+' '+(i+1);const val=document.createElement('b');val.innerText=fmtMs(ms);row.append(label,val);list.appendChild(row);});}
-function updateRace(d){
- const running=!!d.running,role=running?d.role:'inactive';
- document.getElementById('r_dot').classList.toggle('on',running);
- const roleLabels={racer:t('race.roleRacer','Rennfahrer'),gate_a:t('race.roleGateA','Tor A'),gate_b:t('race.roleGateB','Tor B'),inactive:t('race.inactive','Inaktiv')};
- document.getElementById('r_role').innerText=roleLabels[role]||role;
- document.getElementById('r_event').innerText=d.last_event||'-';
- document.getElementById('r_waiting').innerText=d.waiting_for?('Tor '+d.waiting_for):'-';
- document.getElementById('r_lapprogress').innerText=d.finished?t('race.finished','Fertig'):(d.lap_index+1)+' / '+d.laps_total;
- document.getElementById('r_gatea').innerText=d.gate_a_in_range?t('race.inRange','In Reichweite'):t('race.outOfRange','Ausser Reichweite');
- document.getElementById('r_gateb').innerText=d.gate_b_in_range?t('race.inRange','In Reichweite'):t('race.outOfRange','Ausser Reichweite');
- document.getElementById('r_lastlap').innerText=fmtMs(d.last_lap_ms);
- document.getElementById('r_bestlap').innerText=fmtMs(d.best_lap_ms);
- document.getElementById('r_total').innerText=fmtMs(d.total_ms);
- showRaceLapHistory(d);
-}
-function pollRace(){fetch('/race-data',{cache:'no-store'}).then(r=>r.json()).then(updateRace).catch(()=>{}).finally(()=>setTimeout(pollRace,500));}
-
 function loadVersion(){fetch('/system-info',{cache:'no-store'}).then(r=>r.json()).then(d=>document.getElementById('ver').innerText=d.firmware_version?'v'+d.firmware_version:'').catch(()=>{});}
-loadI18n().then(()=>{pollKoth();pollRace();(window.GAMEMODES_HOOKS||[]).forEach(fn=>fn());loadVersion();});setInterval(loadI18n,5000);
+loadI18n().then(()=>{(window.GAMEMODES_HOOKS||[]).forEach(fn=>fn());loadVersion();});setInterval(loadI18n,5000);
 </script>
 </body></html>

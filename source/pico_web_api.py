@@ -40,7 +40,7 @@ async def _send_json(writer, payload, status="200 OK"):
     await writer.drain()
 
 
-async def send_admin_html_with_slot(writer, file_path, slot_names):
+async def send_admin_html_with_slot(writer, file_path, slot_names, static_slots=None):
     """Wie main.send_html_file(), ersetzt aber zusaetzlich <!--PLUGIN_SLOT:x-->
     Marker durch von Plugins bereitgestelltes HTML (siehe
     plugin_manager.get_ui_slot_html()). slot_names ist entweder ein einzelner
@@ -49,8 +49,12 @@ async def send_admin_html_with_slot(writer, file_path, slot_names):
     "dashboard_nav"/"dashboard_card"/"dashboard_stat"/"dashboard_script" -
     so kann JEDES Plugin, das einen dieser Slots belegt, sich selbst in Nav/
     Karten/Statistik einklinken, OHNE dass admin_dashboard.html es kennen
-    muss). Faellt auf das unveraenderte, chunked-gestreamte send_html_file()
-    zurueck, wenn kein Plugin einen der Slots nutzt - Null-Overhead im
+    muss). static_slots (optional dict slot_name->html) ergaenzt/ueberschreibt
+    die Plugin-gelieferten Fragmente um vom Aufrufer selbst berechnetes HTML
+    (siehe send_index_html()'s "index_gamemodes_hub" - EINE zentral
+    berechnete Sammel-Karte statt einer pro Plugin). Faellt auf das
+    unveraenderte, chunked-gestreamte send_html_file() zurueck, wenn weder
+    ein Plugin noch static_slots einen der Slots befuellt - Null-Overhead im
     Normalfall."""
     import plugin_manager
 
@@ -62,6 +66,10 @@ async def send_admin_html_with_slot(writer, file_path, slot_names):
         html = plugin_manager.get_ui_slot_html(slot_name)
         if html:
             slot_html_by_name[slot_name] = html
+    if static_slots:
+        for slot_name, html in static_slots.items():
+            if html:
+                slot_html_by_name[slot_name] = html
 
     if not slot_html_by_name:
         await send_html_file(writer, file_path)
@@ -78,6 +86,40 @@ async def send_admin_html_with_slot(writer, file_path, slot_names):
     writer.write(b"Content-Length: " + str(len(data)).encode() + b"\r\n")
     writer.write(b"Connection: close\r\n\r\n")
     writer.write(data)
+
+
+def _render_gamemodes_hub_card():
+    """Sammel-Karte fuer index.html's <!--PLUGIN_SLOT:index_gamemodes_hub-->
+    Marker: anders als normale ui_slots wird sie NICHT von jedem einzelnen
+    Spielmodus-Plugin selbst geliefert (das gaebe eine Karte pro Plugin,
+    z.B. getrennt fuer KOTH/Race/Shooter) - stattdessen genau EINMAL zentral
+    gerendert, sobald IRGENDEIN aktives Plugin den bereits bestehenden
+    "gamemodes_button"-Slot belegt (siehe gamemodes_view.html) - dadurch
+    bleibt sie trotzdem generisch: sie kennt keinen einzelnen Plugin-Namen,
+    sondern fragt nur, ob die gemeinsame Zuschauer-Seite /gamemodes-view
+    ueberhaupt Inhalt haette."""
+    import plugin_manager
+
+    if not plugin_manager.get_ui_slot_html("gamemodes_button"):
+        return ""
+    return (
+        '<a class="card gamemodes-card" href="/gamemodes-view">'
+        '<div class="cc-top"><h2><span class="dot on"></span> <span data-i18n="index.gamemodesTitle">&#127942; Game Mods</span></h2><span class="cc-arrow">&#8594;</span></div>'
+        '<p class="cc-text" data-i18n="index.gamemodesText">Aktuelle Spielmodi live verfolgen</p>'
+        '</a>'
+    )
+
+
+async def send_index_html(writer, file_path):
+    """Rendert index.html: die generischen "index_card"/"index_script"
+    ui_slots (z.B. Infection's eigene Karte, siehe send_admin_html_with_slot())
+    PLUS die zentral berechnete "index_gamemodes_hub"-Sammel-Karte (siehe
+    _render_gamemodes_hub_card()). Von main.py's Routen-Fallback fuer "/"
+    aufgerufen."""
+    await send_admin_html_with_slot(
+        writer, file_path, ["index_card", "index_script"],
+        static_slots={"index_gamemodes_hub": _render_gamemodes_hub_card()},
+    )
     await writer.drain()
     gc.collect()
 

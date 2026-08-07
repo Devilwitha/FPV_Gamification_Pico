@@ -20,12 +20,8 @@ ROUTE_TO_FILE = {
     "/admin-profiles": "admin_profiles.html",
     "/admin-system": "admin_system.html",
     "/admin-challenges": "admin_challenges.html",
-    "/admin-infection": "admin_infection.html",
-    "/admin-koth": "admin_koth.html",
-    "/admin-race": "admin_race.html",
     "/admin-credits": "admin_credits.html",
     "/challenges-view": "challenges_view.html",
-    "/infection-view": "infection_view.html",
     "/gamemodes-view": "gamemodes_view.html",
 }
 

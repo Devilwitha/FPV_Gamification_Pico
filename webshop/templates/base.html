@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{% block title %}FPV Gamification Pico – Shop{% endblock %}</title>
+    <title>{% block title %}Bollisoft{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}" />
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon-32.png') }}" />
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16.png') }}" />
@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
     {% block head %}{% endblock %}
   </head>
-  <body>
+  <body class="{% block body_class %}{% endblock %}">
     {% if dummy_mode %}
       <div class="dummy-banner">
         ⚠️ DUMMY-MODUS AKTIV – Käufe werden nur simuliert, es fließt kein echtes Geld.
@@ -20,11 +20,12 @@
     <header class="site-header">
       <nav class="navbar">
         <a class="brand" href="{{ url_for('index') }}">
-          <img class="brand-logo" src="{{ url_for('static', filename='bilder/branding/logo-64.png') }}" alt="" width="32" height="32" />
-          FPV Gamification Pico
+          <img class="brand-logo" src="{{ url_for('static', filename='bilder/branding/bollisoft-logo.png') }}" alt="Bollisoft Logo" width="38" height="44" />
+          Bollisoft
         </a>
         <div class="nav-links">
-          <a href="{{ url_for('index') }}">Start</a>
+          <a href="{{ url_for('index') }}">Home</a>
+          <a href="{{ url_for('webshop_home') }}">FPV Gamification Pico</a>
           <a href="{{ url_for('shop') }}">Shop</a>
           <a href="{{ url_for('plugins_store') }}">Plugin-Store</a>
           {% if session.get('account_email') %}
@@ -51,7 +52,7 @@
     </main>
 
     <footer class="site-footer">
-      <p>&copy; 2026 Webshop. Alle Rechte vorbehalten.</p>
+      <p>&copy; 2026 Bollisoft. Engineering Software with Precision.</p>
     </footer>
 
     <a class="admin-corner-link" href="{{ url_for('admin_dashboard') }}" title="Admin" aria-label="Admin-Bereich">&#9881;</a>

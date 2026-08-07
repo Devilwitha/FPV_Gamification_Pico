@@ -67,6 +67,12 @@ def _install_open_compat():
         # to match os.stat-based content-length logic used by firmware.
         if "b" not in mode and newline is None:
             newline = ""
+        # MicroPython's open() always decodes text mode as UTF-8 regardless of
+        # OS locale; without this, CPython falls back to the Windows locale
+        # codec (cp1252) and crashes on UTF-8 multi-byte bytes (e.g. emoji in
+        # index.html/admin_*.html) that real hardware handles fine.
+        if "b" not in mode and encoding is None:
+            encoding = "utf-8"
         return _original_open(
             file,
             mode,

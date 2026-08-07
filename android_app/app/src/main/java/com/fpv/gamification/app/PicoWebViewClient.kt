@@ -51,14 +51,10 @@ class PicoWebViewClient(
             "/admin-simulate" to "admin_simulate.html",
             "/admin-idcard" to "admin_idcard.html",
             "/admin-challenges" to "admin_challenges.html",
-            "/admin-infection" to "admin_infection.html",
             "/admin-credits" to "admin_credits.html",
             "/admin-profiles" to "admin_profiles.html",
             "/admin-system" to "admin_system.html",
-            "/admin-koth" to "admin_koth.html",
-            "/admin-race" to "admin_race.html",
             "/challenges-view" to "challenges_view.html",
-            "/infection-view" to "infection_view.html",
             "/gamemodes-view" to "gamemodes_view.html"
         )
     }

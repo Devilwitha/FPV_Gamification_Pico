@@ -201,12 +201,8 @@ APP_FILES_TO_BUNDLE = [
     "admin_system.html",
     "admin_idcard.html",
     "admin_challenges.html",
-    "admin_infection.html",
-    "admin_koth.html",
-    "admin_race.html",
     "admin_credits.html",
     "challenges_view.html",
-    "infection_view.html",
     "gamemodes_view.html",
 ]
 

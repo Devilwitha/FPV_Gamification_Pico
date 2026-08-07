@@ -18,6 +18,14 @@ import pytest
 def test_index_page_loads(client):
     resp = client.get("/")
     assert resp.status_code == 200
+    assert b"Code trifft Control" in resp.data
+
+
+def test_webshop_home_preserves_product_introduction(client):
+    resp = client.get("/webshop")
+    assert resp.status_code == 200
+    assert b"FPV Gamification Pico" in resp.data
+    assert b"Smart Trick-Erkennung" in resp.data
 
 
 def test_shop_page_lists_products(client):

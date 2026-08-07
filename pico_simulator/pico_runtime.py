@@ -354,6 +354,49 @@ def _install_bluetooth_module():
     sys.modules["bluetooth"] = bluetooth_mod
 
 
+def _install_deflate_module():
+    """CPython-Ersatz fuer MicroPythons eingebautes deflate-Modul (seit
+    Version 1.21 fest im Firmware-Build enthalten, siehe
+    source/zip_helpers.py's ZIP-Entpacker fuer den Plugin-Upload) - deckt
+    nur das dort tatsaechlich genutzte Subset ab (RAW-Decompression via
+    DeflateIO(stream, deflate.RAW).read()), implementiert ueber Pythons
+    eingebautes zlib mit negativem wbits (= raw DEFLATE ohne zlib/gzip-
+    Header, exakt das Format, das ZIP fuer Kompressionsmethode 8 verwendet)."""
+    import zlib as _zlib
+
+    deflate_mod = types.ModuleType("deflate")
+    AUTO, RAW, ZLIB, GZIP = 0, 1, 2, 3
+    deflate_mod.AUTO = AUTO
+    deflate_mod.RAW = RAW
+    deflate_mod.ZLIB = ZLIB
+    deflate_mod.GZIP = GZIP
+    _wbits_by_format = {RAW: -15, ZLIB: 15, GZIP: 31}
+
+    class DeflateIO:
+        def __init__(self, stream, format=AUTO, wbits=0, close=False):
+            self._stream = stream
+            self._close = close
+            self._decompressor = _zlib.decompressobj(_wbits_by_format.get(format, -15))
+
+        def read(self, size=-1):
+            raw = self._stream.read() if (size is None or size < 0) else self._stream.read(size)
+            return self._decompressor.decompress(raw)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            if self._close:
+                try:
+                    self._stream.close()
+                except Exception:
+                    pass
+            return False
+
+    deflate_mod.DeflateIO = DeflateIO
+    sys.modules["deflate"] = deflate_mod
+
+
 def install(
     sim_port=8080,
     mem_free_bytes=180 * 1024,
@@ -370,6 +413,7 @@ def install(
     _install_machine_module()
     _install_network_module()
     _install_bluetooth_module()
+    _install_deflate_module()
     print(
         "[SIM] MicroPython compatibility layer installed "
         f"(mem_free={_SimState.mem_free_bytes}B, mem_alloc={_SimState.mem_alloc_bytes}B, "

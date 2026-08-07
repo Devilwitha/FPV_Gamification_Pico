@@ -16,7 +16,11 @@
   "nav.race": "Race",
   "nav.shooter": "Shooter",
   "nav.credits": "Credits",
+  "nav.plugins": "Plugins",
   "nav.home": "Startseite",
+
+  "plugins.pageTitle": "Admin - Plugins",
+  "plugins.title": "&#129513; PLUGINS",
 
   "infection.pageTitle": "Admin - Infection",
   "infection.title": "INFECTION MODUS",

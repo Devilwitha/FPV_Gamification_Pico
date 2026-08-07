@@ -171,6 +171,39 @@ def test_load_all_plugins_creates_init_files_automatically(plugin_manager):
     assert os.path.isfile(os.path.join("mods", "demo", "__init__.py"))
 
 
+def test_ensure_init_files_does_not_duplicate_when_compiled_init_exists(plugin_manager):
+    """Reproduziert einen real beobachteten Absturz: der Webshop-Store
+    liefert Mods ausschliesslich vorkompiliert (siehe
+    tools/plugin_packager.py's pack_mod_to_zip() - jede .py-Datei, auch ein
+    vom Autor mitgeliefertes __init__.py, wird zu __init__.mpy kompiliert).
+    Landet so ein Mod mit bereits vorhandenem __init__.mpy in mods/<name>/
+    (Webshop-Download oder ZIP-Upload, siehe zip_helpers.py), darf
+    _ensure_init_files() NICHT zusaetzlich ein leeres __init__.py anlegen -
+    zwei gleichzeitige __init__-Varianten im selben Ordner liessen den
+    anschliessenden Import von mods.<name>.main auf echter Hardware mit
+    "No module named" fehlschlagen, obwohl main.mpy nachweislich vorlag."""
+    os.makedirs(os.path.join("mods", "koth"), exist_ok=True)
+    with open(os.path.join("mods", "koth", "__init__.mpy"), "wb") as f:
+        f.write(b"\xfdfake-mpy-bytecode")
+
+    plugin_manager._ensure_init_files("koth")
+
+    assert not os.path.isfile(os.path.join("mods", "koth", "__init__.py"))
+    assert os.path.isfile(os.path.join("mods", "koth", "__init__.mpy"))
+    # Das TOP-LEVEL mods/__init__.py fehlte hier komplett -> muss trotzdem
+    # (als .py, es gibt keine kompilierte Variante davon) angelegt werden.
+    assert os.path.isfile(os.path.join("mods", "__init__.py"))
+
+
+def test_ensure_init_files_still_creates_py_when_neither_variant_exists(plugin_manager):
+    os.makedirs(os.path.join("mods", "demo"), exist_ok=True)
+
+    plugin_manager._ensure_init_files("demo")
+
+    assert os.path.isfile(os.path.join("mods", "__init__.py"))
+    assert os.path.isfile(os.path.join("mods", "demo", "__init__.py"))
+
+
 def test_load_all_plugins_skips_disabled_plugin(plugin_manager):
     _write_plugin("disabled_mod", SIMPLE_PLUGIN_SOURCE, {"enabled": False})
     plugin_manager.load_all_plugins()

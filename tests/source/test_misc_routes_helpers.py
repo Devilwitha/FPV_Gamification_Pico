@@ -114,7 +114,15 @@ async def test_admin_pages_are_served(fake_writer, install_stub_module, fresh_im
     async def fake_send_html_file(writer, path):
         writer.write(("HTTP/1.1 200 OK\r\n\r\nHTML:" + path).encode())
 
-    install_stub_module("main", send_html_file=fake_send_html_file, debug_log=lambda message: None)
+    def fake_safe_base64_file_to_file(input_file, output_file):
+        return True
+
+    install_stub_module(
+        "main",
+        send_html_file=fake_send_html_file,
+        debug_log=lambda message: None,
+        safe_base64_file_to_file=fake_safe_base64_file_to_file,
+    )
     sys.modules.pop("pico_web_api", None)
     sys.modules.pop("plugin_manager", None)
     try:

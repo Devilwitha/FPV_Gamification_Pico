@@ -7,7 +7,11 @@ diese Tests, daher wird (wie in test_gmr.py) ein winziges Stub-Modul namens
 "main" registriert.
 """
 import asyncio
+import base64
+import io
 import json
+import os
+import zipfile
 
 import pytest
 
@@ -20,7 +24,15 @@ def pico_web_api(install_stub_module, fresh_import):
         sent_html_calls.append(path)
         writer.write(b"HTTP/1.1 200 OK\r\n\r\n<html>" + path.encode() + b"</html>")
 
-    install_stub_module("main", send_html_file=fake_send_html_file, debug_log=lambda message: None)
+    def fake_safe_base64_file_to_file(input_file, output_file):
+        return True
+
+    install_stub_module(
+        "main",
+        send_html_file=fake_send_html_file,
+        debug_log=lambda message: None,
+        safe_base64_file_to_file=fake_safe_base64_file_to_file,
+    )
     module = fresh_import("pico_web_api")
     module._test_sent_html_calls = sent_html_calls
     return module
@@ -331,3 +343,192 @@ async def test_handle_pico_api_route_plugin_ui_schema_missing_returns_404(pico_w
     assert handled is True
     assert b"404" in fake_writer.response
     assert fake_writer.json()["ok"] is False
+
+
+# ---------------------------------------------------------------------------
+# Plugin-ZIP-Upload ("Plugin hochladen" auf der /admin-plugins-Seite, siehe
+# zip_helpers.py) - Chunk-Upload + Finalize, End-to-End ueber echte ZIP-Bytes
+# und ein echtes "mods"-Package (gleiches sys.path-Muster wie
+# test_plugin_manager.py/test_zip_helpers.py: "mods" ist ein echtes Python-
+# Package, tmp_path muss daher VOR source/ in sys.path liegen).
+# ---------------------------------------------------------------------------
+
+def _purge_mods_modules_for_upload_tests():
+    import sys as _sys
+    for key in list(_sys.modules.keys()):
+        if key == "mods" or key.startswith("mods."):
+            del _sys.modules[key]
+
+
+def _build_zip_bytes(entries):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        for i, (name, content) in enumerate(entries.items()):
+            data = content.encode("utf-8") if isinstance(content, str) else content
+            method = zipfile.ZIP_STORED if i % 2 == 0 else zipfile.ZIP_DEFLATED
+            archive.writestr(name, data, method)
+    return buf.getvalue()
+
+
+async def _upload_zip_via_routes(pico_web_api, zip_bytes, filename_no_ext, chunk_size=1024):
+    from tests.source.conftest import FakeWriter
+
+    b64 = base64.b64encode(zip_bytes).decode("ascii")
+    chunks = [b64[i:i + chunk_size] for i in range(0, len(b64), chunk_size)] or [""]
+    total = len(chunks)
+    for idx, chunk in enumerate(chunks):
+        writer = FakeWriter()
+        body = {"index": str(idx), "total": str(total), "data": chunk}
+        if idx == 0:
+            body["name"] = filename_no_ext
+        handled = await pico_web_api.handle_pico_api_route(writer, "/api/plugins/upload-chunk", "POST", {}, body)
+        assert handled is True
+        assert writer.json()["ok"] is True, writer.json()
+
+    finalize_writer = FakeWriter()
+    handled = await pico_web_api.handle_pico_api_route(finalize_writer, "/api/plugins/upload-finalize", "POST", {}, {})
+    assert handled is True
+    return finalize_writer
+
+
+@pytest.fixture
+def real_base64_decode(pico_web_api, monkeypatch):
+    """Ersetzt den Chunk-Fixture-Stub (der immer nur True zurueckgibt) durch
+    eine echte Base64-Dekodierung - noetig fuer Tests, die den entpackten
+    ZIP-Inhalt tatsaechlich pruefen wollen."""
+    def _decode(input_file, output_file):
+        with open(input_file, "r") as f:
+            text = f.read()
+        with open(output_file, "wb") as f:
+            f.write(base64.b64decode(text))
+        return True
+
+    monkeypatch.setattr(pico_web_api, "safe_base64_file_to_file", _decode)
+    return pico_web_api
+
+
+@pytest.fixture
+def mods_syspath(tmp_path, monkeypatch):
+    """Macht das per Upload entpackte "mods"-Package unter tmp_path fuer
+    plugin_manager.load_single_plugin() importierbar (isolated_cwd, siehe
+    conftest.py, setzt bereits das Arbeitsverzeichnis auf denselben Pfad -
+    "mods" muss zusaetzlich auf sys.path liegen, damit `import mods.<name>`
+    funktioniert)."""
+    monkeypatch.syspath_prepend(str(tmp_path))
+    _purge_mods_modules_for_upload_tests()
+    yield
+    _purge_mods_modules_for_upload_tests()
+
+
+SIMPLE_PLUGIN_MANIFEST = json.dumps({
+    "name": "placeholder", "version": "1.0.0", "entry": "main.py",
+    "enabled": True, "ui_slots": {}, "route_prefixes": [],
+})
+SIMPLE_PLUGIN_MAIN = "calls = []\n\ndef setup(context):\n    calls.append('setup')\n"
+
+
+@pytest.mark.asyncio
+async def test_plugin_zip_upload_installs_and_activates_plugin(
+    pico_web_api, real_base64_decode, mods_syspath, isolated_cwd
+):
+    import plugin_manager
+
+    zip_bytes = _build_zip_bytes({
+        "manifest.json": SIMPLE_PLUGIN_MANIFEST,
+        "shooter/main.py": SIMPLE_PLUGIN_MAIN,  # Unterordner -> muss flach landen
+    })
+
+    finalize_writer = await _upload_zip_via_routes(pico_web_api, zip_bytes, "shooter")
+
+    result = finalize_writer.json()
+    assert result["ok"] is True
+    assert os.path.isfile("mods/shooter/manifest.json")
+    assert os.path.isfile("mods/shooter/main.py")
+    assert plugin_manager.is_active("shooter")
+
+
+@pytest.mark.asyncio
+async def test_plugin_zip_upload_sanitizes_name_from_filename(
+    pico_web_api, real_base64_decode, mods_syspath, isolated_cwd
+):
+    """Der Zielordnername kommt aus dem hochgeladenen Dateinamen (Frontend
+    schneidet ".zip" ab, siehe pluginNameFromZipFilename()) - der Server
+    sanitisiert ihn zusaetzlich nochmal defensiv (_sanitize_plugin_name())."""
+    zip_bytes = _build_zip_bytes({"manifest.json": SIMPLE_PLUGIN_MANIFEST, "main.py": SIMPLE_PLUGIN_MAIN})
+
+    finalize_writer = await _upload_zip_via_routes(pico_web_api, zip_bytes, "My Cool Plugin!!")
+
+    assert finalize_writer.json()["ok"] is True
+    assert os.path.isdir("mods/MyCoolPlugin")
+
+
+@pytest.mark.asyncio
+async def test_plugin_zip_upload_reports_failure_when_plugin_crashes_after_install(
+    pico_web_api, real_base64_decode, mods_syspath, isolated_cwd
+):
+    """Reproduziert das real beobachtete Verhalten: die ZIP ist strukturell
+    gueltig (manifest.json + main.py vorhanden) und wird komplett nach
+    mods/<name>/ geschrieben, aber der hochgeladene Code wirft beim Laden
+    eine Exception (siehe plugin_manager.py's Crash-Isolation, has_error
+    wird gesetzt). Die Finalize-Antwort MUSS das als Fehlschlag melden statt
+    pauschal "ok": true - vorher wurde jeder erfolgreiche Dateischreibvorgang
+    als Erfolg gewertet, unabhaengig davon, ob das Plugin danach ueberhaupt
+    lief."""
+    crashing_main = "def setup(context):\n    raise RuntimeError('boom in setup')\n"
+    zip_bytes = _build_zip_bytes({"manifest.json": SIMPLE_PLUGIN_MANIFEST, "main.py": crashing_main})
+
+    finalize_writer = await _upload_zip_via_routes(pico_web_api, zip_bytes, "shooter")
+
+    result = finalize_writer.json()
+    assert result["ok"] is False
+    assert "boom in setup" in result["error"]
+    assert "500" in finalize_writer.status_line
+    # Dateien bleiben trotzdem auf dem Geraet liegen (kein automatisches
+    # Rollback) - der Nutzer sieht den Fehler und kann den Code korrigieren.
+    assert os.path.isfile("mods/shooter/main.py")
+
+
+@pytest.mark.asyncio
+async def test_plugin_zip_upload_chunk_rejects_empty_name(pico_web_api, fake_writer):
+    handled = await pico_web_api.handle_pico_api_route(
+        fake_writer, "/api/plugins/upload-chunk", "POST", {}, {"index": "0", "total": "1", "data": "AA==", "name": "!!!"}
+    )
+    assert handled is True
+    assert "400" in fake_writer.status_line
+    assert fake_writer.json()["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_plugin_zip_upload_finalize_without_prior_chunk_fails(pico_web_api, fake_writer):
+    handled = await pico_web_api.handle_pico_api_route(fake_writer, "/api/plugins/upload-finalize", "POST", {}, {})
+    assert handled is True
+    assert "500" in fake_writer.status_line
+    assert fake_writer.json()["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_plugin_zip_upload_finalize_with_missing_chunks_fails(pico_web_api, fake_writer, isolated_cwd):
+    handled = await pico_web_api.handle_pico_api_route(
+        fake_writer, "/api/plugins/upload-chunk", "POST", {}, {"index": "0", "total": "3", "data": "AAAA", "name": "shooter"}
+    )
+    assert handled is True
+
+    finalize_writer_cls = fake_writer.__class__
+    finalize_writer = finalize_writer_cls()
+    handled = await pico_web_api.handle_pico_api_route(finalize_writer, "/api/plugins/upload-finalize", "POST", {}, {})
+    assert handled is True
+    assert "500" in finalize_writer.status_line
+    assert "unvollstaendig" in finalize_writer.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_plugin_zip_upload_rejects_zip_without_manifest(
+    pico_web_api, real_base64_decode, mods_syspath, isolated_cwd
+):
+    zip_bytes = _build_zip_bytes({"main.py": SIMPLE_PLUGIN_MAIN})
+
+    finalize_writer = await _upload_zip_via_routes(pico_web_api, zip_bytes, "shooter")
+
+    result = finalize_writer.json()
+    assert result["ok"] is False
+    assert not os.path.isdir("mods/shooter")

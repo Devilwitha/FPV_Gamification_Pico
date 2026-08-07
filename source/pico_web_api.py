@@ -25,8 +25,34 @@ Lazy importiert aus main.py, erst beim ersten "/admin-plugins" bzw.
 
 import gc
 import json
+import os
 
-from main import send_html_file, debug_log
+from main import send_html_file, debug_log, safe_base64_file_to_file
+
+# Staging-Dateien fuer den Plugin-ZIP-Upload (siehe _handle_plugin_upload_chunk()/
+# _handle_plugin_upload_finalize()) - eigene Dateien statt der OTA-eigenen
+# 'update.pbp' (upload_helpers.py), damit ein Plugin-Upload niemals mit einem
+# parallel laufenden Firmware-Update kollidiert.
+PLUGIN_UPLOAD_STAGING_B64 = "plugin_upload.zip.b64"
+PLUGIN_UPLOAD_STAGING_BIN = "plugin_upload.zip"
+
+# name -> "" ausserhalb eines laufenden Uploads; wird beim ersten Chunk
+# (index=0) gesetzt und nach finalize()/Fehler wieder zurueckgesetzt.
+_plugin_upload_state = {"total_chunks": 0, "received_chunks": 0, "name": ""}
+
+
+def _sanitize_plugin_name(name):
+    """Wie challenge_helpers.py's _sanitize_mission_name(): reiner ASCII-
+    Bereichsvergleich statt str.isalnum() (auf diesem MicroPython-Build
+    nicht verfuegbar, siehe dortiger Kommentar). Bestimmt gleichzeitig den
+    Zielordnernamen mods/<name>/ - "shooter.zip" hochladen ergibt also
+    mods/shooter/."""
+    name = str(name or "").strip()
+    cleaned = "".join(
+        ch for ch in name
+        if ("a" <= ch <= "z") or ("A" <= ch <= "Z") or ("0" <= ch <= "9") or ch in ("-", "_")
+    )
+    return cleaned[:40]
 
 
 async def _send_json(writer, payload, status="200 OK"):
@@ -162,16 +188,27 @@ input:checked+.slider{background:#1abc9c}
 input:checked+.slider:before{transform:translateX(18px)}
 .empty{color:#6f8299;font-size:.85em}
 .msg{color:#9fb4cb;font-size:.82em;min-height:1.3em;margin-top:7px}
+input[type=file]{display:block;margin:10px 0;padding:8px;background:#0b1320;color:#e8f0f8;border:1px solid #335174;border-radius:4px;width:100%;box-sizing:border-box}
+.pbwrap{display:none;margin:10px 0;height:20px;background:#0b1320;border:1px solid #335174;border-radius:4px;overflow:hidden;position:relative}
+.pbbar{height:100%;width:0%;background:#1abc9c;transition:width .15s ease}
+.pbtxt{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:.72em;font-weight:bold;color:#fff;text-shadow:0 1px 2px #000}
 </style>
 </head>
 <body>
 <div class="c">
-<h1>&#129513; PLUGINS</h1>
+<h1 data-i18n="plugins.title">&#129513; PLUGINS</h1>
 <div class="nv">
-<a href="/admin">Dashboard</a>
-<a href="/admin-plugins" class="on">Plugins</a>
-<a href="/admin-system">System</a>
-<a href="/">Home</a>
+<a href="/admin" data-i18n="nav.dashboard">Dashboard</a>
+<a href="/admin-update" data-i18n="nav.update">Update</a>
+<a href="/admin-simulate" data-i18n="nav.simulation">Simulation</a>
+<a href="/admin-profiles" data-i18n="nav.profiles">Profile</a>
+<a href="/admin-system" data-i18n="nav.system">System</a>
+<a href="/admin-idcard" data-i18n="nav.idcard">Ausweis</a>
+<a href="/admin-challenges" data-i18n="nav.challenges">Challenges</a>
+<!--PLUGIN_SLOT:dashboard_nav-->
+<a href="/admin-plugins" class="on" data-i18n="nav.plugins">Plugins</a>
+<a href="/admin-credits" data-i18n="nav.credits">Credits</a>
+<a href="/" data-i18n="nav.home">Home</a>
 </div>
 
 <div class="tabs">
@@ -180,6 +217,15 @@ input:checked+.slider:before{transform:translateX(18px)}
 </div>
 
 <div class="panel on" id="panel_installed">
+<div class="s">
+<h2>Plugin hochladen</h2>
+<div style="color:#9fb4cb;font-size:.8em;margin-bottom:6px">ZIP-Datei eines Mod-Ordners hochladen (z.B. "shooter.zip" -&gt; mods/shooter/). Ein bestehendes Plugin mit gleichem Namen wird ersetzt.</div>
+<input type="file" id="pf" accept=".zip">
+<div id="pfi" style="color:#9fb4cb;font-size:0.9em">ZIP-Datei waehlen...</div>
+<div id="pbwrap" class="pbwrap"><div id="pbbar" class="pbbar"></div><div id="pbtxt" class="pbtxt"></div></div>
+<div id="ps" class="msg"></div>
+<button class="b" onclick="uploadPluginZip()">Hochladen</button>
+</div>
 <div class="s">
 <h2>Installierte Plugins</h2>
 <div id="pluginList" class="empty">Lade...</div>
@@ -287,6 +333,66 @@ function downloadPlugin(name){
     }).catch(()=>{document.getElementById('storeMsg').innerText='Fehler beim Start des Downloads';});
 }
 
+function pluginNameFromZipFilename(filename){
+  return String(filename||'').replace(/\\.zip$/i,'').replace(/[^A-Za-z0-9_-]/g,'_').substring(0,40);
+}
+
+document.getElementById('pf').addEventListener('change',function(e){
+  const f=e.target.files[0];
+  document.getElementById('pfi').innerText=f?('Datei: '+f.name+' ('+(f.size/1024).toFixed(1)+' KB)'):'ZIP-Datei waehlen...';
+  document.getElementById('pbwrap').style.display='none';
+  document.getElementById('pbbar').style.width='0%';
+  document.getElementById('pbtxt').innerText='';
+  document.getElementById('ps').innerText='';
+});
+
+function uploadPluginZip(){
+  const f=document.getElementById('pf').files[0],s=document.getElementById('ps');
+  if(!f){s.innerText='Keine Datei!';return;}
+  if(!f.name.toLowerCase().endsWith('.zip')){s.innerText='Nur .zip-Dateien erlaubt!';return;}
+  const name=pluginNameFromZipFilename(f.name);
+  if(!name){s.innerText='Ungueltiger Dateiname - bitte umbenennen (nur Buchstaben/Zahlen/_/-).';return;}
+  const rd=new FileReader();
+  rd.onload=function(e){
+    try{
+      const b=new Uint8Array(e.target.result);
+      let bn='';
+      for(let i=0;i<b.length;i+=10240){const ch=b.slice(i,i+10240);for(let j=0;j<ch.length;j++)bn+=String.fromCharCode(ch[j]);}
+      const b64=btoa(bn),tc=Math.max(1,Math.ceil(b64.length/1024));
+      let idx=0;
+      const pbwrap=document.getElementById('pbwrap'),pbbar=document.getElementById('pbbar'),pbtxt=document.getElementById('pbtxt');
+      function setProgress(p){pbbar.style.width=p+'%';pbtxt.innerText=p+'%';}
+      pbwrap.style.display='block';setProgress(0);
+      s.innerText='Ziel: mods/'+name+'/ | Upload laeuft...';
+      function nc(){
+        if(idx>=tc){
+          setProgress(100);
+          fetch('/api/plugins/upload-finalize',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'name='+encodeURIComponent(name),cache:'no-store'})
+            .then(r=>r.json()).then(d=>{
+              if(d.ok){s.innerText='Fertig: '+d.message;loadPlugins();}
+              else{s.innerText='Fehler: '+d.error;}
+            }).catch(er=>{s.innerText='Fehler: '+er;});
+          return;
+        }
+        const st=idx*1024,ed=Math.min(st+1024,b64.length),cd=b64.substring(st,ed);
+        fetch('/api/plugins/upload-chunk',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'index='+idx+'&total='+tc+'&name='+encodeURIComponent(name)+'&data='+encodeURIComponent(cd),cache:'no-store'})
+          .then(r=>r.json()).then(d=>{
+            if(d.ok){idx++;setProgress(Math.round((idx/tc)*100));nc();}
+            else{s.innerText='Fehler: '+d.error;}
+          }).catch(er=>{s.innerText='Fehler: '+er;});
+      }
+      nc();
+    }catch(er){s.innerText='Fehler: '+er;}
+  };
+  rd.readAsArrayBuffer(f);
+}
+
+let I18N={strings:{}};
+function t(k,f){const v=I18N.strings[k];return typeof v==='string'?v:f;}
+function applyI18n(){document.querySelectorAll('[data-i18n]').forEach(el=>{const v=t(el.getAttribute('data-i18n'),'');if(v)el.innerHTML=v;});document.title=t('plugins.pageTitle','Admin - Plugins');}
+function loadI18n(){return fetch('/i18n-data',{cache:'no-store'}).then(r=>r.json()).then(d=>{I18N.strings=d.strings||{};applyI18n();}).catch(()=>{});}
+
+loadI18n();
 loadPlugins();
 loadFirmwareStatus();
 loadStoreList();
@@ -338,6 +444,117 @@ async def _run_store_download(plugin_name):
         debug_log("[STORE] Unerwarteter Fehler beim Download von '{}': {}".format(plugin_name, e))
 
 
+async def _handle_plugin_upload_chunk(writer, body_params):
+    """Nimmt einen Base64-Chunk eines hochgeladenen Plugin-ZIPs entgegen
+    (gleiches Chunk-Prinzip wie upload_helpers.handle_upload_chunk() fuer
+    Firmware-Uploads, aber bewusst eigenstaendig/unabhaengig von dessen OTA-
+    Status, siehe PLUGIN_UPLOAD_STAGING_B64). Der Zielname wird beim ersten
+    Chunk (index=0) aus body_params['name'] uebernommen (vom Frontend bereits
+    aus dem ZIP-Dateinamen abgeleitet, siehe pluginNameFromZipFilename()) und
+    zusaetzlich hier nochmal sanitisiert."""
+    try:
+        chunk_index = int(body_params.get("index", "-1"))
+        total = int(body_params.get("total", "0"))
+        chunk_data = body_params.get("data", "")
+
+        if chunk_index == 0:
+            name = _sanitize_plugin_name(body_params.get("name", ""))
+            if not name:
+                await _send_json(writer, {"ok": False, "error": "Ungueltiger Plugin-Name"}, "400 Bad Request")
+                return
+            _plugin_upload_state["total_chunks"] = total
+            _plugin_upload_state["received_chunks"] = 0
+            _plugin_upload_state["name"] = name
+            try:
+                os.remove(PLUGIN_UPLOAD_STAGING_B64)
+            except Exception:
+                pass
+
+        if not _plugin_upload_state["name"]:
+            await _send_json(writer, {"ok": False, "error": "Kein Upload gestartet (erster Chunk fehlt)"}, "400 Bad Request")
+            return
+
+        if chunk_data:
+            with open(PLUGIN_UPLOAD_STAGING_B64, "a") as f:
+                f.write(chunk_data)
+            _plugin_upload_state["received_chunks"] += 1
+
+        await _send_json(writer, {"ok": True})
+    except Exception as e:
+        debug_log("[PLUGIN UPLOAD] Chunk-Fehler: {}".format(e))
+        _plugin_upload_state["total_chunks"] = 0
+        _plugin_upload_state["received_chunks"] = 0
+        _plugin_upload_state["name"] = ""
+        await _send_json(writer, {"ok": False, "error": str(e)[:150]}, "400 Bad Request")
+    gc.collect()
+
+
+def _reset_plugin_upload_state():
+    _plugin_upload_state["total_chunks"] = 0
+    _plugin_upload_state["received_chunks"] = 0
+    _plugin_upload_state["name"] = ""
+    for path in (PLUGIN_UPLOAD_STAGING_B64, PLUGIN_UPLOAD_STAGING_BIN):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
+async def _handle_plugin_upload_finalize(writer):
+    """Dekodiert die fertig empfangene Base64-Staging-Datei zu einer echten
+    ZIP-Binaerdatei (safe_base64_file_to_file(), gleiche Funktion wie beim
+    Firmware-Upload) und entpackt sie ueber zip_helpers.extract_plugin_zip()
+    nach mods/<name>/. Prueft ANSCHLIESSEND ueber plugin_manager.list_plugins(),
+    ob das frisch entpackte Plugin auch tatsaechlich aktiv gelaufen ist -
+    zip_helpers.extract_plugin_zip() kann erfolgreich Dateien schreiben, aber
+    plugin_manager.load_single_plugin() trotzdem has_error=True setzen (z.B.
+    Syntaxfehler/Exception im hochgeladenen Code, siehe plugin_manager.py's
+    Crash-Isolation) - OHNE diese Nachpruefung wuerde die Antwort faelschlich
+    "ok": true melden, obwohl das Plugin in Wahrheit deaktiviert/abgestuerzt
+    dabei blieb. Raeumt IMMER auf (finally), egal ob Erfolg oder Fehler,
+    damit ein fehlgeschlagener Upload keine Staging-Reste hinterlaesst."""
+    import plugin_manager
+    import zip_helpers
+
+    name = _plugin_upload_state["name"]
+    try:
+        if not name:
+            raise Exception("Kein Upload gestartet")
+        if _plugin_upload_state["received_chunks"] != _plugin_upload_state["total_chunks"]:
+            raise Exception("Upload unvollstaendig ({}/{} Chunks)".format(
+                _plugin_upload_state["received_chunks"], _plugin_upload_state["total_chunks"]))
+
+        decode_ok = safe_base64_file_to_file(PLUGIN_UPLOAD_STAGING_B64, PLUGIN_UPLOAD_STAGING_BIN)
+        if decode_ok is not True:
+            raise Exception("Base64-Dekodierung fehlgeschlagen: {}".format(decode_ok))
+
+        zip_helpers.extract_plugin_zip(PLUGIN_UPLOAD_STAGING_BIN, name)
+
+        installed = None
+        for plugin in plugin_manager.list_plugins():
+            if plugin["name"] == name:
+                installed = plugin
+                break
+
+        if installed is not None and installed["has_error"]:
+            debug_log("[PLUGIN UPLOAD] '{}' installiert, aber Aktivierung fehlgeschlagen: {}".format(
+                name, installed["error_message"]))
+            await _send_json(writer, {
+                "ok": False,
+                "error": "Dateien wurden nach mods/{}/ geschrieben, aber das Plugin konnte nicht geladen werden: {}".format(
+                    name, installed["error_message"]),
+            }, "500 Internal Server Error")
+        else:
+            debug_log("[PLUGIN UPLOAD] '{}' erfolgreich aus ZIP installiert".format(name))
+            await _send_json(writer, {"ok": True, "message": "Plugin '{}' installiert (mods/{}/)".format(name, name)})
+    except Exception as e:
+        debug_log("[PLUGIN UPLOAD] Finalize-Fehler ({}): {}".format(name, e))
+        await _send_json(writer, {"ok": False, "error": str(e)[:200]}, "500 Internal Server Error")
+    finally:
+        _reset_plugin_upload_state()
+        gc.collect()
+
+
 async def handle_pico_api_route(writer, request_path, request_method, query_params, body_params):
     import plugin_manager
     import network_manager
@@ -362,6 +579,14 @@ async def handle_pico_api_route(writer, request_path, request_method, query_para
         name = request_path[len("/api/plugins/"):-len("/delete")]
         plugin_manager.delete_plugin(name)
         await _send_json(writer, {"ok": True})
+        return True
+
+    if request_path == "/api/plugins/upload-chunk" and request_method == "POST":
+        await _handle_plugin_upload_chunk(writer, body_params)
+        return True
+
+    if request_path == "/api/plugins/upload-finalize" and request_method == "POST":
+        await _handle_plugin_upload_finalize(writer)
         return True
 
     if request_path == "/api/firmware/status":

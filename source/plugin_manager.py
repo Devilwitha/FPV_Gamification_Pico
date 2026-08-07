@@ -157,17 +157,37 @@ def list_plugin_names():
 
 
 def _ensure_init_files(name):
-    """Legt mods/__init__.py und mods/<name>/__init__.py an, falls sie
-    fehlen - noetig, damit `mods` bzw. `mods.<name>` als importierbares
-    Package erkannt werden. Nachinstallierte Mods (Webshop-Download) muessen
-    diese Dateien deshalb nicht selbst mitbringen."""
+    """Legt mods/__init__.py und mods/<name>/__init__.py an, falls WEDER die
+    .py- NOCH eine bereits per mpy-cross kompilierte .mpy-Variante existiert
+    - noetig, damit `mods` bzw. `mods.<name>` als importierbares Package
+    erkannt werden. Nachinstallierte Mods (Webshop-Download/ZIP-Upload)
+    muessen diese Dateien deshalb nicht selbst mitbringen.
+
+    WICHTIG: die .mpy-Pruefung ist kein Nice-to-have, sondern verhindert
+    einen real beobachteten Absturz - der Webshop-Store liefert Mods
+    ausschliesslich vorkompiliert aus (siehe tools/plugin_packager.py's
+    pack_mod_to_zip(): JEDE .py-Datei des Mods, auch ein vom Autor
+    mitgeliefertes __init__.py, wird zu __init__.mpy kompiliert). Ohne diese
+    Pruefung wuerde hier trotz bereits vorhandenem __init__.mpy zusaetzlich
+    ein LEERES __init__.py angelegt - zwei gleichzeitig vorhandene
+    __init__-Varianten im selben Package-Ordner bringen MicroPythons
+    Import-Aufloesung durcheinander und liessen z.B. den anschliessenden
+    Import von mods.<name>.main mit "No module named" fehlschlagen, OBWOHL
+    main.mpy nachweislich auf der Platte lag."""
     created_any = False
-    for init_path in (MODS_DIR + "/__init__.py", _plugin_dir(name) + "/__init__.py"):
-        try:
-            os.stat(init_path)
-        except Exception:
+    for init_dir in (MODS_DIR, _plugin_dir(name)):
+        init_py = init_dir + "/__init__.py"
+        has_init = False
+        for candidate in (init_py, init_dir + "/__init__.mpy"):
             try:
-                with open(init_path, "w") as f:
+                os.stat(candidate)
+                has_init = True
+                break
+            except Exception:
+                pass
+        if not has_init:
+            try:
+                with open(init_py, "w") as f:
                     f.write("")
                 created_any = True
             except Exception:

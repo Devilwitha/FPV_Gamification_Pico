@@ -27,11 +27,15 @@ def gmr(install_stub_module, fresh_import):
     async def fake_send_html_file(writer, path):
         sent.append((writer, path))
 
+    def fake_safe_base64_file_to_file(input_file, output_file):
+        return True
+
     install_stub_module(
         "main",
         DEFAULT_PILOT_NAME="TestPilot",
         debug_log=lambda message: None,
         send_html_file=fake_send_html_file,
+        safe_base64_file_to_file=fake_safe_base64_file_to_file,
     )
     sys.modules.pop("pico_web_api", None)
     sys.modules.pop("plugin_manager", None)

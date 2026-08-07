@@ -7,7 +7,9 @@ Netzwerkaufrufe an Stripe/PayPal stattfinden. Fuer den kompletten
 Kauf-bis-Lizenz-Flow ohne jeden Zahlungsanbieter wird app.py's eigener
 DUMMY_MODE-Schalter genutzt (siehe webshop/CLAUDE.md).
 """
+import importlib
 import json
+import sys
 import types
 
 import pytest
@@ -54,6 +56,57 @@ def test_hardware_id_pattern():
     assert pattern.match("aabbccdd11223344")
     assert not pattern.match("not-hex!!")
     assert not pattern.match("abc")  # zu kurz
+
+
+def test_https_config_enables_secure_session_cookie(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEBSHOP_DB_PATH", str(tmp_path / "webshop.db"))
+    monkeypatch.setenv("WEBSHOP_ORDERS_DB_PATH", str(tmp_path / "orders.db"))
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("DOMAIN_URL", "https://shop.example.com")
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("TRUST_PROXY_COUNT", raising=False)
+
+    for module_name in ("app", "db", "orders_db"):
+        sys.modules.pop(module_name, None)
+
+    app_module = importlib.import_module("app")
+
+    assert app_module.HTTPS_ENABLED is True
+    assert app_module.app.config["SESSION_COOKIE_SECURE"] is True
+    assert app_module.app.config["PREFERRED_URL_SCHEME"] == "https"
+
+
+def test_trust_proxy_count_wraps_wsgi_app(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEBSHOP_DB_PATH", str(tmp_path / "webshop.db"))
+    monkeypatch.setenv("WEBSHOP_ORDERS_DB_PATH", str(tmp_path / "orders.db"))
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("DOMAIN_URL", "https://shop.example.com")
+    monkeypatch.setenv("TRUST_PROXY_COUNT", "1")
+
+    for module_name in ("app", "db", "orders_db"):
+        sys.modules.pop(module_name, None)
+
+    app_module = importlib.import_module("app")
+
+    assert type(app_module.app.wsgi_app).__name__ == "ProxyFix"
+
+
+def test_http_config_keeps_secure_cookie_disabled_by_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEBSHOP_DB_PATH", str(tmp_path / "webshop.db"))
+    monkeypatch.setenv("WEBSHOP_ORDERS_DB_PATH", str(tmp_path / "orders.db"))
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("DOMAIN_URL", "http://localhost:5000")
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("TRUST_PROXY_COUNT", raising=False)
+
+    for module_name in ("app", "db", "orders_db"):
+        sys.modules.pop(module_name, None)
+
+    app_module = importlib.import_module("app")
+
+    assert app_module.HTTPS_ENABLED is False
+    assert app_module.app.config["SESSION_COOKIE_SECURE"] is False
+    assert app_module.app.config["PREFERRED_URL_SCHEME"] == "http"
 
 
 # ==================== Dummy-Kauf-Flow ====================

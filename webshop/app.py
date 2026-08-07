@@ -15,6 +15,7 @@ import requests
 import stripe
 from dotenv import load_dotenv
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, send_file, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
@@ -22,14 +23,52 @@ import orders_db
 
 load_dotenv()
 
+
+def _env_flag(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name, default=0):
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _is_https_url(url):
+    return (url or "").strip().lower().startswith("https://")
+
 # DUMMY_MODE (Default: aus) - siehe webshop/CLAUDE.md Abschnitt "Ausnahme
 # (lokaler Dev-Schalter)": schaltet AUSSCHLIESSLICH lokal/zu Testzwecken einen
 # zusaetzlichen "Dummy-Kauf simulieren"-Button frei, der Stripe/PayPal komplett
 # umgeht. Ruehrt die echten Zahlungspfade nicht an und ist standardmaessig aus.
 DUMMY_MODE = os.environ.get("DUMMY_MODE", "true").strip().lower() == "true"
+DOMAIN_URL = os.environ.get("DOMAIN_URL", "http://localhost:5000")
+TRUST_PROXY_COUNT = max(0, _env_int("TRUST_PROXY_COUNT", 0))
+HTTPS_ENABLED = _is_https_url(DOMAIN_URL)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "geheim_schluessel_change_me")
+app.config.update(
+    PREFERRED_URL_SCHEME="https" if HTTPS_ENABLED else "http",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE=os.environ.get("SESSION_COOKIE_SAMESITE", "Lax"),
+    SESSION_COOKIE_SECURE=_env_flag("SESSION_COOKIE_SECURE", HTTPS_ENABLED),
+)
+
+if TRUST_PROXY_COUNT:
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=TRUST_PROXY_COUNT,
+        x_proto=TRUST_PROXY_COUNT,
+        x_host=TRUST_PROXY_COUNT,
+    )
 
 # Offline-Lizenzsystem (siehe tools/license_generator.py und
 # source/license_verifier.py): der Webshop-Server signiert license.lic-Dateien
@@ -82,7 +121,6 @@ STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY")
 PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID")
 PAYPAL_CLIENT_SECRET = os.environ.get("PAYPAL_CLIENT_SECRET")
 PAYPAL_MODE = os.environ.get("PAYPAL_MODE", "sandbox")
-DOMAIN_URL = os.environ.get("DOMAIN_URL", "http://localhost:5000")
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -1291,4 +1329,8 @@ def plugins_upload():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0",debug=True, port=5000)
+    app.run(
+        host=os.environ.get("FLASK_HOST", "0.0.0.0"),
+        debug=_env_flag("FLASK_DEBUG", False),
+        port=_env_int("FLASK_PORT", 5000),
+    )

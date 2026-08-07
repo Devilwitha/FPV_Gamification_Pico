@@ -39,6 +39,7 @@ der Download-Link dafuer steht auf der Webshop-Seite /plugins (siehe
 webshop/templates/plugins.html).
 """
 import os
+import site
 import sys
 import tempfile
 import threading
@@ -47,6 +48,16 @@ import zipfile
 from tkinter import filedialog
 
 import requests
+
+# kivy_deps.angle/.sdl2/.glew lesen bei ihrem Import site.USER_BASE (siehe
+# deren __init__.py) - in einer per PyInstaller gebauten .exe bleibt das
+# None (die eingebettete Python-Umgebung richtet kein User-Site-Verzeichnis
+# ein), wodurch os.path.join(None, ...) dort mit einem TypeError abstuerzt,
+# noch bevor Kivy selbst importiert werden kann. Muss VOR dem ersten
+# "import kivy" (bzw. "from kivy...") passieren.
+if site.USER_BASE is None:
+    site.USER_BASE = sys.prefix
+
 from kivy.app import App
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout

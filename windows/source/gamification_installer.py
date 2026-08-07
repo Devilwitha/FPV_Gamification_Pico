@@ -44,6 +44,7 @@ import ctypes
 import glob
 import json
 import os
+import site
 import string
 import struct
 import sys
@@ -54,6 +55,15 @@ import tkinter as tk
 from datetime import datetime
 from tkinter import filedialog
 from urllib import request
+
+# kivy_deps.angle/.sdl2/.glew lesen bei ihrem Import site.USER_BASE (siehe
+# deren __init__.py) - in einer per PyInstaller gebauten .exe bleibt das
+# None (die eingebettete Python-Umgebung richtet kein User-Site-Verzeichnis
+# ein), wodurch os.path.join(None, ...) dort mit einem TypeError abstuerzt,
+# noch bevor Kivy selbst importiert werden kann. Muss VOR dem ersten
+# "import kivy" (bzw. "from kivy...") passieren.
+if site.USER_BASE is None:
+    site.USER_BASE = sys.prefix
 
 from kivy.app import App
 from kivy.metrics import dp, sp

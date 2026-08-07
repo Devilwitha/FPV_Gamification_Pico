@@ -56,15 +56,34 @@ PICOFW_DIR = os.path.join(PROJECT_ROOT, "picofw")
 #   - "--paths WINDOWS_DIR" macht "import kivy_theme" fuer PyInstallers
 #     statische Import-Analyse sichtbar (gleicher Grund wie "--paths
 #     TOOLS_DIR" unten fuer plugin_packager.py's "import build_firmware").
-#   - "--collect-all kivy"/"kivy_deps.*" packt Kivys eigene Datendateien
-#     (Default-Schriften/Shader/Bild-Loader) sowie die auf Windows per pip
-#     separat installierten SDL2/GLEW/ANGLE-DLLs (kivy_deps.sdl2/.glew/
-#     .angle) mit ein - ohne das startet die gebaute .exe nicht (fehlende
-#     DLLs/Ressourcen), da PyInstallers automatische Analyse Kivys
-#     Plugin-basiertes Nachladen dieser Dateien nicht selbst erkennt.
+#   - Kivy laedt seine Provider-Module (Fenster/Text/Bild/Zwischenablage-
+#     Backends unter kivy.core.*, sowie kivy.graphics/.input/.lang/.modules/
+#     .effects/.uix) zur Laufzeit dynamisch per importlib nach - PyInstallers
+#     normale Analyse findet nur statische "import"-Anweisungen und wuerde
+#     diese Provider ohne explizites Einsammeln weglassen (die .exe stuerzt
+#     dann erst beim Start ab). "--collect-data kivy" ergaenzt Kivys eigene
+#     Datendateien (Default-Schriften/Shader/Bild-Loader unter kivy/data/).
+#     BEWUSST NICHT "--collect-all kivy"/"--collect-submodules kivy" (auf das
+#     komplette Wurzelpaket): das wuerde auch kivy.garden mit einsammeln - ein
+#     von der separaten "Kivy-Garden"-Distribution nachinstalliertes
+#     Namespace-Paket mit einem __path__, das kein Kivy-Code selbst braucht
+#     (nur fuer optionale Drittanbieter-Widgets gedacht, hier ungenutzt),
+#     dessen __path__-Form PyInstallers collect_submodules() aber mit
+#     "ValueError: path must be None or list of paths" zum Absturz bringt.
+#     Einzelne Unterpakete gezielt einzusammeln umgeht kivy.garden komplett.
+#   - "kivy_deps.*" sind die auf Windows per pip separat installierten
+#     SDL2/GLEW/ANGLE-DLLs (kivy_deps.sdl2/.glew/.angle) - ohne die
+#     "--collect-all" dafuer fehlen der .exe die noetigen DLLs.
 KIVY_PYINSTALLER_ARGS = [
     "--paths", WINDOWS_DIR,
-    "--collect-all", "kivy",
+    "--collect-data", "kivy",
+    "--collect-submodules", "kivy.core",
+    "--collect-submodules", "kivy.graphics",
+    "--collect-submodules", "kivy.input",
+    "--collect-submodules", "kivy.lang",
+    "--collect-submodules", "kivy.modules",
+    "--collect-submodules", "kivy.effects",
+    "--collect-submodules", "kivy.uix",
     "--collect-all", "kivy_deps.sdl2",
     "--collect-all", "kivy_deps.glew",
     "--collect-all", "kivy_deps.angle",

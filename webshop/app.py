@@ -271,7 +271,13 @@ def get_paypal_access_token():
 
 @app.route("/")
 def index():
-    """Startseite mit Produktvorstellung."""
+    """Bollisoft-Unternehmensseite."""
+    return render_template("bollisoft_home.html")
+
+
+@app.route("/webshop")
+def webshop_home():
+    """Startseite des FPV-Gamification-Webshops."""
     return render_template("index.html")
 
 

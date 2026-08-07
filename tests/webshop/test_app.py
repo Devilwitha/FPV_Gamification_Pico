@@ -56,9 +56,6 @@ def test_format_price_filter(webshop_app):
 
 
 def test_hardware_id_pattern():
-    import re as _re
-    pattern = None
-    import importlib
     app_module = importlib.import_module("app")
     pattern = app_module.HARDWARE_ID_PATTERN
     assert pattern.match("aabbccdd11223344")
@@ -73,6 +70,10 @@ def test_https_config_enables_secure_session_cookie(tmp_path, monkeypatch):
     monkeypatch.setenv("DOMAIN_URL", "https://shop.example.com")
     monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
     monkeypatch.delenv("TRUST_PROXY_COUNT", raising=False)
+    # app.py's load_dotenv() would otherwise re-fill deleted vars from a real
+    # local webshop/.env (only sets vars still absent from os.environ) and
+    # make this test depend on the developer's own deployment config.
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
 
     for module_name in ("app", "db", "orders_db"):
         sys.modules.pop(module_name, None)
@@ -106,6 +107,9 @@ def test_http_config_keeps_secure_cookie_disabled_by_default(tmp_path, monkeypat
     monkeypatch.setenv("DOMAIN_URL", "http://localhost:5000")
     monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
     monkeypatch.delenv("TRUST_PROXY_COUNT", raising=False)
+    # see test_https_config_enables_secure_session_cookie() - avoid a real
+    # local webshop/.env re-filling the deleted SESSION_COOKIE_SECURE var.
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
 
     for module_name in ("app", "db", "orders_db"):
         sys.modules.pop(module_name, None)

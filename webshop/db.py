@@ -145,7 +145,7 @@ def get_pending_licenses_for_email(email):
     """Liefert alle offenen Bestellungen einer E-Mail-Adresse, aelteste zuerst."""
     with _get_connection() as connection:
         return connection.execute(
-            "SELECT * FROM pending_licenses WHERE email = ? COLLATE NOCASE ORDER BY created_at ASC",
+            "SELECT * FROM pending_licenses WHERE email = ? COLLATE NOCASE ORDER BY created_at ASC, id ASC",
             (email,),
         ).fetchall()
 
@@ -154,7 +154,7 @@ def get_customer_licenses_for_email(email):
     """Liefert alle bereits ausgestellten Lizenzen einer E-Mail-Adresse, neueste zuerst."""
     with _get_connection() as connection:
         return connection.execute(
-            "SELECT * FROM customer_licenses WHERE email = ? COLLATE NOCASE ORDER BY issued_at DESC",
+            "SELECT * FROM customer_licenses WHERE email = ? COLLATE NOCASE ORDER BY issued_at DESC, id DESC",
             (email,),
         ).fetchall()
 
@@ -165,7 +165,7 @@ def get_all_customer_licenses():
     verkauften Produkte" (siehe app.py's /admin)."""
     with _get_connection() as connection:
         return connection.execute(
-            "SELECT * FROM customer_licenses ORDER BY issued_at DESC"
+            "SELECT * FROM customer_licenses ORDER BY issued_at DESC, id DESC"
         ).fetchall()
 
 

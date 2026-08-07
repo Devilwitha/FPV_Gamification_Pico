@@ -161,6 +161,7 @@ def _ensure_init_files(name):
     fehlen - noetig, damit `mods` bzw. `mods.<name>` als importierbares
     Package erkannt werden. Nachinstallierte Mods (Webshop-Download) muessen
     diese Dateien deshalb nicht selbst mitbringen."""
+    created_any = False
     for init_path in (MODS_DIR + "/__init__.py", _plugin_dir(name) + "/__init__.py"):
         try:
             os.stat(init_path)
@@ -168,8 +169,20 @@ def _ensure_init_files(name):
             try:
                 with open(init_path, "w") as f:
                     f.write("")
+                created_any = True
             except Exception:
                 pass
+    if created_any:
+        # CPython (Simulator/Tests) caches directory listings per import path;
+        # ohne dies wuerde der direkt folgende __import__() die soeben
+        # angelegten __init__.py-Dateien manchmal nicht finden. Echtes
+        # MicroPython kennt diesen Cache nicht (importlib fehlt dort), daher
+        # try/except statt eines harten Imports.
+        try:
+            import importlib
+            importlib.invalidate_caches()
+        except Exception:
+            pass
 
 
 def _module_stem(entry_filename):

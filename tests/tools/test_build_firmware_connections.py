@@ -189,6 +189,11 @@ def test_resolve_mpremote_command_falls_through_candidates_on_failure(build_firm
             raise FileNotFoundError("not found")
         return _fake_completed()
 
+    # sys.executable == the .venv python running this test suite, so the
+    # venv-priority and current-interpreter candidates would otherwise
+    # collapse into a single deduplicated entry, leaving no real fallback
+    # to exercise here - force a distinct standalone-PATH candidate instead.
+    monkeypatch.setattr(build_firmware.shutil, "which", lambda name: "C:/tools/mpremote.exe")
     monkeypatch.setattr(build_firmware.subprocess, "run", fake_run)
     resolved = build_firmware._resolve_mpremote_command()
     assert len(attempts) == 2

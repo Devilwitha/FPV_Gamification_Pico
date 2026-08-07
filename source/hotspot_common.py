@@ -5,7 +5,7 @@ import json
 
 HOTSPOT_CONFIG_FILE = "hotspot.conf"
 DEFAULT_HOTSPOT_SSID = "FPV_Gamification_Pico"
-DEFAULT_HOTSPOT_PASSWORD = "drohnenspiel"
+DEFAULT_HOTSPOT_PASSWORD = ""
 
 # WLAN-Zielnetz fuer die GitHub-Update-Suche (siehe github_ota_helpers.py):
 # getrennt von hotspot.conf, weil es ein FREMDES Netz ist, mit dem sich der

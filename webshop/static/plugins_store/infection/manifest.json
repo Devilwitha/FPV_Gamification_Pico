@@ -1,0 +1,23 @@
+{
+    "name": "infection",
+    "version": "1.0.0",
+    "author": "Nico Bollhalder",
+    "description": "Infection-Spielmodus: Picos spielen per BLE Infizierter/Sucher, mit Lobby-Verwaltung und Live-Erkennung.",
+    "entry": "main.py",
+    "enabled": true,
+    "has_error": false,
+    "error_message": "",
+    "loop_interval_ms": 1000,
+    "ui_slots": {
+        "dashboard_nav": "render_dashboard_nav_slot",
+        "dashboard_card": "render_dashboard_card_slot",
+        "dashboard_stat": "render_dashboard_stat_slot",
+        "dashboard_script": "render_dashboard_script_slot",
+        "index_card": "render_index_card_slot",
+        "index_script": "render_index_script_slot"
+    },
+    "ui_pages": {
+        "main": "get_ui_schema"
+    },
+    "route_prefixes": ["/admin-infection", "/infection-", "/lobby-"]
+}

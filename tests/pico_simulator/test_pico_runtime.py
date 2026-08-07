@@ -285,6 +285,19 @@ def test_open_compat_respects_explicit_newline_override(tmp_path):
         assert f.read() == b"line1\r\n"
 
 
+def test_open_compat_defaults_text_mode_to_utf8(tmp_path):
+    """MicroPython's open() always decodes text mode as UTF-8, unabhaengig
+    vom OS-Locale - ohne diesen Default faellt CPython unter Windows auf die
+    Locale-Codepage (cp1252) zurueck und stuerzt bei echten UTF-8-Mehrbyte-
+    Zeichen (z.B. Emojis in index.html) mit 'charmap' codec-Fehlern ab."""
+    path = tmp_path / "test.html"
+    with open(path, "wb") as f:
+        f.write("&#128299; Shooter \U0001f52b".encode("utf-8"))
+    with open(path, "r") as f:
+        content = f.read()
+    assert content == "&#128299; Shooter \U0001f52b"
+
+
 # ==================== asyncio Kompatibilitaet (Ende-zu-Ende) ====================
 
 @pytest.mark.asyncio

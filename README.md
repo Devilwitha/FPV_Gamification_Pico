@@ -44,8 +44,9 @@ Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen (nicht
 | `role_setup.py` & `device_role.json` | 🧭 Einmalige Ersteinrichtungsseite zur Wahl der Geräte-Rolle (Gamification vs. Gate/Hill). |
 | `main.py` (oder `main_LilyGo.py`) | 🚀 Hauptskript der Rolle "Gamification" (startet nach `boot.py`). |
 | `main_gatehill.py` & `index_gatehill.html` | ⛳ Hauptskript & Oberfläche der Rolle "Gate/Hill" (King-of-the-Hill-Hügel bzw. Race-Tor A/B). |
-| `gmr.py`, `koth_mode.py`, `race_mode.py` | 🏁 Lazy-geladene Logik & Routen für die Spielmodi King of the Hill und Race (BLE-basiert, von beiden Rollen genutzt). |
-| `plugin_manager.py` & `mods/` | 🧩 Generische Plugin-Engine + Ordner der installierten Mods (u.a. `mods/shooter/` – IR-Laser-Tag inkl. `ir_emitter.py`/`ir_receiver.py`/`admin_shooter.html`), siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen) & [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen). |
+| `gmr.py`, `koth_mode.py` | 🏁 Lazy-geladene Logik & Routen für den Spielmodus King of the Hill (BLE-basiert, von beiden Rollen genutzt). |
+| `race_mode.py` | 🏎️ BLE-Kernlogik des Race-Spielmodus (Gate-A/B-Advertising, Rundenzeit-Timing) – bleibt bewusst als Firmware-Modul bestehen, die Web-/Dashboard-Anbindung lebt als Plugin in `mods/race/`. |
+| `plugin_manager.py` & `mods/` | 🧩 Generische Plugin-Engine + Ordner der installierten Mods (u.a. `mods/shooter/` – IR-Laser-Tag inkl. `ir_emitter.py`/`ir_receiver.py`/`admin_shooter.html`; `mods/race/` – duenne Plugin-Huelle um `race_mode.py`, inkl. `admin_race.html`), siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen) & [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen). |
 | `hotspot_common.py`, `hotspot.conf` & `wlan.conf` | 📡 WLAN-Access-Point-Konfiguration (`hotspot.conf`) sowie Ziel-WLAN für die GitHub-Update-Suche (`wlan.conf`). |
 | `ota_helpers.py`, `upload_helpers.py`, `misc_routes_helpers.py`, `github_ota_helpers.py`, `update_manager.py` | 🛠️ OTA-, Upload- und "Nach Updates suchen"-Hilfsfunktionen für den Webserver. |
 | `license_verifier.py`, `license.lic` & `public_key.pem` | 🔒 Offline-Lizenzprüfung: signierte, hardware-gebundene Freischaltung (siehe [Lizenzsystem](#-lizenzsystem)). |
@@ -53,7 +54,7 @@ Es müssen **alle** folgenden Dateien im Hauptverzeichnis des Pico liegen (nicht
 | `infection_mode.py` & `idcard_helpers.py` | ☣️ Logik für den Bluetooth-Infection-Modus und Spieler-Verwaltung. |
 | `*.pak` Dateien (z.B. `en.pak`, `de.pak`) | 🌍 Sprachpakete für die Internationalisierung des Webinterfaces. |
 | `index.html` | 📱 Hauptseite der Rolle "Gamification" (Scoreboard, Live-Feed, Historie, Downloads für Session/Debug). |
-| `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html` | 🎛️ Alle Admin-Unterseiten (Update, Simulation, System-Info, Challenges, Spielmodi, Credits, etc.) – Shooter/Plugins haben eigene Seiten (`mods/shooter/admin_shooter.html` bzw. die dynamisch generierte `/admin-plugins`). |
+| `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html` | 🎛️ Alle Admin-Unterseiten (Update, Simulation, System-Info, Challenges, Spielmodi, Credits, etc.) – Shooter/Race/Plugins haben eigene Seiten (`mods/shooter/admin_shooter.html`, `mods/race/admin_race.html` bzw. die dynamisch generierte `/admin-plugins`). |
 | `challenges_view.html`, `infection_view.html` & `gamemodes_view.html` | 📺 Öffentliche Live-Visualisierungen für Zuschauer. |
 | `firmware_version.txt` & `version.json` | 🏷️ Versionstag (z.B. `1.3.3`). Wird bei jedem Release **automatisch** hochgezählt. Nicht manuell bearbeiten! |
 
@@ -440,10 +441,11 @@ Hier liegen alle Dateien, die tatsächlich *auf* deinen Pico müssen (oder vom B
   * `infection_mode.py` / `.mpy` ☣️: Der Code für den gnadenlosen Bluetooth Infection-Modus (das `.mpy` ist kompiliert für mehr Speed & RAM).
   * `idcard_helpers.py` 🪪: Helfer für die Verwaltung von Spieler-IDs im Infection-Modus.
   * `mods/shooter/` 🔫: Der IR-basierte Shooter-Modus (`main.py`, `ir_emitter.py`, `ir_receiver.py`, `admin_shooter.html`, `manifest.json`) - laeuft NICHT mehr fest verdrahtet in `main.py`, sondern als eigenstaendiges Plugin ueber `plugin_manager.py`, per `/admin-plugins` einzeln (de)aktivierbar. Details siehe [🔫 Shooter-Hardware](#-shooter-hardware-anschliessen--testen) & [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen).
+  * `mods/race/` 🏎️: Der Race-Modus als Plugin (`main.py`, `admin_race.html`, `manifest.json`) - die BLE-Kernlogik (Gate-Advertising, Rundenzeit-Timing) bleibt bewusst in `race_mode.py` als Firmware-Modul, `mods/race/main.py` ist nur eine duenne Huelle, die die Web-/Dashboard-/Zuschauer-Anbindung ueber `plugin_manager.py` bereitstellt.
 * **Web-Oberfläche (Die HTML-Seiten):**
   * `index.html`: Das Main-Dashboard für Piloten (Geraete-Rolle "gamification").
   * `index_gatehill.html`: Die kombinierte Konfigurationsseite für die Geraete-Rolle "gatehill" (King of the Hill & Race).
-  * `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`, `admin_race.html`: Alle Kontrollzentren im Backend - Nav-Leiste/Dashboard-Kachel/Statistik fuer Plugins (z.B. Shooter) sind darin NICHT fest verdrahtet, sondern kommen dynamisch ueber `<!--PLUGIN_SLOT:...-->`-Marker (siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen)).
+  * `admin_dashboard.html`, `admin_update.html`, `admin_simulate.html`, `admin_profiles.html`, `admin_system.html`, `admin_challenges.html`, `admin_idcard.html`, `admin_infection.html`, `admin_credits.html`, `admin_koth.html`: Alle Kontrollzentren im Backend - Nav-Leiste/Dashboard-Kachel/Statistik fuer Plugins (z.B. Shooter, Race) sind darin NICHT fest verdrahtet, sondern kommen dynamisch ueber `<!--PLUGIN_SLOT:...-->`-Marker (siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen)).
   * `challenges_view.html`, `infection_view.html` & `gamemodes_view.html` 📺: Die hübschen, öffentlichen Ansichten für Zuschauer.
 * **Sprachpakete (.pak):**
   * `de.pak`, `en.pak`, `es.pak`, `fr.pak`, `it.pak`, `pt.pak`, `tr.pak` 🌍: Internationalisierung, Baby! Übersetzungsdateien für das Webinterface.

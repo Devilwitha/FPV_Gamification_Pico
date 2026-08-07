@@ -1,0 +1,24 @@
+{
+    "name": "koth",
+    "version": "1.0.0",
+    "author": "Nico Bollhalder",
+    "description": "King of the Hill-Spielmodus: Spieler sammeln Punkte per BLE, solange Empfang zu einem Huegel-Pico besteht.",
+    "entry": "main.py",
+    "enabled": true,
+    "has_error": false,
+    "error_message": "",
+    "loop_interval_ms": 1000,
+    "ui_slots": {
+        "dashboard_nav": "render_dashboard_nav_slot",
+        "dashboard_card": "render_dashboard_card_slot",
+        "dashboard_stat": "render_dashboard_stat_slot",
+        "dashboard_script": "render_dashboard_script_slot",
+        "gamemodes_button": "render_gamemodes_button_slot",
+        "gamemodes_card": "render_gamemodes_card_slot",
+        "gamemodes_script": "render_gamemodes_script_slot"
+    },
+    "ui_pages": {
+        "main": "get_ui_schema"
+    },
+    "route_prefixes": ["/admin-koth", "/koth-"]
+}

@@ -320,6 +320,13 @@ def index():
     return render_template("bollisoft_home.html")
 
 
+@app.route("/impressum")
+def impressum():
+    """Gesetzlich vorgeschriebene Anbieterkennzeichnung (Art. 3 UWG) - im
+    Footer jeder Seite verlinkt (siehe base.html)."""
+    return render_template("impressum.html")
+
+
 @app.route("/webshop")
 def webshop_home():
     """Startseite des FPV-Gamification-Webshops."""

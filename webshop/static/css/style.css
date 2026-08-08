@@ -145,6 +145,19 @@ code {
   font-size: 0.9rem;
 }
 
+.site-footer-links {
+  margin: 8px 0 0 0;
+  font-size: 0.85rem;
+}
+
+.site-footer-links a {
+  color: var(--color-muted);
+}
+
+.site-footer-links a:hover {
+  color: var(--color-accent);
+}
+
 /* Buttons */
 
 .btn {

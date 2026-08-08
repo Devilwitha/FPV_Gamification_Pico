@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Bollisoft – Impressum{% endblock %}
+
+{% block content %}
+  <section class="admin-page">
+    <h1>Impressum</h1>
+    <p class="license-intro">Anbieterkennzeichnung gemäß Art. 3 UWG.</p>
+
+    {#
+      TODO (vor Live-Schaltung ausfuellen): Strasse/Hausnummer, PLZ/Ort und
+      optional Telefonnummer sowie Handelsregister-/UID-Nummer fehlen aktuell
+      im Repository und wurden daher nicht erfunden - siehe Chat-Hinweis.
+    #}
+    <div class="license-warning">
+      Diese Seite enthält noch Platzhalter (Adresse, ggf. Handelsregister-/
+      UID-Nummer) - bitte vor der Live-Schaltung vervollständigen.
+    </div>
+
+    <div class="license-step">
+      <h2>Anbieter</h2>
+      <p>
+        Bollisoft<br />
+        Nico Bollhalder<br />
+        [Straße und Hausnummer]<br />
+        [PLZ] [Ort]<br />
+        Schweiz
+      </p>
+    </div>
+
+    <div class="license-step">
+      <h2>Kontakt</h2>
+      <p>
+        E-Mail: <a href="mailto:info@bollisoft.ch">info@bollisoft.ch</a><br />
+        Telefon: [Telefonnummer]
+      </p>
+    </div>
+
+    <div class="license-step">
+      <h2>Handelsregister / UID</h2>
+      <p>
+        [Handelsregister-Nummer bzw. Hinweis "nicht im Handelsregister
+        eingetragen"]<br />
+        UID: [UID-Nummer, falls vorhanden]
+      </p>
+    </div>
+
+    <div class="license-step">
+      <h2>Verantwortlich für den Inhalt</h2>
+      <p>Nico Bollhalder (Adresse wie oben)</p>
+    </div>
+
+    <div class="license-step">
+      <h2>Haftungsausschluss</h2>
+      <p>
+        <strong>Haftung für Inhalte:</strong> Die Inhalte dieser Website wurden
+        mit größtmöglicher Sorgfalt erstellt. Für die Richtigkeit,
+        Vollständigkeit und Aktualität der Inhalte kann jedoch keine Gewähr
+        übernommen werden. Als Diensteanbieter sind wir für eigene Inhalte auf
+        diesen Seiten nach den allgemeinen Gesetzen verantwortlich.
+      </p>
+      <p>
+        <strong>Haftung für Links:</strong> Diese Website enthält Links zu
+        externen Websites Dritter, auf deren Inhalte wir keinen Einfluss
+        haben. Für die Inhalte der verlinkten Seiten ist stets der jeweilige
+        Anbieter verantwortlich. Verlinkte Seiten wurden zum Zeitpunkt der
+        Verlinkung auf mögliche Rechtsverstöße überprüft; eine permanente
+        inhaltliche Kontrolle ist ohne konkrete Anhaltspunkte einer
+        Rechtsverletzung nicht zumutbar.
+      </p>
+    </div>
+
+    <div class="license-step">
+      <h2>Urheberrecht</h2>
+      <p>
+        Die durch die Seitenbetreiber erstellten Inhalte und Werke auf diesen
+        Seiten unterliegen dem schweizerischen Urheberrecht. Die
+        Vervielfältigung, Bearbeitung, Verbreitung und jede Art der
+        Verwertung außerhalb der Grenzen des Urheberrechts bedürfen der
+        schriftlichen Zustimmung des jeweiligen Autors bzw. Erstellers.
+      </p>
+    </div>
+
+    <div class="license-step">
+      <h2>Streitschlichtung</h2>
+      <p>
+        Die Europäische Kommission stellt eine Plattform zur
+        Online-Streitbeilegung (OS) bereit:
+        <a href="https://ec.europa.eu/consumers/odr/" target="_blank" rel="noopener noreferrer"
+          >https://ec.europa.eu/consumers/odr/</a
+        >. Wir sind nicht verpflichtet und nicht bereit, an einem
+        Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle
+        teilzunehmen.
+      </p>
+    </div>
+  </section>
+{% endblock %}

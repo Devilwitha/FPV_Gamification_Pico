@@ -35,6 +35,24 @@ import os
 import sys
 import zipfile
 
+# PyInstallers "Looking for dynamic libraries"-Schritt (Aufloesen der DLL-
+# Abhaengigkeiten kompilierter Provider wie kivy.core.window.window_sdl2,
+# siehe windows/pyinstaller_hooks/hook-kivy.py's Docstring) importiert diese
+# Provider dafuer tatsaechlich - deren Modul-Code erzeugt beim Import sofort
+# ein ECHTES Fenster + einen echten OpenGL-Kontext (core_select_lib() in
+# kivy/core/__init__.py). Auf einem Build-Server ohne echte GPU (z.B. GitHub
+# Actions' windows-latest-Runner, nur Software-Rendering "GDI Generic",
+# OpenGL 1.1) bricht Kivy das mit "Minimum required OpenGL version (2.0)
+# NOT found!" hart ab und der Build-Job haengt/schlaegt fehl. KIVY_DOC ist
+# Kivys eigener, dafuer vorgesehener Schalter (siehe kivy/core/__init__.py's
+# core_select_lib(): "if 'KIVY_DOC' in os.environ: return") - er laesst
+# genau diese Provider-Auswahl folgenlos leerlaufen, ohne dass Kivy selbst
+# dadurch nicht mehr importierbar waere. Muss VOR dem PyInstaller-Lauf
+# gesetzt sein; gilt nur fuer diesen Build-Prozess, NICHT fuer die spaeter
+# gebaute .exe selbst (die startet als eigener Prozess ohne dieses Env-Var
+# neu und erzeugt ihr Fenster ganz normal).
+os.environ.setdefault("KIVY_DOC", "1")
+
 WINDOWS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(WINDOWS_DIR)
 TOOLS_DIR = os.path.join(PROJECT_ROOT, "tools")
@@ -56,28 +74,29 @@ PICOFW_DIR = os.path.join(PROJECT_ROOT, "picofw")
 #   - "--paths WINDOWS_DIR" macht "import kivy_theme" fuer PyInstallers
 #     statische Import-Analyse sichtbar (gleicher Grund wie "--paths
 #     TOOLS_DIR" unten fuer plugin_packager.py's "import build_firmware").
-#   - Kivy laedt seine Provider-Module (Fenster/Text/Bild/Zwischenablage-
-#     Backends unter kivy.core.*, sowie kivy.graphics/.input/.lang/.modules/
-#     .effects/.uix) zur Laufzeit dynamisch per importlib nach - PyInstallers
-#     normale Analyse findet nur statische "import"-Anweisungen und wuerde
-#     diese Provider ohne explizites Einsammeln weglassen (die .exe stuerzt
-#     dann erst beim Start ab). "--collect-data kivy" ergaenzt Kivys eigene
-#     Datendateien (Default-Schriften/Shader/Bild-Loader unter kivy/data/).
-#     BEWUSST NICHT "--collect-all kivy"/"--collect-submodules kivy" (auf das
-#     komplette Wurzelpaket): das wuerde auch kivy.garden mit einsammeln - ein
-#     von der separaten "Kivy-Garden"-Distribution nachinstalliertes
-#     Namespace-Paket mit einem __path__, das kein Kivy-Code selbst braucht
-#     (nur fuer optionale Drittanbieter-Widgets gedacht, hier ungenutzt),
-#     dessen __path__-Form PyInstallers collect_submodules() aber mit
-#     "ValueError: path must be None or list of paths" zum Absturz bringt.
-#     Einzelne Unterpakete gezielt einzusammeln umgeht kivy.garden komplett.
+#   - "--additional-hooks-dir" zeigt auf windows/pyinstaller_hooks/hook-
+#     kivy.py, die PyInstallers EINGEBAUTEN Kivy-Hook komplett ersetzt (siehe
+#     Kommentar dort fuer den Grund: der eingebaute Hook importiert beim
+#     Einsammeln von kivy.core.window ein ECHTES Fenster + OpenGL-Kontext,
+#     was auf einem Build-Server ohne echte GPU wie GitHub Actions'
+#     windows-latest-Runner mit "Minimum required OpenGL version (2.0) NOT
+#     found!" hart abstuerzt/haengt - und regelt auch Kivys eigene
+#     Datendateien, siehe dessen "datas"-Kommentar). BEWUSST NICHT ZUSAETZLICH
+#     "--collect-data kivy"/"--collect-all kivy"/"--collect-submodules kivy"
+#     (auf das komplette Wurzelpaket): "--collect-data kivy" wuerde die
+#     Datendateien an den falschen Pfad kopieren (siehe Hook-Kommentar), und
+#     "--collect-all/-submodules kivy" wuerde zusaetzlich noch kivy.garden
+#     mit einsammeln - ein von der separaten "Kivy-Garden"-Distribution
+#     nachinstalliertes Namespace-Paket (hier ungenutzt), dessen __path__-Form
+#     PyInstallers collect_submodules() mit "ValueError: path must be None or
+#     list of paths" zum Absturz bringt.
 #   - "kivy_deps.*" sind die auf Windows per pip separat installierten
 #     SDL2/GLEW/ANGLE-DLLs (kivy_deps.sdl2/.glew/.angle) - ohne die
 #     "--collect-all" dafuer fehlen der .exe die noetigen DLLs.
+KIVY_HOOKS_DIR = os.path.join(WINDOWS_DIR, "pyinstaller_hooks")
 KIVY_PYINSTALLER_ARGS = [
     "--paths", WINDOWS_DIR,
-    "--collect-data", "kivy",
-    "--collect-submodules", "kivy.core",
+    "--additional-hooks-dir", KIVY_HOOKS_DIR,
     "--collect-submodules", "kivy.graphics",
     "--collect-submodules", "kivy.input",
     "--collect-submodules", "kivy.lang",

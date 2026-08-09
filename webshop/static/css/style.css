@@ -84,7 +84,11 @@ code {
 }
 
 .navbar {
-  max-width: 1100px;
+  /* Einheitlich mit .company-hero/.company-section/... (siehe unten), damit
+     die Nav-Links auf JEDER Seite exakt gleich positioniert sind wie auf der
+     Startseite "/" - vorher hatte nur .company-page eine abweichende Breite,
+     wodurch die Navbar beim Seitenwechsel sichtbar "sprang". */
+  max-width: 1240px;
   margin: 0 auto;
   padding: 16px 24px;
   display: flex;
@@ -443,10 +447,6 @@ code {
   padding-right: 32px;
 }
 
-.company-page .navbar {
-  max-width: 1240px;
-}
-
 .company-page .site-main {
   max-width: none;
   padding: 0;
@@ -768,19 +768,19 @@ code {
 }
 
 @media (max-width: 900px) {
-  .company-page .navbar {
+  .navbar {
     align-items: flex-start;
     gap: 14px;
   }
 
-  .company-page .nav-links {
+  .nav-links {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px 16px;
   }
 
-  .company-page .nav-links a {
+  .nav-links a {
     margin-left: 0;
   }
 
@@ -808,12 +808,12 @@ code {
 }
 
 @media (max-width: 600px) {
-  .company-page .navbar {
+  .navbar {
     padding: 12px 18px;
     flex-direction: column;
   }
 
-  .company-page .nav-links {
+  .nav-links {
     justify-content: flex-start;
   }
 

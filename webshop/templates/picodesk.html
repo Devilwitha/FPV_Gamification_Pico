@@ -111,6 +111,48 @@
     </p>
   </section>
 
+  <section class="wiring">
+    <h2>Relais für Auf/Ab/Stehen/Sitzen anschließen</h2>
+    <p class="wiring-intro">
+      Ein handelsübliches 4-Kanal-Relaismodul reicht aus – die vier
+      Relais-Ausgänge werden dabei parallel zu den vorhandenen physischen
+      Tastern der Tisch-Steuerung angeschlossen (Relais überbrücken den
+      jeweiligen Taster elektrisch, statt ihn zu ersetzen). Die GPIO-Pins
+      sind in <code>main.py</code> frei wählbar, Standardbelegung:
+    </p>
+    <pre class="wiring-box">4-Kanal-Relaismodul          Raspberry Pi Pico W
+--------------------------------------------------
+      VCC  ------------------->  VBUS (5V)
+      GND  ------------------->  GND
+      IN1 (Auf)     ---------->  GPIO 13
+      IN2 (Ab)      ---------->  GPIO 10
+      IN3 (Stehen)  ---------->  GPIO 11
+      IN4 (Sitzen)  ---------->  GPIO 12
+
+Relais-Ausgang (NO/COM) je Kanal parallel zum
+entsprechenden Taster der Tisch-Steuerung.</pre>
+    <p class="wiring-note">
+      Je nach Relaismodul kann der Ausgang statt 5V eine eigene, potentialgetrennte
+      Versorgung benötigen – Datenblatt des jeweiligen Moduls beachten.
+    </p>
+  </section>
+
+  <section class="wiring">
+    <h2>Mit dem Hotspot verbinden</h2>
+    <p class="wiring-intro">
+      Findet der Pico kein konfiguriertes WLAN, spannt er automatisch einen
+      eigenen Einrichtungs-Hotspot auf:
+    </p>
+    <pre class="wiring-box">SSID:      PicoSteuerung-Setup
+Passwort:  picosetup123</pre>
+    <p class="wiring-note">
+      Darüber lässt sich auf der Recovery-Seite das eigentliche Heim-WLAN
+      hinterlegen – SSID und Passwort des Hotspots selbst sind in
+      <code>main.py</code> über <code>AP_SSID</code>/<code>AP_PASSWORT</code>
+      änderbar (mind. 8 Zeichen).
+    </p>
+  </section>
+
   <section class="cta">
     <h2>Selbst nachbauen?</h2>
     <p>

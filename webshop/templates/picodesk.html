@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Picodesk – WLAN-Steuerung für den Sitz-/Steh-Tisch{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <h1>Picodesk</h1>
+    <p class="hero-subtitle">
+      Ein Raspberry Pi Pico W steuert deinen Sitz-/Steh-Tisch übers WLAN –
+      mit moderner Weboberfläche, automatischem Sitzen/Stehen-Wechsel,
+      Bewegungserkennung per Ultraschallsensor sowie passender Android- und
+      Windows-App. Inklusive WLAN-Ausfallsicherung: findet keine Verbindung
+      statt, öffnet der Pico automatisch einen eigenen Einrichtungs-Hotspot.
+    </p>
+    <a class="btn btn-primary btn-large" href="https://github.com/Devilwitha/Pico" target="_blank" rel="noopener noreferrer">
+      Projekt auf GitHub ansehen
+    </a>
+  </section>
+
+  <section class="features">
+    <h2>Das steckt drin</h2>
+    <div class="feature-grid">
+      <article class="feature-card">
+        <h3>Vier Aktionen per Weboberfläche</h3>
+        <p>
+          Auf / Ab / Stehen / Sitzen steuern vier GPIO-Ausgänge (z. B. für
+          Relais oder eine Motorsteuerung) direkt aus dem Browser an.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Automatik-Modus</h3>
+        <p>
+          Zeitgesteuerter, automatischer Wechsel zwischen Sitzen und Stehen –
+          konfigurierbar direkt in der Weboberfläche.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Bewegungserkennung</h3>
+        <p>
+          Ein Grove Ultrasonic Ranger erkennt Positionswechsel automatisch
+          (ändert sich die gemessene Distanz um mehr als einen im Web
+          einstellbaren Schwellwert) und aktiviert darüber die Automatik.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>WLAN-Ausfallsicherung</h3>
+        <p>
+          Schlägt die Verbindung zum konfigurierten WLAN fehl, öffnet der
+          Pico automatisch einen eigenen Hotspot mit Recovery-Seite für neue
+          Zugangsdaten – kein Neuflashen nötig.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Automatische Geräte-Erkennung</h3>
+        <p>
+          Der Pico antwortet auf UDP-Broadcast-Anfragen im lokalen Netz –
+          die Android-App findet ihn dadurch automatisch, egal ob im
+          Heim-WLAN oder im eigenen Recovery-Hotspot.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Updates &amp; Dateiverwaltung im Browser</h3>
+        <p>
+          Neue Dateien direkt im Browser hochladen (inkl. automatischer
+          Backup-Kopie und Syntax-Prüfung bei <code>.py</code>-Dateien) oder
+          über die Dateiverwaltung durchsuchen, bearbeiten und löschen –
+          ganz ohne Kabel.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Android-App</h3>
+        <p>
+          Native App (Python/Kivy), die die Weboberfläche nachbildet und den
+          Pico automatisch per Discovery findet.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Windows-App</h3>
+        <p>
+          Native App (C#/WPF) mit denselben Funktionen wie die
+          Weboberfläche – ebenfalls mit automatischer Geräte-Erkennung.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section class="wiring">
+    <h2>Bewegungserkennung anschließen</h2>
+    <p class="wiring-intro">
+      Für die Bewegungserkennung wird ein Grove Ultrasonic Ranger benötigt,
+      der Rest (Relais/Motorsteuerung für Auf/Ab/Stehen/Sitzen) hängt von
+      deiner eigenen Tisch-Elektronik ab und lässt sich frei auf beliebige
+      GPIO-Pins legen.
+    </p>
+    <pre class="wiring-box">Grove Ultrasonic Ranger      Raspberry Pi Pico W
+--------------------------------------------------
+   Schwarz (GND)  ------------------->  GND
+   Rot     (VCC)  ------------------->  3V3 OUT
+   Gelb    (SIG)  ------------------->  GPIO 15
+   Weiss   (NC)   ------------------->  nicht anschließen</pre>
+    <p class="wiring-note">
+      Wichtig: Die VCC-Leitung gehört an 3V3 OUT, nicht an 5V/VBUS – die
+      GPIOs des Pico W sind nicht 5V-tolerant.
+    </p>
+  </section>
+
+  <section class="cta">
+    <h2>Selbst nachbauen?</h2>
+    <p>
+      Der komplette Quellcode (Firmware, Weboberfläche, Android- und
+      Windows-App) steht offen auf GitHub zur Verfügung.
+    </p>
+    <a class="btn btn-primary btn-large" href="https://github.com/Devilwitha/Pico" target="_blank" rel="noopener noreferrer">
+      Zum GitHub-Repository
+    </a>
+  </section>
+{% endblock %}

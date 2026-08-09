@@ -327,6 +327,14 @@ def impressum():
     return render_template("impressum.html")
 
 
+@app.route("/picodesk")
+def picodesk_home():
+    """Projektseite fuer Picodesk (Pico-W-WLAN-Steuerung fuer einen
+    Sitz-/Steh-Tisch, siehe github.com/Devilwitha/Pico) - rein informativ,
+    kein Shop-Produkt (noch keine veroeffentlichten Releases)."""
+    return render_template("picodesk.html")
+
+
 @app.route("/webshop")
 def webshop_home():
     """Startseite des FPV-Gamification-Webshops."""

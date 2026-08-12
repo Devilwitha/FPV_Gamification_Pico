@@ -1,0 +1,64 @@
+name: Webshop deployen
+
+# Verbindet sich per SSH mit dem Produktivserver und bringt den dort
+# laufenden Webshop auf den aktuellen Stand - der Server holt Aenderungen
+# NICHT von selbst, siehe webshop/HTTPS_DEPLOYMENT.md (systemd-Unit
+# "fpv-webshop", siehe webshop/fpv-webshop.service). Ohne diesen Workflow
+# muesste nach jedem Push manuell "git pull" + Dienst-Neustart auf dem
+# Server ausgefuehrt werden.
+#
+# Benoetigt folgende Repo-Secrets (Settings > Secrets and variables >
+# Actions) - Einrichtung auf dem Server siehe Kommentare unten:
+#   DEPLOY_SSH_HOST  - Hostname/IP des Servers
+#   DEPLOY_SSH_USER  - SSH-Benutzername fuer das Deployment (siehe unten,
+#                      NICHT root)
+#   DEPLOY_SSH_KEY   - Privater Schluessel (vollstaendiger PEM-Inhalt) des
+#                      eigens fuer dieses Deployment erzeugten
+#                      SSH-Schluesselpaars
+#   DEPLOY_SSH_PORT  - optional, SSH-Port (Default 22, falls nicht gesetzt)
+#
+# Einmalige Einrichtung auf dem Server:
+#   1. Eigenes SSH-Schluesselpaar NUR fuer dieses Deployment erzeugen
+#      (nicht den persoenlichen Schluessel wiederverwenden):
+#        ssh-keygen -t ed25519 -C "github-actions-deploy" -f deploy_key -N ""
+#      Den privaten Schluessel (deploy_key) als DEPLOY_SSH_KEY-Secret
+#      hinterlegen, den oeffentlichen (deploy_key.pub) auf dem Server in
+#      die authorized_keys des Deploy-Benutzers eintragen:
+#        ssh-copy-id -i deploy_key.pub deployuser@dein-server
+#   2. Dedizierten, unprivilegierten Deploy-Benutzer auf dem Server anlegen
+#      (falls noch nicht vorhanden) und ihm Schreibrechte auf das
+#      Repository-Verzeichnis geben, z. B.:
+#        sudo useradd -m -s /bin/bash deployuser
+#        sudo chown -R deployuser:deployuser /opt/fpv-gamification-pico
+#   3. Passwortloses sudo NUR fuer den Dienst-Neustart erlauben (nicht
+#      pauschal!) - z. B. per neuer Datei /etc/sudoers.d/fpv-webshop-deploy
+#      (mit visudo -f bearbeiten, damit Syntaxfehler nicht das komplette
+#      sudo lahmlegen):
+#        deployuser ALL=(root) NOPASSWD: /usr/bin/systemctl restart fpv-webshop, /usr/bin/systemctl is-active fpv-webshop
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "webshop/**"
+  workflow_dispatch: {}
+    # Manuelles Ausloesen ueber den "Run workflow"-Button im Actions-Tab.
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auf dem Server "git pull" + Dienst neu starten
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd /opt/fpv-gamification-pico
+            git pull --ff-only
+            python3 -m pip install --quiet -r webshop/requirements.txt
+            sudo systemctl restart fpv-webshop
+            sudo systemctl is-active --quiet fpv-webshop

@@ -335,6 +335,15 @@ def picodesk_home():
     return render_template("picodesk.html")
 
 
+@app.route("/steamos-pogram")
+def steamos_pogram_home():
+    """Projektseite fuer SteamOs_Pogram (RFID-Tag-Spielstarter fuer das
+    Steam Deck auf Pico-W-Basis, siehe github.com/Devilwitha/SteamOs_Pogram)
+    - rein informativ, kein Shop-Produkt (noch keine veroeffentlichten
+    Releases)."""
+    return render_template("steamos_pogram.html")
+
+
 @app.route("/webshop")
 def webshop_home():
     """Startseite des FPV-Gamification-Webshops."""

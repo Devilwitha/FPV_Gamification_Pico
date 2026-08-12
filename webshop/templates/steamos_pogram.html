@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}SteamOs_Pogram – RFID-Spielstarter fürs Steam Deck{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <h1>SteamOs_Pogram</h1>
+    <p class="hero-subtitle">
+      Ein Raspberry Pi Pico W mit RFID-Leser (RC522) startet Steam-Spiele auf
+      dem Steam Deck automatisch, sobald du eine passende Karte auflegst –
+      und das sogar, während das Deck im Game Mode läuft. Ein
+      Hintergrunddienst auf SteamOS überwacht den Pico laufend, verknüpft
+      Tags mit Spielen und startet sie automatisch. Optional zeigt ein
+      zweiter, eigenständiger Pico mit LED-Streifen die Farbe des gerade
+      erkannten Spiels an.
+    </p>
+    <a class="btn btn-primary btn-large" href="https://github.com/Devilwitha/SteamOs_Pogram" target="_blank" rel="noopener noreferrer">
+      Projekt auf GitHub ansehen
+    </a>
+  </section>
+
+  <section class="features">
+    <h2>Das steckt drin</h2>
+    <div class="feature-grid">
+      <article class="feature-card">
+        <h3>RFID-Tag startet automatisch das Spiel</h3>
+        <p>
+          Tag auf den RC522 legen – SteamOS erkennt die Verknüpfung und
+          startet das zugehörige Spiel, auch im Game Mode.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Verknüpfung in beide Richtungen</h3>
+        <p>
+          Entweder zuerst ein Spiel auswählen und danach einen Tag auflegen,
+          oder einen bereits bekannten Tag direkt aus der Tag-Liste einem
+          Spiel zuweisen.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Läuft dauerhaft im Hintergrund</h3>
+        <p>
+          Ein systemd-Nutzerdienst auf SteamOS überwacht den Pico alle 3
+          Sekunden, scannt periodisch installierte Steam-Spiele und
+          bestätigt jeden Spielstart zurück an den Pico.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Dunkle Status-Weboberfläche</h3>
+        <p>
+          Der Pico hostet selbst eine moderne Statusseite mit Geräte- und
+          Tag-Status – direkt im Browser unter <code>http://&lt;pico-ip&gt;/</code>.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Fernsteuerseite <code>/control</code></h3>
+        <p>
+          Spiegelt die komplette SteamOS-Oberfläche (Spiele, Tags, Farben,
+          Sounds) direkt auf der vom Pico gehosteten Seite – der Pico leitet
+          dabei nichts durch, sondern spricht per Token-geschütztem Zugriff
+          direkt mit dem PC.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Optionaler LED-Streifen-Pico</h3>
+        <p>
+          Ein zweiter, eigenständiger Pico W mit WS2812/NeoPixel-Streifen
+          zeigt unabhängig vom RFID-Pico die Farbe des aktuell erkannten
+          Spiels bzw. Tags an.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>Optionales LCD &amp; Status-LEDs</h3>
+        <p>
+          Ein 16x2-I2C-LCD zeigt Spielname und Meldezustand direkt am
+          Gerät, zwei einfache Status-LEDs (rot/grün) signalisieren auf
+          einen Blick, ob ein Spielstart bereits bestätigt wurde.
+        </p>
+      </article>
+
+      <article class="feature-card">
+        <h3>WLAN-Ausfallsicherung &amp; Auto-Erkennung</h3>
+        <p>
+          Findet der Pico kein gespeichertes WLAN, öffnet er automatisch
+          einen Einrichtungs-Hotspot; SteamOS findet beide Picos danach
+          automatisch per UDP-Broadcast im Netzwerk.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section class="wiring">
+    <h2>RFID-Leser (RC522) anschließen</h2>
+    <p class="wiring-intro">
+      Der RC522 hängt am Standard-SPI0 des Pico:
+    </p>
+    <pre class="wiring-box">RC522                  Raspberry Pi Pico W
+--------------------------------------------------
+  SDA (SS/CS)  ------------------->  GP5
+  SCK          ------------------->  GP2
+  MOSI         ------------------->  GP3
+  MISO         ------------------->  GP4
+  RST          ------------------->  GP6
+  3.3V         ------------------->  3V3
+  GND          ------------------->  GND</pre>
+    <p class="wiring-note">
+      Optional zusätzlich möglich: ein 16x2-I2C-LCD (SDA an GP0, SCL an
+      GP1) sowie zwei einfache Status-LEDs (rot an GP7, grün an GP8) –
+      beides wird automatisch erkannt und übersprungen, falls nicht
+      angeschlossen.
+    </p>
+  </section>
+
+  <section class="wiring">
+    <h2>Optionalen LED-Streifen-Pico anschließen</h2>
+    <p class="wiring-intro">
+      Der LED-Streifen läuft auf einem zweiten, eigenständigen Pico W –
+      unabhängig vom RFID-Pico:
+    </p>
+    <pre class="wiring-box">WS2812/NeoPixel-Streifen     Raspberry Pi Pico W
+--------------------------------------------------
+  DIN (Daten)   ------------------->  GP15
+  5V            ------------------->  eigenes Netzteil empfohlen
+  GND           ------------------->  GND (mit Pico gemeinsam)</pre>
+    <p class="wiring-note">
+      Bei vielen LEDs (Standard: 30) reicht die Stromversorgung über den
+      Pico selbst meist nicht aus – ein eigenes 5V-Netzteil für den
+      Streifen verhindern Flackern und Spannungseinbrüche.
+    </p>
+  </section>
+
+  <section class="wiring">
+    <h2>Mit dem Hotspot verbinden</h2>
+    <p class="wiring-intro">
+      Findet ein Pico kein konfiguriertes WLAN, spannt er automatisch einen
+      eigenen Einrichtungs-Hotspot auf (unter <code>http://192.168.4.1/</code>
+      erreichbar):
+    </p>
+    <pre class="wiring-box">RFID-Pico   SSID: Pico-Setup       Passwort: picosetup123
+LED-Pico    SSID: LedPico-Setup   Passwort: picosetup123</pre>
+    <p class="wiring-note">
+      Darüber lässt sich das eigentliche Heim-WLAN hinterlegen – der Pico
+      startet danach automatisch neu und verbindet sich damit.
+    </p>
+  </section>
+
+  <section class="cta">
+    <h2>Selbst nachbauen?</h2>
+    <p>
+      Der komplette Quellcode (Pico-Firmware, SteamOS-Dienst samt GUI,
+      optionaler LED-Pico und Windows-Testumgebung) steht offen auf GitHub
+      zur Verfügung.
+    </p>
+    <a class="btn btn-primary btn-large" href="https://github.com/Devilwitha/SteamOs_Pogram" target="_blank" rel="noopener noreferrer">
+      Zum GitHub-Repository
+    </a>
+  </section>
+{% endblock %}

@@ -1,5 +1,9 @@
 bollisoft.ch {
     encode zstd gzip
 
+    handle_path /coverstore-maker/* {
+        reverse_proxy 127.0.0.1:9090
+    }
+
     reverse_proxy 127.0.0.1:5000
 }

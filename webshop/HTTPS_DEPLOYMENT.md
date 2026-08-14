@@ -11,6 +11,9 @@ Im Repo liegen dafuer jetzt direkt nutzbare Produktionsdateien:
 - `webshop/fpv-webshop.service` als `systemd`-Unit
 - `webshop/serve_production.py` als Waitress-Entrypoint
 
+Zusatz: Der Link `https://bollisoft.ch/coverstore-maker/` wird per Caddy intern
+an `127.0.0.1:9090` weitergeleitet.
+
 ## Voraussetzungen
 
 - Eine oeffentlich erreichbare Domain, hier: `bollisoft.ch`
@@ -70,6 +73,11 @@ sudo systemctl status caddy
 ```caddy
 bollisoft.ch {
     encode zstd gzip
+
+    handle_path /coverstore-maker/* {
+        reverse_proxy 127.0.0.1:9090
+    }
+
     reverse_proxy 127.0.0.1:5000
 }
 ```

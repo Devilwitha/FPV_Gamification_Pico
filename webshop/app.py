@@ -154,7 +154,7 @@ PRODUCTS = {
             "Sofortige digitale Freischaltung nach dem Kauf."
         ),
         "type": "digital",
-        "price_cents": 495,
+        "price_cents": 0,
         "currency": "chf",
         "image": "bilder/shop/lizenz/Gemini_Generated_Image_f7pr0tf7pr0tf7pr.png",
     },
@@ -189,6 +189,23 @@ PRODUCTS = {
         "image": "bilder/shop/Hardware/Gemini_Generated_Image_8jui9u8jui9u8jui.png",
     },
 }
+
+
+def _is_product_available(product):
+    """Nur nicht-physische Produkte im oeffentlichen Shop anbieten.
+
+    Hardware-Produkte bleiben intern fuer bestehende Bestellungen im System,
+    sind aber nicht mehr neu kaufbar."""
+    return bool(product) and product.get("type") != "physical"
+
+
+def _require_logged_in_account_json():
+    """Liefert die eingeloggte Konto-E-Mail fuer JSON-Endpunkte oder einen
+    passenden Fehler-Response, falls kein Login aktiv ist."""
+    email = (session.get("account_email") or "").strip()
+    if "@" not in email:
+        return None, (jsonify({"error": "Bitte zuerst einloggen."}), 401)
+    return email, None
 
 
 # ==================== Plugin-Store ====================
@@ -335,13 +352,20 @@ def picodesk_home():
     return render_template("picodesk.html")
 
 
+@app.route("/steamdeck-rfid-launcher")
+def steamdeck_rfid_launcher_home():
+    """Projektseite fuer den Steam Deck RFID Launcher (Pico-W-basierter
+    RFID-Tag-Spielstarter fuer SteamOS, siehe
+    github.com/Devilwitha/SteamOs_Pogram) - rein informativ, kein
+    Shop-Produkt."""
+    return render_template("steamos_pogram.html")
+
+
 @app.route("/steamos-pogram")
 def steamos_pogram_home():
-    """Projektseite fuer SteamOs_Pogram (RFID-Tag-Spielstarter fuer das
-    Steam Deck auf Pico-W-Basis, siehe github.com/Devilwitha/SteamOs_Pogram)
-    - rein informativ, kein Shop-Produkt (noch keine veroeffentlichten
-    Releases)."""
-    return render_template("steamos_pogram.html")
+    """Legacy-URL der Projektseite - leitet auf die neue, klar benannte
+    Route weiter."""
+    return redirect(url_for("steamdeck_rfid_launcher_home"), code=301)
 
 
 @app.route("/webshop")
@@ -460,7 +484,10 @@ def demo_proxy(token, subpath):
 @app.route("/shop")
 def shop():
     """Shop-Übersicht mit allen verfügbaren Artikeln."""
-    return render_template("shop.html", products=PRODUCTS.values())
+    if not session.get("account_email"):
+        return redirect(url_for("login"))
+    visible_products = [product for product in PRODUCTS.values() if _is_product_available(product)]
+    return render_template("shop.html", products=visible_products)
 
 
 @app.route("/plugins")
@@ -582,15 +609,17 @@ def checkout(product_id):
     dessen E-Mail-Adresse vorausgefüllt und im Frontend gesperrt - der Kauf
     läuft dann automatisch über diese Adresse, ohne dass sie erneut
     eingetippt werden muss."""
+    if not session.get("account_email"):
+        return redirect(url_for("login"))
     product = PRODUCTS.get(product_id)
-    if product is None:
+    if not _is_product_available(product):
         return render_template("cancel.html", message="Dieses Produkt existiert nicht."), 404
     return render_template(
         "checkout.html",
         product=product,
         stripe_publishable_key=STRIPE_PUBLISHABLE_KEY,
         paypal_client_id=PAYPAL_CLIENT_ID,
-        account_email=_current_account_email(),
+        account_email=session.get("account_email"),
     )
 
 
@@ -600,13 +629,14 @@ def stripe_create_checkout_session():
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
     product = PRODUCTS.get(product_id)
-    email = (data.get("email") or "").strip()
+    email, auth_error = _require_logged_in_account_json()
+    if auth_error:
+        return auth_error
 
-    if product is None:
+    if not _is_product_available(product):
         return jsonify({"error": "Unbekanntes Produkt."}), 404
-    if "@" not in email:
-        return jsonify({"error": "Bitte eine gültige E-Mail-Adresse angeben."}), 400
-
+    if product["price_cents"] <= 0:
+        return jsonify({"error": "Dieses Produkt ist kostenlos. Bitte den Gratis-Checkout verwenden."}), 400
     try:
         checkout_session = stripe.checkout.Session.create(
             mode="payment",
@@ -649,13 +679,14 @@ def paypal_create_order():
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
     product = PRODUCTS.get(product_id)
-    email = (data.get("email") or "").strip()
+    email, auth_error = _require_logged_in_account_json()
+    if auth_error:
+        return auth_error
 
-    if product is None:
+    if not _is_product_available(product):
         return jsonify({"error": "Unbekanntes Produkt."}), 404
-    if "@" not in email:
-        return jsonify({"error": "Bitte eine gültige E-Mail-Adresse angeben."}), 400
-
+    if product["price_cents"] <= 0:
+        return jsonify({"error": "Dieses Produkt ist kostenlos. Bitte den Gratis-Checkout verwenden."}), 400
     try:
         access_token = get_paypal_access_token()
     except requests.RequestException as fehler:
@@ -753,12 +784,12 @@ def dummy_create_purchase():
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
     product = PRODUCTS.get(product_id)
-    if product is None:
+    if not _is_product_available(product):
         return jsonify({"error": "Unbekanntes Produkt."}), 404
 
-    email = (data.get("email") or "").strip() or "dummy@example.test"
-    if "@" not in email:
-        return jsonify({"error": "Bitte eine gültige E-Mail-Adresse angeben."}), 400
+    email, auth_error = _require_logged_in_account_json()
+    if auth_error:
+        return auth_error
 
     session["checkout_product_id"] = product["id"]
     session["checkout_email"] = email
@@ -769,6 +800,30 @@ def dummy_create_purchase():
     _record_valid_purchase(product, email, "dummy", order_id)
 
     return jsonify({"redirect_url": url_for("success", order_id=order_id)})
+
+
+@app.route("/api/free/create-purchase", methods=["POST"])
+def free_create_purchase():
+    """Schliesst eine kostenlose Bestellung direkt ohne Stripe/PayPal ab."""
+    data = request.get_json(silent=True) or {}
+    product_id = data.get("product_id")
+    product = PRODUCTS.get(product_id)
+
+    if not _is_product_available(product):
+        return jsonify({"error": "Unbekanntes Produkt."}), 404
+    if product["price_cents"] > 0:
+        return jsonify({"error": "Dieses Produkt ist nicht kostenlos."}), 400
+
+    email, auth_error = _require_logged_in_account_json()
+    if auth_error:
+        return auth_error
+
+    session["checkout_product_id"] = product["id"]
+    session["checkout_email"] = email
+
+    purchase_id = f"FREE-{int(time.time())}-{secrets.token_hex(4)}"
+    _record_valid_purchase(product, email, "free", purchase_id)
+    return jsonify({"redirect_url": url_for("account")})
 
 
 def _record_valid_purchase(product, email, payment_provider, payment_reference):
@@ -1041,7 +1096,7 @@ def license_setup_public_key():
     return send_file(PUBLIC_KEY_PATH, mimetype="application/x-pem-file", as_attachment=True, download_name="public_key.pem")
 
 
-REQUIRED_ACCOUNT_FIELDS = ("full_name", "address", "phone", "country")
+REQUIRED_ACCOUNT_FIELDS = ("full_name", "country")
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1067,14 +1122,14 @@ def login():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Registrierung eines neuen Login-Kontos: E-Mail + Passwort + Name/
-    Adresse/Telefon/Land (siehe REQUIRED_ACCOUNT_FIELDS) - unabhängig davon,
+    Land (siehe REQUIRED_ACCOUNT_FIELDS) - unabhängig davon,
     ob unter der E-Mail-Adresse bereits eine Bestellung existiert. Loggt
     nach erfolgreicher Registrierung direkt ein (kein separater Bestätigungs-
     schritt), analog zum bisherigen Direkt-Login nach Kauf."""
     error = None
     form_values = {}
     if request.method == "POST":
-        form_values = {key: (request.form.get(key) or "").strip() for key in ("email", "full_name", "address", "phone", "country")}
+        form_values = {key: (request.form.get(key) or "").strip() for key in ("email", "full_name", "country")}
         email = form_values["email"]
         password = request.form.get("password") or ""
 
@@ -1083,7 +1138,7 @@ def register():
         elif len(password) < 8:
             error = "Das Passwort muss mindestens 8 Zeichen lang sein."
         elif any(not form_values[field] for field in REQUIRED_ACCOUNT_FIELDS):
-            error = "Bitte Name, Adresse, Telefon und Land vollständig ausfüllen."
+            error = "Bitte Name und Land vollständig ausfüllen."
         elif db.get_account_by_email(email) is not None:
             error = "Für diese E-Mail-Adresse existiert bereits ein Konto."
         else:
@@ -1091,8 +1146,8 @@ def register():
                 email=email,
                 password_hash=generate_password_hash(password),
                 full_name=form_values["full_name"],
-                address=form_values["address"],
-                phone=form_values["phone"],
+                address="",
+                phone="",
                 country=form_values["country"],
             )
             session["account_email"] = email

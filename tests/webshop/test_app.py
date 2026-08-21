@@ -323,8 +323,6 @@ def _register(client, email="kunde@example.com", password="supersecret", **overr
         "email": email,
         "password": password,
         "full_name": "Kunde Muster",
-        "address": "Musterstrasse 1, 8000 Zürich",
-        "phone": "+41 79 123 45 67",
         "country": "Schweiz",
     }
     data.update(overrides)

@@ -1,19 +1,20 @@
 {% extends "base.html" %}
 
-{% block title %}SteamOs_Pogram – RFID-Spielstarter fürs Steam Deck{% endblock %}
+{% block title %}Steam Deck RFID Launcher – Automatischer Spielstart mit Pico W{% endblock %}
 
 {% block content %}
   <section class="hero">
-    <h1>SteamOs_Pogram</h1>
+    <h1>Steam Deck RFID Launcher</h1>
     <p class="hero-subtitle">
-      Ein Raspberry Pi Pico W mit RFID-Leser (RC522) startet Steam-Spiele auf
-      dem Steam Deck automatisch, sobald du eine passende Karte auflegst –
-      und das sogar, während das Deck im Game Mode läuft. Ein
-      Hintergrunddienst auf SteamOS überwacht den Pico laufend, verknüpft
-      Tags mit Spielen und startet sie automatisch. Optional zeigt ein
-      zweiter, eigenständiger Pico mit LED-Streifen die Farbe des gerade
-      erkannten Spiels an.
+      Der Steam Deck RFID Launcher verbindet einen Raspberry Pi Pico W mit
+      SteamOS, damit Spiele per RFID-Karte gestartet werden können - direkt
+      im Game Mode, ohne Desktop-Wechsel. Ein lokaler SteamOS-Dienst hält
+      die Zuordnung von Karten, Spielen, Farben und Sounds aktuell und
+      startet Titel automatisch beim Auflegen. Die LED-Ausgabe läuft
+      standardmäßig über Corsair-LEDs per USB; ein zusätzlicher LED-Pico ist
+      optional möglich.
     </p>
+    <p class="form-hint">Stand: August 2026 - stabiler Betrieb mit RFID-Pico, Corsair-LED-Steuerung per USB, Web-UI und /control-Fernsteuerung; LED-Pico optional.</p>
     <a class="btn btn-primary btn-large" href="https://github.com/Devilwitha/SteamOs_Pogram" target="_blank" rel="noopener noreferrer">
       Projekt auf GitHub ansehen
     </a>
@@ -23,76 +24,70 @@
   </section>
 
   <section class="features">
-    <h2>Das steckt drin</h2>
+    <h2>Aktueller Funktionsumfang</h2>
     <div class="feature-grid">
       <article class="feature-card">
-        <h3>RFID-Tag startet automatisch das Spiel</h3>
+        <h3>Spielstart per RFID im Game Mode</h3>
         <p>
-          Tag auf den RC522 legen – SteamOS erkennt die Verknüpfung und
-          startet das zugehörige Spiel, auch im Game Mode.
+          Karte auf den RC522 legen - SteamOS erkennt die Zuordnung und
+          startet das passende Spiel sofort, auch während der Gaming-Oberfläche.
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Verknüpfung in beide Richtungen</h3>
+        <h3>Tag-Spiel-Zuordnung in beide Richtungen</h3>
         <p>
-          Entweder zuerst ein Spiel auswählen und danach einen Tag auflegen,
-          oder einen bereits bekannten Tag direkt aus der Tag-Liste einem
-          Spiel zuweisen.
+          Entweder zuerst ein Spiel wählen und dann einen neuen Tag auflegen,
+          oder einen bestehenden Tag direkt aus der Liste einem Titel zuordnen.
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Läuft dauerhaft im Hintergrund</h3>
+        <h3>Dauerbetrieb mit SteamOS-Dienst</h3>
         <p>
-          Ein systemd-Nutzerdienst auf SteamOS überwacht den Pico alle 3
-          Sekunden, scannt periodisch installierte Steam-Spiele und
-          bestätigt jeden Spielstart zurück an den Pico.
+          Ein systemd-User-Service läuft kontinuierlich, überwacht den Pico,
+          synchronisiert die Spieleliste und bestätigt Starts ans Gerät zurück.
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Dunkle Status-Weboberfläche</h3>
+        <h3>Integrierte Weboberfläche auf dem Pico</h3>
         <p>
-          Der Pico hostet selbst eine moderne Statusseite mit Geräte- und
-          Tag-Status – direkt im Browser unter <code>http://&lt;pico-ip&gt;/</code>.
+          Der Pico hostet eine lokale Statusseite mit Gerätezustand,
+          Tag-Informationen und Live-Rückmeldungen unter <code>http://&lt;pico-ip&gt;/</code>.
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Fernsteuerseite <code>/control</code></h3>
+        <h3>Fernsteuerung über <code>/control</code></h3>
         <p>
-          Spiegelt die komplette SteamOS-Oberfläche (Spiele, Tags, Farben,
-          Sounds) direkt auf der vom Pico gehosteten Seite – der Pico leitet
-          dabei nichts durch, sondern spricht per Token-geschütztem Zugriff
-          direkt mit dem PC.
+          Die komplette Steuerung (Spiele, Tags, Farben, Sounds) ist per
+          Token-geschützter /control-Seite verfügbar - ohne zusätzliche
+          öffentliche Ports.
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Optionaler LED-Streifen-Pico</h3>
+        <h3>Corsair-LEDs per USB angesteuert</h3>
         <p>
-          Ein zweiter, eigenständiger Pico W mit WS2812/NeoPixel-Streifen
-          zeigt unabhängig vom RFID-Pico die Farbe des aktuell erkannten
-          Spiels bzw. Tags an.
+          Die Beleuchtung wird direkt über USB gesteuert (Corsair-Setup),
+          ohne dass dafür ein zweiter Pico erforderlich ist.
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Optionales LCD &amp; Status-LEDs</h3>
+        <h3>Optionales LCD und Status-LEDs</h3>
         <p>
-          Ein 16x2-I2C-LCD zeigt Spielname und Meldezustand direkt am
-          Gerät, zwei einfache Status-LEDs (rot/grün) signalisieren auf
-          einen Blick, ob ein Spielstart bereits bestätigt wurde.
+          Ein 16x2-I2C-LCD zeigt Spielname und Status direkt am Gerät; zwei
+          LEDs (rot/grün) signalisieren den bestätigten Spielstart.
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>WLAN-Ausfallsicherung &amp; Auto-Erkennung</h3>
+        <h3>Hotspot-Fallback und Auto-Erkennung</h3>
         <p>
-          Findet der Pico kein gespeichertes WLAN, öffnet er automatisch
-          einen Einrichtungs-Hotspot; SteamOS findet beide Picos danach
-          automatisch per UDP-Broadcast im Netzwerk.
+          Ohne gespeichertes WLAN startet der Pico automatisch einen
+          Setup-Hotspot; danach findet SteamOS die Geräte per UDP-Broadcast.
         </p>
       </article>
     </div>
@@ -121,20 +116,15 @@
   </section>
 
   <section class="wiring">
-    <h2>Optionalen LED-Streifen-Pico anschließen</h2>
+    <h2>Corsair-LEDs per USB verbinden</h2>
     <p class="wiring-intro">
-      Der LED-Streifen läuft auf einem zweiten, eigenständigen Pico W –
-      unabhängig vom RFID-Pico:
+      Die LED-Steuerung läuft direkt über USB vom Steam Deck/PC zum
+      Corsair-Gerät - ohne zusätzlichen LED-Pico.
     </p>
-    <pre class="wiring-box">WS2812/NeoPixel-Streifen     Raspberry Pi Pico W
---------------------------------------------------
-  DIN (Daten)   ------------------->  GP15
-  5V            ------------------->  eigenes Netzteil empfohlen
-  GND           ------------------->  GND (mit Pico gemeinsam)</pre>
+    <pre class="wiring-box">Steam Deck / PC      ------------------->  USB-C/USB-A  ------------------->  Corsair-LED-Gerät</pre>
     <p class="wiring-note">
-      Bei vielen LEDs (Standard: 30) reicht die Stromversorgung über den
-      Pico selbst meist nicht aus – ein eigenes 5V-Netzteil für den
-      Streifen verhindern Flackern und Spannungseinbrüche.
+      Optional kannst du trotzdem einen separaten LED-Pico ergänzen, falls du
+      zusätzlich einen eigenen WS2812/NeoPixel-Streifen ansteuern willst.
     </p>
   </section>
 
@@ -146,7 +136,7 @@
       erreichbar):
     </p>
     <pre class="wiring-box">RFID-Pico   SSID: Pico-Setup       Passwort: picosetup123
-LED-Pico    SSID: LedPico-Setup   Passwort: picosetup123</pre>
+  LED-Pico (optional)  SSID: LedPico-Setup   Passwort: picosetup123</pre>
     <p class="wiring-note">
       Darüber lässt sich das eigentliche Heim-WLAN hinterlegen – der Pico
       startet danach automatisch neu und verbindet sich damit.

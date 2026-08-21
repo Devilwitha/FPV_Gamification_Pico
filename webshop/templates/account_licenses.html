@@ -11,8 +11,15 @@
       <div class="s">
         <h2>Profil</h2>
         <p><strong>{{ account.full_name }}</strong></p>
-        <p>{{ account.address }}, {{ account.country }}</p>
-        <p>Tel: {{ account.phone }}</p>
+        {% if account.country %}
+          <p>{{ account.country }}</p>
+        {% endif %}
+        {% if account.address %}
+          <p>{{ account.address }}</p>
+        {% endif %}
+        {% if account.phone %}
+          <p>Tel: {{ account.phone }}</p>
+        {% endif %}
       </div>
     {% endif %}
 

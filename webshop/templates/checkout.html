@@ -3,7 +3,9 @@
 {% block title %}Webshop – Checkout{% endblock %}
 
 {% block head %}
-  <script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency={{ product.currency.upper() }}"></script>
+  {% if product.price_cents > 0 %}
+    <script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency={{ product.currency.upper() }}"></script>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -24,49 +26,57 @@
       </div>
 
       <div class="checkout-payment">
-        <h2>Zahlungsmethode wählen</h2>
+        <h2>{% if product.price_cents > 0 %}Zahlungsmethode wählen{% else %}Kostenlosen Zugang freischalten{% endif %}</h2>
 
         <div id="checkout-error" class="checkout-error" hidden></div>
 
         <div class="form-field">
-          <label for="checkout-email">E-Mail-Adresse *</label>
+          <label for="checkout-email">Konto *</label>
           <input
             type="email"
             id="checkout-email"
-            placeholder="du@example.com"
             value="{{ account_email or '' }}"
-            {% if account_email %}readonly{% endif %}
+            readonly
             required
           />
           <p class="form-hint">
-            {% if account_email %}
+            {% if product.price_cents > 0 %}
               Angemeldet als <strong>{{ account_email }}</strong> - die Bestellung wird automatisch
-              dieser Adresse zugeordnet. (<a href="{{ url_for('logout') }}">nicht du? ausloggen</a>)
-            {% elif product.type == "digital" %}
-              Wird für die spätere Lizenz-Einrichtung benötigt.
+              diesem Konto zugeordnet. (<a href="{{ url_for('logout') }}">nicht du? ausloggen</a>)
             {% else %}
-              Wird für die Bestellbestätigung benötigt.
+              Angemeldet als <strong>{{ account_email }}</strong> - die kostenlose Lizenz wird direkt
+              diesem Konto zugeordnet. (<a href="{{ url_for('logout') }}">nicht du? ausloggen</a>)
             {% endif %}
           </p>
         </div>
 
-        <div class="payment-option">
-          <h3>Kreditkarte (Stripe)</h3>
-          <p>Du wirst zur gesicherten Stripe-Checkout-Seite weitergeleitet.</p>
-          <button id="stripe-checkout-button" class="btn btn-primary btn-large">
-            Mit Kreditkarte bezahlen
-          </button>
-        </div>
+        {% if product.price_cents > 0 %}
+          <div class="payment-option">
+            <h3>Kreditkarte (Stripe)</h3>
+            <p>Du wirst zur gesicherten Stripe-Checkout-Seite weitergeleitet.</p>
+            <button id="stripe-checkout-button" class="btn btn-primary btn-large">
+              Mit Kreditkarte bezahlen
+            </button>
+          </div>
 
-        <div class="payment-divider">
-          <span>oder</span>
-        </div>
+          <div class="payment-divider">
+            <span>oder</span>
+          </div>
 
-        <div class="payment-option">
-          <h3>PayPal</h3>
-          <p>Bezahle direkt und sicher über dein PayPal-Konto.</p>
-          <div id="paypal-button-container"></div>
-        </div>
+          <div class="payment-option">
+            <h3>PayPal</h3>
+            <p>Bezahle direkt und sicher über dein PayPal-Konto.</p>
+            <div id="paypal-button-container"></div>
+          </div>
+        {% else %}
+          <div class="payment-option">
+            <h3>Gratis freischalten</h3>
+            <p>Für dieses Produkt ist keine Zahlung nötig. Die Freischaltung erfolgt sofort.</p>
+            <button id="free-checkout-button" class="btn btn-primary btn-large">
+              Kostenlos freischalten
+            </button>
+          </div>
+        {% endif %}
 
         {% if dummy_mode %}
           <div class="payment-divider">
@@ -93,6 +103,7 @@
 {% block scripts %}
   <script>
     const productId = "{{ product.id }}";
+    const productPriceCents = {{ product.price_cents }};
     const errorBox = document.getElementById("checkout-error");
     const emailInput = document.getElementById("checkout-email");
 
@@ -104,11 +115,41 @@
     function leseEmailOderZeigeFehler() {
       const email = emailInput.value.trim();
       if (!email || !email.includes("@")) {
-        zeigeFehler("Bitte zuerst eine gültige E-Mail-Adresse eingeben.");
+        zeigeFehler("Bitte zuerst mit einem gültigen Konto einloggen.");
         emailInput.focus();
         return null;
       }
       return email;
+    }
+
+    const freeButton = document.getElementById("free-checkout-button");
+    if (freeButton) {
+      freeButton.addEventListener("click", function () {
+        const email = leseEmailOderZeigeFehler();
+        if (!email) {
+          return;
+        }
+        fetch("/api/free/create-purchase", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ product_id: productId }),
+        })
+          .then(function (response) {
+            return response.json();
+          })
+          .then(function (daten) {
+            if (daten.redirect_url) {
+              window.location.href = daten.redirect_url;
+            } else {
+              zeigeFehler(daten.error || "Die kostenlose Freischaltung ist fehlgeschlagen.");
+            }
+          })
+          .catch(function () {
+            zeigeFehler("Verbindung zum Server fehlgeschlagen. Bitte versuche es erneut.");
+          });
+      });
     }
 
     const dummyButton = document.getElementById("dummy-checkout-button");
@@ -151,7 +192,7 @@
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ product_id: productId, email: email }),
+        body: JSON.stringify({ product_id: productId }),
       })
         .then(function (response) {
           return response.json();
@@ -168,8 +209,9 @@
         });
     });
 
-    paypal
-      .Buttons({
+    if (productPriceCents > 0 && typeof paypal !== "undefined") {
+      paypal
+        .Buttons({
         style: {
           layout: "vertical",
           color: "gold",
@@ -186,7 +228,7 @@
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ product_id: productId, email: email }),
+            body: JSON.stringify({ product_id: productId }),
           })
             .then(function (response) {
               return response.json();
@@ -219,7 +261,8 @@
         onCancel: function () {
           window.location.href = "/cancel";
         },
-      })
-      .render("#paypal-button-container");
+        })
+        .render("#paypal-button-container");
+    }
   </script>
 {% endblock %}

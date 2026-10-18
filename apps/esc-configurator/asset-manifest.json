@@ -1,0 +1,18 @@
+{
+  "files": {
+    "main.css": "./static/css/main.2c4bbfac.css",
+    "main.js": "./static/js/main.ef983db6.js",
+    "static/js/27.37ff10b1.chunk.js": "./static/js/27.37ff10b1.chunk.js",
+    "service-worker.js": "./service-worker.js",
+    "static/media/bluejay_logo.png": "./static/media/bluejay_logo.3272ddcf195ab7d55e45.png",
+    "static/media/icon_128.png": "./static/media/icon_128.24904331aaa8d5887f0a.png",
+    "static/media/scroll.svg": "./static/media/scroll.f29d645cc75951f71381.svg",
+    "index.html": "./index.html",
+    "static/media/cf_icon_usb1_white.svg": "./static/media/cf_icon_usb1_white.fc73b153eb35d0c282bb.svg",
+    "static/media/cf_icon_usb2_white.svg": "./static/media/cf_icon_usb2_white.d90b668541e9c6d1ca24.svg"
+  },
+  "entrypoints": [
+    "static/css/main.2c4bbfac.css",
+    "static/js/main.ef983db6.js"
+  ]
+}

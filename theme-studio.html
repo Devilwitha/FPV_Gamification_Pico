@@ -1,0 +1,753 @@
+<title>TX15 Theme Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: Werkbank – links die 12 Theme-Farben, mitte das Funkgerät mit Live-Display, rechts Datei-Export */
+:root {
+  --bg: #eef0f2;
+  --panel: #ffffff;
+  --ink: #1b2126;
+  --muted: #5d6973;
+  --line: #d5dbe0;
+  --accent: #e2731b;
+  --accent-ink: #ffffff;
+  --bezel: #2a2f34;
+  --bezel-hi: #41484f;
+  --good: #1f8a4c;
+  --warn: #b7791f;
+  --bad: #c43c2c;
+  --code-bg: #f5f7f8;
+  --f-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15191c; --panel: #1e2327; --ink: #e6eaed; --muted: #95a1ab; --line: #333b42;
+    --accent: #f08a35; --accent-ink: #1a1206; --bezel: #0c0e10; --bezel-hi: #2b3237;
+    --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a; --code-bg: #171b1e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15191c; --panel: #1e2327; --ink: #e6eaed; --muted: #95a1ab; --line: #333b42;
+  --accent: #f08a35; --accent-ink: #1a1206; --bezel: #0c0e10; --bezel-hi: #2b3237;
+  --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a; --code-bg: #171b1e;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 14px/1.5 var(--f-body);
+  padding: 0 16px 32px;
+}
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: .01em; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.top {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px;
+  padding-block: 18px 14px; max-width: 1500px; margin: 0 auto;
+}
+header.top h1 { font-size: 30px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+header.top h1 span { color: var(--accent); }
+header.top p { margin: 0; color: var(--muted); }
+header.top a.back { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 13px; }
+header.top a.back:hover { color: var(--accent); }
+
+.wrap {
+  max-width: 1500px; margin: 0 auto;
+  display: grid; gap: 16px;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr) minmax(280px, 340px);
+  align-items: start;
+}
+@media (max-width: 1180px) { .wrap { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); } .col-export { grid-column: 1 / -1; } }
+@media (max-width: 820px) { .wrap { grid-template-columns: minmax(0, 1fr); } .col-preview { order: -1; } }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.panel + .panel { margin-top: 16px; }
+.panel h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 12px; }
+
+label.field { display: grid; gap: 4px; margin-bottom: 10px; }
+label.field span { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+input[type="text"], select, textarea {
+  width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg);
+}
+.hint { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px 5px 6px;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--bg); cursor: pointer; font-size: 13px;
+}
+.preset:hover { border-color: var(--accent); }
+.preset i { display: inline-flex; width: 30px; height: 14px; border-radius: 2px; overflow: hidden; }
+.preset i b { flex: 1; }
+
+.colors { display: grid; gap: 2px; }
+.crow {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) 88px; gap: 10px; align-items: center;
+  padding: 6px; border-radius: 6px; cursor: default;
+}
+.crow:hover, .crow.hl { background: var(--bg); }
+.crow input[type="color"] {
+  width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer;
+}
+.crow input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.crow input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+.crow .meta { min-width: 0; }
+.crow .key { font-family: var(--f-mono); font-size: 12px; font-weight: 600; }
+.crow .desc { font-size: 12px; color: var(--muted); line-height: 1.3; }
+.crow input.hex {
+  font-family: var(--f-mono); font-size: 12px; padding: 6px; text-transform: uppercase;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--bg); width: 100%;
+}
+.crow input.hex.bad { border-color: var(--bad); }
+
+/* Funkgerät */
+.radio {
+  background: linear-gradient(160deg, var(--bezel-hi), var(--bezel) 40%);
+  border-radius: 22px; padding: 22px 22px 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.radio .brandline {
+  display: flex; justify-content: space-between; align-items: center; color: #9aa4ad;
+  font: 600 12px/1 var(--f-display); letter-spacing: .2em; text-transform: uppercase; margin-bottom: 12px;
+}
+.radio .brandline em { font-style: normal; color: #c9d1d8; }
+.screen {
+  background: #000; border-radius: 6px; padding: 6px; box-shadow: inset 0 0 0 2px #050607;
+}
+#lcd { display: block; width: 100%; height: auto; aspect-ratio: 480 / 320; image-rendering: auto; border-radius: 2px; max-width: 100%; }
+.screen-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.screen-tabs button {
+  flex: 1 1 110px; padding: 8px 10px; border-radius: 6px; border: 1px solid #3c444b;
+  background: #20262b; color: #c9d1d8; cursor: pointer; font: 600 13px var(--f-display); letter-spacing: .08em; text-transform: uppercase;
+}
+.screen-tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+.contrast { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.cchip { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.cchip .sw { width: 34px; height: 24px; border-radius: 4px; display: grid; place-items: center; font: 700 12px var(--f-body); flex: none; }
+.cchip .txt { font-size: 12px; line-height: 1.25; min-width: 0; }
+.cchip .ratio { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+.pill { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 1px 6px; border-radius: 9px; color: #fff; }
+.pill.good { background: var(--good); } .pill.warn { background: var(--warn); } .pill.bad { background: var(--bad); }
+
+.drop {
+  display: grid; grid-template-columns: 64px minmax(0,1fr); gap: 10px; align-items: center;
+  padding: 8px; border: 1px dashed var(--line); border-radius: 6px; margin-bottom: 8px;
+}
+.drop .thumb { width: 64px; height: 43px; border-radius: 4px; background: var(--bg) center / cover no-repeat; border: 1px solid var(--line); }
+.drop .thumb.logo { background-size: contain; }
+.drop .t { font-size: 13px; font-weight: 600; }
+.drop .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-weight: 500;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.small { padding: 3px 8px; font-size: 12px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn-row .btn { flex: 1 1 auto; }
+
+.tree { font-family: var(--f-mono); font-size: 12px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin: 0 0 12px; overflow-x: auto; white-space: pre; }
+pre.yml { font-family: var(--f-mono); font-size: 12px; line-height: 1.55; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin: 0; overflow-x: auto; max-height: 420px; }
+.toast { min-height: 1.5em; font-size: 13px; margin-top: 8px; color: var(--muted); }
+.toast.ok { color: var(--good); } .toast.err { color: var(--bad); }
+input[type="file"] { display: none; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top">
+  <h1>TX15 <span>Theme</span> Studio</h1>
+  <p>Farbschemata für EdgeTX auf der RadioMaster TX15 bauen, live auf dem 480×320-Display prüfen und als SD-Karten-Ordner exportieren.</p>
+  <a class="back" id="backLink" href="index.html">← Übersicht</a>
+</header>
+<script>if (window.claude) document.getElementById('backLink').hidden = true;</script>
+
+<main class="wrap">
+  <!-- Spalte 1: Farben -->
+  <section class="col-colors">
+    <div class="panel">
+      <h2>Vorlagen</h2>
+      <div class="presets" id="presets"></div>
+      <p class="hint">Eine Vorlage überschreibt alle 12 Farben. Name und Autor bleiben.</p>
+    </div>
+    <div class="panel">
+      <h2>Theme-Farben</h2>
+      <div class="colors" id="colors"></div>
+      <p class="hint">Mit der Maus über eine Farbe fahren: Die Stellen, die sie nutzt, blinken im Display.</p>
+    </div>
+  </section>
+
+  <!-- Spalte 2: Vorschau -->
+  <section class="col-preview">
+    <div class="radio">
+      <div class="brandline"><span>RadioMaster <em>TX15</em></span><span>EdgeTX · 480 × 320</span></div>
+      <div class="screen"><canvas id="lcd" width="480" height="320" aria-label="Vorschau des Funkgerät-Displays"></canvas></div>
+      <div class="screen-tabs" role="group" aria-label="Ansicht wählen">
+        <button type="button" data-view="main" aria-pressed="true">Hauptansicht</button>
+        <button type="button" data-view="menu" aria-pressed="false">Menü</button>
+        <button type="button" data-view="dialog" aria-pressed="false">Warnung</button>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>Lesbarkeit</h2>
+      <div class="contrast" id="contrast"></div>
+      <p class="hint">Kontrast nach WCAG. Im Sonnenlicht am Flugfeld sollte er mindestens 4,5 : 1 sein.</p>
+    </div>
+  </section>
+
+  <!-- Spalte 3: Datei -->
+  <section class="col-export">
+    <div class="panel">
+      <h2>Theme-Info</h2>
+      <label class="field"><span>Name</span><input type="text" id="tName" maxlength="24"></label>
+      <label class="field"><span>Autor</span><input type="text" id="tAuthor" maxlength="32"></label>
+      <label class="field"><span>Beschreibung</span><input type="text" id="tInfo" maxlength="64"></label>
+      <p class="hint">Ordner auf der SD-Karte: <code id="folderName"></code></p>
+    </div>
+    <div class="panel">
+      <h2>Bilder (optional)</h2>
+      <div class="drop">
+        <div class="thumb" id="bgThumb"></div>
+        <div><div class="t">Hintergrund</div><div class="hint" style="margin:0">Wird auf 480×320 zugeschnitten.</div>
+          <div class="row"><button class="btn small" type="button" id="bgPick">Bild wählen</button><button class="btn small" type="button" id="bgClear" hidden>Entfernen</button></div></div>
+        <input type="file" id="bgFile" accept="image/*">
+      </div>
+      <div class="drop">
+        <div class="thumb logo" id="logoThumb"></div>
+        <div><div class="t">Logo</div><div class="hint" style="margin:0">Erscheint in der Theme-Auswahl.</div>
+          <div class="row"><button class="btn small" type="button" id="logoPick">Bild wählen</button><button class="btn small" type="button" id="logoClear" hidden>Entfernen</button></div></div>
+        <input type="file" id="logoFile" accept="image/*">
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Export</h2>
+      <pre class="tree" id="tree"></pre>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="dlZip">ZIP herunterladen</button>
+        <button class="btn" type="button" id="dlYml">Nur theme.yml</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn" type="button" id="importBtn">theme.yml importieren</button>
+        <button class="btn" type="button" id="copyYml">YAML kopieren</button>
+      </div>
+      <input type="file" id="importFile" accept=".yml,.yaml,text/yaml,text/plain">
+      <div class="toast" id="toast" role="status"></div>
+      <p class="hint">ZIP entpacken und den Ordner <code>THEMES</code> ins Hauptverzeichnis der SD-Karte kopieren. Danach am Sender: SYS → Themes.</p>
+    </div>
+    <div class="panel">
+      <h2>theme.yml</h2>
+      <pre class="yml" id="yml"></pre>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+'use strict';
+
+// ---------- Theme-Modell ----------
+const KEYS = [
+  ['PRIMARY1',   'Haupttext auf hellem Grund'],
+  ['PRIMARY2',   'Text auf dunklem Grund, Seiten- & Feldhintergrund'],
+  ['PRIMARY3',   'Dunkler Akzent: Topbar-Logo, Untertitel'],
+  ['SECONDARY1', 'Kopfzeilen, Topbar, Scrollbalken'],
+  ['SECONDARY2', 'Rahmen, Trennlinien, inaktive Schalter'],
+  ['SECONDARY3', 'Heller Seitenhintergrund, Tabs'],
+  ['FOCUS',      'Ausgewähltes Feld'],
+  ['EDIT',       'Feld im Bearbeitungsmodus'],
+  ['ACTIVE',     'Aktive Schalter & Logische Schalter'],
+  ['WARNING',    'Warnungen & Alarme'],
+  ['DISABLED',   'Deaktivierte Einträge'],
+  ['CUSTOM',     'Frei für Widgets & Lua-Skripte'],
+];
+
+const PRESETS = {
+  'EdgeTX':   { PRIMARY1:'#000000', PRIMARY2:'#FFFFFF', PRIMARY3:'#0C3F64', SECONDARY1:'#125E9E', SECONDARY2:'#B7CFE3', SECONDARY3:'#E6EDF2', FOCUS:'#F29A1F', EDIT:'#00A54F', ACTIVE:'#F29A1F', WARNING:'#E62E1F', DISABLED:'#8C8C8C', CUSTOM:'#000000' },
+  'Nachtflug':{ PRIMARY1:'#E8ECEF', PRIMARY2:'#1A1F24', PRIMARY3:'#8FA3B4', SECONDARY1:'#0B0E11', SECONDARY2:'#3A444D', SECONDARY3:'#252C33', FOCUS:'#3FA7FF', EDIT:'#2FCB7A', ACTIVE:'#3FA7FF', WARNING:'#FF5A47', DISABLED:'#5F6A73', CUSTOM:'#FFD24A' },
+  'Racing':   { PRIMARY1:'#111111', PRIMARY2:'#FFFFFF', PRIMARY3:'#5A0A0A', SECONDARY1:'#C8102E', SECONDARY2:'#D9C9CB', SECONDARY3:'#F3EDEE', FOCUS:'#1A1A1A', EDIT:'#E8A400', ACTIVE:'#C8102E', WARNING:'#FF6A00', DISABLED:'#9A9091', CUSTOM:'#C8102E' },
+  'Segelflug':{ PRIMARY1:'#14281D', PRIMARY2:'#FFFFFF', PRIMARY3:'#2C4A36', SECONDARY1:'#3D7A52', SECONDARY2:'#BFD6C4', SECONDARY3:'#ECF3EC', FOCUS:'#E0A82E', EDIT:'#2E86C1', ACTIVE:'#E0A82E', WARNING:'#D64933', DISABLED:'#8E9A91', CUSTOM:'#3D7A52' },
+  'Synthwave':{ PRIMARY1:'#F6E9FF', PRIMARY2:'#1B1033', PRIMARY3:'#B89CE0', SECONDARY1:'#2D1656', SECONDARY2:'#4E3478', SECONDARY3:'#26174A', FOCUS:'#FF3EA5', EDIT:'#21E6C1', ACTIVE:'#FF3EA5', WARNING:'#FFB000', DISABLED:'#6E5C8C', CUSTOM:'#21E6C1' },
+};
+
+const DEFAULT_STATE = { name: 'MeinTheme', author: 'Pilot', info: 'Eigenes Farbschema für die TX15', colors: { ...PRESETS.EdgeTX } };
+const STORE_KEY = 'tx15-theme-studio-v1';
+
+let state = loadState();
+let view = 'main';
+let bgImg = null, bgCanvas = null;     // 480x320 zugeschnitten
+let logoCanvas = null;
+let highlightKey = null, blinkOn = false, blinkTimer = null;
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && s.colors) return { ...DEFAULT_STATE, ...s, colors: { ...DEFAULT_STATE.colors, ...s.colors } };
+    }
+  } catch (e) {}
+  return structuredClone(DEFAULT_STATE);
+}
+function saveState() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {} }
+
+// ---------- Farb-Helfer ----------
+const isHex = v => /^#?[0-9a-f]{6}$/i.test(v);
+const normHex = v => ('#' + v.replace('#', '')).toUpperCase();
+function rgb(hex) { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function lum(hex) {
+  return rgb(hex).map(c => { c /= 255; return c <= .03928 ? c / 12.92 : Math.pow((c + .055) / 1.055, 2.4); })
+    .reduce((a, c, i) => a + c * [.2126, .7152, .0722][i], 0);
+}
+function contrast(a, b) { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }
+function alpha(hex, a) { const [r, g, b] = rgb(hex); return `rgba(${r},${g},${b},${a})`; }
+
+// Farbe für Zeichnung – blinkt magenta/cyan wenn hervorgehoben
+function C(key) {
+  if (highlightKey === key) return blinkOn ? '#FF00FF' : '#00FFFF';
+  return state.colors[key];
+}
+
+// ---------- UI aufbauen ----------
+const $ = id => document.getElementById(id);
+
+function buildPresets() {
+  const host = $('presets');
+  for (const [name, p] of Object.entries(PRESETS)) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'preset';
+    const sw = document.createElement('i');
+    for (const k of ['SECONDARY1', 'SECONDARY3', 'FOCUS', 'EDIT']) { const s = document.createElement('b'); s.style.background = p[k]; sw.appendChild(s); }
+    b.appendChild(sw); b.appendChild(document.createTextNode(name));
+    b.addEventListener('click', () => { state.colors = { ...p }; syncColorInputs(); changed(); toast(`Vorlage „${name}“ geladen.`, 'ok'); });
+    host.appendChild(b);
+  }
+}
+
+function buildColorRows() {
+  const host = $('colors');
+  for (const [key, desc] of KEYS) {
+    const row = document.createElement('div');
+    row.className = 'crow'; row.dataset.key = key;
+    row.innerHTML = `<input type="color" id="c_${key}" aria-label="${key}">
+      <div class="meta"><div class="key">${key}</div><div class="desc">${desc}</div></div>
+      <input class="hex" id="h_${key}" type="text" maxlength="7" spellcheck="false" aria-label="${key} Hex">`;
+    host.appendChild(row);
+    const pick = row.querySelector('input[type=color]'), hex = row.querySelector('input.hex');
+    pick.addEventListener('input', () => { state.colors[key] = pick.value.toUpperCase(); hex.value = state.colors[key]; hex.classList.remove('bad'); changed(); });
+    hex.addEventListener('input', () => {
+      if (isHex(hex.value)) { state.colors[key] = normHex(hex.value); pick.value = state.colors[key]; hex.classList.remove('bad'); changed(); }
+      else hex.classList.add('bad');
+    });
+    hex.addEventListener('blur', () => { hex.value = state.colors[key]; hex.classList.remove('bad'); });
+    row.addEventListener('mouseenter', () => startBlink(key));
+    row.addEventListener('mouseleave', stopBlink);
+    pick.addEventListener('focus', () => startBlink(key));
+    pick.addEventListener('blur', stopBlink);
+  }
+}
+function syncColorInputs() {
+  for (const [key] of KEYS) { $('c_' + key).value = state.colors[key]; $('h_' + key).value = state.colors[key]; }
+}
+function startBlink(key) {
+  highlightKey = key; blinkOn = true; draw();
+  clearInterval(blinkTimer);
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+    blinkTimer = setInterval(() => { blinkOn = !blinkOn; draw(); }, 380);
+}
+function stopBlink() { clearInterval(blinkTimer); highlightKey = null; draw(); }
+
+function bindInfo() {
+  for (const [id, prop] of [['tName', 'name'], ['tAuthor', 'author'], ['tInfo', 'info']]) {
+    const el = $(id); el.value = state[prop];
+    el.addEventListener('input', () => { state[prop] = el.value; changed(); });
+  }
+}
+
+document.querySelectorAll('.screen-tabs button').forEach(b => b.addEventListener('click', () => {
+  view = b.dataset.view;
+  document.querySelectorAll('.screen-tabs button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  draw();
+}));
+
+// ---------- Display-Rendering (480x320) ----------
+const W = 480, H = 320;
+const lcd = $('lcd');
+const FONT = 'Roboto, "Segoe UI", Arial, sans-serif';
+
+function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function fillRR(g, x, y, w, h, r, c) { rr(g, x, y, w, h, r); g.fillStyle = c; g.fill(); }
+function text(g, s, x, y, size, color, weight = 400, align = 'left', base = 'middle') {
+  g.font = `${weight} ${size}px ${FONT}`; g.fillStyle = color; g.textAlign = align; g.textBaseline = base; g.fillText(s, x, y);
+}
+
+function drawTopbar(g, title) {
+  g.fillStyle = C('SECONDARY1'); g.fillRect(0, 0, W, 44);
+  // EdgeTX-Logo-Feld
+  g.fillStyle = C('PRIMARY3'); g.fillRect(0, 0, 48, 44);
+  g.strokeStyle = C('PRIMARY2'); g.lineWidth = 2.5; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(15, 14); g.lineTo(33, 14); g.moveTo(15, 22); g.lineTo(29, 22); g.moveTo(15, 30); g.lineTo(33, 30); g.stroke();
+  text(g, title, 60, 22, 17, C('PRIMARY2'), 500);
+  // Signal
+  for (let i = 0; i < 5; i++) { const h = 5 + i * 3; g.fillStyle = i < 4 ? C('PRIMARY2') : alpha(state.colors.PRIMARY2, .35); if (highlightKey === 'PRIMARY2' && i === 4) g.fillStyle = C('PRIMARY2'); g.fillRect(330 + i * 6, 32 - h, 4, h); }
+  // Akku
+  g.strokeStyle = C('PRIMARY2'); g.lineWidth = 1.5; rr(g, 370, 14, 34, 16, 3); g.stroke();
+  g.fillStyle = C('PRIMARY2'); g.fillRect(404, 19, 3, 6);
+  fillRR(g, 373, 17, 22, 10, 1.5, C('EDIT'));
+  text(g, '10:42', 468, 22, 16, C('PRIMARY2'), 500, 'right');
+}
+
+function drawTrimH(g, x, y, w, pos, val) {
+  fillRR(g, x, y, w, 10, 5, alpha(state.colors.PRIMARY3, .55));
+  if (highlightKey === 'PRIMARY3') fillRR(g, x, y, w, 10, 5, C('PRIMARY3'));
+  g.fillStyle = alpha(state.colors.PRIMARY2, .6); g.fillRect(x + w / 2 - 1, y + 2, 2, 6);
+  const cx = x + w / 2 + pos * (w / 2 - 12);
+  fillRR(g, cx - 11, y - 4, 22, 18, 4, C('SECONDARY1'));
+  g.strokeStyle = C('PRIMARY2'); g.lineWidth = 1.2; rr(g, cx - 11, y - 4, 22, 18, 4); g.stroke();
+  text(g, val, cx, y + 5, 10, C('PRIMARY2'), 700, 'center');
+}
+function drawTrimV(g, x, y, h, pos, val) {
+  fillRR(g, x, y, 10, h, 5, alpha(state.colors.PRIMARY3, .55));
+  if (highlightKey === 'PRIMARY3') fillRR(g, x, y, 10, h, 5, C('PRIMARY3'));
+  g.fillStyle = alpha(state.colors.PRIMARY2, .6); g.fillRect(x + 2, y + h / 2 - 1, 6, 2);
+  const cy = y + h / 2 - pos * (h / 2 - 12);
+  fillRR(g, x - 6, cy - 10, 22, 20, 4, C('SECONDARY1'));
+  g.strokeStyle = C('PRIMARY2'); g.lineWidth = 1.2; rr(g, x - 6, cy - 10, 22, 20, 4); g.stroke();
+  text(g, val, x + 5, cy, 10, C('PRIMARY2'), 700, 'center');
+}
+
+function drawMain(g) {
+  // Hintergrund
+  if (bgCanvas && highlightKey !== 'SECONDARY3') g.drawImage(bgCanvas, 0, 0);
+  else { g.fillStyle = C('SECONDARY3'); g.fillRect(0, 0, W, H); }
+  drawTopbar(g, 'Quad 5" Freestyle');
+
+  // Widgets
+  const cardBg = alpha(state.colors.PRIMARY2, .88);
+  const card = (x, y, w, h) => { fillRR(g, x, y, w, h, 8, highlightKey === 'PRIMARY2' ? C('PRIMARY2') : cardBg); g.strokeStyle = C('SECONDARY2'); g.lineWidth = 1; rr(g, x + .5, y + .5, w - 1, h - 1, 8); g.stroke(); };
+
+  card(44, 62, 186, 96);
+  text(g, 'TIMER 1', 58, 80, 12, C('PRIMARY3'), 700);
+  text(g, '02:37', 58, 120, 44, C('PRIMARY1'), 500);
+  fillRR(g, 58, 144, 158, 5, 2.5, C('SECONDARY2'));
+  fillRR(g, 58, 144, 158 * .52, 5, 2.5, C('ACTIVE'));
+
+  card(250, 62, 186, 96);
+  text(g, 'TELEMETRIE', 264, 80, 12, C('PRIMARY3'), 700);
+  text(g, 'RxBt', 264, 104, 14, C('PRIMARY1'));
+  text(g, '7.9 V', 422, 104, 18, C('PRIMARY1'), 500, 'right');
+  text(g, 'RSSI', 264, 128, 14, C('PRIMARY1'));
+  text(g, '-58 dB', 422, 128, 18, C('PRIMARY1'), 500, 'right');
+  text(g, 'GPS', 264, 148, 14, C('DISABLED'));
+  text(g, '---', 422, 148, 14, C('DISABLED'), 400, 'right');
+
+  // Logische Schalter / Status
+  card(44, 172, 392, 62);
+  text(g, 'SCHALTER', 58, 188, 12, C('PRIMARY3'), 700);
+  const sw = [['SA', 1], ['SB', 0], ['SC', 1], ['SD', 0], ['L01', 1], ['L02', 0]];
+  sw.forEach(([n, on], i) => {
+    const x = 58 + i * 62;
+    fillRR(g, x, 200, 54, 24, 5, on ? C('ACTIVE') : C('SECONDARY2'));
+    text(g, n, x + 27, 212, 13, on ? C('PRIMARY2') : C('PRIMARY1'), 700, 'center');
+  });
+  // CUSTOM-Akzent
+  fillRR(g, 400, 182, 26, 10, 5, C('CUSTOM'));
+
+  text(g, 'FM0  Normal', W / 2, 252, 15, C('PRIMARY1'), 500, 'center');
+
+  // Trims
+  drawTrimH(g, 40, 284, 170, -.35, '-12');
+  drawTrimH(g, 270, 284, 170, .2, '8');
+  drawTrimV(g, 12, 64, 200, .45, '15');
+  drawTrimV(g, 458, 64, 200, 0, '0');
+}
+
+function drawMenu(g, dim) {
+  g.fillStyle = C('SECONDARY3'); g.fillRect(0, 0, W, H);
+  // Kopf
+  g.fillStyle = C('SECONDARY1'); g.fillRect(0, 0, W, 72);
+  g.fillStyle = C('PRIMARY3'); g.fillRect(0, 0, 48, 72);
+  g.strokeStyle = C('PRIMARY2'); g.lineWidth = 2.5; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(14, 30); g.lineTo(24, 40); g.lineTo(34, 30); g.stroke();
+  text(g, 'MODELL', 60, 20, 17, C('PRIMARY2'), 700);
+  text(g, 'Eingänge', 60, 42, 13, alpha(state.colors.PRIMARY2, .8), 400);
+  if (highlightKey === 'PRIMARY2') text(g, 'Eingänge', 60, 42, 13, C('PRIMARY2'));
+  // Tabs
+  const tabs = ['⚙', '✈', '⇄', '◎', '⏱', '∿', '☰'];
+  tabs.forEach((t, i) => {
+    const x = 150 + i * 46, sel = i === 2;
+    if (sel) { fillRR(g, x, 18, 40, 54, 6, C('SECONDARY3')); g.fillStyle = C('SECONDARY3'); g.fillRect(x, 60, 40, 12); }
+    text(g, t, x + 20, 44, 20, sel ? C('SECONDARY1') : C('PRIMARY2'), 400, 'center');
+  });
+
+  // Liste
+  const rows = [
+    { l: 'Modellname',      v: 'Quad 5"',  kind: 'field' },
+    { l: 'Expo Querruder',  v: '30 %',     kind: 'focus' },
+    { l: 'Dual Rate',       v: '85 %',     kind: 'edit' },
+    { l: 'Trainer-Modus',   v: true,       kind: 'toggle' },
+    { l: 'Gas-Trim Leerlauf', v: false,    kind: 'toggle' },
+    { l: 'Helikopter-Setup', v: 'Aus',     kind: 'disabled' },
+  ];
+  rows.forEach((r, i) => {
+    const y = 84 + i * 38;
+    if (i) { g.fillStyle = C('SECONDARY2'); g.fillRect(14, y - 4, W - 40, 1); }
+    text(g, r.l, 18, y + 15, 15, r.kind === 'disabled' ? C('DISABLED') : C('PRIMARY1'));
+    const fx = 300, fw = 140;
+    if (r.kind === 'toggle') {
+      fillRR(g, fx + fw - 52, y + 3, 52, 24, 12, r.v ? C('ACTIVE') : C('SECONDARY2'));
+      fillRR(g, r.v ? fx + fw - 24 : fx + fw - 50, y + 5, 20, 20, 10, C('PRIMARY2'));
+    } else {
+      const bg = r.kind === 'focus' ? C('FOCUS') : r.kind === 'edit' ? C('EDIT') : C('PRIMARY2');
+      fillRR(g, fx, y, fw, 30, 5, bg);
+      g.strokeStyle = r.kind === 'field' || r.kind === 'disabled' ? C('SECONDARY2') : bg; g.lineWidth = 1; rr(g, fx + .5, y + .5, fw - 1, 29, 5); g.stroke();
+      const fg = r.kind === 'focus' || r.kind === 'edit' ? C('PRIMARY2') : r.kind === 'disabled' ? C('DISABLED') : C('PRIMARY1');
+      text(g, r.v, fx + 10, y + 15, 15, fg, 500);
+      if (r.kind === 'edit') { g.fillStyle = C('PRIMARY2'); g.fillRect(fx + 52, y + 7, 2, 16); }
+    }
+  });
+  // Scrollbar
+  fillRR(g, W - 10, 80, 4, H - 88, 2, C('SECONDARY2'));
+  fillRR(g, W - 10, 80, 4, 110, 2, C('SECONDARY1'));
+  if (dim) { g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, 0, W, H); }
+}
+
+function drawDialog(g) {
+  drawMenu(g, true);
+  const x = 60, y = 70, w = 360, h = 180;
+  g.save(); g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 18; g.shadowOffsetY = 6;
+  fillRR(g, x, y, w, h, 8, C('PRIMARY2')); g.restore();
+  g.save(); rr(g, x, y, w, h, 8); g.clip();
+  g.fillStyle = C('WARNING'); g.fillRect(x, y, w, 44);
+  g.restore();
+  // Warn-Dreieck
+  g.fillStyle = C('PRIMARY2'); g.beginPath(); g.moveTo(x + 30, y + 10); g.lineTo(x + 44, y + 34); g.lineTo(x + 16, y + 34); g.closePath(); g.fill();
+  text(g, '!', x + 30, y + 27, 15, C('WARNING'), 700, 'center');
+  text(g, 'WARNUNG', x + 56, y + 22, 18, C('PRIMARY2'), 700);
+  text(g, 'Gashebel nicht in Leerlaufstellung', x + 20, y + 74, 16, C('PRIMARY1'), 500);
+  text(g, 'Gas auf Minimum stellen oder', x + 20, y + 100, 14, C('PRIMARY3'));
+  text(g, 'Taste drücken, um fortzufahren.', x + 20, y + 118, 14, C('PRIMARY3'));
+  fillRR(g, x + w - 120, y + h - 46, 100, 32, 6, C('FOCUS'));
+  text(g, 'OK', x + w - 70, y + h - 30, 15, C('PRIMARY2'), 700, 'center');
+  fillRR(g, x + 20, y + h - 46, 100, 32, 6, C('SECONDARY3'));
+  g.strokeStyle = C('SECONDARY2'); rr(g, x + 20.5, y + h - 45.5, 99, 31, 6); g.stroke();
+  text(g, 'Abbrechen', x + 70, y + h - 30, 14, C('PRIMARY1'), 500, 'center');
+}
+
+function render(g, which) {
+  g.save(); g.clearRect(0, 0, W, H);
+  if (which === 'main') drawMain(g); else if (which === 'menu') drawMenu(g, false); else drawDialog(g);
+  g.restore();
+}
+function draw() { render(lcd.getContext('2d'), view); }
+
+// ---------- Kontrast ----------
+function renderContrast() {
+  const c = state.colors;
+  const pairs = [
+    ['Text auf Seite', 'PRIMARY1', 'SECONDARY3'],
+    ['Kopfzeile', 'PRIMARY2', 'SECONDARY1'],
+    ['Fokus-Feld', 'PRIMARY2', 'FOCUS'],
+    ['Bearbeiten', 'PRIMARY2', 'EDIT'],
+    ['Warnung', 'PRIMARY2', 'WARNING'],
+    ['Deaktiviert', 'DISABLED', 'SECONDARY3'],
+  ];
+  $('contrast').innerHTML = '';
+  for (const [label, fg, bg] of pairs) {
+    const r = contrast(c[fg], c[bg]);
+    const cls = r >= 4.5 ? 'good' : r >= 3 ? 'warn' : 'bad';
+    const word = r >= 4.5 ? 'gut' : r >= 3 ? 'knapp' : 'schwach';
+    const el = document.createElement('div'); el.className = 'cchip';
+    el.innerHTML = `<div class="sw" style="background:${c[bg]};color:${c[fg]}">Aa</div>
+      <div class="txt"><div>${label}</div><span class="ratio">${r.toFixed(1)}:1</span> <span class="pill ${cls}">${word}</span></div>`;
+    $('contrast').appendChild(el);
+  }
+}
+
+// ---------- YAML ----------
+const clean = s => String(s || '').replace(/[\r\n#:]/g, ' ').replace(/\s+/g, ' ').trim();
+function folderName() { return (clean(state.name).replace(/[^A-Za-z0-9_-]/g, '') || 'MeinTheme').slice(0, 16); }
+function toYaml() {
+  let y = '---\nsummary:\n';
+  y += `  name: ${clean(state.name) || 'MeinTheme'}\n`;
+  y += `  author: ${clean(state.author)}\n`;
+  y += `  info: ${clean(state.info)}\n\ncolors:\n`;
+  for (const [k] of KEYS) y += `  ${k}: 0x${state.colors[k].slice(1).toUpperCase()}\n`;
+  return y;
+}
+function parseYaml(txt) {
+  const out = { colors: {} };
+  for (const line of txt.split(/\r?\n/)) {
+    let m = line.match(/^\s*(name|author|info)\s*:\s*(.*?)\s*$/);
+    if (m) { out[m[1]] = m[2].replace(/^["']|["']$/g, ''); continue; }
+    m = line.match(/^\s*([A-Z0-9_]+)\s*:\s*(?:0x|#)([0-9a-fA-F]{6})\b/);
+    if (m && KEYS.some(([k]) => k === m[1])) out.colors[m[1]] = '#' + m[2].toUpperCase();
+  }
+  return out;
+}
+
+function renderFiles() {
+  const f = folderName();
+  $('folderName').textContent = `/THEMES/${f}/`;
+  const files = ['theme.yml', 'screenshot1.png', 'screenshot2.png', 'screenshot3.png'];
+  if (logoCanvas) files.push('logo.png');
+  if (bgCanvas) files.push('background.png');
+  $('tree').textContent = `THEMES/\n└─ ${f}/\n` + files.map((n, i) => `   ${i === files.length - 1 ? '└─' : '├─'} ${n}`).join('\n');
+  $('yml').textContent = toYaml();
+}
+
+function changed() { saveState(); draw(); renderContrast(); renderFiles(); }
+
+// ---------- Bilder ----------
+function loadImageFile(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file); const im = new Image();
+    im.onload = () => res(im); im.onerror = () => rej(new Error('Bild konnte nicht gelesen werden.')); im.src = url;
+  });
+}
+function coverCanvas(im, w, h) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); const s = Math.max(w / im.width, h / im.height);
+  const dw = im.width * s, dh = im.height * s; g.drawImage(im, (w - dw) / 2, (h - dh) / 2, dw, dh); return c;
+}
+function fitCanvas(im, maxW, maxH) {
+  const s = Math.min(1, maxW / im.width, maxH / im.height);
+  const c = document.createElement('canvas'); c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
+  c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); return c;
+}
+$('bgPick').onclick = () => $('bgFile').click();
+$('logoPick').onclick = () => $('logoFile').click();
+$('bgFile').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { bgImg = await loadImageFile(f); bgCanvas = coverCanvas(bgImg, W, H);
+    $('bgThumb').style.backgroundImage = `url(${bgCanvas.toDataURL()})`; $('bgClear').hidden = false;
+    if (view !== 'main') document.querySelector('[data-view=main]').click(); changed(); toast('Hintergrund gesetzt.', 'ok');
+  } catch (err) { toast(err.message, 'err'); }
+  e.target.value = '';
+};
+$('logoFile').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { const im = await loadImageFile(f); logoCanvas = fitCanvas(im, 200, 100);
+    $('logoThumb').style.backgroundImage = `url(${logoCanvas.toDataURL()})`; $('logoClear').hidden = false; changed(); toast('Logo gesetzt.', 'ok');
+  } catch (err) { toast(err.message, 'err'); }
+  e.target.value = '';
+};
+$('bgClear').onclick = () => { bgImg = bgCanvas = null; $('bgThumb').style.backgroundImage = ''; $('bgClear').hidden = true; changed(); };
+$('logoClear').onclick = () => { logoCanvas = null; $('logoThumb').style.backgroundImage = ''; $('logoClear').hidden = true; changed(); };
+
+// ---------- Import ----------
+$('importBtn').onclick = () => $('importFile').click();
+$('importFile').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const p = parseYaml(await f.text());
+  const n = Object.keys(p.colors).length;
+  if (!n) { toast('In dieser Datei wurden keine EdgeTX-Farben gefunden (erwartet z. B. „PRIMARY1: 0x000000“).', 'err'); }
+  else {
+    state.colors = { ...state.colors, ...p.colors };
+    if (p.name) state.name = p.name; if (p.author) state.author = p.author; if (p.info) state.info = p.info;
+    $('tName').value = state.name; $('tAuthor').value = state.author; $('tInfo').value = state.info;
+    syncColorInputs(); changed(); toast(`${n} von 12 Farben importiert.`, 'ok');
+  }
+  e.target.value = '';
+};
+document.addEventListener('paste', e => {
+  if (e.target.closest && e.target.closest('input,textarea')) return;
+  const t = e.clipboardData && e.clipboardData.getData('text');
+  if (!t) return; const p = parseYaml(t); const n = Object.keys(p.colors).length;
+  if (n) { state.colors = { ...state.colors, ...p.colors }; if (p.name) { state.name = p.name; $('tName').value = p.name; } syncColorInputs(); changed(); toast(`${n} Farben aus der Zwischenablage übernommen.`, 'ok'); }
+});
+
+// ---------- ZIP (ohne Kompression) ----------
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(entries) {
+  const enc = new TextEncoder(); const parts = []; const central = []; let offset = 0;
+  const d = new Date(); const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosDate = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const { name, data } of entries) {
+    const nb = enc.encode(name), crc = crc32(data), sz = data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, sz, true); lh.setUint32(22, sz, true); lh.setUint16(26, nb.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), nb, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(10, 0, true); ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, sz, true); ch.setUint32(24, sz, true); ch.setUint16(28, nb.length, true);
+    ch.setUint32(38, name.endsWith('/') ? 0x10 : 0, true); ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), nb);
+    offset += 30 + nb.length + sz;
+  }
+  const cdSize = central.reduce((a, p) => a + p.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+async function canvasBytes(c) {
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+async function screenshot(which) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const hk = highlightKey; highlightKey = null; render(c.getContext('2d'), which); highlightKey = hk;
+  return canvasBytes(c);
+}
+
+// ---------- Speichern ----------
+let downloads = null;
+if (window.claude && typeof window.claude.use === 'function') {
+  window.claude.use('downloads').then(d => { downloads = d; }).catch(() => {});
+}
+async function saveFile(filename, blob) {
+  if (downloads) {
+    try { await downloads.save({ filename, data: blob }); toast(`${filename} gespeichert.`, 'ok'); }
+    catch (e) { toast(e && e.code === 'declined' ? 'Speichern abgebrochen.' : 'Speichern ist in dieser Ansicht nicht möglich.', 'err'); }
+    return;
+  }
+  if (window.claude) { toast('Speichern ist in dieser Ansicht nicht verfügbar. Kopiere stattdessen das YAML.', 'err'); return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast(`${filename} gespeichert.`, 'ok');
+}
+
+$('dlZip').onclick = async () => {
+  const f = folderName(), base = `THEMES/${f}/`, enc = new TextEncoder();
+  const entries = [
+    { name: 'THEMES/', data: new Uint8Array() },
+    { name: base, data: new Uint8Array() },
+    { name: base + 'theme.yml', data: enc.encode(toYaml()) },
+    { name: base + 'screenshot1.png', data: await screenshot('main') },
+    { name: base + 'screenshot2.png', data: await screenshot('menu') },
+    { name: base + 'screenshot3.png', data: await screenshot('dialog') },
+  ];
+  if (logoCanvas) entries.push({ name: base + 'logo.png', data: await canvasBytes(logoCanvas) });
+  if (bgCanvas) entries.push({ name: base + 'background.png', data: await canvasBytes(bgCanvas) });
+  await saveFile(`${f}.zip`, makeZip(entries));
+};
+$('dlYml').onclick = () => saveFile('theme.yml', new Blob([toYaml()], { type: 'text/yaml' }));
+$('copyYml').onclick = () => {
+  navigator.clipboard.writeText(toYaml()).then(() => toast('YAML kopiert.', 'ok')).catch(() => {
+    const r = document.createRange(); r.selectNodeContents($('yml')); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    toast('Text markiert – mit Strg+C kopieren.', 'ok');
+  });
+};
+
+let toastTimer;
+function toast(msg, kind) { const t = $('toast'); t.textContent = msg; t.className = 'toast ' + (kind || ''); clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.textContent = ''; }, 5000); }
+
+// ---------- Start ----------
+buildPresets(); buildColorRows(); syncColorInputs(); bindInfo(); changed();
+if (document.fonts && document.fonts.load) document.fonts.load(`500 16px Roboto`).then(draw, () => {});
+})();
+</script>

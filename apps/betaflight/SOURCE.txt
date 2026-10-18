@@ -1,0 +1,5 @@
+betaflight – unverändert gebaut aus dem offiziellen Quellcode.
+Quellcode: https://github.com/betaflight/betaflight-configurator.git
+Commit:    2866d884aba71e08b399a6cb8a0f22cd17328960
+Lizenz:    GPL-3.0 (siehe LICENSE.txt)
+Gebaut am: 2026-10-18 11:50

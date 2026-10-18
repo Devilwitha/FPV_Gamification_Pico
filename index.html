@@ -1,0 +1,524 @@
+<title>TX15 Werkstatt</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+/* Layout: dunkle Werkstatt-Landingpage – Sticky-Header, Hero mit Live-Display, nummerierte Abschnitte (Werkzeuge, Ablauf, SD-Karte) */
+:root {
+  --bg: #080b0d;
+  --surface: #101518;
+  --surface-alt: #151b1f;
+  --line: #263137;
+  --text: #f0f4f2;
+  --muted: #9aaba5;
+  --accent: #58f0a8;
+  --accent-dark: #33cf86;
+  --accent-soft: rgba(88, 240, 168, .14);
+  --accent-ink: #07100b;
+  --f-serif: Georgia, "Times New Roman", serif;
+  --f-body: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --f-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  --radius: 8px;
+  --radius-l: 18px;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 16px/1.6 var(--f-body); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1, h2, h3 { font-family: var(--f-serif); font-weight: 400; line-height: 1.2; margin: 0; text-wrap: balance; }
+code { font-family: var(--f-mono); background: var(--surface-alt); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; font-size: .88em; }
+::selection { background: var(--accent-soft); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.container { max-width: 1240px; margin: 0 auto; padding-inline: 24px; }
+@media (max-width: 600px) { .container { padding-inline: 16px; } }
+
+/* Kopf */
+.site-header {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
+  background: rgba(8, 11, 13, .92); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line);
+}
+.navbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 24px; padding-block: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); font: 400 20px var(--f-serif); }
+.brand:hover { text-decoration: none; }
+.brand svg { width: 28px; height: 28px; }
+.nav { display: flex; flex-wrap: wrap; gap: 4px 22px; font-size: 15px; }
+.nav a { color: var(--muted); }
+.nav a:hover { color: var(--text); text-decoration: none; }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 48px; align-items: center; padding-block: 88px 72px; }
+@media (max-width: 900px) { .hero { grid-template-columns: minmax(0, 1fr); padding-block: 56px 48px; gap: 36px; } }
+.eyebrow { font-family: var(--f-mono); font-size: 13px; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; margin: 0 0 18px; }
+.hero h1 { font-size: clamp(38px, 5.4vw, 64px); letter-spacing: -.01em; }
+.hero h1 em { font-style: italic; color: var(--accent); }
+.lead { color: var(--muted); font-size: 18px; max-width: 34em; margin: 22px 0 32px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: var(--radius);
+  border: 1px solid var(--line); color: var(--text); font-weight: 600; font-size: 15px; transition: border-color .15s, background .15s;
+}
+.btn:hover { text-decoration: none; border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+.btn svg { width: 16px; height: 16px; }
+
+/* Funkgerät im Hero */
+.device {
+  background: linear-gradient(160deg, #2b3237, #0e1214 45%); border: 1px solid var(--line); border-radius: 28px;
+  padding: 22px 22px 18px; box-shadow: 0 14px 32px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+  max-width: 560px; justify-self: end; width: 100%;
+}
+@media (max-width: 900px) { .device { justify-self: stretch; } }
+.device-top { display: flex; justify-content: space-between; font: 600 11px var(--f-mono); letter-spacing: .18em; color: #7d8a90; text-transform: uppercase; margin-bottom: 12px; }
+.device-screen { background: #000; border-radius: 6px; padding: 6px; }
+#heroLcd { display: block; width: 100%; height: auto; aspect-ratio: 480 / 320; max-width: 100%; border-radius: 2px; }
+.device-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font: 12px var(--f-mono); color: #7d8a90; }
+.dots { display: flex; gap: 6px; }
+.dots button { width: 22px; height: 8px; border-radius: 4px; border: 0; padding: 0; cursor: pointer; background: #2a3338; }
+.dots button[aria-pressed="true"] { background: var(--accent); }
+
+/* Abschnitte */
+section.block { padding-block: 72px; border-top: 1px solid var(--line); }
+.sec-label { font: 13px var(--f-mono); color: var(--accent); letter-spacing: .06em; margin: 0 0 12px; }
+.sec-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 48px; align-items: end; margin-bottom: 40px; }
+.sec-head h2 { font-size: clamp(30px, 3.6vw, 42px); }
+.sec-head p { color: var(--muted); margin: 0; max-width: 36em; }
+@media (max-width: 800px) { .sec-head { grid-template-columns: minmax(0, 1fr); } }
+
+/* Werkzeug-Karten */
+.tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.tools.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.flash-visual { width: 100%; max-width: 340px; display: grid; gap: 10px; }
+.flash-visual .waves { display: flex; align-items: center; justify-content: center; gap: 14px; color: var(--accent); }
+.flash-visual .waves svg { width: 64px; height: 64px; }
+.flash-visual .term { background: #05080a; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; font: 12px/1.6 var(--f-mono); color: #c9d4d0; }
+.flash-visual .term i { font-style: normal; color: var(--accent); }
+.esc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.esc-grid span { background: #05080a; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; font: 11px var(--f-mono); color: var(--muted); }
+.esc-grid b { display: block; color: var(--text); font-size: 13px; font-weight: 400; }
+.bf-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.bf-tabs span { font: 12px var(--f-mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.bf-tabs span.on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+@media (max-width: 1100px) { .tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .tools { grid-template-columns: minmax(0, 1fr); } }
+.bk-visual { width: 100%; max-width: 340px; display: grid; gap: 8px; }
+.bk-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; background: #05080a; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; font: 12px var(--f-mono); color: #c9d4d0; }
+.bk-row small { display: block; color: var(--muted); font-size: 11px; }
+.bk-row .tag { color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 8px; font-size: 11px; white-space: nowrap; }
+.bk-row.dim { opacity: .55; }
+.bk-bar { height: 6px; border-radius: 3px; background: #1d262a; overflow: hidden; }
+.bk-bar i { display: block; height: 100%; width: 72%; background: var(--accent); }
+.tool {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-l); overflow: hidden;
+  display: grid; grid-template-rows: auto 1fr; transition: border-color .2s, transform .2s;
+}
+.tool:hover { border-color: rgba(88, 240, 168, .55); }
+.tool-visual { background: var(--surface-alt); border-bottom: 1px solid var(--line); padding: 28px; display: grid; place-items: center; min-height: 250px; }
+.tool-body { padding: 26px 28px 28px; display: flex; flex-direction: column; gap: 14px; }
+.tool-body .num { font: 13px var(--f-mono); color: var(--muted); }
+.tool-body h3 { font-size: 28px; }
+.tool-body p { color: var(--muted); margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 12px var(--f-mono); color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 3px 10px; }
+.tool-body ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 15px; }
+.tool-body li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; }
+.tool-body li::before { content: ""; width: 7px; height: 7px; margin-top: 9px; border-radius: 2px; background: var(--accent); }
+.tool-body .btn { align-self: flex-start; margin-top: 6px; }
+
+/* Mini-Vorschauen */
+.swatch-screen { width: 100%; max-width: 340px; aspect-ratio: 3 / 2; border-radius: 6px; overflow: hidden; display: grid; grid-template-rows: 16% 1fr; box-shadow: 0 0 0 6px #000, 0 10px 28px rgba(0,0,0,.5); transition: background .6s; }
+.swatch-screen .tb { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font: 600 11px var(--f-body); transition: background .6s, color .6s; }
+.swatch-screen .tb i { width: 18px; height: 8px; border-radius: 2px; transition: background .6s; }
+.swatch-screen .bd { padding: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start; transition: background .6s; }
+.swatch-screen .card { border-radius: 4px; padding: 7px 8px; font: 10px/1.25 var(--f-body); transition: background .6s, color .6s; }
+.swatch-screen .card b { display: block; font-size: 18px; font-weight: 500; }
+.swatch-screen .row { grid-column: 1 / -1; display: flex; gap: 6px; }
+.swatch-screen .row span { flex: 1; height: 14px; border-radius: 3px; transition: background .6s; }
+.palette-strip { display: flex; gap: 4px; margin-top: 18px; justify-content: center; flex-wrap: wrap; }
+.palette-strip span { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,.08); transition: background .6s; }
+
+pre.code { margin: 0; width: 100%; max-width: 420px; background: #05080a; border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; font: 12.5px/1.6 var(--f-mono); color: #c9d4d0; overflow-x: auto; }
+pre.code .k { color: #c792ea; } pre.code .s { color: var(--accent); } pre.code .c { color: #5f6f69; font-style: italic; } pre.code .n { color: #f0a868; } pre.code .f { color: #7cc4ff; }
+
+/* Kennzahlen */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: var(--radius-l); overflow: hidden; margin-top: 56px; }
+.stats div { padding: 24px; border-left: 1px solid var(--line); }
+.stats div:first-child { border-left: 0; }
+.stats b { display: block; font: 400 34px var(--f-serif); color: var(--accent); font-variant-numeric: tabular-nums; }
+.stats span { color: var(--muted); font-size: 14px; }
+@media (max-width: 800px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stats div:nth-child(3) { border-left: 0; } .stats div:nth-child(n+3) { border-top: 1px solid var(--line); } }
+
+/* Ablauf */
+.steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; counter-reset: s; }
+.step { padding: 0 24px 0 0; position: relative; }
+.step::before { counter-increment: s; content: "0" counter(s); display: block; font: 13px var(--f-mono); color: var(--accent); padding-bottom: 14px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+.step h3 { font-size: 21px; margin-bottom: 8px; }
+.step p { color: var(--muted); margin: 0; font-size: 15px; }
+@media (max-width: 900px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 36px; } }
+@media (max-width: 520px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+
+/* SD-Karte */
+.sd { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+@media (max-width: 800px) { .sd { grid-template-columns: minmax(0, 1fr); } }
+.tree { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-l); padding: 24px 26px; font: 14px/1.9 var(--f-mono); color: var(--muted); overflow-x: auto; }
+.tree .d { color: var(--text); }
+.tree .hl { color: var(--accent); }
+.tree .t { color: #5f6f69; }
+.notes { display: grid; gap: 14px; align-content: start; }
+.note { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
+.note h3 { font-size: 19px; margin-bottom: 6px; }
+.note p { margin: 0; color: var(--muted); font-size: 15px; }
+
+footer { border-top: 1px solid var(--line); padding-block: 28px 40px; color: var(--muted); font-size: 14px; }
+footer .container { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 24px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="site-header">
+  <div class="container navbar">
+    <a class="brand" href="#top" aria-label="TX15 Werkstatt, zum Anfang">
+      <svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="3" y="7" width="22" height="16" rx="3" stroke="#58f0a8" stroke-width="1.6"/><rect x="7" y="10.5" width="14" height="9" rx="1" fill="#58f0a8" fill-opacity=".22"/><path d="M9 7V3.5M19 7V3.5" stroke="#58f0a8" stroke-width="1.6" stroke-linecap="round"/></svg>
+      TX15 Werkstatt
+    </a>
+    <nav class="nav" aria-label="Hauptnavigation">
+      <a href="#werkzeuge">Werkzeuge</a>
+      <a data-tool="theme" href="theme-studio.html">Theme Studio</a>
+      <a data-tool="lua" href="lua-studio.html">Lua Studio</a>
+      <a data-tool="elrs" data-feature="webflasher" href="elrs-flasher.html" hidden>ELRS Flasher</a>
+      <a data-tool="esc" data-feature="escconfigurator" href="esc-configurator.html" hidden>ESC</a>
+      <a data-tool="betaflight" data-feature="betaflight" href="betaflight.html" hidden>Betaflight</a>
+      <a data-tool="backup" href="backup-studio.html">Backup Studio</a>
+      <a href="#ablauf">Ablauf</a>
+      <a href="#sd-karte">SD-Karte</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="container hero">
+    <div>
+      <p class="eyebrow">EdgeTX · RadioMaster TX15</p>
+      <h1>Dein Sender. <em>Dein Look.</em> Deine Skripte.</h1>
+      <p class="lead">Werkzeuge im Browser für die TX15: Farbschemata gestalten, Lua-Skripte bauen, die SD-Karte sichern<span data-feature="webflasher" hidden>, das ELRS-Modul flashen</span><span data-feature="escconfigurator" hidden>, Regler einstellen</span><span data-feature="betaflight" hidden>, den Flugcontroller einrichten</span>. Was du siehst, landet als fertiger Ordner auf der SD-Karte. Installation und Programmierkenntnisse brauchst du nicht.</p>
+      <div class="cta">
+        <a class="btn primary" data-tool="theme" href="theme-studio.html">Theme gestalten
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <a class="btn" data-tool="lua" href="lua-studio.html">Lua-Skript bauen</a>
+      </div>
+    </div>
+    <div class="device" aria-label="Beispiel-Display der TX15">
+      <div class="device-top"><span>TX15</span><span id="themeName">EdgeTX</span></div>
+      <div class="device-screen"><canvas id="heroLcd" width="480" height="320"></canvas></div>
+      <div class="device-foot"><span>480 × 320 · Farbdisplay</span><div class="dots" id="dots" role="group" aria-label="Beispiel-Theme wählen"></div></div>
+    </div>
+  </div>
+
+  <section class="block" id="werkzeuge">
+    <div class="container">
+      <p class="sec-label">01 / Werkzeuge</p>
+      <div class="sec-head">
+        <h2><span id="toolCount">Drei</span> Werkzeuge, ein Sender.</h2>
+        <p>Alle Werkzeuge laufen im Browser und merken sich deinen Stand. Was auf die SD-Karte gehört, kommt als ZIP mit der passenden Ordnerstruktur. Regler und Flugcontroller verbindest du direkt per USB.</p>
+      </div>
+
+      <div class="tools">
+        <article class="tool">
+          <div class="tool-visual">
+            <div style="width:100%;display:grid;justify-items:center">
+              <div class="swatch-screen" id="mini">
+                <div class="tb"><span>Quad 5"</span><i></i></div>
+                <div class="bd">
+                  <div class="card"><span>TIMER 1</span><b>02:37</b></div>
+                  <div class="card"><span>RxBt</span><b>7.9 V</b></div>
+                  <div class="row"><span></span><span></span><span></span><span></span></div>
+                </div>
+              </div>
+              <div class="palette-strip" id="strip"></div>
+            </div>
+          </div>
+          <div class="tool-body">
+            <span class="num">Werkzeug 1</span>
+            <h3>Theme Studio</h3>
+            <p>Alle zwölf EdgeTX-Theme-Farben einstellen und live auf einem nachgebauten TX15-Display prüfen: Hauptansicht, Menü und Warnfenster.</p>
+            <div class="chips"><span class="chip">theme.yml</span><span class="chip">screenshots</span><span class="chip">background.png</span></div>
+            <ul>
+              <li>5 Vorlagen, Import vorhandener Themes</li>
+              <li>Blink-Markierung: zeigt, wo jede Farbe wirkt</li>
+              <li>Kontrast-Check für Sonnenlicht am Flugfeld</li>
+            </ul>
+            <a class="btn primary" data-tool="theme" href="theme-studio.html">Theme Studio öffnen</a>
+          </div>
+        </article>
+
+        <article class="tool">
+          <div class="tool-visual">
+<pre class="code"><span class="c">-- WIDGETS/FLUGDAT/main.lua</span>
+<span class="k">local function</span> <span class="f">refresh</span>(widget)
+  <span class="k">local</span> v = <span class="f">getValue</span>(<span class="s">"VFAS"</span>)
+  <span class="f">lcd.drawText</span>(X(<span class="n">8</span>), Y(<span class="n">34</span>),
+    <span class="f">string.format</span>(<span class="s">"%.1f V"</span>, v),
+    DBLSIZE + COLOR_THEME_PRIMARY1)
+<span class="k">end</span></pre>
+          </div>
+          <div class="tool-body">
+            <span class="num">Werkzeug 2</span>
+            <h3>Lua Studio</h3>
+            <p>Widgets und Tools per Drag &amp; Drop zeichnen, Funktions- und Mischer-Skripte aus Vorlagen erzeugen. Der fertige Lua-Code entsteht live mit.</p>
+            <div class="chips"><span class="chip">Widget</span><span class="chip">Tool</span><span class="chip">Funktion</span><span class="chip">Mischer</span></div>
+            <ul>
+              <li>Text, Telemetrie-Werte, Balken, Timer, Formen</li>
+              <li>Widgets passen sich jeder Zonengröße an</li>
+              <li>Vorlagen: Wertansage, Akku-Alarm, Gas-Begrenzer, Expo</li>
+            </ul>
+            <a class="btn primary" data-tool="lua" href="lua-studio.html">Lua Studio öffnen</a>
+          </div>
+        </article>
+
+        <article class="tool">
+          <div class="tool-visual">
+            <div class="bk-visual" aria-hidden="true">
+              <div class="bk-row"><span>Vor Firmware-Update<small>18.10.2026 · 6 Modelle · 412 KB</small></span><span class="tag">gespeichert</span></div>
+              <div class="bk-row"><span>Saisonstart Segler<small>02.04.2026 · 5 Modelle · 388 KB</small></span><span class="tag">gespeichert</span></div>
+              <div class="bk-row dim"><span>Automatisch vor Wiederherstellung<small>14.03.2026 · 2 Dateien</small></span><span class="tag">auto</span></div>
+              <div class="bk-bar"><i></i></div>
+            </div>
+          </div>
+          <div class="tool-body">
+            <span class="num">Werkzeug 3</span>
+            <h3>Backup Studio</h3>
+            <p>Die SD-Karte per USB einlesen, Einstellungen und Modelle sichern und bei Bedarf gezielt zurückspielen, auch ein einzelnes Modell.</p>
+            <div class="chips"><span class="chip">ZIP</span><span class="chip">RADIO/</span><span class="chip">MODELS/</span><span class="chip">Vergleich</span></div>
+            <ul>
+              <li>Kategorien wählbar, Sounds und Logs optional</li>
+              <li>Vergleich mit der Karte: neu, anders, gleich</li>
+              <li>Vor jedem Zurückspielen eine automatische Sicherung</li>
+            </ul>
+            <a class="btn primary" data-tool="backup" href="backup-studio.html">Backup Studio öffnen</a>
+          </div>
+        </article>
+
+        <article class="tool" data-feature="webflasher" hidden>
+          <div class="tool-visual">
+            <div class="flash-visual" aria-hidden="true">
+              <div class="waves"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="32" cy="34" r="4" fill="currentColor"/><path d="M22 24a14 14 0 000 20M42 24a14 14 0 010 20M14 16a26 26 0 000 36M50 16a26 26 0 010 36"/></svg></div>
+              <div class="term">Starte EdgeTX-Passthrough …<br>Verbunden mit ESP32<br>Datei 4 von 4 · <i>100 %</i><br><i>Flashen abgeschlossen.</i></div>
+            </div>
+          </div>
+          <div class="tool-body">
+            <span class="num">Werkzeug 4</span>
+            <h3>ELRS Flasher</h3>
+            <p>Der ExpressLRS Configurator im Browser: Firmware wählen, Binding-Phrase und Region einstellen und das interne Modul der TX15 per USB flashen.</p>
+            <div class="chips"><span class="chip">ExpressLRS</span><span class="chip">EdgeTX Passthrough</span><span class="chip">WLAN</span></div>
+            <ul>
+              <li>Ein Klick für das TX15-Modul, alle anderen Geräte wählbar</li>
+              <li>Binding-Phrase, LBT/FCC, WLAN-Zugang</li>
+              <li>Flashen per USB in Chrome/Edge oder Download für WLAN</li>
+            </ul>
+            <a class="btn primary" data-tool="elrs" href="elrs-flasher.html">ELRS Flasher öffnen</a>
+          </div>
+        </article>
+
+        <article class="tool" data-feature="escconfigurator" hidden>
+          <div class="tool-visual">
+            <div class="flash-visual" aria-hidden="true">
+              <div class="esc-grid"><span>ESC 1<b>Bluejay 0.21</b></span><span>ESC 2<b>Bluejay 0.21</b></span><span>ESC 3<b>Bluejay 0.21</b></span><span>ESC 4<b>Bluejay 0.21</b></span></div>
+              <div class="term">Motor-Richtung: normal · Startleistung 1 · <i>48 kHz</i></div>
+            </div>
+          </div>
+          <div class="tool-body">
+            <span class="num">Werkzeug</span>
+            <h3>ESC Configurator</h3>
+            <p>Regler mit BLHeli_S, Bluejay oder AM32 über den Flugcontroller einstellen und flashen. Das Original-Projekt, unverändert aus dem Quellcode gebaut.</p>
+            <div class="chips"><span class="chip">BLHeli_S</span><span class="chip">Bluejay</span><span class="chip">AM32</span><span class="chip">AGPL-3.0</span></div>
+            <ul>
+              <li>Alle vier Regler auf einmal lesen und schreiben</li>
+              <li>Firmware-Updates und Startmelodien</li>
+              <li>Verbindung über Betaflight-Passthrough per USB</li>
+            </ul>
+            <a class="btn primary" data-tool="esc" href="esc-configurator.html">ESC Configurator öffnen</a>
+          </div>
+        </article>
+
+        <article class="tool" data-feature="betaflight" hidden>
+          <div class="tool-visual">
+            <div class="flash-visual" aria-hidden="true">
+              <div class="bf-tabs"><span class="on">Konfiguration</span><span>Ports</span><span>Empfänger</span><span>Modi</span><span>PID</span><span>OSD</span></div>
+              <div class="term">MSP API 1.47 · Betaflight 4.5<br>Empfänger: <i>CRSF</i> · UART2</div>
+            </div>
+          </div>
+          <div class="tool-body">
+            <span class="num">Werkzeug</span>
+            <h3>Betaflight Configurator</h3>
+            <p>Flugcontroller einrichten: Ports, Empfänger, Modi, PIDs und OSD, dazu Firmware flashen. Die offizielle Web-App, unverändert aus dem Quellcode gebaut.</p>
+            <div class="chips"><span class="chip">Betaflight</span><span class="chip">MSP</span><span class="chip">DFU</span><span class="chip">GPL-3.0</span></div>
+            <ul>
+              <li>Empfänger-Einstellungen passend zu ExpressLRS</li>
+              <li>Firmware per USB-DFU flashen</li>
+              <li>Läuft lokal ohne Installation in Chrome oder Edge</li>
+            </ul>
+            <a class="btn primary" data-tool="betaflight" href="betaflight.html">Betaflight öffnen</a>
+          </div>
+        </article>
+      </div>
+
+      <div class="stats">
+        <div><b>480×320</b><span>Display der TX15 als Vorschau</span></div>
+        <div><b>12</b><span>Theme-Farben von PRIMARY1 bis CUSTOM</span></div>
+        <div><b>4</b><span>Skripttypen von Widget bis Mischer</span></div>
+        <div><b>1 Klick</b><span>Backup der Modelle vor jedem Update</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="ablauf">
+    <div class="container">
+      <p class="sec-label">02 / Ablauf</p>
+      <div class="sec-head">
+        <h2>Vom Entwurf auf den Sender.</h2>
+        <p>Der Weg ist bei Themes und Skripten derselbe. Nur der Zielordner auf der Karte ist ein anderer.</p>
+      </div>
+      <div class="steps">
+        <div class="step"><h3>Gestalten</h3><p>Im Studio Farben wählen oder Elemente platzieren. Die Vorschau zeigt sofort, wie es am Sender aussieht.</p></div>
+        <div class="step"><h3>Exportieren</h3><p>ZIP herunterladen. Darin liegen schon die richtigen Ordner, etwa <code>THEMES/</code> oder <code>WIDGETS/</code>.</p></div>
+        <div class="step"><h3>Auf die Karte</h3><p>SD-Karte oder Sender per USB verbinden und das ZIP ins Hauptverzeichnis entpacken.</p></div>
+        <div class="step"><h3>Am Sender wählen</h3><p>Theme unter SYS → Themes aktivieren, Widgets über „Hauptansichten einrichten“ platzieren.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="sd-karte">
+    <div class="container">
+      <p class="sec-label">03 / SD-Karte</p>
+      <div class="sec-head">
+        <h2>Wo welche Datei hingehört.</h2>
+        <p>EdgeTX sucht Themes und Skripte in festen Ordnern. Die Studios legen alles an die richtige Stelle.</p>
+      </div>
+      <div class="sd">
+<pre class="tree"><span class="d">SD-Karte/</span>
+├─ <span class="d">THEMES/</span>
+│  └─ <span class="hl">MeinTheme/</span>        <span class="t">← Theme Studio</span>
+│     ├─ theme.yml
+│     └─ screenshot1.png …
+├─ <span class="d">WIDGETS/</span>
+│  └─ <span class="hl">FLUGDAT/main.lua</span>  <span class="t">← Widget</span>
+└─ <span class="d">SCRIPTS/</span>
+   ├─ <span class="d">TOOLS/</span><span class="hl">Flugbuch.lua</span>  <span class="t">← Tool</span>
+   ├─ <span class="d">FUNCTIONS/</span><span class="hl">akku.lua</span> <span class="t">← Funktion</span>
+   └─ <span class="d">MIXES/</span><span class="hl">limit.lua</span>     <span class="t">← Mischer</span></pre>
+        <div class="notes">
+          <div class="note"><h3>Kurze Namen</h3><p>Funktions- und Mischer-Skripte dürfen höchstens 6 Zeichen haben, Widget-Ordner höchstens 8. Die Studios kürzen das automatisch.</p></div>
+          <div class="note"><h3>Neustart nach dem Kopieren</h3><p>Neue Widgets und Themes erkennt EdgeTX erst nach einem Neustart des Senders.</p></div>
+          <div class="note"><h3>Vorher sichern</h3><p>Erstelle im <a data-tool="backup" href="backup-studio.html">Backup Studio</a> ein Backup, bevor du Dateien ersetzt oder die Firmware aktualisierst. Ein misslungenes Skript ist dann schnell rückgängig gemacht.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<footer>
+  <div class="container">
+    <span>TX15 Werkstatt · Werkzeuge für EdgeTX-Sender mit Farbdisplay</span>
+    <span>EdgeTX und RadioMaster sind Marken ihrer jeweiligen Inhaber.</span>
+  </div>
+</footer>
+
+<script>
+(() => {
+'use strict';
+// Links: lokal relative Dateien, im Claude-Viewer die veröffentlichten Seiten
+// Funktionen aus config.js ein- oder ausblenden
+const CFG = window.WERKSTATT_CONFIG || {};
+document.querySelectorAll('[data-feature]').forEach(el => { el.hidden = CFG[el.dataset.feature] !== true; });
+// Werkzeuge nummerieren und Raster an die Anzahl anpassen
+const visibleTools = [...document.querySelectorAll('.tools > .tool')].filter(t => !t.hidden);
+visibleTools.forEach((t, i) => { const n = t.querySelector('.num'); if (n) n.textContent = 'Werkzeug ' + (i + 1); });
+document.querySelector('.tools').classList.toggle('four', visibleTools.length === 4);
+document.getElementById('toolCount').textContent = ['', 'Ein', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs'][visibleTools.length] || String(visibleTools.length);
+
+const ONLINE = { theme: 'https://claude.ai/artifact/ChEip3M9VTVKBTe52yZ84z', lua: 'https://claude.ai/artifact/NqNAfXKkzoAaimnJWVsEsb', backup: 'https://claude.ai/artifact/TCs6tidxPkAh8dBvptW5Md', elrs: 'https://claude.ai/artifact/4uwyvsqHaX8CLSAWAY3FAz', esc: 'https://esc-configurator.com', betaflight: 'https://app.betaflight.com' };
+if (window.claude && typeof window.claude.use === 'function') {
+  document.querySelectorAll('[data-tool]').forEach(a => { a.href = ONLINE[a.dataset.tool]; a.target = '_blank'; a.rel = 'noopener'; });
+}
+
+const THEMES = {
+  'EdgeTX':    { PRIMARY1:'#000000', PRIMARY2:'#FFFFFF', PRIMARY3:'#0C3F64', SECONDARY1:'#125E9E', SECONDARY2:'#B7CFE3', SECONDARY3:'#E6EDF2', FOCUS:'#F29A1F', EDIT:'#00A54F', ACTIVE:'#F29A1F', WARNING:'#E62E1F', DISABLED:'#8C8C8C', CUSTOM:'#000000' },
+  'Nachtflug': { PRIMARY1:'#E8ECEF', PRIMARY2:'#1A1F24', PRIMARY3:'#8FA3B4', SECONDARY1:'#0B0E11', SECONDARY2:'#3A444D', SECONDARY3:'#252C33', FOCUS:'#3FA7FF', EDIT:'#2FCB7A', ACTIVE:'#3FA7FF', WARNING:'#FF5A47', DISABLED:'#5F6A73', CUSTOM:'#FFD24A' },
+  'Racing':    { PRIMARY1:'#111111', PRIMARY2:'#FFFFFF', PRIMARY3:'#5A0A0A', SECONDARY1:'#C8102E', SECONDARY2:'#D9C9CB', SECONDARY3:'#F3EDEE', FOCUS:'#1A1A1A', EDIT:'#E8A400', ACTIVE:'#C8102E', WARNING:'#FF6A00', DISABLED:'#9A9091', CUSTOM:'#C8102E' },
+  'Segelflug': { PRIMARY1:'#14281D', PRIMARY2:'#FFFFFF', PRIMARY3:'#2C4A36', SECONDARY1:'#3D7A52', SECONDARY2:'#BFD6C4', SECONDARY3:'#ECF3EC', FOCUS:'#E0A82E', EDIT:'#2E86C1', ACTIVE:'#E0A82E', WARNING:'#D64933', DISABLED:'#8E9A91', CUSTOM:'#3D7A52' },
+  'Synthwave': { PRIMARY1:'#F6E9FF', PRIMARY2:'#1B1033', PRIMARY3:'#B89CE0', SECONDARY1:'#2D1656', SECONDARY2:'#4E3478', SECONDARY3:'#26174A', FOCUS:'#FF3EA5', EDIT:'#21E6C1', ACTIVE:'#FF3EA5', WARNING:'#FFB000', DISABLED:'#6E5C8C', CUSTOM:'#21E6C1' },
+};
+const names = Object.keys(THEMES);
+let cur = 0, timer = null;
+
+// ----- Hero-Display -----
+const cv = document.getElementById('heroLcd'), g = cv.getContext('2d');
+const FONT = 'Roboto, "Segoe UI", Arial, sans-serif';
+const rr = (x, y, w, h, r, c) => { g.beginPath(); g.roundRect(x, y, w, h, r); g.fillStyle = c; g.fill(); };
+const tx = (s, x, y, size, c, w = 400, a = 'left') => { g.font = `${w} ${size}px ${FONT}`; g.fillStyle = c; g.textAlign = a; g.textBaseline = 'middle'; g.fillText(s, x, y); };
+const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
+function draw(C) {
+  g.clearRect(0, 0, 480, 320);
+  g.fillStyle = C.SECONDARY3; g.fillRect(0, 0, 480, 320);
+  g.fillStyle = C.SECONDARY1; g.fillRect(0, 0, 480, 44);
+  g.fillStyle = C.PRIMARY3; g.fillRect(0, 0, 48, 44);
+  g.strokeStyle = C.PRIMARY2; g.lineWidth = 2.5; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(15, 14); g.lineTo(33, 14); g.moveTo(15, 22); g.lineTo(29, 22); g.moveTo(15, 30); g.lineTo(33, 30); g.stroke();
+  tx('Quad 5" Freestyle', 60, 22, 17, C.PRIMARY2, 500);
+  for (let i = 0; i < 5; i++) { const h = 5 + i * 3; g.fillStyle = i < 4 ? C.PRIMARY2 : rgba(C.PRIMARY2, .35); g.fillRect(330 + i * 6, 32 - h, 4, h); }
+  g.strokeStyle = C.PRIMARY2; g.lineWidth = 1.5; g.beginPath(); g.roundRect(370, 14, 34, 16, 3); g.stroke();
+  g.fillStyle = C.PRIMARY2; g.fillRect(404, 19, 3, 6); rr(373, 17, 22, 10, 1.5, C.EDIT);
+  tx('10:42', 468, 22, 16, C.PRIMARY2, 500, 'right');
+  const card = (x, y, w, h) => { rr(x, y, w, h, 8, rgba(C.PRIMARY2, .9)); g.strokeStyle = C.SECONDARY2; g.lineWidth = 1; g.beginPath(); g.roundRect(x + .5, y + .5, w - 1, h - 1, 8); g.stroke(); };
+  card(44, 62, 186, 96); tx('TIMER 1', 58, 80, 12, C.PRIMARY3, 700); tx('02:37', 58, 120, 44, C.PRIMARY1, 500);
+  rr(58, 144, 158, 5, 2.5, C.SECONDARY2); rr(58, 144, 82, 5, 2.5, C.ACTIVE);
+  card(250, 62, 186, 96); tx('TELEMETRIE', 264, 80, 12, C.PRIMARY3, 700);
+  tx('RxBt', 264, 104, 14, C.PRIMARY1); tx('7.9 V', 422, 104, 18, C.PRIMARY1, 500, 'right');
+  tx('RSSI', 264, 128, 14, C.PRIMARY1); tx('-58 dB', 422, 128, 18, C.PRIMARY1, 500, 'right');
+  tx('GPS', 264, 148, 14, C.DISABLED); tx('---', 422, 148, 14, C.DISABLED, 400, 'right');
+  card(44, 172, 392, 62); tx('SCHALTER', 58, 188, 12, C.PRIMARY3, 700);
+  [['SA', 1], ['SB', 0], ['SC', 1], ['SD', 0], ['L01', 1], ['L02', 0]].forEach(([n, on], i) => {
+    const x = 58 + i * 62; rr(x, 200, 54, 24, 5, on ? C.ACTIVE : C.SECONDARY2); tx(n, x + 27, 212, 13, on ? C.PRIMARY2 : C.PRIMARY1, 700, 'center');
+  });
+  tx('FM0  Normal', 240, 252, 15, C.PRIMARY1, 500, 'center');
+  const trim = (x, y, w, pos) => {
+    rr(x, y, w, 10, 5, rgba(C.PRIMARY3, .55)); const cx = x + w / 2 + pos * (w / 2 - 12);
+    rr(cx - 11, y - 4, 22, 18, 4, C.SECONDARY1); g.strokeStyle = C.PRIMARY2; g.lineWidth = 1.2; g.beginPath(); g.roundRect(cx - 11, y - 4, 22, 18, 4); g.stroke();
+  };
+  trim(40, 284, 170, -.35); trim(270, 284, 170, .2);
+}
+
+// ----- Mini-Vorschau im Theme-Kärtchen -----
+const mini = document.getElementById('mini'), strip = document.getElementById('strip');
+const STRIP_KEYS = ['PRIMARY1', 'PRIMARY2', 'PRIMARY3', 'SECONDARY1', 'SECONDARY2', 'SECONDARY3', 'FOCUS', 'EDIT', 'ACTIVE', 'WARNING', 'DISABLED', 'CUSTOM'];
+STRIP_KEYS.forEach(k => { const s = document.createElement('span'); s.title = k; strip.appendChild(s); });
+function paintMini(C) {
+  mini.querySelector('.tb').style.cssText = `background:${C.SECONDARY1};color:${C.PRIMARY2}`;
+  mini.querySelector('.tb i').style.background = C.EDIT;
+  mini.querySelector('.bd').style.background = C.SECONDARY3;
+  mini.querySelectorAll('.card').forEach(c => { c.style.background = C.PRIMARY2; c.style.color = C.PRIMARY1; });
+  const r = mini.querySelectorAll('.row span'); [C.ACTIVE, C.SECONDARY2, C.FOCUS, C.WARNING].forEach((c, i) => r[i].style.background = c);
+  strip.querySelectorAll('span').forEach((s, i) => s.style.background = C[STRIP_KEYS[i]]);
+}
+
+// ----- Umschalten -----
+const dots = document.getElementById('dots');
+names.forEach((n, i) => {
+  const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-label', n); b.title = n;
+  b.addEventListener('click', () => { show(i); stop(); });
+  dots.appendChild(b);
+});
+function show(i) {
+  cur = i; const C = THEMES[names[i]];
+  draw(C); paintMini(C);
+  document.getElementById('themeName').textContent = names[i];
+  dots.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-pressed', String(j === i)));
+}
+function stop() { clearInterval(timer); timer = null; }
+show(0);
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) timer = setInterval(() => show((cur + 1) % names.length), 3500);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => show(cur));
+})();
+</script>

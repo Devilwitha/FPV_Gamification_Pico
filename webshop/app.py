@@ -11,6 +11,7 @@ import time
 import zipfile
 from datetime import datetime, timezone
 from functools import wraps
+from pathlib import Path
 
 import requests
 import stripe
@@ -335,6 +336,26 @@ def get_paypal_access_token():
 def index():
     """Bollisoft-Unternehmensseite."""
     return render_template("bollisoft_home.html")
+
+
+@app.route("/site-nav.js")
+def site_nav_script():
+    """Hauptnavigation (templates/_nav.html) als einbettbares Skript fuer die
+    eigenstaendigen Projekte unter derselben Domain (Drohnen Tools unter
+    /tx15-werkstatt/, CoverStore/Maker unter /coverstore-maker/). So gibt es
+    das Menue nur einmal, und Login-Status/Konto stimmen auch dort."""
+    static_dir = Path(app.static_folder)
+    body = render_template(
+        "site_nav_embed.js",
+        nav_js=(static_dir / "js" / "nav.js").read_text(encoding="utf-8"),
+        nav_css=(static_dir / "css" / "nav.css").read_text(encoding="utf-8"),
+        markup=render_template("_nav.html"),
+    )
+    return Response(
+        body,
+        mimetype="text/javascript",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.route("/impressum")

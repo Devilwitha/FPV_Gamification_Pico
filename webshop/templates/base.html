@@ -9,6 +9,8 @@
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon-16.png') }}" />
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/nav.css') }}" />
+    <script src="{{ url_for('static', filename='js/nav.js') }}" defer></script>
     {% block head %}{% endblock %}
   </head>
   <body class="{% block body_class %}{% endblock %}">
@@ -17,29 +19,7 @@
         ⚠️ DUMMY-MODUS AKTIV – Käufe werden nur simuliert, es fließt kein echtes Geld.
       </div>
     {% endif %}
-    <header class="site-header">
-      <nav class="navbar">
-        <a class="brand" href="{{ url_for('index') }}">
-          <img class="brand-logo" src="{{ url_for('static', filename='bilder/branding/bollisoft-logo.png') }}" alt="Bollisoft Logo" width="38" height="44" />
-          Bollisoft
-        </a>
-        <div class="nav-links">
-          <a href="{{ url_for('index') }}">Home</a>
-          <a href="{{ url_for('picodesk_home') }}">Picodesk</a>
-          <a href="{{ url_for('steamdeck_rfid_launcher_home') }}">Steam Deck RFID Launcher</a>
-          <a href="/coverstore-maker/" target="_blank" rel="noopener noreferrer">CoverStore/Maker</a>
-          <a href="{{ url_for('webshop_home') }}">FPV Gamification Pico</a>
-          <a href="{{ url_for('shop') }}">Shop</a>
-          <a href="{{ url_for('plugins_store') }}">Plugin-Store</a>
-          {% if session.get('account_email') %}
-            <a href="{{ url_for('account') }}">Mein Konto</a>
-            <a href="{{ url_for('logout') }}">Logout</a>
-          {% else %}
-            <a href="{{ url_for('login') }}">Login</a>
-          {% endif %}
-        </div>
-      </nav>
-    </header>
+    {% include "_nav.html" %}
 
     <main class="site-main">
       {% with messages = get_flashed_messages(with_categories=true) %}

@@ -1,0 +1,85 @@
+{#- Hauptnavigation - einzige Quelle fuer alle Seiten: wird in base.html
+    eingebunden und ueber /site-nav.js auch in die eigenstaendigen Projekte
+    (Drohnen Tools, CoverStore/Maker). Die aktuelle Seite markiert
+    static/js/nav.js anhand der URL. -#}
+{%- set chevron -%}
+<svg class="nav-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+{%- endset -%}
+<header class="site-header" data-site-nav>
+  <nav class="navbar" aria-label="Hauptnavigation">
+    <a class="brand" href="{{ url_for('index') }}">
+      <img class="brand-logo" src="{{ url_for('static', filename='bilder/branding/bollisoft-logo.png') }}" alt="Bollisoft Logo" width="38" height="44" />
+      Bollisoft
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Menü öffnen">
+      <span class="nav-toggle-bar"></span>
+      <span class="nav-toggle-bar"></span>
+      <span class="nav-toggle-bar"></span>
+    </button>
+    <div class="nav-panel" id="site-nav">
+      <div class="nav-main">
+        <details class="nav-group">
+          <summary class="nav-trigger">Produkte {{ chevron }}</summary>
+          <div class="nav-dropdown">
+            <a class="nav-item" href="{{ url_for('webshop_home') }}">
+              <span class="nav-item-title">FPV Gamification Pico</span>
+              <span class="nav-item-text">Score-Tracker und Mini-Games für FPV-Drohnen</span>
+            </a>
+            <a class="nav-item" href="{{ url_for('picodesk_home') }}">
+              <span class="nav-item-title">Picodesk</span>
+              <span class="nav-item-text">WLAN-Steuerung für den Sitz-/Steh-Tisch</span>
+            </a>
+            <a class="nav-item" href="{{ url_for('steamdeck_rfid_launcher_home') }}">
+              <span class="nav-item-title">Steam Deck RFID Launcher</span>
+              <span class="nav-item-text">Automatischer Spielstart mit Pico W</span>
+            </a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary class="nav-trigger">Tools {{ chevron }}</summary>
+          <div class="nav-dropdown">
+            <a class="nav-item" href="/tx15-werkstatt/">
+              <span class="nav-item-title">Drohnen Tools</span>
+              <span class="nav-item-text">Themes, Lua-Skripte und Konfiguratoren für EdgeTX</span>
+            </a>
+            <a class="nav-item" href="/coverstore-maker/">
+              <span class="nav-item-title">CoverStore/Maker</span>
+              <span class="nav-item-text">Spiele-Cover gestalten, finden und teilen</span>
+            </a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary class="nav-trigger">Shop {{ chevron }}</summary>
+          <div class="nav-dropdown">
+            <a class="nav-item" href="{{ url_for('shop') }}">
+              <span class="nav-item-title">Artikel</span>
+              <span class="nav-item-text">FPV Gamification Pico und Zubehör kaufen</span>
+            </a>
+            <a class="nav-item" href="{{ url_for('plugins_store') }}">
+              <span class="nav-item-title">Plugin-Store</span>
+              <span class="nav-item-text">Zusätzliche Spielmodi für deinen Pico</span>
+            </a>
+          </div>
+        </details>
+      </div>
+      <div class="nav-account">
+        {% if session.get('account_email') %}
+          <details class="nav-group nav-group-end">
+            <summary class="nav-trigger">Konto {{ chevron }}</summary>
+            <div class="nav-dropdown">
+              <a class="nav-item" href="{{ url_for('account') }}">
+                <span class="nav-item-title">Mein Konto</span>
+                <span class="nav-item-text">{{ session.get('account_email') }}</span>
+              </a>
+              <a class="nav-item" href="{{ url_for('logout') }}" data-nav-ignore>
+                <span class="nav-item-title">Logout</span>
+              </a>
+            </div>
+          </details>
+        {% else %}
+          <a class="nav-cta" href="{{ url_for('login') }}">Login</a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+</header>

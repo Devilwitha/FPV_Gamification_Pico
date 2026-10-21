@@ -1,4 +1,5 @@
 <title>TX15 Lua Studio</title>
+<script src="/site-nav.js" defer></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Roboto:wght@400;500;700&display=swap">
@@ -31,6 +32,7 @@
   color-scheme: dark;
 }
 *, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); padding: 0 16px 32px; }
 h1, h2 { font-family: var(--f-display); font-weight: 600; margin: 0; text-wrap: balance; }
@@ -83,6 +85,7 @@ textarea { font-family: var(--f-mono); font-size: 12px; line-height: 1.5; resize
 .btn.danger:hover { border-color: var(--bad); color: var(--bad); }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .btn-row .btn { flex: 1 1 auto; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
 
 .palette { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .palette button { padding: 8px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); cursor: pointer; display: grid; justify-items: center; gap: 2px; font-size: 12px; }
@@ -125,6 +128,18 @@ pre.lua { font-family: var(--f-mono); font-size: 12px; line-height: 1.55; backgr
 .stats { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-bottom: 10px; font-variant-numeric: tabular-nums; }
 .stats b { color: var(--ink); font-weight: 600; }
 input[type="file"] { display: none; }
+.files-drop { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; font-size: 13px; color: var(--muted); cursor: pointer; margin-bottom: 10px; transition: border-color .15s; }
+.files-drop:hover, .files-drop.over { border-color: var(--accent); color: var(--ink); }
+.ftree { display: grid; gap: 2px; font-size: 13px; }
+.ftree .dir { font-family: var(--f-mono); font-size: 11px; color: var(--muted); padding: 8px 2px 2px; overflow-wrap: anywhere; }
+.ftree .file { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 5px; }
+.ftree .file:hover { background: var(--bg); }
+.ftree .thumb { width: 30px; height: 30px; border-radius: 4px; border: 1px solid var(--line); background: var(--code-bg) center / contain no-repeat; display: grid; place-items: center; font: 600 9px var(--f-mono); color: var(--muted); }
+.ftree .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ftree .nm small { display: block; color: var(--muted); font-size: 11px; }
+.ftree .acts { display: flex; gap: 4px; }
+.ftree .acts .btn { padding: 2px 7px; }
+.ftree .locked .nm { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
@@ -155,8 +170,29 @@ input[type="file"] { display: none; }
         <button class="btn" type="button" id="dlLua">Nur .lua</button>
         <button class="btn" type="button" id="copyLua">Code kopieren</button>
       </div>
+      <div class="btn-row" style="margin-top:8px" id="sdRow">
+        <button class="btn primary" type="button" id="sdWrite">Auf SD-Karte schreiben</button>
+      </div>
+      <p class="hint" id="sdHint">Sender per USB verbinden und am Sender <b>USB Storage (SD)</b> wählen. Beim ersten Mal wählst du das Laufwerk der Karte. <button class="linkbtn" type="button" id="sdOther">Andere Karte wählen</button></p>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn" type="button" id="srvSave">Auf dem Server speichern</button>
+        <button class="btn" type="button" id="srvNew" hidden>Als neu speichern</button>
+      </div>
+      <p class="hint" id="srvHint"></p>
       <div class="toast" id="toast" role="status"></div>
-      <p class="hint" style="margin-top:6px">Das ZIP spiegelt die Ordner der SD-Karte. Entpacke es direkt ins Hauptverzeichnis der Karte.</p>
+      <p class="hint" style="margin-top:6px">Das ZIP spiegelt die Ordner der SD-Karte. Ohne direktes Schreiben entpackst du es ins Hauptverzeichnis der Karte.</p>
+    </div>
+    <div class="panel" id="filesPanel">
+      <h2>Dateien</h2>
+      <p class="hint">Bilder, Sounds oder weitere Lua-Dateien, die dein Skript braucht. Sie kommen mit ins ZIP und werden im Konto mitgespeichert. Bilder fügst du über „Einfügen“ oder das Element „Bild“ ins Layout ein.</p>
+      <div class="grid2">
+        <label class="field"><span>Hochladen nach</span><select id="exTarget"></select></label>
+        <label class="field" id="exCustomBox" hidden><span>Eigener Ordner</span><input type="text" id="exCustom" placeholder="z. B. IMAGES/flug" maxlength="80"></label>
+      </div>
+      <div class="files-drop" id="exDrop" role="button" tabindex="0">Dateien hierher ziehen oder klicken<br><small>PNG, BMP, JPG für Bilder · WAV für Sounds · max. 2 MB pro Datei, 8 MB insgesamt</small></div>
+      <input type="file" id="exInput" multiple>
+      <div class="ftree" id="exTree"></div>
+      <div class="toast" id="exToast" role="status"></div>
     </div>
     <div class="panel">
       <h2>Lua-Code</h2>
@@ -176,6 +212,8 @@ input[type="file"] { display: none; }
 </datalist>
 <input type="file" id="themeFile" accept=".yml,.yaml,text/plain">
 
+<script src="konto.js"></script>
+<script src="sdkarte.js"></script>
 <script>
 (() => {
 'use strict';
@@ -298,8 +336,9 @@ const ICONS = {
   text: '<path d="M5 6h14M12 6v13"/>', value: '<path d="M4 17l4-10 4 10M5.5 13h5M15 7h3a2 2 0 010 4h-3v6h4"/>',
   bar: '<rect x="3" y="9" width="18" height="6" rx="1"/><path d="M4 12h9" stroke-width="4"/>', timer: '<circle cx="12" cy="13" r="7"/><path d="M12 13V9M10 3h4"/>',
   rect: '<rect x="4" y="6" width="16" height="12" rx="1"/>', circle: '<circle cx="12" cy="12" r="7"/>',
+  image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-8 8"/>',
 };
-const KIND_LABEL = { text: 'Text', value: 'Wert', bar: 'Balken', timer: 'Timer', rect: 'Rechteck', circle: 'Kreis' };
+const KIND_LABEL = { text: 'Text', value: 'Wert', bar: 'Balken', timer: 'Timer', rect: 'Rechteck', circle: 'Kreis', image: 'Bild' };
 
 function buildSide() {
   const side = $('side');
@@ -400,6 +439,7 @@ function bindPalette() { document.querySelectorAll('[data-add]').forEach(b => b.
 function propsShell() { return `<div class="panel" id="propsPanel"><h2 id="propsTitle">Eigenschaften</h2><div id="props"></div></div>`; }
 
 function addElement(kind) {
+  if (kind === 'image') return addImage();
   const zw = zoneW(), zh = zoneH();
   const base = { x: Math.round(zw * .1), y: Math.round(zh * .3), color: 'PRIMARY1' };
   const txt = { font: '0', align: 'LEFT', bold: false, shadow: false };
@@ -419,7 +459,7 @@ function addElement(kind) {
 function buildLayers() {
   const host = $('layers'); if (!host) return;
   host.innerHTML = doc().elements.slice().reverse().map(e => {
-    const label = e.kind === 'text' ? `„${e.text}“` : e.kind === 'value' || e.kind === 'bar' ? (e.asOption ? `Option ${e.optName}` : e.source) : e.kind === 'timer' ? `Timer ${e.timer + 1}` : '';
+    const label = e.kind === 'text' ? `„${e.text}“` : e.kind === 'value' || e.kind === 'bar' ? (e.asOption ? `Option ${e.optName}` : e.source) : e.kind === 'timer' ? `Timer ${e.timer + 1}` : e.kind === 'image' ? (files.has(e.file) ? files.get(e.file).path.split('/').pop() : 'Datei fehlt') : '';
     return `<button type="button" data-l="${e.id}" class="${e.id === selId ? 'on' : ''}"><span>${KIND_LABEL[e.kind]} ${esc(label)}</span><span>${e.x},${e.y}</span></button>`;
   }).join('') || '<p class="hint">Noch keine Elemente. Füge oben eins hinzu.</p>';
   host.querySelectorAll('[data-l]').forEach(b => b.onclick = () => { selId = Number(b.dataset.l); buildProps(); changed(); });
@@ -431,7 +471,14 @@ function buildProps() {
   if (!e) { $('propsTitle').textContent = 'Eigenschaften'; host.innerHTML = '<p class="hint">Klicke ein Element in der Zeichenfläche an. Verschieben geht per Ziehen oder mit den Pfeiltasten, die Größe änderst du am Eck-Griff, Entf löscht.</p>'; return; }
   $('propsTitle').textContent = KIND_LABEL[e.kind];
   const isTxt = ['text', 'value', 'timer'].includes(e.kind);
-  let h = `<div class="grid4">${field('X', inp('p_x', e.x, 'number'))}${field('Y', inp('p_y', e.y, 'number'))}${field('Breite', inp('p_w', e.w, 'number', 'min="0"'))}${e.kind === 'circle' || isTxt ? '' : field('Höhe', inp('p_h', e.h, 'number', 'min="1"'))}</div>`;
+  let h = `<div class="grid4">${field('X', inp('p_x', e.x, 'number'))}${field('Y', inp('p_y', e.y, 'number'))}${field('Breite', inp('p_w', e.w, 'number', 'min="0"'))}${e.kind === 'circle' || e.kind === 'image' || isTxt ? '' : field('Höhe', inp('p_h', e.h, 'number', 'min="1"'))}</div>`;
+  if (e.kind === 'image') {
+    const imgs = [...files].filter(([, f]) => IMAGE_EXT.test(f.path)).map(([k, f]) => [k, fullPath(f)]);
+    if (!files.has(e.file)) imgs.unshift([e.file, 'Datei fehlt']);
+    h += field('Bild', selectBox('p_file', imgs, e.file));
+    h += `<div class="btn-row" style="margin-bottom:10px"><button class="btn small" type="button" id="p_orig">Originalgröße${e.iw ? ` (${e.iw}×${e.ih})` : ''}</button></div>`;
+    h += '<p class="hint">EdgeTX skaliert Bilder nur gleichmäßig – die Höhe folgt der Breite. Am schärfsten in Originalgröße.</p>';
+  }
   if (e.kind === 'text') h += field('Text', inp('p_text', e.text, 'text', 'maxlength="40"'));
   if (e.kind === 'value' || e.kind === 'bar') {
     h += check('p_opt', 'Quelle am Sender wählbar (Widget-Option)', e.asOption);
@@ -447,7 +494,7 @@ function buildProps() {
     <div class="grid2">${check('p_bold', 'Fett', e.bold)}${check('p_shadow', 'Schatten', e.shadow)}</div>`;
   if (e.kind === 'rect' || e.kind === 'circle') h += check('p_filled', 'Gefüllt', e.filled);
   if (e.kind === 'rect') h += `<div id="p_thickBox"${e.filled ? ' hidden' : ''}>${field('Linienstärke', inp('p_thick', e.thick, 'number', 'min="1" max="8"'))}</div>`;
-  h += colorField('p_col', e.kind === 'bar' ? 'Füllfarbe' : 'Farbe', e.color);
+  if (e.kind !== 'image') h += colorField('p_col', e.kind === 'bar' ? 'Füllfarbe' : 'Farbe', e.color);
   if (e.kind === 'bar') h += colorField('p_bgc', 'Hintergrund', e.bgColor);
   if (e.kind === 'value' || e.kind === 'bar') h += field('Testwert für die Vorschau', inp('p_test', e.test, 'number', 'step="any"'));
   if (e.kind === 'timer') h += field('Testwert in Sekunden', inp('p_test', e.test, 'number'));
@@ -457,7 +504,7 @@ function buildProps() {
   host.innerHTML = h;
 
   const fit = () => { if (isTxt) e.h = fontPx(e.font); };
-  bindVal('p_x', e, 'x', 'num'); bindVal('p_y', e, 'y', 'num'); bindVal('p_w', e, 'w', 'num', () => { if (e.kind === 'circle') e.h = e.w; }); bindVal('p_h', e, 'h', 'num');
+  bindVal('p_x', e, 'x', 'num'); bindVal('p_y', e, 'y', 'num'); bindVal('p_w', e, 'w', 'num', () => { if (e.kind === 'circle') e.h = e.w; else if (e.kind === 'image') e.h = imgH(e); }); bindVal('p_h', e, 'h', 'num');
   bindVal('p_text', e, 'text'); bindVal('p_src', e, 'source'); bindVal('p_optName', e, 'optName');
   bindVal('p_opt', e, 'asOption', 'text', () => { if (S.type === 'widget') { $('p_optBox').hidden = !e.asOption; $('p_srcBox').hidden = e.asOption; } });
   bindVal('p_dec', e, 'decimals', 'num'); bindVal('p_unit', e, 'unit');
@@ -466,7 +513,11 @@ function buildProps() {
   bindVal('p_bold', e, 'bold'); bindVal('p_shadow', e, 'shadow');
   bindVal('p_filled', e, 'filled', 'text', () => { const t = $('p_thickBox'); if (t) t.hidden = e.filled; }); bindVal('p_thick', e, 'thick', 'num');
   bindVal('p_test', e, 'test', 'num');
-  bindColor('p_col', () => e.color, v => { e.color = v; });
+  if (e.kind !== 'image') bindColor('p_col', () => e.color, v => { e.color = v; });
+  if (e.kind === 'image') {
+    $('p_file').onchange = ev => { const f = files.get(ev.target.value); if (!f) return; e.file = ev.target.value; e.iw = f.iw; e.ih = f.ih; e.h = imgH(e); buildProps(); changed(); };
+    $('p_orig').onclick = () => { if (!e.iw) return; e.w = e.iw; e.h = e.ih; buildProps(); changed(); };
+  }
   if (e.kind === 'bar') bindColor('p_bgc', () => e.bgColor, v => { e.bgColor = v; });
   const els = doc().elements, idx = () => els.indexOf(e);
   $('p_up').onclick = () => { const i = idx(); if (i < els.length - 1) { els.splice(i, 1); els.splice(i + 1, 0, e); changed(); } };
@@ -551,6 +602,7 @@ function bindCanvas() {
     else {
       d.w = Math.max(4, Math.round(drag.w + p.x - drag.sx));
       if (d.kind === 'circle') d.h = d.w;
+      else if (d.kind === 'image') d.h = imgH(d);
       else if (!['text', 'value', 'timer'].includes(d.kind)) d.h = Math.max(2, Math.round(drag.h + p.y - drag.sy));
     }
     syncPosFields(); draw(); buildLayers();
@@ -614,6 +666,14 @@ function draw() {
       const v = Number(e.test) || 0, span = (e.max - e.min) || 1, f = Math.max(0, Math.min(1, (v - e.min) / span));
       g.fillStyle = colorHex(e.bgColor); g.fillRect(e.x, e.y, e.w, e.h);
       g.fillStyle = e.warn && v < e.warnBelow ? S.theme.WARNING : colorHex(e.color); g.fillRect(e.x, e.y, Math.floor(e.w * f), e.h);
+    } else if (e.kind === 'image') {
+      const b = imgCache.get(e.file);
+      if (b) g.drawImage(b, e.x, e.y, e.w, e.h);
+      else {
+        g.strokeStyle = S.theme.WARNING; g.lineWidth = 1; g.setLineDash([3, 3]); g.strokeRect(e.x + .5, e.y + .5, e.w - 1, e.h - 1); g.setLineDash([]);
+        g.fillStyle = S.theme.WARNING; g.font = `11px ${FONTFACE}`; g.textBaseline = 'top'; g.textAlign = 'left'; g.fillText(files.has(e.file) ? 'Lade Bild …' : 'Bild fehlt', e.x + 4, e.y + 4);
+        if (files.has(e.file) && !imgCache.has(e.file)) ensureImage(e.file).then(() => draw());
+      }
     }
     g.restore();
   }
@@ -715,6 +775,16 @@ function elementCode(els, isWidget, ind) {
     } else if (e.kind === 'circle') {
       const r = e.w / 2;
       p(`lcd.${e.filled ? 'drawFilledCircle' : 'drawCircle'}(X(${num(e.x + r)}), Y(${num(e.y + r)}), SR(${num(r)}), ${colorExpr(e.color)})`);
+    } else if (e.kind === 'image') {
+      const f = files.get(e.file);
+      if (!f) p('-- Bilddatei fehlt: im Bereich „Dateien“ hochladen');
+      else {
+        const pct = Math.max(1, Math.round(e.w / (e.iw || e.w || 1) * 100));
+        p(`do  -- ${fullPath(f).split('/').pop()}, ${pct} %`);
+        p(`  local b = bmp(${luaStr('/' + fullPath(f))})`);
+        p(`  if b then lcd.drawBitmap(b, X(${num(e.x)}), Y(${num(e.y)}), SP(${pct})) end`);
+        p('end');
+      }
     }
   });
   return L.join('\n');
@@ -728,6 +798,7 @@ function genWidget() {
   for (const n of opts) o += `  { ${luaStr(n)}, SOURCE, 1 },\n`;
   o += '}\n\n';
   o += `local DW, DH = ${w.zw}, ${w.zh}  -- Größe, für die das Layout entworfen wurde\n\n`;
+  if (usesImages(els)) o += '-- Bilder nur einmal laden und danach wiederverwenden\nlocal bitmaps = {}\nlocal function bmp(path)\n  if bitmaps[path] == nil then\n    bitmaps[path] = Bitmap.open(path) or false\n  end\n  return bitmaps[path] or nil\nend\n\n';
   o += 'local function create(zone, options)\n  return { zone = zone, options = options }\nend\n\n';
   o += 'local function update(widget, options)\n  widget.options = options\nend\n\n';
   o += 'local function background(widget)\nend\n\n';
@@ -739,10 +810,14 @@ function genWidget() {
     o += '  local function Y(v) return z.y + math.floor(v * sy + 0.5) end\n';
     o += '  local function SW(v) return math.max(1, math.floor(v * sx + 0.5)) end\n';
     o += '  local function SH(v) return math.max(1, math.floor(v * sy + 0.5)) end\n';
-    o += '  local function SR(v) return math.max(1, math.floor(v * math.min(sx, sy) + 0.5)) end\n\n';
+    o += '  local function SR(v) return math.max(1, math.floor(v * math.min(sx, sy) + 0.5)) end\n';
+    if (usesImages(els)) o += '  local function SP(v) return math.max(1, math.floor(v * math.min(sx, sy) + 0.5)) end\n';
+    o += '\n';
   } else {
     o += '  local function X(v) return z.x + v end\n  local function Y(v) return z.y + v end\n';
-    o += '  local function SW(v) return v end\n  local function SH(v) return v end\n  local function SR(v) return v end\n\n';
+    o += '  local function SW(v) return v end\n  local function SH(v) return v end\n  local function SR(v) return v end\n';
+    if (usesImages(els)) o += '  local function SP(v) return v end\n';
+    o += '\n';
   }
   if (w.bg) o += `  lcd.drawFilledRectangle(z.x, z.y, z.w, z.h, ${colorExpr(w.bgColor)})\n\n`;
   o += elementCode(els, true, '  ') + '\nend\n\n';
@@ -754,7 +829,9 @@ function genTool() {
   let o = `local toolName = "TNS|${String(t.name || 'Tool').replace(/[|"\\]/g, '')}|TNE"\n`;
   o += `-- ${t.name} – EdgeTX-Tool für RadioMaster TX15\n-- Erstellt mit TX15 Lua Studio\n-- Datei: /SCRIPTS/TOOLS/${toolFile()}.lua\n\n`;
   o += 'local function X(v) return v end\nlocal function Y(v) return v end\n';
-  o += 'local function SW(v) return v end\nlocal function SH(v) return v end\nlocal function SR(v) return v end\n\n';
+  o += 'local function SW(v) return v end\nlocal function SH(v) return v end\nlocal function SR(v) return v end\n';
+  if (usesImages(t.elements)) o += 'local function SP(v) return v end\n\n' + '-- Bilder nur einmal laden und danach wiederverwenden\nlocal bitmaps = {}\nlocal function bmp(path)\n  if bitmaps[path] == nil then\n    bitmaps[path] = Bitmap.open(path) or false\n  end\n  return bitmaps[path] or nil\nend\n\n';
+  else o += '\n';
   o += 'local function init()\nend\n\n';
   o += 'local function run(event, touchState)\n';
   o += '  if event == EVT_VIRTUAL_EXIT then\n    return 1  -- Tool beenden\n  end\n\n';
@@ -841,6 +918,8 @@ function warnings() {
     const W = zoneW(), H = zoneH();
     const out = doc().elements.filter(x => x.x < 0 || x.y < 0 || x.x + boxW(x) > W + .5 || x.y + x.h > H + .5).length;
     if (out) w.push(`${out} Element(e) ragen über die Zone hinaus (rot markiert).`);
+    const missing = doc().elements.filter(x => x.kind === 'image' && !files.has(x.file)).length;
+    if (missing) w.push(`${missing} Bild-Element(e) ohne Datei. Lade das Bild unter „Dateien“ (wieder) hoch.`);
   }
   if (S.type === 'mix') {
     const outs = S.mix.outputs.split(',').map(s => s.trim()).filter(Boolean);
@@ -855,14 +934,15 @@ function changed() {
   save();
   const code = generate(), path = filePath();
   $('code').innerHTML = highlight(code);
-  const parts = path.split('/');
-  $('tree').textContent = parts.map((p, i) => (i ? '   '.repeat(i - 1) + '└─ ' : '') + p + (i < parts.length - 1 ? '/' : '')).join('\n');
+  $('tree').textContent = textTree([path, ...[...files.values()].map(fullPath)]);
   const lines = code.split('\n').length, bytes = new TextEncoder().encode(code).length;
   const warn = warnings();
   $('stats').innerHTML = `<span><b>${lines}</b> Zeilen</span><span><b>${(bytes / 1024).toFixed(1)}</b> KB</span>` +
     (isDesign() ? `<span><b>${doc().elements.length}</b> Elemente</span>` : '') +
+    (files.size ? `<span><b>${files.size}</b> Dateien · ${fmtSize(filesTotal())}</span>` : '') +
     warn.map(x => `<span style="color:var(--bad);flex-basis:100%">${esc(x)}</span>`).join('');
   if (isDesign()) { layoutCanvas(); buildLayers(); } else buildCenter();
+  renderFiles();
   if (S.type === 'func' && $('funcDesc')) {
     const f = S.func;
     $('funcDesc').textContent = f.tpl === 'announce' ? `Liest „${f.source}“ und sagt den Wert alle ${f.interval} s an, solange der Schalter aktiv ist.`
@@ -870,6 +950,195 @@ function changed() {
       : 'Leeres Gerüst mit init(), run() und background() zum Selbstschreiben.';
   }
 }
+
+// ---------- Dateien (Bilder, Sounds, weitere Lua-Dateien) ----------
+// Liegen getrennt vom Studio-Stand in IndexedDB – localStorage wäre für Bilder zu klein.
+// scope 'project': relativ zum Ordner des Skripts (wandert beim Umbenennen mit); 'sd': ab der SD-Wurzel.
+const FILE_MAX = 2 * 1024 * 1024, FILES_MAX = 8 * 1024 * 1024;
+const IMAGE_EXT = /\.(png|bmp|jpe?g)$/i;
+let files = new Map();          // key -> { scope, path, type, blob, size, iw, ih }
+const imgCache = new Map();     // key -> ImageBitmap (Vorschau)
+const thumbUrls = new Map();    // key -> Objekt-URL fürs Vorschaubild
+const fileKey = (scope, path) => scope + ':' + path;
+const projectDir = () => ({ widget: `WIDGETS/${widgetFolder()}/`, tool: `SCRIPTS/TOOLS/${toolFile()}/`, func: 'SCRIPTS/FUNCTIONS/', mix: 'SCRIPTS/MIXES/' }[S.type]);
+const fullPath = f => (f.scope === 'project' ? projectDir() : '') + f.path;
+const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(2) + ' MB';
+const imgH = e => e.iw ? Math.max(1, Math.round(e.w * e.ih / e.iw)) : e.h;
+const usesImages = els => els.some(e => e.kind === 'image' && files.has(e.file));
+function cleanPath(p) {
+  return String(p).replace(/\\/g, '/').split('/')
+    .map(s => s.trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9._-]/g, ''))
+    .filter(s => s && s !== '.' && s !== '..').join('/');
+}
+function filesTotal() { let t = 0; for (const f of files.values()) t += f.size; return t; }
+function exToast(m, k) { const t = $('exToast'); t.textContent = m; t.className = 'toast ' + (k || ''); }
+function clearThumbs() { for (const u of thumbUrls.values()) URL.revokeObjectURL(u); thumbUrls.clear(); }
+function dropThumb(key) { if (thumbUrls.has(key)) { URL.revokeObjectURL(thumbUrls.get(key)); thumbUrls.delete(key); } }
+function textTree(paths) {
+  const root = {};
+  for (const p of [...new Set(paths)].sort()) { let n = root; for (const part of p.split('/')) n = n[part] = n[part] || {}; }
+  const out = [];
+  const walk = (n, prefix, depth) => { const keys = Object.keys(n); keys.forEach((k, i) => { const last = i === keys.length - 1, dir = Object.keys(n[k]).length > 0;
+    out.push((depth ? prefix + (last ? '└─ ' : '├─ ') : '') + k + (dir ? '/' : '')); if (dir) walk(n[k], depth ? prefix + (last ? '   ' : '│  ') : '', depth + 1); }); };
+  walk(root, '', 0);
+  return out.join('\n');
+}
+function blobToB64(blob) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+}
+
+// IndexedDB
+let fdbp = null;
+function fdb() {
+  if (!fdbp) fdbp = new Promise((res, rej) => {
+    try { const r = indexedDB.open('tx15-lua-studio-files', 1); r.onupgradeneeded = () => r.result.createObjectStore('files', { keyPath: 'key' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }
+    catch (e) { rej(e); }
+  });
+  return fdbp;
+}
+async function persistFiles() {
+  try {
+    const d = await fdb();
+    await new Promise((res, rej) => {
+      const t = d.transaction('files', 'readwrite'), st = t.objectStore('files');
+      st.clear();
+      for (const [key, f] of files) st.put({ key, scope: f.scope, path: f.path, type: f.type, blob: f.blob, iw: f.iw || 0, ih: f.ih || 0 });
+      t.oncomplete = res; t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('Speicher voll?'));
+    });
+  } catch (e) { exToast('Dateien konnten im Browser nicht gesichert werden: ' + (e.message || e), 'err'); }
+}
+// Zähler gegen Wettläufe: Öffnet konto.js währenddessen ein Projekt aus dem Konto,
+// darf das (langsamere) Laden des lokalen Stands dessen Dateien nicht überschreiben.
+let filesGen = 0;
+async function loadFiles() {
+  const gen = filesGen;
+  try {
+    const d = await fdb();
+    const all = await new Promise((res, rej) => { const r = d.transaction('files').objectStore('files').getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    if (gen !== filesGen) return;
+    files = new Map(all.map(f => [f.key, { scope: f.scope, path: f.path, type: f.type, blob: f.blob, size: f.blob.size, iw: f.iw || 0, ih: f.ih || 0 }]));
+  } catch (e) {}
+}
+async function ensureImage(key) {
+  if (imgCache.has(key)) return imgCache.get(key);
+  const f = files.get(key); if (!f || !IMAGE_EXT.test(f.path)) return null;
+  try { const b = await createImageBitmap(f.blob); imgCache.set(key, b); return b; }
+  catch (e) { imgCache.set(key, null); return null; }
+}
+
+// Hochladen
+function buildTargetOptions() {
+  const sel = $('exTarget'), cur = sel.value || 'project';
+  sel.innerHTML = [['project', `Projektordner (${projectDir()})`], ['IMAGES/', 'Bilder (IMAGES/)'], ['SOUNDS/de/', 'Sounds (SOUNDS/de/)'], ['custom', 'Eigener Ordner …']]
+    .map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  $('exCustomBox').hidden = sel.value !== 'custom';
+}
+function targetDir() {
+  const v = $('exTarget').value;
+  if (v === 'project') return { scope: 'project', prefix: '' };
+  if (v === 'custom') {
+    const dir = cleanPath($('exCustom').value);
+    if (!dir) { exToast('Bitte einen Ordner angeben, z. B. IMAGES/flug.', 'err'); return null; }
+    return { scope: 'sd', prefix: dir + '/' };
+  }
+  return { scope: 'sd', prefix: v };
+}
+async function addFiles(list) {
+  const dir = targetDir(); if (!dir) return;
+  let added = 0, total = filesTotal();
+  for (const file of list) {
+    const name = cleanPath(String(file.name).split(/[\\/]/).pop());
+    if (!name) continue;
+    if (file.size > FILE_MAX) { exToast(`„${file.name}“ ist größer als 2 MB.`, 'err'); continue; }
+    const path = dir.prefix + name, key = fileKey(dir.scope, path);
+    if ((dir.scope === 'project' ? projectDir() : '') + path === filePath()) { exToast(`„${name}“ würde das erzeugte Skript überschreiben.`, 'err'); continue; }
+    const before = files.has(key) ? files.get(key).size : 0;
+    if (total - before + file.size > FILES_MAX) { exToast('Zusammen sind höchstens 8 MB an Dateien möglich.', 'err'); break; }
+    const entry = { scope: dir.scope, path, type: file.type || '', blob: file, size: file.size, iw: 0, ih: 0 };
+    if (IMAGE_EXT.test(name)) {
+      try { const b = await createImageBitmap(file); entry.iw = b.width; entry.ih = b.height; imgCache.set(key, b); }
+      catch (e) { exToast(`„${name}“ ist kein lesbares Bild.`, 'err'); continue; }
+    } else imgCache.delete(key);
+    dropThumb(key); files.set(key, entry); total += file.size - before; added++;
+    // Bild-Elemente, die schon auf diese Datei zeigen, an die neue Größe anpassen
+    for (const d of [S.widget, S.tool]) for (const e of d.elements) if (e.kind === 'image' && e.file === key) { e.iw = entry.iw; e.ih = entry.ih; e.h = imgH(e); }
+  }
+  if (added) { await persistFiles(); exToast(`${added} Datei${added === 1 ? '' : 'en'} hinzugefügt.`, 'ok'); }
+  changed();
+}
+function addImage(key) {
+  if (!isDesign()) return;
+  const k = key || [...files.keys()].find(x => IMAGE_EXT.test(files.get(x).path));
+  if (!k) return toast('Lade zuerst unter „Dateien“ ein Bild hoch (PNG, BMP oder JPG).', 'err');
+  const f = files.get(k), zw = zoneW(), zh = zoneH();
+  const iw = f.iw || 64, ih = f.ih || 64, fit = Math.min(1, zw * .6 / iw, zh * .6 / ih);
+  const w = Math.max(4, Math.round(iw * fit));
+  const e = mk('image', { x: 0, y: 0, w, h: 1, file: k, iw: f.iw, ih: f.ih, color: 'PRIMARY1' });
+  e.h = imgH(e); e.x = Math.max(0, Math.round((zw - e.w) / 2)); e.y = Math.max(0, Math.round((zh - e.h) / 2));
+  doc().elements.push(e); selId = e.id; buildProps(); changed();
+}
+async function fileAction(act, key) {
+  const f = files.get(key); if (!f) return;
+  if (act === 'dl') return saveFile(f.path.split('/').pop(), f.blob);
+  if (act === 'insert') return addImage(key);
+  const usedBy = () => [S.widget, S.tool].flatMap(d => d.elements).filter(e => e.kind === 'image' && e.file === key);
+  if (act === 'del') {
+    if (!confirm(`„${fullPath(f)}“ löschen?`)) return;
+    const used = usedBy().length;
+    files.delete(key); dropThumb(key); imgCache.delete(key);
+    await persistFiles(); changed();
+    exToast(used ? `Gelöscht. ${used} Bild-Element(e) zeigen jetzt auf eine fehlende Datei.` : 'Gelöscht.', used ? 'err' : 'ok');
+    return;
+  }
+  if (act === 'rename') {
+    const cur = f.path.split('/').pop(), dir = f.path.slice(0, f.path.length - cur.length);
+    const input = prompt('Neuer Dateiname', cur); if (input === null) return;
+    const name = cleanPath(input.split(/[\\/]/).pop()); if (!name) return;
+    const nk = fileKey(f.scope, dir + name); if (nk === key) return;
+    if (files.has(nk)) return exToast(`„${name}“ gibt es in diesem Ordner schon.`, 'err');
+    for (const e of usedBy()) e.file = nk;
+    files.delete(key); files.set(nk, { ...f, path: dir + name });
+    if (imgCache.has(key)) { imgCache.set(nk, imgCache.get(key)); imgCache.delete(key); }
+    dropThumb(key); await persistFiles(); buildProps(); changed();
+  }
+}
+function renderFiles() {
+  if (!$('exTree')) return;
+  buildTargetOptions();
+  const code = generate();
+  const rows = [{ locked: true, full: filePath(), size: new TextEncoder().encode(code).length },
+    ...[...files].map(([key, f]) => ({ key, f, full: fullPath(f), size: f.size }))].sort((a, b) => a.full.localeCompare(b.full));
+  const groups = new Map();
+  for (const r of rows) { const i = r.full.lastIndexOf('/'), dir = i < 0 ? '/' : r.full.slice(0, i + 1); if (!groups.has(dir)) groups.set(dir, []); groups.get(dir).push(r); }
+  let h = '';
+  for (const [dir, list] of groups) {
+    h += `<div class="dir">${esc(dir)}</div>`;
+    for (const r of list) {
+      const name = r.full.slice(r.full.lastIndexOf('/') + 1);
+      if (r.locked) { h += `<div class="file locked"><span class="thumb">LUA</span><span class="nm">${esc(name)}<small>wird erzeugt · ${fmtSize(r.size)}</small></span><span></span></div>`; continue; }
+      const f = r.f, isImg = IMAGE_EXT.test(f.path), ext = (name.includes('.') ? name.split('.').pop() : '').slice(0, 4).toUpperCase();
+      h += `<div class="file"><span class="thumb" data-thumb="${esc(r.key)}">${isImg ? '' : esc(ext || '?')}</span>
+        <span class="nm" title="${esc(r.full)}">${esc(name)}<small>${fmtSize(f.size)}${isImg && f.iw ? ` · ${f.iw}×${f.ih} px` : ''}${f.scope === 'project' ? ' · Projektordner' : ''}</small></span>
+        <span class="acts">${isImg && isDesign() ? `<button class="btn small" type="button" data-fact="insert" data-key="${esc(r.key)}">Einfügen</button>` : ''}<button class="btn small" type="button" data-fact="rename" data-key="${esc(r.key)}" title="Umbenennen" aria-label="Umbenennen">✎</button><button class="btn small" type="button" data-fact="dl" data-key="${esc(r.key)}" title="Herunterladen" aria-label="Herunterladen">↓</button><button class="btn small danger" type="button" data-fact="del" data-key="${esc(r.key)}" title="Löschen" aria-label="Löschen">✕</button></span></div>`;
+    }
+  }
+  const host = $('exTree');
+  host.innerHTML = h;
+  host.querySelectorAll('[data-thumb]').forEach(t => {
+    const f = files.get(t.dataset.thumb); if (!f || !IMAGE_EXT.test(f.path)) return;
+    if (!thumbUrls.has(t.dataset.thumb)) thumbUrls.set(t.dataset.thumb, URL.createObjectURL(f.blob));
+    t.style.backgroundImage = `url(${thumbUrls.get(t.dataset.thumb)})`;
+  });
+  host.querySelectorAll('[data-fact]').forEach(b => b.onclick = () => fileAction(b.dataset.fact, b.dataset.key));
+}
+$('exTarget').onchange = () => { $('exCustomBox').hidden = $('exTarget').value !== 'custom'; };
+$('exDrop').onclick = () => $('exInput').click();
+$('exDrop').onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); $('exInput').click(); } };
+$('exInput').onchange = ev => { addFiles([...ev.target.files]); ev.target.value = ''; };
+const filesPanelEl = $('filesPanel');
+filesPanelEl.addEventListener('dragover', ev => { if ([...ev.dataTransfer.types].includes('Files')) { ev.preventDefault(); $('exDrop').classList.add('over'); } });
+filesPanelEl.addEventListener('dragleave', ev => { if (!filesPanelEl.contains(ev.relatedTarget)) $('exDrop').classList.remove('over'); });
+filesPanelEl.addEventListener('drop', ev => { if (!ev.dataTransfer.files.length) return; ev.preventDefault(); $('exDrop').classList.remove('over'); addFiles([...ev.dataTransfer.files]); });
 
 // ---------- ZIP & Speichern ----------
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -907,13 +1176,15 @@ async function saveFile(filename, blob) {
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   toast(`${filename} gespeichert.`, 'ok');
 }
-$('dlZip').onclick = () => {
-  const path = filePath(), parts = path.split('/'), enc = new TextEncoder(), entries = [];
-  for (let i = 1; i < parts.length; i++) entries.push({ name: parts.slice(0, i).join('/') + '/', data: new Uint8Array() });
-  entries.push({ name: path, data: enc.encode(generate().replace(/\n/g, '\r\n')) });
+async function buildZip() {
+  const path = filePath(), parts = path.split('/'), enc = new TextEncoder(), entries = [], dirs = new Set();
+  const addDirs = p => { const ps = p.split('/'); for (let i = 1; i < ps.length; i++) { const d = ps.slice(0, i).join('/') + '/'; if (!dirs.has(d)) { dirs.add(d); entries.push({ name: d, data: new Uint8Array() }); } } };
+  addDirs(path); entries.push({ name: path, data: enc.encode(generate().replace(/\n/g, '\r\n')) });
+  for (const f of files.values()) { const fp = fullPath(f); if (fp === path) continue; addDirs(fp); entries.push({ name: fp, data: new Uint8Array(await f.blob.arrayBuffer()) }); }
   const base = parts[parts.length - 1] === 'main.lua' ? parts[parts.length - 2] : parts[parts.length - 1].replace('.lua', '');
-  saveFile(`${base}.zip`, makeZip(entries));
-};
+  return { base, path, entries, blob: makeZip(entries) };
+}
+$('dlZip').onclick = async () => { const z = await buildZip(); saveFile(`${z.base}.zip`, z.blob); };
 $('dlLua').onclick = () => { const p = filePath().split('/'); saveFile(p[p.length - 1], new Blob([generate()], { type: 'text/plain' })); };
 $('copyLua').onclick = () => {
   navigator.clipboard.writeText(generate()).then(() => toast('Code kopiert.', 'ok')).catch(() => {
@@ -923,6 +1194,63 @@ $('copyLua').onclick = () => {
 };
 let tt; function toast(m, k) { const t = $('toast'); t.textContent = m; t.className = 'toast ' + (k || ''); clearTimeout(tt); tt = setTimeout(() => { t.textContent = ''; }, 5000); }
 
+const SD_NEXT = {
+  widget: 'Sender neu starten, auf der Hauptansicht lange TELE drücken, „Hauptansichten einrichten“ und das Widget wählen.',
+  tool: 'Am Sender SYS → Tools öffnen und das Tool starten.',
+  func: 'Unter MDL → Spezialfunktionen die Aktion „Lua-Skript“ wählen.',
+  mix: 'Unter MDL → Eigene Skripte das Skript wählen.',
+};
+// ---------- Direkt auf die SD-Karte (sdkarte.js) ----------
+if (!window.WerkstattSD || !window.WerkstattSD.supported) {
+  $('sdRow').hidden = true;
+  $('sdHint').textContent = 'Direkt auf die SD-Karte schreiben geht in Chrome oder Edge am PC. Sonst: ZIP herunterladen und ins Hauptverzeichnis der Karte entpacken.';
+}
+async function writeToCard(pickNew) {
+  const btn = $('sdWrite'); btn.disabled = true;
+  try {
+    const entries = (await buildZip()).entries;
+    const r = await window.WerkstattSD.write(entries, { pickNew, onProgress: (v, name) => { if (name) toast(`Schreibe ${name} …`); } });
+    if (r.cancelled) toast('Abgebrochen – es wurde nichts geschrieben.');
+    else toast(`${filePath()} ${files.size ? `und ${files.size} Datei${files.size === 1 ? '' : 'en'} ` : ''}auf die Karte geschrieben${r.replaced ? ` (${r.replaced} ersetzt)` : ''}. Karte auswerfen, dann: ${SD_NEXT[S.type]}`, 'ok');
+  } catch (e) { toast(e.message || 'Schreiben fehlgeschlagen. Ist die Karte noch verbunden?', 'err'); }
+  btn.disabled = false;
+}
+$('sdWrite').onclick = () => writeToCard(false);
+$('sdOther').onclick = () => writeToCard(true);
+
+// ---------- Im Bollisoft-Konto speichern (konto.js) ----------
+const TYPE_LABEL = { widget: 'Widget', tool: 'Tool', func: 'Funktion', mix: 'Mischer' };
+async function applyState(saved) {
+  const { files: savedFiles, ...s } = saved || {};
+  const d = DEFAULT();
+  S = { ...d, ...s, func: { ...d.func, ...s.func }, mix: { ...d.mix, ...s.mix }, theme: { ...d.theme, ...s.theme } };
+  for (const doc of [S.widget, S.tool]) for (const e of doc.elements) uid = Math.max(uid, e.id + 1);
+  if (!S.mix.body) S.mix.body = MIX_TPL[S.mix.tpl]?.body || MIX_TPL.limiter.body;
+  // Dateien des Projekts übernehmen (ältere Stände ohne Dateien: leer)
+  filesGen++;
+  files = new Map();
+  for (const f of Array.isArray(savedFiles) ? savedFiles : []) {
+    if (!f || !f.path || typeof f.b64 !== 'string') continue;
+    const blob = new Blob([Uint8Array.from(atob(f.b64), c => c.charCodeAt(0))], { type: f.type || '' });
+    const scope = f.scope === 'sd' ? 'sd' : 'project', path = cleanPath(f.path);
+    if (path) files.set(fileKey(scope, path), { scope, path, type: f.type || '', blob, size: blob.size, iw: f.iw || 0, ih: f.ih || 0 });
+  }
+  imgCache.clear(); clearThumbs(); await persistFiles();
+  selId = null; buildAll(); changed();
+}
+if (window.WerkstattKonto && !window.claude) {
+  window.WerkstattKonto.mount({
+    kind: 'lua', label: 'Lua-Skript', storageKey: 'tx15-lua-studio-konto',
+    saveBtn: $('srvSave'), newBtn: $('srvNew'), hint: $('srvHint'), toast,
+    collect: async () => {
+      const z = await buildZip();
+      const packed = await Promise.all([...files.values()].map(async f => ({ scope: f.scope, path: f.path, type: f.type, iw: f.iw || 0, ih: f.ih || 0, b64: await blobToB64(f.blob) })));
+      return { name: z.base, detail: `${TYPE_LABEL[S.type]} · ${z.path}${files.size ? ` + ${files.size} Dateien` : ''}`, state: { ...S, files: packed }, zip: z.blob };
+    },
+    apply: async saved => applyState(saved),
+  });
+} else { $('srvSave').closest('.btn-row').hidden = true; $('srvHint').hidden = true; }
+
 // ---------- Start ----------
 function buildAll() {
   cv = null;
@@ -931,6 +1259,7 @@ function buildAll() {
 }
 if (!S.mix.body) S.mix.body = MIX_TPL[S.mix.tpl]?.body || MIX_TPL.limiter.body;
 buildAll(); changed();
+loadFiles().then(() => changed());
 if (document.fonts && document.fonts.load) document.fonts.load('400 16px Roboto').then(draw, () => {});
 })();
 </script>

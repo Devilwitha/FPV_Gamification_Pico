@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Bollisoft – Forum verwalten{% endblock %}
+
+{% block content %}
+  <section class="forum-page">
+    <nav class="forum-breadcrumbs" aria-label="Pfad">
+      <a href="{{ url_for('admin_dashboard') }}">Admin</a> <span>›</span>
+      <a href="{{ url_for('forum.index') }}">Forum</a> <span>›</span> <span>Verwaltung</span>
+    </nav>
+    <h1>Überthemen verwalten</h1>
+    <p class="form-hint">
+      Kategorien des Forums anlegen, umbenennen, sortieren (kleinere Zahl = weiter oben) und löschen.
+      Themen und einzelne Beiträge löschst, sperrst, heftest oder verschiebst du direkt im Forum.
+    </p>
+
+    {% if message == "angelegt" %}
+      <div class="license-success">Überthema angelegt.</div>
+    {% elif message == "gespeichert" %}
+      <div class="license-success">Änderungen gespeichert.</div>
+    {% elif message == "geloescht" %}
+      <div class="license-success">Überthema mit allen Themen gelöscht.</div>
+    {% endif %}
+    {% if error %}
+      <div class="checkout-error">{{ error }}</div>
+    {% endif %}
+
+    <ul class="forum-manage-list">
+      {% for category in categories %}
+        {% set stat = stats.get(category.slug, (0, 0, None)) %}
+        <li class="login-card">
+          <form method="post" action="{{ url_for('forum.manage') }}" class="forum-manage-form">
+            <input type="hidden" name="action" value="update" />
+            <input type="hidden" name="slug" value="{{ category.slug }}" />
+            <div class="form-row">
+              <div class="form-field">
+                <label for="name-{{ category.slug }}">Name</label>
+                <input type="text" id="name-{{ category.slug }}" name="name" value="{{ category.name }}" minlength="2" maxlength="{{ limits[0] }}" required />
+              </div>
+              <div class="form-field forum-manage-order">
+                <label for="order-{{ category.slug }}">Reihenfolge</label>
+                <input type="number" id="order-{{ category.slug }}" name="sort_order" value="{{ category.sort_order }}" step="1" />
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="desc-{{ category.slug }}">Beschreibung</label>
+              <input type="text" id="desc-{{ category.slug }}" name="description" value="{{ category.description }}" maxlength="{{ limits[1] }}" />
+            </div>
+            <p class="form-hint">
+              <a href="{{ url_for('forum.category', category=category.slug) }}">/forum/{{ category.slug }}</a>
+              · {{ stat[0] }} Themen · {{ stat[1] }} Beiträge
+            </p>
+            <button type="submit" class="btn btn-primary">Speichern</button>
+          </form>
+          <form method="post" action="{{ url_for('forum.manage') }}" class="forum-manage-delete"
+                data-confirm="„{{ category.name }}“ mit allen {{ stat[0] }} Themen und {{ stat[1] }} Beiträgen endgültig löschen?">
+            <input type="hidden" name="action" value="delete" />
+            <input type="hidden" name="slug" value="{{ category.slug }}" />
+            <button type="submit" class="btn btn-secondary forum-danger">Löschen</button>
+          </form>
+        </li>
+      {% else %}
+        <li><p>Noch keine Überthemen.</p></li>
+      {% endfor %}
+    </ul>
+
+    <div class="login-card forum-reply">
+      <h2>Neues Überthema</h2>
+      <form method="post" action="{{ url_for('forum.manage') }}">
+        <input type="hidden" name="action" value="create" />
+        <div class="form-row">
+          <div class="form-field">
+            <label for="new-name">Name</label>
+            <input type="text" id="new-name" name="name" minlength="2" maxlength="{{ limits[0] }}" required />
+          </div>
+          <div class="form-field forum-manage-order">
+            <label for="new-order">Reihenfolge</label>
+            <input type="number" id="new-order" name="sort_order" value="{{ ((categories|map(attribute='sort_order')|max) if categories else 0) + 10 }}" step="1" />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="new-desc">Beschreibung</label>
+          <input type="text" id="new-desc" name="description" maxlength="{{ limits[1] }}" />
+        </div>
+        <button type="submit" class="btn btn-primary">Überthema anlegen</button>
+      </form>
+    </div>
+  </section>
+  {% include "_forum_confirm.html" %}
+{% endblock %}

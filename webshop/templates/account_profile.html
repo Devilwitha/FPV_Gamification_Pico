@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Bollisoft – Profil & Passwort{% endblock %}
+
+{% block content %}
+  <section class="account-page">
+    <h1>Profil &amp; Passwort</h1>
+    {% set active = "profile" %}
+    {% include "_account_tabs.html" %}
+
+    {% if message == "profil" %}
+      <div class="license-success">Profil gespeichert.</div>
+    {% elif message == "passwort" %}
+      <div class="license-success">Passwort geändert.</div>
+    {% endif %}
+    {% if request.args.get("benutzername") == "fehlt" %}
+      <div class="license-warning">
+        Für das Forum brauchst du einen Benutzernamen. Lege ihn hier fest und speichere das Profil.
+      </div>
+    {% endif %}
+    {% if next_url and account.username %}
+      <p><a class="btn btn-secondary" href="{{ next_url }}">Zurück zum Forum</a></p>
+    {% endif %}
+
+    <div class="login-card account-card">
+      <h2>Profil</h2>
+      {% if profile_error %}
+        <div class="checkout-error">{{ profile_error }}</div>
+      {% endif %}
+      <form method="post" action="{{ url_for('konto.profile', next=next_url) }}">
+        <input type="hidden" name="action" value="profile" />
+        <div class="form-field">
+          <label for="profile-email">E-Mail-Adresse</label>
+          <input type="email" id="profile-email" value="{{ account.email }}" readonly />
+          <p class="form-hint">
+            An der E-Mail-Adresse hängen Bestellungen, Lizenzen und deine gespeicherten Drohnen-Tools-Daten.
+            Sie lässt sich deshalb hier nicht ändern.
+          </p>
+        </div>
+        <div class="form-field">
+          <label for="profile-username">Benutzername</label>
+          <input
+            type="text"
+            id="profile-username"
+            name="username"
+            value="{{ values.get('username') or '' }}"
+            autocomplete="username"
+            minlength="3"
+            maxlength="24"
+            pattern="[A-Za-z0-9ÄÖÜäöüß][A-Za-z0-9ÄÖÜäöüß_.\-]{2,23}"
+            required
+          />
+          <p class="form-hint">Wird im Forum angezeigt. 3–24 Zeichen: Buchstaben, Ziffern, _ . -</p>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="profile-full-name">Name</label>
+            <input type="text" id="profile-full-name" name="full_name" value="{{ values.get('full_name') or '' }}" autocomplete="name" maxlength="200" required />
+          </div>
+          <div class="form-field">
+            <label for="profile-country">Land</label>
+            <input type="text" id="profile-country" name="country" value="{{ values.get('country') or '' }}" autocomplete="country-name" maxlength="200" required />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="profile-address">Adresse (optional)</label>
+          <input type="text" id="profile-address" name="address" value="{{ values.get('address') or '' }}" autocomplete="street-address" maxlength="200" />
+        </div>
+        <div class="form-field">
+          <label for="profile-phone">Telefon (optional)</label>
+          <input type="tel" id="profile-phone" name="phone" value="{{ values.get('phone') or '' }}" autocomplete="tel" maxlength="200" />
+        </div>
+        <button type="submit" class="btn btn-primary">Profil speichern</button>
+      </form>
+    </div>
+
+    <div class="login-card account-card">
+      <h2>Passwort ändern</h2>
+      {% if password_error %}
+        <div class="checkout-error">{{ password_error }}</div>
+      {% endif %}
+      <form method="post" action="{{ url_for('konto.profile') }}">
+        <input type="hidden" name="action" value="password" />
+        <div class="form-field">
+          <label for="current-password">Aktuelles Passwort</label>
+          <input type="password" id="current-password" name="current_password" autocomplete="current-password" required />
+        </div>
+        <div class="form-field">
+          <label for="new-password">Neues Passwort (mind. 8 Zeichen)</label>
+          <input type="password" id="new-password" name="new_password" autocomplete="new-password" minlength="8" required />
+        </div>
+        <div class="form-field">
+          <label for="new-password-confirm">Neues Passwort wiederholen</label>
+          <input type="password" id="new-password-confirm" name="new_password_confirm" autocomplete="new-password" minlength="8" required />
+        </div>
+        <button type="submit" class="btn btn-primary">Passwort ändern</button>
+      </form>
+    </div>
+  </section>
+  <script>
+    // Tippfehler im neuen Passwort sofort zeigen; verbindlich prueft der Server (konto.py).
+    (() => {
+      const password = document.getElementById("new-password");
+      const confirm = document.getElementById("new-password-confirm");
+      const check = () => {
+        confirm.setCustomValidity(
+          confirm.value && confirm.value !== password.value ? "Die Passwörter stimmen nicht überein." : ""
+        );
+      };
+      password.addEventListener("input", check);
+      confirm.addEventListener("input", check);
+    })();
+  </script>
+{% endblock %}

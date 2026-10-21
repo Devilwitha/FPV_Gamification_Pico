@@ -15,7 +15,7 @@
         <div class="checkout-error">{{ error }}</div>
       {% endif %}
 
-      <form method="post" action="{{ url_for('register') }}">
+      <form method="post" action="{{ url_for('register', next=next_url) }}">
         <div class="form-field">
           <label for="register-email">E-Mail-Adresse</label>
           <input
@@ -29,11 +29,37 @@
           />
         </div>
         <div class="form-field">
+          <label for="register-username">Benutzername</label>
+          <input
+            type="text"
+            id="register-username"
+            name="username"
+            value="{{ values.get('username', '') }}"
+            autocomplete="username"
+            minlength="3"
+            maxlength="24"
+            pattern="[A-Za-z0-9ÄÖÜäöüß][A-Za-z0-9ÄÖÜäöüß_.\-]{2,23}"
+            required
+          />
+          <p class="form-hint">Wird im Forum angezeigt. 3–24 Zeichen: Buchstaben, Ziffern, _ . -</p>
+        </div>
+        <div class="form-field">
           <label for="register-password">Passwort (mind. 8 Zeichen)</label>
           <input
             type="password"
             id="register-password"
             name="password"
+            autocomplete="new-password"
+            minlength="8"
+            required
+          />
+        </div>
+        <div class="form-field">
+          <label for="register-password-confirm">Passwort wiederholen</label>
+          <input
+            type="password"
+            id="register-password-confirm"
+            name="password_confirm"
             autocomplete="new-password"
             minlength="8"
             required
@@ -65,4 +91,18 @@
       </form>
     </div>
   </section>
+  <script>
+    // Tippfehler sofort zeigen; die verbindliche Pruefung macht der Server (app.py's register()).
+    (() => {
+      const password = document.getElementById("register-password");
+      const confirm = document.getElementById("register-password-confirm");
+      const check = () => {
+        confirm.setCustomValidity(
+          confirm.value && confirm.value !== password.value ? "Die Passwörter stimmen nicht überein." : ""
+        );
+      };
+      password.addEventListener("input", check);
+      confirm.addEventListener("input", check);
+    })();
+  </script>
 {% endblock %}

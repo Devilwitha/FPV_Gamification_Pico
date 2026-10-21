@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Bollisoft – Forum – {{ topic.title }}{% endblock %}
+
+{% block content %}
+  <section class="forum-page">
+    <nav class="forum-breadcrumbs" aria-label="Pfad">
+      <a href="{{ url_for('forum.index') }}">Forum</a> <span>›</span>
+      <a href="{{ url_for('forum.category', category=slug) }}">{{ category[0] }}</a>
+    </nav>
+    <div class="forum-heading">
+      <h1>
+        {% if topic.pinned %}<span class="forum-badge">Angeheftet</span>{% endif %}
+        {% if topic.locked %}<span class="forum-badge forum-badge-muted">Gesperrt</span>{% endif %}
+        {{ topic.title }}
+      </h1>
+      {% if is_admin %}
+        <div class="forum-moderation">
+          <form method="post" action="{{ url_for('forum.moderate', thread_id=topic.id) }}">
+            <button class="btn btn-secondary" name="action" value="pin">{{ "Lösen" if topic.pinned else "Anheften" }}</button>
+            <button class="btn btn-secondary" name="action" value="lock">{{ "Entsperren" if topic.locked else "Sperren" }}</button>
+          </form>
+          <form method="post" action="{{ url_for('forum.moderate', thread_id=topic.id) }}" class="forum-move">
+            <input type="hidden" name="action" value="move" />
+            <select name="category" aria-label="Verschieben nach">
+              {% for cslug, (cname, _desc) in categories.items() %}
+                <option value="{{ cslug }}"{% if cslug == slug %} selected{% endif %}>{{ cname }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-secondary">Verschieben</button>
+          </form>
+          <form method="post" action="{{ url_for('forum.delete_thread', thread_id=topic.id) }}"
+                data-confirm="Das ganze Thema mit allen {{ topic.post_count }} Beiträgen löschen?">
+            <button class="btn btn-secondary forum-danger">Thema löschen</button>
+          </form>
+        </div>
+      {% elif owns_thread %}
+        <form method="post" action="{{ url_for('forum.delete_thread', thread_id=topic.id) }}" class="forum-moderation"
+              data-confirm="Dein Thema mit {{ 'deinem Beitrag' if topic.post_count == 1 else 'allen ' ~ topic.post_count ~ ' Beiträgen (auch den Antworten anderer)' }} löschen?">
+          <button class="btn btn-secondary forum-danger">Thema löschen</button>
+        </form>
+      {% endif %}
+    </div>
+
+    {% if request.args.get("verschoben") %}
+      <div class="license-success">Thema nach „{{ category[0] }}“ verschoben.</div>
+    {% endif %}
+
+    <ol class="forum-posts">
+      {% for post in posts %}
+        <li class="forum-post" id="beitrag-{{ post.id }}">
+          <aside class="forum-post-author">
+            <strong>{{ post.author_name or "Mitglied" }}</strong>
+            {% if post.author_is_team %}<span class="forum-badge">Team</span>{% endif %}
+            <span class="form-hint">{{ post.author_posts }} {{ "Beitrag" if post.author_posts == 1 else "Beiträge" }}</span>
+            {% if post.author_copters %}
+              <span class="form-hint">{{ post.author_copters }} Copter</span>
+            {% endif %}
+          </aside>
+          <div class="forum-post-body">
+            <div class="forum-post-meta form-hint">
+              <a href="#beitrag-{{ post.id }}">{{ post.created_at|forum_time }}</a>
+              {% if post.edited_at %} · bearbeitet {{ post.edited_at|forum_time }}{% endif %}
+            </div>
+            <div class="forum-post-text">{{ post.body|forum_text }}</div>
+            {% if can_edit(post) %}
+              <div class="forum-post-actions">
+                <a href="{{ url_for('forum.edit_post', post_id=post.id) }}">Bearbeiten</a>
+                <form method="post" action="{{ url_for('forum.delete_post', post_id=post.id) }}"
+                      data-confirm="{{ 'Das ist der Eröffnungsbeitrag – das ganze Thema mit allen ' ~ topic.post_count ~ ' Beiträgen löschen?' if post.id == first_post_id else 'Diesen Beitrag löschen?' }}">
+                  <button type="submit" class="forum-link-button">{{ "Thema löschen" if post.id == first_post_id else "Löschen" }}</button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+
+    {% set page_endpoint = "forum.thread" %}
+    {% set page_args = {"thread_id": topic.id} %}
+    {% include "_forum_pagination.html" %}
+
+    <div class="login-card forum-reply" id="antworten">
+      {% if topic.locked and not is_admin %}
+        <p>Dieses Thema ist gesperrt – Antworten sind nicht mehr möglich.</p>
+      {% elif writer %}
+        <h2>Antworten</h2>
+        <form method="post" action="{{ url_for('forum.reply', thread_id=topic.id) }}">
+          <div class="form-field">
+            <label for="reply-body">Deine Antwort als {{ writer }}</label>
+            <textarea id="reply-body" name="body" rows="6" minlength="2" maxlength="{{ body_max }}" required></textarea>
+            <p class="form-hint">Reiner Text – Links werden automatisch erkannt.</p>
+          </div>
+          <button type="submit" class="btn btn-primary">Antwort senden</button>
+        </form>
+      {% elif account %}
+        <p>Zum Antworten brauchst du einen Benutzernamen.
+          <a href="{{ url_for('konto.profile', next=request.path, benutzername='fehlt') }}">Jetzt festlegen</a></p>
+      {% else %}
+        <p>Zum Antworten bitte
+          <a href="{{ url_for('login', next=request.path) }}">einloggen</a> oder
+          <a href="{{ url_for('register', next=request.path) }}">ein Konto erstellen</a>.</p>
+      {% endif %}
+    </div>
+  </section>
+  {% include "_forum_confirm.html" %}
+{% endblock %}

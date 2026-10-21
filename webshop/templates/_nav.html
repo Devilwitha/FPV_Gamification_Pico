@@ -40,7 +40,7 @@
           <div class="nav-dropdown">
             <a class="nav-item" href="/tx15-werkstatt/">
               <span class="nav-item-title">Drohnen Tools</span>
-              <span class="nav-item-text">Themes, Lua-Skripte und Konfiguratoren für EdgeTX</span>
+              <span class="nav-item-text">Themes, Lua-Skripte, Konfiguratoren und Blackbox-Auswertung</span>
             </a>
             <a class="nav-item" href="/coverstore-maker/">
               <span class="nav-item-title">CoverStore/Maker</span>
@@ -48,6 +48,7 @@
             </a>
           </div>
         </details>
+        <a class="nav-trigger nav-link" href="{{ url_for('forum.index') }}">Forum</a>
         <details class="nav-group">
           <summary class="nav-trigger">Shop {{ chevron }}</summary>
           <div class="nav-dropdown">
@@ -70,6 +71,14 @@
               <a class="nav-item" href="{{ url_for('account') }}">
                 <span class="nav-item-title">Mein Konto</span>
                 <span class="nav-item-text">{{ session.get('account_email') }}</span>
+              </a>
+              <a class="nav-item" href="{{ url_for('konto.profile') }}">
+                <span class="nav-item-title">Profil &amp; Passwort</span>
+                <span class="nav-item-text">Benutzername, Angaben, Passwort ändern</span>
+              </a>
+              <a class="nav-item" href="{{ url_for('konto.copters') }}">
+                <span class="nav-item-title">Meine Copter</span>
+                <span class="nav-item-text">Deine Copter mit Setup speichern</span>
               </a>
               <a class="nav-item" href="{{ url_for('logout') }}" data-nav-ignore>
                 <span class="nav-item-title">Logout</span>

@@ -5,6 +5,12 @@ bollisoft.ch {
         reverse_proxy 127.0.0.1:9090
     }
 
+    # Blackbox Viewer (Node.js, von serve_production.py gestartet) erwartet
+    # das Praefix /blackbox-viewer selbst.
+    handle /blackbox-viewer* {
+        reverse_proxy 127.0.0.1:8787
+    }
+
     redir /tx15-werkstatt /tx15-werkstatt/ 308
 
     handle_path /tx15-werkstatt/* {

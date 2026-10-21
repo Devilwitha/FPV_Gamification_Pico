@@ -134,9 +134,10 @@ Auf dem Windows-Produktivserver startet **eine einzige Datei** alle Server:
 | Webshop (Waitress) | `127.0.0.1:5000` | `https://www.bollisoft.ch/` |
 | TX15 Werkstatt (statisch, im Webshop-Prozess) | `127.0.0.1:5000/tx15-werkstatt/` | `https://www.bollisoft.ch/tx15-werkstatt/` |
 | Cover Store/Maker (ueberwachter Unterprozess) | `127.0.0.1:9090` | `https://www.bollisoft.ch/coverstore-maker/` |
+| Blackbox Viewer (Node.js, ueberwachter Unterprozess) | `127.0.0.1:8787/blackbox-viewer/` | `https://www.bollisoft.ch/blackbox-viewer/` |
 
-Der Cover Store wird nach einem Absturz automatisch neu gestartet und endet
-immer zusammen mit `serve_production.py`.
+Cover Store und Blackbox Viewer werden nach einem Absturz automatisch neu
+gestartet und enden immer zusammen mit `serve_production.py`.
 
 Erwartete Verzeichnisse (neben diesem Repo im selben `GitHub`-Ordner,
 abweichende Pfade per `.env`):
@@ -145,6 +146,12 @@ abweichende Pfade per `.env`):
   ueberschreibbar mit `TX15_WERKSTATT_DIR`
 - `SteamOs_Pogram`, Skript ueberschreibbar mit `COVERSTORE_SCRIPT`;
   `COVERSTORE_ENABLED=false` schaltet den Cover Store ab
+- `BlackboxViewer` (`git clone https://github.com/Devilwitha/BlackboxViewer.git`),
+  ueberschreibbar mit `BLACKBOX_VIEWER_DIR`; Port mit `BLACKBOX_VIEWER_PORT`
+  (Default 8787), `BLACKBOX_VIEWER_ENABLED=false` schaltet ihn ab. Benoetigt
+  **Node.js LTS** (`C:\Program Files\nodejs\node.exe` oder im PATH, sonst
+  `BLACKBOX_NODE`). Fehlt `dist/`, baut `serve_production.py` die App vor dem
+  ersten Start selbst (`npm ci` + `npm run build`).
 
 Einmalige Einrichtung (PowerShell als Administrator):
 
@@ -158,8 +165,34 @@ Das Skript
    SYSTEM, ohne Zeitlimit),
 2. deaktiviert die alte Einzelaufgabe "Bollisoft Cover Store",
 3. traegt in der IIS-Site **"Bollisoft"** (IIS-Manager > Bollisoft >
-   URL-Rewrite) die Proxy-Regeln `CoverStoreProxy`, `Tx15WerkstattProxy` und
-   `ReverseProxyInboundRule1` ein (Sicherung als `web.config.bak`).
+   URL-Rewrite) die Proxy-Regeln `CoverStoreProxy`, `Tx15WerkstattProxy`,
+   `BlackboxViewerProxy` und `ReverseProxyInboundRule1` ein (Sicherung als
+   `web.config.bak`),
+4. hebt fuer `/api/tx15-backups` das IIS-Upload-Limit an (Standard ~28 MB,
+   Parameter `-BackupUploadLimit`, Default 300 MB).
+
+### Backups des TX15 Backup Studios
+
+Eingeloggte Konten speichern ihre SD-Karten-Backups ueber
+`/api/tx15-backups` (siehe `webshop/tx15_backups.py`) auf dem Server:
+ZIP-Dateien unter `tx15_backups/` im Repo-Ordner (nicht im Git, enthaelt
+Kundendaten), Metadaten in `webshop.db`. Grenzen per `.env`:
+
+- `TX15_BACKUP_MAX_BYTES` - je Backup (Default 250 MB)
+- `TX15_BACKUP_QUOTA_BYTES` - je Konto (Default 1 GB)
+- `TX15_BACKUP_MAX_COUNT` - Anzahl je Konto (Default 50)
+- `TX15_BACKUP_DIR` - anderer Ablageordner
+
+Themes (Theme Studio) und Lua-Skripte (Lua Studio) speichern eingeloggte
+Konten ueber `/api/tx15-projects` (siehe `webshop/tx15_projects.py`):
+Studio-Stand in `webshop.db`, ZIP unter `tx15_backups/projects/`. Grenzen:
+`TX15_PROJECT_MAX_COUNT` (je Art und Konto, Default 100),
+`TX15_PROJECT_MAX_STATE_BYTES` (Default 16 MB, enthaelt beim Lua Studio auch hochgeladene Dateien),
+`TX15_PROJECT_MAX_ZIP_BYTES` (Default 20 MB). Alles zusammen erscheint auf
+der Konto-Seite (`/account`, Abschnitt "Meine Drohnen Tools").
+
+`tx15_backups/` (inklusive `projects/`) und `webshop.db` gehoeren ins
+Server-Backup.
 
 Die TLS-Zertifikate kommen dort von win-acme (Aufgabe "win-acme renew").
 
@@ -174,3 +207,31 @@ TX15 Werkstatt aktualisieren (kein Neustart noetig):
 ```powershell
 git -C C:\Users\Administrator\Documents\GitHub\txtheme-maker pull --ff-only
 ```
+
+Blackbox Viewer aktualisieren (danach Neustart, siehe oben):
+
+```powershell
+cd C:\Users\Administrator\Documents\GitHub\BlackboxViewer
+git pull --ff-only; npm ci; npm run build
+```
+
+### TX15-Firmware im Backup Studio
+
+`/api/tx15-firmware` (siehe `webshop/tx15_firmware.py`) holt die offiziellen
+EdgeTX-Releases von GitHub (ab 2.12, aeltere enthalten keine TX15-Datei),
+entnimmt dem Firmware-ZIP die `tx15-*.uf2` und liefert nur diese aus.
+Zwischenspeicher: `tx15_backups/firmware-cache/` (darf jederzeit geloescht
+werden). Installiert wird im Browser: Sender im Bootloader, Laufwerk
+`EDGETX_UF2` waehlen - das Studio prueft vorher `INFO_UF2.TXT`
+(`Board-ID: tx15`).
+
+### Konto, Copter und Forum
+
+- `/account/profil`: Benutzername, Profil, Passwort aendern;
+  `/account/copter`: "Meine Copter" (siehe `webshop/konto.py`).
+- `/forum`: oeffentlich lesbar, schreiben nur mit Login und Benutzername
+  (siehe `webshop/forum.py`). Der Admin (`/admin/login`) verwaltet unter
+  `/forum/verwaltung` die Ueberthemen, loescht/verschiebt/sperrt Themen und
+  schreibt ohne eigenes Konto als "Bollisoft-Team".
+- Admin-Dashboard: Anzahl registrierter Benutzer und wer in den letzten
+  5 Minuten aktiv war (`accounts.last_seen_at`).

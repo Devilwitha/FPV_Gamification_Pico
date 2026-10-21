@@ -7,7 +7,51 @@
     <h1>Admin-Dashboard</h1>
     <p class="license-intro">
       Eingeloggt im Admin-Bereich. <a href="{{ url_for('admin_logout') }}">Ausloggen</a>
+      · <a href="{{ url_for('forum.manage') }}">Forum verwalten</a>
     </p>
+
+    <div class="admin-stats">
+      <div class="admin-stat">
+        <span class="admin-stat-value">{{ registered_count }}</span>
+        <span class="admin-stat-label">registrierte Benutzer</span>
+      </div>
+      <div class="admin-stat">
+        <span class="admin-stat-value">{{ online_accounts|length }}</span>
+        <span class="admin-stat-label">jetzt online (aktiv in den letzten {{ online_minutes }} Min.)</span>
+      </div>
+    </div>
+
+    <h2>Benutzer online</h2>
+    {% if online_accounts %}
+      <div class="admin-table-wrapper">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Benutzername</th>
+              <th>E-Mail</th>
+              <th>Name</th>
+              <th>Land</th>
+              <th>Zuletzt aktiv</th>
+              <th>Registriert</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in online_accounts %}
+              <tr>
+                <td>{{ user.username or "–" }}</td>
+                <td>{{ user.email }}</td>
+                <td>{{ user.full_name }}</td>
+                <td>{{ user.country }}</td>
+                <td>{{ user.last_seen_at|forum_time }}</td>
+                <td>{{ user.created_at|forum_time }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="form-hint">Gerade ist kein eingeloggter Benutzer aktiv.</p>
+    {% endif %}
 
     <div class="admin-tabs" role="tablist">
       <button type="button" class="admin-tab-button active" data-tab-target="unshipped">

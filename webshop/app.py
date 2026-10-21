@@ -9,7 +9,7 @@ import secrets
 import sys
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -21,8 +21,13 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
+import forum
+import konto
 import orders_db
 import simulator_manager
+import tx15_backups
+import tx15_firmware
+import tx15_projects
 
 load_dotenv()
 
@@ -106,6 +111,18 @@ LICENSES_DIR = os.path.join(PROJECT_ROOT, "lizenzen")
 # spaeter per E-Mail-Adresse erneut einzuloggen, statt nur der Flask-Session
 # zu vertrauen.
 db.init_db()
+
+# Server-Ablage der Drohnen Tools (Backups, Themes, Lua-Skripte) - nur fuer
+# eingeloggte Konten, siehe tx15_backups.py und tx15_projects.py.
+app.register_blueprint(tx15_backups.bp)
+app.register_blueprint(tx15_projects.bp)
+app.register_blueprint(tx15_firmware.bp)
+
+# Konto (Profil, Passwort, Meine Copter) und Community-Forum - siehe konto.py
+# und forum.py.
+app.register_blueprint(konto.bp)
+app.register_blueprint(forum.bp)
+forum.setup(app)
 
 # Separate, eigenstaendige Datenbank ausschliesslich fuer Hardware-Bestellungen
 # (Versandadressen) - siehe orders_db.py's Modul-Docstring: bewusst getrennt
@@ -310,6 +327,26 @@ def format_price(price_cents):
 
 
 app.jinja_env.filters["format_price"] = format_price
+
+
+# "Online" im Admin-Dashboard = in diesem Zeitraum aktiv gewesen.
+ONLINE_WINDOW = timedelta(minutes=5)
+SEEN_UPDATE_SECONDS = 60
+
+
+@app.before_request
+def track_account_activity():
+    """Merkt sich, wann ein eingeloggtes Konto zuletzt aktiv war (Admin-
+    Dashboard: Benutzer online). Hoechstens einmal pro Minute ein Schreib-
+    zugriff - der Zeitpunkt des letzten Eintrags steht in der Session."""
+    email = session.get("account_email")
+    if not email or request.endpoint == "static":
+        return
+    now = time.time()
+    if now - session.get("seen_at", 0) < SEEN_UPDATE_SECONDS:
+        return
+    session["seen_at"] = now
+    db.touch_account_seen(email)
 
 
 @app.context_processor
@@ -1120,6 +1157,26 @@ def license_setup_public_key():
 REQUIRED_ACCOUNT_FIELDS = ("full_name", "country")
 
 
+def _safe_next_url():
+    """Rücksprungziel nach Login/Registrierung (?next=...), z. B. aus dem
+    Blackbox Viewer. Nur Pfade derselben Domain - "//host" oder absolute
+    URLs werden verworfen, damit /login kein offener Redirect ist."""
+    target = (request.values.get("next") or "").strip()
+    if not target.startswith("/") or target.startswith("//") or "\\" in target:
+        return None
+    return target
+
+
+@app.route("/api/account/session")
+def account_session_status():
+    """Login-Status der aktuellen Sitzung - wird vom Blackbox Viewer
+    (serve_production.py) mit dem Cookie des Besuchers abgefragt, damit nur
+    eingeloggte Konten Punkte ins Leaderboard einreichen können."""
+    response = jsonify({"logged_in": bool(session.get("account_email"))})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     """Login-Seite für den Konto-Bereich: E-Mail-Adresse + Passwort gegen das
@@ -1128,6 +1185,7 @@ def login():
     unabhängig davon, ob unter der E-Mail-Adresse bereits etwas gekauft
     wurde (Bestellungen und Login-Konto sind bewusst getrennte Konzepte)."""
     error = None
+    next_url = _safe_next_url()
     if request.method == "POST":
         email = (request.form.get("email") or "").strip()
         password = request.form.get("password") or ""
@@ -1136,8 +1194,8 @@ def login():
             error = "E-Mail-Adresse oder Passwort falsch."
         else:
             session["account_email"] = account["email"]
-            return redirect(url_for("account"))
-    return render_template("login.html", error=error)
+            return redirect(next_url or url_for("account"))
+    return render_template("login.html", error=error, next_url=next_url)
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -1149,8 +1207,9 @@ def register():
     schritt), analog zum bisherigen Direkt-Login nach Kauf."""
     error = None
     form_values = {}
+    next_url = _safe_next_url()
     if request.method == "POST":
-        form_values = {key: (request.form.get(key) or "").strip() for key in ("email", "full_name", "country")}
+        form_values = {key: (request.form.get(key) or "").strip() for key in ("email", "username", "full_name", "country")}
         email = form_values["email"]
         password = request.form.get("password") or ""
 
@@ -1158,10 +1217,14 @@ def register():
             error = "Bitte eine gültige E-Mail-Adresse eingeben."
         elif len(password) < 8:
             error = "Das Passwort muss mindestens 8 Zeichen lang sein."
+        elif password != (request.form.get("password_confirm") or ""):
+            error = "Die Passwörter stimmen nicht überein. Bitte beide Felder gleich ausfüllen."
         elif any(not form_values[field] for field in REQUIRED_ACCOUNT_FIELDS):
             error = "Bitte Name und Land vollständig ausfüllen."
         elif db.get_account_by_email(email) is not None:
             error = "Für diese E-Mail-Adresse existiert bereits ein Konto."
+        elif (username_error := konto.validate_username(form_values["username"])) is not None:
+            error = username_error
         else:
             db.create_account(
                 email=email,
@@ -1170,10 +1233,11 @@ def register():
                 address="",
                 phone="",
                 country=form_values["country"],
+                username=form_values["username"],
             )
             session["account_email"] = email
-            return redirect(url_for("account"))
-    return render_template("register.html", error=error, values=form_values)
+            return redirect(next_url or url_for("account"))
+    return render_template("register.html", error=error, values=form_values, next_url=next_url)
 
 
 @app.route("/logout")
@@ -1204,8 +1268,18 @@ def account():
     licenses = db.get_customer_licenses_for_email(email)
     pending_shipping_rows = orders_db.get_pending_shipping_for_email(email)
     shipping_orders = orders_db.get_shipping_orders_for_email(email)
+    # Drohnen Tools: nur mit echtem Login (nicht ueber die Checkout-Session),
+    # genau wie die Server-Ablage selbst (tx15_backups.account_email()).
+    werkstatt_email = tx15_backups.account_email()
+    werkstatt = None
+    if werkstatt_email:
+        werkstatt = {
+            "backups": tx15_backups.account_overview(werkstatt_email),
+            "projects": tx15_projects.account_overview(werkstatt_email),
+        }
     return render_template(
         "account_licenses.html",
+        werkstatt=werkstatt,
         email=email,
         account=db.get_account_by_email(email),
         licenses=licenses,
@@ -1342,9 +1416,13 @@ def admin_dashboard():
     shipped_orders = orders_db.get_shipped_orders()
     all_sales = _build_all_sales_overview()
     store_plugins = _list_store_plugins()
+    online_since = (datetime.now(timezone.utc) - ONLINE_WINDOW).isoformat()
 
     return render_template(
         "admin_dashboard.html",
+        registered_count=db.count_accounts(),
+        online_accounts=db.list_online_accounts(online_since),
+        online_minutes=int(ONLINE_WINDOW.total_seconds() // 60),
         products=PRODUCTS,
         unshipped_orders=unshipped_orders,
         shipped_orders=shipped_orders,

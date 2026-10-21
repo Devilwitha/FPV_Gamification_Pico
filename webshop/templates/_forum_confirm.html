@@ -1,0 +1,10 @@
+{#- Rueckfrage vor Loesch-Formularen (form[data-confirm]) im Forum -#}
+<script>
+  document.querySelectorAll("form[data-confirm]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      if (!window.confirm(form.dataset.confirm)) {
+        event.preventDefault();
+      }
+    });
+  });
+</script>

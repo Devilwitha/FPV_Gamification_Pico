@@ -22,3 +22,6 @@ __pycache__/main.cpython-311.pyc
 /webshop/*.db
 /.venv
 android_app/tempCodeRunnerFile.ps1
+# SD-Karten-Backups der Kunden aus dem TX15 Backup Studio (siehe
+# webshop/tx15_backups.py) - Kundendaten, nicht ins Repo.
+/tx15_backups

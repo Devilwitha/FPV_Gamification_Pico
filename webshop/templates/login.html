@@ -7,7 +7,7 @@
     <h1>Login</h1>
     <p class="license-intro">
       Melde dich mit E-Mail-Adresse und Passwort an. Noch kein Konto?
-      <a href="{{ url_for('register') }}">Jetzt registrieren</a>.
+      <a href="{{ url_for('register', next=next_url) }}">Jetzt registrieren</a>.
     </p>
 
     <div class="login-card">
@@ -15,7 +15,7 @@
         <div class="checkout-error">{{ error }}</div>
       {% endif %}
 
-      <form method="post" action="{{ url_for('login') }}">
+      <form method="post" action="{{ url_for('login', next=next_url) }}">
         <div class="form-field">
           <label for="login-email">E-Mail-Adresse</label>
           <input

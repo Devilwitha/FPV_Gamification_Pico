@@ -1,0 +1,7 @@
+{#- Unterseiten des Kontos - active: "overview" | "profile" | "copters" -#}
+<nav class="account-tabs" aria-label="Konto">
+  <a href="{{ url_for('account') }}"{% if active == "overview" %} aria-current="page"{% endif %}>Übersicht</a>
+  <a href="{{ url_for('konto.profile') }}"{% if active == "profile" %} aria-current="page"{% endif %}>Profil &amp; Passwort</a>
+  <a href="{{ url_for('konto.copters') }}"{% if active == "copters" %} aria-current="page"{% endif %}>Meine Copter</a>
+  <a href="{{ url_for('forum.index') }}">Forum</a>
+</nav>

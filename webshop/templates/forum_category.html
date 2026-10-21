@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Bollisoft – Forum – {{ category[0] }}{% endblock %}
+
+{% block content %}
+  <section class="forum-page">
+    <nav class="forum-breadcrumbs" aria-label="Pfad">
+      <a href="{{ url_for('forum.index') }}">Forum</a> <span>›</span> <span>{{ category[0] }}</span>
+    </nav>
+    <div class="forum-heading">
+      <div>
+        <h1>{{ category[0] }}</h1>
+        <p class="form-hint">{{ category[1] }}</p>
+      </div>
+      {% if writer %}
+        <a class="btn btn-primary" href="{{ url_for('forum.new_thread', category=slug) }}">Neues Thema</a>
+      {% elif account %}
+        <a class="btn btn-secondary" href="{{ url_for('konto.profile', next=request.path, benutzername='fehlt') }}">Benutzername festlegen</a>
+      {% else %}
+        <a class="btn btn-secondary" href="{{ url_for('login', next=request.path) }}">Zum Schreiben einloggen</a>
+      {% endif %}
+    </div>
+
+    {% if request.args.get("geloescht") %}
+      <div class="license-success">Thema gelöscht.</div>
+    {% elif request.args.get("verschoben") %}
+      <div class="license-success">Thema verschoben.</div>
+    {% endif %}
+    {% if threads %}
+      {% set show_category = false %}
+      {% include "_forum_thread_list.html" %}
+      {% set page_endpoint = "forum.category" %}
+      {% set page_args = {"category": slug} %}
+      {% include "_forum_pagination.html" %}
+    {% else %}
+      <p class="form-hint">In dieser Kategorie gibt es noch keine Themen.</p>
+    {% endif %}
+  </section>
+  {% include "_forum_confirm.html" %}
+{% endblock %}

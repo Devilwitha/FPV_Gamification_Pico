@@ -116,6 +116,15 @@
 }
 
 .nav-trigger:hover,
+.nav-link,
+.nav-link:hover {
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background-color: var(--color-surface-alt);
+}
+
 .nav-group[open] > .nav-trigger {
   background-color: var(--color-surface-alt);
 }

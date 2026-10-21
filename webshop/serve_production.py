@@ -9,6 +9,11 @@ Startet aus einer einzigen Datei:
 - den Cover Store/Maker (SteamOs_Pogram) als ueberwachten Unterprozess auf
   COVERSTORE_HOST:COVERSTORE_PORT (Default 127.0.0.1:9090). Stuerzt er ab,
   wird er automatisch neu gestartet.
+- den Blackbox Viewer (Repo github.com/Devilwitha/BlackboxViewer, Node.js)
+  als ueberwachten Unterprozess auf 127.0.0.1:BLACKBOX_VIEWER_PORT (Default
+  8787) unter /blackbox-viewer/. Fehlt der Build (dist/), wird er vor dem
+  ersten Start mit npm erzeugt. Punkte ins Leaderboard einreichen koennen
+  nur im Webshop eingeloggte Konten (/api/account/session).
 
 Von aussen erreichbar sind die Server ueber den IIS-Reverse-Proxy (Site
 "Bollisoft", siehe HTTPS_DEPLOYMENT.md bzw. install_webshop_autostart.ps1).
@@ -16,6 +21,7 @@ Von aussen erreichbar sind die Server ueber den IIS-Reverse-Proxy (Site
 
 import mimetypes
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -38,7 +44,9 @@ os.chdir(BASE_DIR)
 from app import app  # noqa: E402 - erst nach dem Laden der .env importieren
 
 TX15_MOUNT_PATH = "/tx15-werkstatt"
+BLACKBOX_MOUNT_PATH = "/blackbox-viewer"
 RESTART_DELAY_SECONDS = 5
+NPM_BUILD_TIMEOUT_SECONDS = 900
 
 # Unter Windows fehlen diese Typen je nach Registry-Stand.
 mimetypes.add_type("text/javascript", ".mjs")
@@ -206,13 +214,18 @@ _assign_to_job = _create_kill_on_close_job()
 
 
 class SupervisedProcess:
-    """Haelt einen Unterprozess am Leben und startet ihn nach Abstuerzen neu."""
+    """Haelt einen Unterprozess am Leben und startet ihn nach Abstuerzen neu.
 
-    def __init__(self, name, args, cwd, env):
+    prepare (optional) laeuft einmalig im Ueberwachungs-Thread vor dem ersten
+    Start, z. B. fuer einen Build - so blockiert er den Webshop-Start nicht.
+    """
+
+    def __init__(self, name, args, cwd, env, prepare=None):
         self.name = name
         self.args = args
         self.cwd = cwd
         self.env = env
+        self.prepare = prepare
         self._process = None
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name=name, daemon=True)
@@ -221,6 +234,11 @@ class SupervisedProcess:
         self._thread.start()
 
     def _run(self):
+        if self.prepare is not None:
+            try:
+                self.prepare()
+            except Exception as exc:  # noqa: BLE001 - Server trotzdem starten
+                _log(f"{self.name}: Vorbereitung fehlgeschlagen ({exc})")
         while not self._stop.is_set():
             _log(f"{self.name}: starte {' '.join(self.args)}")
             try:
@@ -278,8 +296,103 @@ def start_cover_store():
     return supervisor
 
 
+def _find_node():
+    """node.exe suchen: BLACKBOX_NODE, PATH, dann Standard-Installationsorte.
+
+    Die Aufgabenplanung startet mit dem PATH vom Systemstart - nach einer
+    frischen Node-Installation fehlt Node dort ggf. noch.
+    """
+    configured = os.environ.get("BLACKBOX_NODE", "").strip()
+    if configured:
+        return configured if Path(configured).is_file() else None
+    found = shutil.which("node")
+    if found:
+        return found
+    for candidate in (
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "nodejs" / "node.exe",
+        Path("/usr/bin/node"),
+        Path("/usr/local/bin/node"),
+    ):
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _build_blackbox_viewer(node, app_dir, env):
+    """Erzeugt dist/ per npm (npm-cli.js direkt ueber node, damit kein
+    npm.cmd/Shell noetig ist). Nach einem "git pull" dist/ loeschen oder
+    "npm ci; npm run build" ausfuehren, dann wird die neue Version gebaut."""
+    if (app_dir / "dist" / "index.html").is_file():
+        return
+    npm_cli = Path(node).resolve().parent / "node_modules" / "npm" / "bin" / "npm-cli.js"
+    if not npm_cli.is_file():
+        _log(f"Blackbox Viewer: npm nicht gefunden ({npm_cli}) - Build bitte manuell ausfuehren.")
+        return
+    commands = []
+    if not (app_dir / "node_modules").is_dir():
+        commands.append(["ci"])
+    commands.append(["run", "build"])
+    for npm_args in commands:
+        _log(f"Blackbox Viewer: npm {' '.join(npm_args)}")
+        result = subprocess.run(
+            [node, str(npm_cli), *npm_args],
+            cwd=str(app_dir),
+            env=env,
+            timeout=NPM_BUILD_TIMEOUT_SECONDS,
+        )
+        if result.returncode != 0:
+            _log(f"Blackbox Viewer: npm {' '.join(npm_args)} fehlgeschlagen (Code {result.returncode})")
+            return
+
+
+def start_blackbox_viewer():
+    if not _env_bool("BLACKBOX_VIEWER_ENABLED", True):
+        _log("Blackbox Viewer: per BLACKBOX_VIEWER_ENABLED deaktiviert")
+        return None
+
+    app_dir = _env_path("BLACKBOX_VIEWER_DIR", GITHUB_DIR / "BlackboxViewer")
+    server_script = app_dir / "server" / "server.mjs"
+    if not server_script.is_file():
+        _log(
+            f"Blackbox Viewer nicht gefunden ({app_dir}) - {BLACKBOX_MOUNT_PATH}/ "
+            "ist deaktiviert. Repo klonen oder BLACKBOX_VIEWER_DIR setzen."
+        )
+        return None
+    node = _find_node()
+    if node is None:
+        _log("Blackbox Viewer: Node.js nicht gefunden - wird nicht gestartet. "
+             "Node.js LTS installieren oder BLACKBOX_NODE setzen.")
+        return None
+
+    env = os.environ.copy()
+    # Node-Ordner vorne in den PATH, damit die npm-Skripte (tsc, vite) node finden.
+    env["PATH"] = str(Path(node).resolve().parent) + os.pathsep + env.get("PATH", "")
+    env["HOST"] = "127.0.0.1"
+    env["PORT"] = str(_env_int("BLACKBOX_VIEWER_PORT", 8787))
+    env["BASE_PATH"] = BLACKBOX_MOUNT_PATH
+    # Punkte einreichen nur mit Webshop-Login: Der Viewer fragt den Login-
+    # Status mit dem Cookie des Besuchers direkt beim Webshop ab.
+    flask_host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    if flask_host in ("0.0.0.0", "::", ""):
+        flask_host = "127.0.0.1"
+    env["LEADERBOARD_AUTH_URL"] = (
+        f"http://{flask_host}:{_env_int('FLASK_PORT', 5000)}/api/account/session"
+    )
+    env["LEADERBOARD_LOGIN_URL"] = f"/login?next={BLACKBOX_MOUNT_PATH}/"
+
+    supervisor = SupervisedProcess(
+        "Blackbox Viewer",
+        [node, str(server_script)],
+        cwd=str(app_dir),
+        env=env,
+        prepare=lambda: _build_blackbox_viewer(node, app_dir, env),
+    )
+    supervisor.start()
+    return supervisor
+
+
 def main():
-    cover_store = start_cover_store()
+    children = [child for child in (start_cover_store(), start_blackbox_viewer()) if child]
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     port = _env_int("FLASK_PORT", 5000)
     _log(f"Webshop: http://{host}:{port}/")
@@ -291,8 +404,8 @@ def main():
             threads=_env_int("WAITRESS_THREADS", 8),
         )
     finally:
-        if cover_store is not None:
-            cover_store.stop()
+        for child in children:
+            child.stop()
 
 
 if __name__ == "__main__":

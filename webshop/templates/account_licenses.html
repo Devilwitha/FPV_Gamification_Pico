@@ -5,11 +5,23 @@
 {% block content %}
   <section class="account-page">
     <h1>Mein Konto</h1>
+    {% if account %}
+      {% set active = "overview" %}
+      {% include "_account_tabs.html" %}
+    {% endif %}
     <p class="license-intro">Eingeloggt als <strong>{{ email }}</strong>.</p>
 
     {% if account %}
       <div class="s">
         <h2>Profil</h2>
+        {% if account.username %}
+          <p>Benutzername: <strong>{{ account.username }}</strong></p>
+        {% else %}
+          <p class="license-warning">
+            Noch kein Benutzername – den brauchst du fürs Forum.
+            <a href="{{ url_for('konto.profile') }}">Jetzt festlegen</a>
+          </p>
+        {% endif %}
         <p><strong>{{ account.full_name }}</strong></p>
         {% if account.country %}
           <p>{{ account.country }}</p>
@@ -20,6 +32,10 @@
         {% if account.phone %}
           <p>Tel: {{ account.phone }}</p>
         {% endif %}
+        <p>
+          <a class="btn btn-secondary" href="{{ url_for('konto.profile') }}">Profil &amp; Passwort ändern</a>
+          <a class="btn btn-secondary" href="{{ url_for('konto.copters') }}">Meine Copter</a>
+        </p>
       </div>
     {% endif %}
 
@@ -99,5 +115,112 @@
       <p>Für diese E-Mail-Adresse liegen noch keine ausgestellten Lizenzen vor.</p>
       <a class="btn btn-primary" href="{{ url_for('shop') }}">Zum Shop</a>
     {% endif %}
+
+    {% if werkstatt %}
+      <h2 id="werkstatt">Meine Drohnen Tools</h2>
+      <p class="form-hint">
+        Was du in den <a href="/tx15-werkstatt/">Drohnen Tools</a> auf dem Server gespeichert hast.
+        Nur du siehst diese Einträge.
+      </p>
+
+      <h3>SD-Karten-Backups</h3>
+      {% if werkstatt.backups["items"] %}
+        <ul class="license-list">
+          {% for backup in werkstatt.backups["items"] %}
+            <li class="license-list-item" data-entry>
+              <div class="license-list-details">
+                <h3>{{ backup.label }}</h3>
+                <p>
+                  {{ backup.files }} Dateien · {{ backup.models }} Modelle
+                  {%- if backup.edgetx %} · EdgeTX {{ backup.edgetx }}{% endif %}
+                  · ZIP {{ backup.size|filesizeformat }}
+                </p>
+                <p class="form-hint">
+                  {% if backup.auto %}Automatisch vor einer Wiederherstellung · {% endif %}Erstellt am {{ backup.created }}
+                </p>
+              </div>
+              <div class="license-list-actions">
+                <a class="btn btn-primary" href="/tx15-werkstatt/backup-studio.html?backup={{ backup.id }}">Im Backup Studio öffnen</a>
+                <a class="btn btn-secondary" href="/api/tx15-backups/{{ backup.id }}/zip">ZIP herunterladen</a>
+                <button
+                  class="btn btn-secondary"
+                  type="button"
+                  data-delete-url="/api/tx15-backups/{{ backup.id }}"
+                  data-delete-header="tx15-backup-studio"
+                  data-delete-name="{{ backup.label }}"
+                >Löschen</button>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+        <p class="form-hint">
+          {{ werkstatt.backups["count"] }} von {{ werkstatt.backups["max_count"] }} Backups ·
+          {{ werkstatt.backups["used"]|filesizeformat }} von {{ werkstatt.backups["quota"]|filesizeformat }} belegt
+        </p>
+      {% else %}
+        <p>
+          Noch keine Backups gespeichert. Im <a href="/tx15-werkstatt/backup-studio.html">Backup Studio</a>
+          sicherst du die SD-Karte deines Senders.
+        </p>
+      {% endif %}
+
+      {% for kind, heading, studio, studio_name in [
+        ("theme", "Themes", "/tx15-werkstatt/theme-studio.html", "Theme Studio"),
+        ("lua", "Lua-Skripte", "/tx15-werkstatt/lua-studio.html", "Lua Studio"),
+      ] %}
+        <h3>{{ heading }}</h3>
+        {% if werkstatt.projects[kind] %}
+          <ul class="license-list">
+            {% for project in werkstatt.projects[kind] %}
+              <li class="license-list-item" data-entry>
+                <div class="license-list-details">
+                  <h3>{{ project.name }}</h3>
+                  {% if project.detail %}<p><code>{{ project.detail }}</code></p>{% endif %}
+                  <p class="form-hint">Zuletzt gespeichert am {{ project.updated }} · ZIP {{ project.size|filesizeformat }}</p>
+                </div>
+                <div class="license-list-actions">
+                  <a class="btn btn-primary" href="{{ project.studio_url }}">Im {{ studio_name }} öffnen</a>
+                  <a class="btn btn-secondary" href="/api/tx15-projects/{{ project.id }}/zip">ZIP herunterladen</a>
+                  <button
+                    class="btn btn-secondary"
+                    type="button"
+                    data-delete-url="/api/tx15-projects/{{ project.id }}"
+                    data-delete-header="tx15-werkstatt"
+                    data-delete-name="{{ project.name }}"
+                  >Löschen</button>
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p>Noch nichts gespeichert. Im <a href="{{ studio }}">{{ studio_name }}</a> speicherst du mit „Auf dem Server speichern“.</p>
+        {% endif %}
+      {% endfor %}
+    {% endif %}
   </section>
+  <script>
+    // Loeschen von Backups/Themes/Lua-Skripten ueber die Server-Ablage (tx15_backups.py, tx15_projects.py).
+    document.querySelectorAll("[data-delete-url]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!window.confirm(`„${button.dataset.deleteName}“ wirklich löschen?`)) {
+          return;
+        }
+        button.disabled = true;
+        try {
+          const response = await fetch(button.dataset.deleteUrl, {
+            method: "DELETE",
+            headers: { "X-Requested-With": button.dataset.deleteHeader },
+            credentials: "same-origin",
+          });
+          if (!response.ok && response.status !== 404) {
+            throw new Error();
+          }
+          window.location.reload();
+        } catch (error) {
+          button.disabled = false;
+          window.alert("Löschen hat nicht geklappt. Bitte die Seite neu laden und erneut versuchen.");
+        }
+      });
+    });
+  </script>
 {% endblock %}

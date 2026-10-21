@@ -6,13 +6,18 @@ window.initSiteNav = (header) => {
   const groups = [...header.querySelectorAll(".nav-group")];
   const path = window.location.pathname;
 
-  header.querySelectorAll(".nav-item[href]:not([data-nav-ignore])").forEach((item) => {
+  header.querySelectorAll(".nav-item[href]:not([data-nav-ignore]), .nav-link[href]").forEach((item) => {
     const target = new URL(item.href, window.location.href).pathname;
-    const isCurrent = target.endsWith("/") ? path.startsWith(target) : path === target;
+    // Direkte Links (.nav-link, z. B. Forum) gelten auch fuer ihre Unterseiten.
+    const isSection = target.endsWith("/") || item.classList.contains("nav-link");
+    const isCurrent = isSection ? path === target || path.startsWith(target.replace(/\/?$/, "/")) : path === target;
     if (!isCurrent) {
       return;
     }
     item.setAttribute("aria-current", "page");
+    if (item.classList.contains("nav-link")) {
+      item.classList.add("is-active");
+    }
     const group = item.closest(".nav-group");
     if (group) {
       group.querySelector(".nav-trigger").classList.add("is-active");

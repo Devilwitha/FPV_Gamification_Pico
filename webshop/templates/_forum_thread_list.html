@@ -1,0 +1,44 @@
+{#- Themenliste - erwartet "threads" oder "latest"; show_category blendet die Kategorie ein -#}
+{% set items = latest if latest is defined else threads %}
+<ul class="forum-threads">
+  {% for t in items %}
+    <li class="forum-thread-row{% if t.pinned %} is-pinned{% endif %}">
+      <div class="forum-thread-main">
+        <a class="forum-thread-title" href="{{ url_for('forum.thread', thread_id=t.id) }}">
+          {% if t.pinned %}<span class="forum-badge">Angeheftet</span>{% endif %}
+          {% if t.locked %}<span class="forum-badge forum-badge-muted">Gesperrt</span>{% endif %}
+          {{ t.title }}
+        </a>
+        <span class="form-hint">
+          von {{ t.author_name or "Mitglied" }} · {{ t.created_at|forum_time }}
+          {% if show_category %} · {{ categories[t.category][0] if t.category in categories else t.category }}{% endif %}
+        </span>
+      </div>
+      <div class="forum-thread-meta">
+        <span><b>{{ t.post_count - 1 }}</b> {{ "Antwort" if t.post_count == 2 else "Antworten" }}</span>
+        <span class="form-hint">{{ t.last_post_at|forum_time }}{% if t.post_count > 1 %} · {{ t.last_author_name or "Mitglied" }}{% endif %}</span>
+        {% set own = account and t.author_email|lower == account.email|lower %}
+        {% if is_admin or own %}
+          <div class="forum-thread-tools">
+            {% if is_admin %}
+              <form method="post" action="{{ url_for('forum.moderate', thread_id=t.id) }}" class="forum-move">
+                <input type="hidden" name="action" value="move" />
+                <input type="hidden" name="next" value="{{ request.path }}" />
+                <select name="category" aria-label="Thema verschieben nach">
+                  {% for cslug, (cname, _desc) in categories.items() %}
+                    <option value="{{ cslug }}"{% if cslug == t.category %} selected{% endif %}>{{ cname }}</option>
+                  {% endfor %}
+                </select>
+                <button class="btn btn-secondary btn-small">Verschieben</button>
+              </form>
+            {% endif %}
+            <form method="post" action="{{ url_for('forum.delete_thread', thread_id=t.id) }}"
+                  data-confirm="Thema „{{ t.title }}“ mit {{ 'seinem Beitrag' if t.post_count == 1 else 'allen ' ~ t.post_count ~ ' Beiträgen' }} löschen?">
+              <button class="forum-link-button">{{ "Mein Thema löschen" if own and not is_admin else "Thema löschen" }}</button>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+    </li>
+  {% endfor %}
+</ul>

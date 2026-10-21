@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Bollisoft – Meine Copter{% endblock %}
+
+{% macro copter_input(name, label, placeholder="", maxlength=80) %}
+  <div class="form-field">
+    <label for="copter-{{ name }}">{{ label }}</label>
+    <input type="text" id="copter-{{ name }}" name="{{ name }}" value="{{ values.get(name) or '' }}" placeholder="{{ placeholder }}" maxlength="{{ maxlength }}" />
+  </div>
+{% endmacro %}
+
+{% block content %}
+  <section class="account-page account-page-wide">
+    <h1>Meine Copter</h1>
+    {% set active = "copters" %}
+    {% include "_account_tabs.html" %}
+
+    {% if message == "angelegt" %}
+      <div class="license-success">Copter gespeichert.</div>
+    {% elif message == "aktualisiert" %}
+      <div class="license-success">Änderungen gespeichert.</div>
+    {% elif message == "geloescht" %}
+      <div class="license-success">Copter gelöscht.</div>
+    {% endif %}
+
+    {% if copters %}
+      <ul class="copter-list">
+        {% for copter in copters %}
+          <li class="copter-card" id="copter-{{ copter.id }}">
+            <div class="copter-head">
+              <h3>{{ copter.name }}</h3>
+              <span class="copter-category">{{ copter.category }}</span>
+            </div>
+            <dl class="copter-specs">
+              {% for key, label in [
+                ("frame", "Rahmen"), ("motors", "Motoren"), ("flight_controller", "Flugcontroller"),
+                ("esc", "ESC"), ("video", "Video / Kamera"), ("receiver", "Empfänger"),
+                ("battery", "Akku"), ("firmware", "Firmware"),
+              ] if copter[key] %}
+                <div><dt>{{ label }}</dt><dd>{{ copter[key] }}</dd></div>
+              {% endfor %}
+              {% if copter.weight_g %}
+                <div><dt>Gewicht</dt><dd>{{ copter.weight_g }} g</dd></div>
+              {% endif %}
+            </dl>
+            {% if copter.notes %}
+              <p class="copter-notes">{{ copter.notes }}</p>
+            {% endif %}
+            <div class="license-list-actions">
+              <a class="btn btn-secondary" href="{{ url_for('konto.copters', bearbeiten=copter.id) }}#copter-formular">Bearbeiten</a>
+              <form method="post" action="{{ url_for('konto.copters') }}" data-confirm="„{{ copter.name }}“ wirklich löschen?">
+                <input type="hidden" name="action" value="delete" />
+                <input type="hidden" name="copter_id" value="{{ copter.id }}" />
+                <button type="submit" class="btn btn-secondary">Löschen</button>
+              </form>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="form-hint">{{ copters|length }} von {{ max_copters }} Coptern</p>
+    {% else %}
+      <p>Du hast noch keine Copter eingetragen. Leg unten deinen ersten an.</p>
+    {% endif %}
+
+    <div class="login-card account-card" id="copter-formular">
+      <h2>{% if editing %}„{{ editing.name }}“ bearbeiten{% else %}Copter hinzufügen{% endif %}</h2>
+      {% if error %}
+        <div class="checkout-error">{{ error }}</div>
+      {% endif %}
+      <form method="post" action="{{ url_for('konto.copters') }}">
+        <input type="hidden" name="action" value="{{ 'update' if editing else 'create' }}" />
+        {% if editing %}
+          <input type="hidden" name="copter_id" value="{{ editing.id }}" />
+        {% endif %}
+        <div class="form-row">
+          <div class="form-field">
+            <label for="copter-name">Name</label>
+            <input type="text" id="copter-name" name="name" value="{{ values.get('name') or '' }}" placeholder="z. B. Freestyle-Quad" maxlength="60" required />
+          </div>
+          <div class="form-field">
+            <label for="copter-category">Art</label>
+            <select id="copter-category" name="category">
+              {% for category in categories %}
+                <option value="{{ category }}"{% if values.get('category') == category %} selected{% endif %}>{{ category }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          {{ copter_input("frame", "Rahmen", "z. B. Source One V5 5\"") }}
+          {{ copter_input("motors", "Motoren", "z. B. 2306 1950KV") }}
+        </div>
+        <div class="form-row">
+          {{ copter_input("flight_controller", "Flugcontroller", "z. B. SpeedyBee F405 V4") }}
+          {{ copter_input("esc", "ESC", "z. B. 55A 4in1, Bluejay") }}
+        </div>
+        <div class="form-row">
+          {{ copter_input("video", "Video / Kamera", "z. B. DJI O3, Walksnail") }}
+          {{ copter_input("receiver", "Empfänger", "z. B. ELRS 2.4 GHz") }}
+        </div>
+        <div class="form-row">
+          {{ copter_input("battery", "Akku", "z. B. 6S 1100 mAh") }}
+          {{ copter_input("firmware", "Firmware", "z. B. Betaflight 4.5", 60) }}
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="copter-weight">Gewicht in g (optional)</label>
+            <input type="number" id="copter-weight" name="weight_g" value="{{ values.get('weight_g') or '' }}" min="1" max="50000" step="1" />
+          </div>
+          <div class="form-field"></div>
+        </div>
+        <div class="form-field">
+          <label for="copter-notes">Notizen (optional)</label>
+          <textarea id="copter-notes" name="notes" rows="4" maxlength="1000">{{ values.get('notes') or '' }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">{{ 'Änderungen speichern' if editing else 'Copter speichern' }}</button>
+        {% if editing %}
+          <a class="btn btn-secondary" href="{{ url_for('konto.copters') }}">Abbrechen</a>
+        {% endif %}
+      </form>
+    </div>
+  </section>
+  <script>
+    document.querySelectorAll("form[data-confirm]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        if (!window.confirm(form.dataset.confirm)) {
+          event.preventDefault();
+        }
+      });
+    });
+  </script>
+{% endblock %}

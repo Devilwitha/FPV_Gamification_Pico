@@ -1,0 +1,101 @@
+<title>TX15 ESC Configurator</title>
+<script src="/site-nav.js" defer></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script src="config.js"></script>
+<style>
+/* Layout: schmale Werkstatt-Leiste oben, darunter die unveränderte Original-App im ganzen Fenster */
+:root {
+  --bg: #080b0d; --bar: #101518; --line: #263137; --text: #f0f4f2; --muted: #9aaba5;
+  --accent: #58f0a8; --accent-ink: #07100b; --accent-soft: rgba(88, 240, 168, .14); --warn: #f39c12;
+  --f-serif: Georgia, "Times New Roman", serif;
+  --f-body: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --f-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--f-body); display: flex; flex-direction: column; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+code { font-family: var(--f-mono); background: #151b1f; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; font-size: .9em; }
+
+.bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 8px 16px; padding-top: calc(8px + env(safe-area-inset-top, 0px)); background: var(--bar); border-bottom: 1px solid var(--line); }
+.bar .home { color: var(--muted); font-size: 13px; }
+.bar .home:hover { color: var(--text); text-decoration: none; }
+.bar h1 { margin: 0; font: 400 19px var(--f-serif); }
+.bar .chip { font: 11px var(--f-mono); color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+.bar nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
+.bar nav a { color: var(--muted); }
+.bar nav a:hover { color: var(--text); text-decoration: none; }
+
+iframe { flex: 1; width: 100%; border: 0; background: #fff; display: block; }
+
+.msg { flex: 1; display: grid; place-items: center; padding: 32px 16px; }
+.msg .box { max-width: 620px; width: 100%; background: var(--bar); border: 1px solid var(--line); border-radius: 18px; padding: 28px; }
+.msg .eyebrow { font: 13px var(--f-mono); color: var(--accent); margin: 0 0 10px; }
+.msg h2 { margin: 0 0 10px; font: 400 28px/1.2 var(--f-serif); text-wrap: balance; }
+.msg p { color: var(--muted); margin: 0 0 14px; }
+.msg ol { color: var(--muted); padding-left: 20px; margin: 0 0 18px; }
+.msg li { margin-bottom: 6px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--line); color: var(--text); font-weight: 600; }
+.btn:hover { text-decoration: none; border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; }
+</style>
+
+<header class="bar">
+  <a class="home" id="home" href="index.html">← Drohnen Tools</a>
+  <h1>ESC Configurator</h1>
+  <span class="chip">Original · AGPL-3.0</span>
+  <nav aria-label="Links zur App">
+    <a href="https://github.com/stylesuxx/esc-configurator" target="_blank" rel="noopener">Quellcode</a>
+    <a href="apps/esc-configurator/LICENSE.txt" target="_blank" rel="noopener" id="licLink">Lizenz</a>
+    <a href="apps/esc-configurator/index.html" target="_blank" rel="noopener" id="tabLink">In neuem Tab</a>
+    <a href="https://esc-configurator.com" target="_blank" rel="noopener">Offizielle Online-Version</a>
+  </nav>
+</header>
+
+<iframe id="app" title="ESC Configurator" allow="serial; usb; bluetooth; fullscreen; clipboard-read; clipboard-write" hidden></iframe>
+
+<div class="msg" id="msg" hidden><div class="box" id="msgBox"></div></div>
+
+<script>
+(() => {
+  const APP = 'apps/esc-configurator/index.html';
+  const ONLINE = 'https://esc-configurator.com';
+  const CFG = window.WERKSTATT_CONFIG || {};
+  const msg = (html) => { document.getElementById('msgBox').innerHTML = html; document.getElementById('msg').hidden = false; };
+  const online = `<div class="btns"><a class="btn primary" href="${ONLINE}" target="_blank" rel="noopener">Offizielle Online-Version öffnen</a></div>`;
+
+  if (window.claude) {
+    document.getElementById('home').hidden = true;
+    document.getElementById('licLink').hidden = document.getElementById('tabLink').hidden = true;
+    msg(`<p class="eyebrow">ESC Configurator</p><h2>Hier läuft nur die offizielle Online-Version.</h2>
+      <p>Im Claude-Fenster ist der USB-Zugriff gesperrt. Die selbst gebaute Version liegt in deinem Projektordner unter <code>apps/esc-configurator/</code> und läuft über <code>start-server.ps1</code> oder auf deinem Webspace.</p>${online}`);
+    return;
+  }
+  if (CFG.escconfigurator === false) {
+    msg(`<p class="eyebrow">Ausgeschaltet</p><h2>Der ESC Configurator ist deaktiviert.</h2>
+      <p>Setze in <code>config.js</code> den Wert <code>escconfigurator: true</code>, um ihn wieder einzublenden.</p>`);
+    return;
+  }
+  if (location.protocol === 'file:') {
+    msg(`<p class="eyebrow">ESC Configurator</p><h2>Bitte über den Webserver öffnen.</h2>
+      <p>Die App braucht einen Webserver. Per Doppelklick geöffnet blockiert der Browser ihre Skripte und den USB-Zugriff.</p>
+      <ol><li>Im Projektordner <code>start-server.ps1</code> ausführen (Rechtsklick → Mit PowerShell ausführen).</li>
+      <li>Im Browser öffnet sich <code>http://localhost:8080/</code>. Dort ESC Configurator wählen.</li></ol>${online}`);
+    return;
+  }
+  fetch(APP, { method: 'HEAD', cache: 'no-store' }).then(r => {
+    if (!r.ok) throw new Error(r.status);
+    const f = document.getElementById('app'); f.src = APP; f.hidden = false;
+  }).catch(() => {
+    msg(`<p class="eyebrow">Noch nicht gebaut</p><h2>Die App fehlt in <code>apps/esc-configurator/</code>.</h2>
+      <p>Sie wird einmal aus dem offiziellen Quellcode gebaut. Dafür brauchst du Git und Node.js.</p>
+      <ol><li>Im Projektordner <code>tools\\build-webapps.ps1 -Only esc</code> ausführen. Das dauert einige Minuten.</li>
+      <li>Diese Seite neu laden.</li></ol>${online}`);
+  });
+})();
+</script>

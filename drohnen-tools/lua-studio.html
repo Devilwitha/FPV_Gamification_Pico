@@ -1,0 +1,1265 @@
+<title>TX15 Lua Studio</title>
+<script src="/site-nav.js" defer></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: Werkbank – links Skripttyp & Eigenschaften, mitte Zeichenfläche (Display-Zone), rechts erzeugter Lua-Code & Export */
+:root {
+  --bg: #eef0f2; --panel: #ffffff; --ink: #1b2126; --muted: #5d6973; --line: #d5dbe0;
+  --accent: #2f7fd0; --accent-ink: #ffffff; --bezel: #2a2f34; --bezel-hi: #41484f;
+  --good: #1f8a4c; --warn: #b7791f; --bad: #c43c2c; --code-bg: #f5f7f8; --sel: #ff7a1a;
+  --kw: #8a3fb8; --str: #1f7a46; --num: #b4521b; --com: #7a8791;
+  --f-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15191c; --panel: #1e2327; --ink: #e6eaed; --muted: #95a1ab; --line: #333b42;
+    --accent: #5aa2ec; --accent-ink: #08121c; --bezel: #0c0e10; --bezel-hi: #2b3237;
+    --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a; --code-bg: #171b1e; --sel: #ff9a4a;
+    --kw: #c792ea; --str: #8fd19e; --num: #f0a868; --com: #6f7d88;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15191c; --panel: #1e2327; --ink: #e6eaed; --muted: #95a1ab; --line: #333b42;
+  --accent: #5aa2ec; --accent-ink: #08121c; --bezel: #0c0e10; --bezel-hi: #2b3237;
+  --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a; --code-bg: #171b1e; --sel: #ff9a4a;
+  --kw: #c792ea; --str: #8fd19e; --num: #f0a868; --com: #6f7d88;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); padding: 0 16px 32px; }
+h1, h2 { font-family: var(--f-display); font-weight: 600; margin: 0; text-wrap: balance; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code { font-family: var(--f-mono); font-size: .92em; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding-block: 18px 14px; max-width: 1560px; margin: 0 auto; }
+header.top h1 { font-size: 30px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+header.top h1 span { color: var(--accent); }
+header.top p { margin: 0; color: var(--muted); }
+header.top a.back { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 13px; }
+header.top a.back:hover { color: var(--accent); }
+
+.types { max-width: 1560px; margin: 0 auto 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.types button {
+  text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer;
+  display: grid; gap: 2px;
+}
+.types button b { font: 600 17px var(--f-display); letter-spacing: .04em; text-transform: uppercase; }
+.types button small { color: var(--muted); font-size: 12px; line-height: 1.3; }
+.types button small code { font-size: 11px; }
+.types button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.types button[aria-pressed="true"] b { color: var(--accent); }
+
+.wrap { max-width: 1560px; margin: 0 auto; display: grid; gap: 16px; grid-template-columns: minmax(290px, 360px) minmax(0, 1fr) minmax(320px, 460px); align-items: start; }
+@media (max-width: 1240px) { .wrap { grid-template-columns: minmax(290px, 360px) minmax(0, 1fr); } .col-code { grid-column: 1 / -1; } }
+@media (max-width: 820px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.panel + .panel { margin-top: 16px; }
+.panel h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 8px; }
+label.field { display: grid; gap: 3px; margin-bottom: 10px; min-width: 0; }
+label.field > span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+label.check { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; cursor: pointer; }
+input[type="text"], input[type="number"], select, textarea {
+  width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg);
+}
+input[type="color"] { width: 100%; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); cursor: pointer; }
+textarea { font-family: var(--f-mono); font-size: 12px; line-height: 1.5; resize: vertical; }
+.hint { font-size: 12px; color: var(--muted); margin: 2px 0 10px; }
+.warnline { font-size: 12px; color: var(--bad); margin: 0 0 10px; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 11px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-weight: 500; }
+.btn:hover { border-color: var(--accent); }
+.btn.small { padding: 3px 8px; font-size: 12px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.danger:hover { border-color: var(--bad); color: var(--bad); }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn-row .btn { flex: 1 1 auto; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+
+.palette { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.palette button { padding: 8px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); cursor: pointer; display: grid; justify-items: center; gap: 2px; font-size: 12px; }
+.palette button:hover { border-color: var(--accent); }
+.palette svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+
+.layers { display: grid; gap: 2px; margin-top: 4px; }
+.layers button { display: flex; justify-content: space-between; gap: 8px; text-align: left; padding: 5px 8px; border: 1px solid transparent; border-radius: 5px; background: none; cursor: pointer; font-size: 13px; min-width: 0; }
+.layers button span:last-child { color: var(--muted); font-family: var(--f-mono); font-size: 11px; white-space: nowrap; }
+.layers button span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layers button:hover { background: var(--bg); }
+.layers button.on { border-color: var(--sel); background: var(--bg); }
+
+/* Funkgerät / Zeichenfläche */
+.radio { background: linear-gradient(160deg, var(--bezel-hi), var(--bezel) 40%); border-radius: 22px; padding: 18px 20px 16px; box-shadow: 0 10px 30px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.08); }
+.radio .brandline { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; align-items: center; color: #9aa4ad; font: 600 12px/1 var(--f-display); letter-spacing: .2em; text-transform: uppercase; margin-bottom: 12px; }
+.radio .brandline em { font-style: normal; color: #c9d1d8; }
+.stage { background: #000; border-radius: 6px; padding: 14px; display: grid; place-items: center; min-height: 200px; overflow: hidden; }
+#design { display: block; max-width: 100%; touch-action: none; cursor: default; image-rendering: auto; }
+.stagebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; color: #aab4bc; font-size: 12px; }
+.stagebar label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.stagebar .sp { flex: 1; }
+.stagebar .btn { background: #20262b; border-color: #3c444b; color: #c9d1d8; }
+
+.info h3 { font: 600 16px var(--f-display); letter-spacing: .04em; text-transform: uppercase; margin: 14px 0 6px; }
+.info ol { margin: 0; padding-left: 20px; }
+.info li { margin-bottom: 4px; }
+
+.inputs-table { display: grid; gap: 6px; margin-bottom: 10px; }
+.irow { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.1fr) repeat(3, minmax(0, .8fr)) 28px; gap: 4px; align-items: center; }
+.irow input, .irow select { padding: 4px 5px; font-size: 12px; }
+.irow.head { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.irow .x { padding: 2px; height: 26px; }
+
+.tree { font-family: var(--f-mono); font-size: 12px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin: 0 0 12px; overflow-x: auto; white-space: pre; }
+pre.lua { font-family: var(--f-mono); font-size: 12px; line-height: 1.55; background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin: 0; overflow: auto; max-height: 760px; tab-size: 2; }
+.lua .k { color: var(--kw); font-weight: 600; } .lua .s { color: var(--str); } .lua .n { color: var(--num); } .lua .c { color: var(--com); font-style: italic; }
+.toast { min-height: 1.5em; font-size: 13px; margin-top: 8px; color: var(--muted); }
+.toast.ok { color: var(--good); } .toast.err { color: var(--bad); }
+.stats { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-bottom: 10px; font-variant-numeric: tabular-nums; }
+.stats b { color: var(--ink); font-weight: 600; }
+input[type="file"] { display: none; }
+.files-drop { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; font-size: 13px; color: var(--muted); cursor: pointer; margin-bottom: 10px; transition: border-color .15s; }
+.files-drop:hover, .files-drop.over { border-color: var(--accent); color: var(--ink); }
+.ftree { display: grid; gap: 2px; font-size: 13px; }
+.ftree .dir { font-family: var(--f-mono); font-size: 11px; color: var(--muted); padding: 8px 2px 2px; overflow-wrap: anywhere; }
+.ftree .file { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 5px; }
+.ftree .file:hover { background: var(--bg); }
+.ftree .thumb { width: 30px; height: 30px; border-radius: 4px; border: 1px solid var(--line); background: var(--code-bg) center / contain no-repeat; display: grid; place-items: center; font: 600 9px var(--f-mono); color: var(--muted); }
+.ftree .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ftree .nm small { display: block; color: var(--muted); font-size: 11px; }
+.ftree .acts { display: flex; gap: 4px; }
+.ftree .acts .btn { padding: 2px 7px; }
+.ftree .locked .nm { color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top">
+  <h1>TX15 <span>Lua</span> Studio</h1>
+  <p>Lua-Skripte für EdgeTX bauen: Widgets und Tools zeichnen, Funktions- und Mischer-Skripte aus Vorlagen erzeugen, fertigen Code auf die SD-Karte bringen.</p>
+  <a class="back" id="backLink" href="index.html">← Übersicht</a>
+</header>
+<script>if (window.claude) document.getElementById('backLink').hidden = true;</script>
+
+<nav class="types" role="group" aria-label="Skripttyp">
+  <button type="button" data-type="widget" aria-pressed="true"><b>Widget</b><small>Anzeige auf dem Hauptbildschirm · <code>WIDGETS/</code></small></button>
+  <button type="button" data-type="tool" aria-pressed="false"><b>Tool</b><small>Eigene Vollbild-Seite unter SYS → Tools · <code>SCRIPTS/TOOLS/</code></small></button>
+  <button type="button" data-type="func" aria-pressed="false"><b>Funktion</b><small>Läuft per Schalter über Spezialfunktionen · <code>SCRIPTS/FUNCTIONS/</code></small></button>
+  <button type="button" data-type="mix" aria-pressed="false"><b>Mischer</b><small>Eigene Mischer-Logik pro Modell · <code>SCRIPTS/MIXES/</code></small></button>
+</nav>
+
+<main class="wrap">
+  <section class="col-side" id="side"></section>
+  <section class="col-center" id="center"></section>
+  <section class="col-code">
+    <div class="panel">
+      <h2>Datei</h2>
+      <pre class="tree" id="tree"></pre>
+      <div class="stats" id="stats"></div>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="dlZip">ZIP herunterladen</button>
+        <button class="btn" type="button" id="dlLua">Nur .lua</button>
+        <button class="btn" type="button" id="copyLua">Code kopieren</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px" id="sdRow">
+        <button class="btn primary" type="button" id="sdWrite">Auf SD-Karte schreiben</button>
+      </div>
+      <p class="hint" id="sdHint">Sender per USB verbinden und am Sender <b>USB Storage (SD)</b> wählen. Beim ersten Mal wählst du das Laufwerk der Karte. <button class="linkbtn" type="button" id="sdOther">Andere Karte wählen</button></p>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn" type="button" id="srvSave">Auf dem Server speichern</button>
+        <button class="btn" type="button" id="srvNew" hidden>Als neu speichern</button>
+      </div>
+      <p class="hint" id="srvHint"></p>
+      <div class="toast" id="toast" role="status"></div>
+      <p class="hint" style="margin-top:6px">Das ZIP spiegelt die Ordner der SD-Karte. Ohne direktes Schreiben entpackst du es ins Hauptverzeichnis der Karte.</p>
+    </div>
+    <div class="panel" id="filesPanel">
+      <h2>Dateien</h2>
+      <p class="hint">Bilder, Sounds oder weitere Lua-Dateien, die dein Skript braucht. Sie kommen mit ins ZIP und werden im Konto mitgespeichert. Bilder fügst du über „Einfügen“ oder das Element „Bild“ ins Layout ein.</p>
+      <div class="grid2">
+        <label class="field"><span>Hochladen nach</span><select id="exTarget"></select></label>
+        <label class="field" id="exCustomBox" hidden><span>Eigener Ordner</span><input type="text" id="exCustom" placeholder="z. B. IMAGES/flug" maxlength="80"></label>
+      </div>
+      <div class="files-drop" id="exDrop" role="button" tabindex="0">Dateien hierher ziehen oder klicken<br><small>PNG, BMP, JPG für Bilder · WAV für Sounds · max. 2 MB pro Datei, 8 MB insgesamt</small></div>
+      <input type="file" id="exInput" multiple>
+      <div class="ftree" id="exTree"></div>
+      <div class="toast" id="exToast" role="status"></div>
+    </div>
+    <div class="panel">
+      <h2>Lua-Code</h2>
+      <pre class="lua" id="code"></pre>
+    </div>
+  </section>
+</main>
+
+<datalist id="sources">
+  <option value="RxBt">Empfänger-Akku</option><option value="VFAS">Flugakku</option><option value="Curr">Strom</option>
+  <option value="Capa">Verbrauch mAh</option><option value="Bat%">Akku %</option><option value="1RSS">RSSI Antenne 1</option>
+  <option value="RQly">Link-Qualität</option><option value="TQly">Uplink-Qualität</option><option value="RSSI">RSSI</option>
+  <option value="Alt">Höhe</option><option value="GSpd">Geschwindigkeit</option><option value="Sats">Satelliten</option>
+  <option value="tx-voltage">Senderakku</option><option value="thr">Gas</option><option value="ail">Querruder</option>
+  <option value="ele">Höhenruder</option><option value="rud">Seitenruder</option><option value="ch1">Kanal 1</option>
+  <option value="sa">Schalter SA</option><option value="s1">Poti S1</option>
+</datalist>
+<input type="file" id="themeFile" accept=".yml,.yaml,text/plain">
+
+<script src="konto.js"></script>
+<script src="sdkarte.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---------- Theme ----------
+const THEME_KEYS = ['PRIMARY1','PRIMARY2','PRIMARY3','SECONDARY1','SECONDARY2','SECONDARY3','FOCUS','EDIT','ACTIVE','WARNING','DISABLED','CUSTOM'];
+const EDGETX_THEME = { PRIMARY1:'#000000', PRIMARY2:'#FFFFFF', PRIMARY3:'#0C3F64', SECONDARY1:'#125E9E', SECONDARY2:'#B7CFE3', SECONDARY3:'#E6EDF2', FOCUS:'#F29A1F', EDIT:'#00A54F', ACTIVE:'#F29A1F', WARNING:'#E62E1F', DISABLED:'#8C8C8C', CUSTOM:'#000000' };
+
+// ---------- EdgeTX-Konstanten ----------
+const FONTS = [['TINSIZE','Winzig',10],['SMLSIZE','Klein',13],['0','Normal',16],['MIDSIZE','Mittel',22],['DBLSIZE','Groß',32],['XXLSIZE','Riesig',60]];
+const fontPx = f => (FONTS.find(x => x[0] === f) || FONTS[2])[2];
+const UNITS = [['UNIT_RAW','ohne'],['UNIT_VOLTS','Volt'],['UNIT_AMPS','Ampere'],['UNIT_MAH','mAh'],['UNIT_PERCENT','Prozent'],['UNIT_DB','dB'],['UNIT_METERS','Meter'],['UNIT_KMH','km/h'],['UNIT_CELSIUS','°C'],['UNIT_SECONDS','Sekunden']];
+const ZONES = [['480x275','Hauptansicht ohne Topbar · 480×275'],['480x320','Vollbild · 480×320'],['240x275','Halbe Breite · 240×275'],['240x137','Viertel · 240×137'],['160x92','Kleine Zone · 160×92'],['70x36','Topbar · 70×36'],['custom','Eigene Größe']];
+
+// ---------- Zustand ----------
+const STORE = 'tx15-lua-studio-v1';
+let uid = 1;
+const mk = (kind, props) => ({ id: uid++, kind, ...props });
+function sampleWidget() {
+  return { name: 'Flugdaten', folder: 'FLUGDAT', zone: '240x137', zw: 240, zh: 137, scale: true, bg: true, bgColor: 'PRIMARY2', elements: [
+    mk('rect',  { x: 0, y: 0, w: 240, h: 26, color: 'SECONDARY1', filled: true, thick: 1 }),
+    mk('text',  { x: 8, y: 5, w: 150, h: 16, text: 'FLUGAKKU', font: 'SMLSIZE', align: 'LEFT', bold: true, shadow: false, color: 'PRIMARY2' }),
+    mk('timer', { x: 150, y: 5, w: 82, h: 16, timer: 0, font: 'SMLSIZE', align: 'RIGHT', bold: true, shadow: false, color: 'PRIMARY2', test: 157 }),
+    mk('value', { x: 8, y: 34, w: 224, h: 32, source: 'VFAS', asOption: true, optName: 'Akku', decimals: 1, unit: ' V', font: 'DBLSIZE', align: 'LEFT', bold: false, shadow: false, color: 'PRIMARY1', test: 15.4 }),
+    mk('value', { x: 120, y: 44, w: 112, h: 22, source: 'Capa', asOption: false, optName: 'Verbrauch', decimals: 0, unit: ' mAh', font: 'MIDSIZE', align: 'RIGHT', bold: false, shadow: false, color: 'PRIMARY3', test: 1240 }),
+    mk('bar',   { x: 8, y: 82, w: 224, h: 16, source: 'Bat%', asOption: false, optName: 'Prozent', min: 0, max: 100, warn: true, warnBelow: 25, color: 'EDIT', bgColor: 'SECONDARY2', test: 62 }),
+    mk('text',  { x: 8, y: 108, w: 80, h: 13, text: 'Link', font: 'SMLSIZE', align: 'LEFT', bold: false, shadow: false, color: 'PRIMARY3' }),
+    mk('value', { x: 120, y: 106, w: 112, h: 16, source: 'RQly', asOption: false, optName: 'Link', decimals: 0, unit: ' %', font: '0', align: 'RIGHT', bold: true, shadow: false, color: 'PRIMARY1', test: 100 }),
+  ] };
+}
+function sampleTool() {
+  return { name: 'Flugbuch', file: 'Flugbuch', bgColor: 'SECONDARY3', elements: [
+    mk('rect',  { x: 0, y: 0, w: 480, h: 44, color: 'SECONDARY1', filled: true, thick: 1 }),
+    mk('text',  { x: 14, y: 11, w: 300, h: 22, text: 'Flugbuch', font: 'MIDSIZE', align: 'LEFT', bold: true, shadow: false, color: 'PRIMARY2' }),
+    mk('text',  { x: 20, y: 70, w: 200, h: 16, text: 'Flugzeit Timer 1', font: '0', align: 'LEFT', bold: false, shadow: false, color: 'PRIMARY1' }),
+    mk('timer', { x: 260, y: 60, w: 200, h: 32, timer: 0, font: 'DBLSIZE', align: 'RIGHT', bold: false, shadow: false, color: 'PRIMARY1', test: 412 }),
+    mk('text',  { x: 20, y: 120, w: 200, h: 16, text: 'Senderakku', font: '0', align: 'LEFT', bold: false, shadow: false, color: 'PRIMARY1' }),
+    mk('value', { x: 260, y: 116, w: 200, h: 22, source: 'tx-voltage', asOption: false, optName: '', decimals: 2, unit: ' V', font: 'MIDSIZE', align: 'RIGHT', bold: false, shadow: false, color: 'PRIMARY1', test: 7.84 }),
+    mk('bar',   { x: 20, y: 156, w: 440, h: 14, source: 'tx-voltage', asOption: false, optName: '', min: 6.6, max: 8.4, warn: true, warnBelow: 7.0, color: 'ACTIVE', bgColor: 'SECONDARY2', test: 7.84 }),
+    mk('text',  { x: 240, y: 290, w: 0, h: 13, text: 'RTN = Zurück', font: 'SMLSIZE', align: 'CENTER', bold: false, shadow: false, color: 'DISABLED' }),
+  ] };
+}
+const DEFAULT = () => ({
+  type: 'widget',
+  widget: sampleWidget(),
+  tool: sampleTool(),
+  func: { file: 'akku', tpl: 'announce', source: 'VFAS', interval: 30, unit: 'UNIT_VOLTS', decimals: 1, limit: 14.0, sound: '', haptic: true },
+  mix: { file: 'limit', tpl: 'limiter', inputs: [{ name: 'Gas', type: 'SOURCE', min: 0, max: 0, def: 0 }, { name: 'Limit', type: 'VALUE', min: 0, max: 100, def: 80 }], outputs: 'Gas', body: '' },
+  theme: { ...EDGETX_THEME },
+});
+let S = load();
+let selId = null, showGrid = true, previewMode = false;
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE);
+    if (raw) {
+      const s = JSON.parse(raw), d = DEFAULT();
+      const out = { ...d, ...s, func: { ...d.func, ...s.func }, mix: { ...d.mix, ...s.mix }, theme: { ...d.theme, ...s.theme } };
+      for (const doc of [out.widget, out.tool]) for (const e of doc.elements) uid = Math.max(uid, e.id + 1);
+      return out;
+    }
+  } catch (e) {}
+  return DEFAULT();
+}
+function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }
+
+const isDesign = () => S.type === 'widget' || S.type === 'tool';
+const doc = () => S.type === 'tool' ? S.tool : S.widget;
+const zoneW = () => S.type === 'tool' ? 480 : S.widget.zw;
+const zoneH = () => S.type === 'tool' ? 320 : S.widget.zh;
+const sel = () => isDesign() ? doc().elements.find(e => e.id === selId) : null;
+
+// ---------- Hilfen für Namen ----------
+const ident = s => { let t = String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss').replace(/[^A-Za-z0-9_]/g, ''); if (/^[0-9]/.test(t)) t = '_' + t; return t; };
+const luaStr = s => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n') + '"';
+const num = v => { const n = Number(v); return Number.isFinite(n) ? String(Math.round(n * 1000) / 1000) : '0'; };
+function colorExpr(c) {
+  if (THEME_KEYS.includes(c)) return 'COLOR_THEME_' + c;
+  const n = parseInt(String(c).slice(1), 16) || 0;
+  return `lcd.RGB(${n >> 16 & 255}, ${n >> 8 & 255}, ${n & 255})`;
+}
+const colorHex = c => THEME_KEYS.includes(c) ? S.theme[c] : c;
+
+// ---------- Typ-Wechsel ----------
+document.querySelectorAll('.types button').forEach(b => b.addEventListener('click', () => {
+  S.type = b.dataset.type; selId = null;
+  document.querySelectorAll('.types button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  buildAll(); changed();
+}));
+
+// ---------- Formular-Bausteine ----------
+function field(label, html, cls = '') { return `<label class="field ${cls}"><span>${label}</span>${html}</label>`; }
+function inp(id, val, type = 'text', extra = '') { return `<input type="${type}" id="${id}" value="${esc(val)}" ${extra}>`; }
+function selectBox(id, opts, val) { return `<select id="${id}">${opts.map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(val) ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`; }
+function check(id, label, on) { return `<label class="check"><input type="checkbox" id="${id}"${on ? ' checked' : ''}> ${label}</label>`; }
+function colorField(prefix, label, val) {
+  const custom = !THEME_KEYS.includes(val);
+  return `<div class="grid2">${field(label, selectBox(prefix + '_sel', [...THEME_KEYS.map(k => [k, k]), ['custom', 'Eigene Farbe']], custom ? 'custom' : val))}
+    ${field('Farbe', `<input type="color" id="${prefix}_hex" value="${colorHex(val)}">`)}</div>`;
+}
+function bindColor(prefix, get, set) {
+  const s = $(prefix + '_sel'), h = $(prefix + '_hex');
+  s.onchange = () => { if (s.value === 'custom') set(h.value.toUpperCase()); else { set(s.value); h.value = S.theme[s.value]; } changed(); };
+  h.oninput = () => { s.value = 'custom'; set(h.value.toUpperCase()); changed(); };
+}
+function bindVal(id, obj, key, kind = 'text', after) {
+  const el = $(id); if (!el) return;
+  const ev = el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input';
+  el.addEventListener(ev, () => {
+    obj[key] = el.type === 'checkbox' ? el.checked : kind === 'num' ? (el.value === '' ? 0 : Number(el.value)) : el.value;
+    if (after) after(); changed();
+  });
+}
+
+// ---------- Seitenleiste ----------
+const ICONS = {
+  text: '<path d="M5 6h14M12 6v13"/>', value: '<path d="M4 17l4-10 4 10M5.5 13h5M15 7h3a2 2 0 010 4h-3v6h4"/>',
+  bar: '<rect x="3" y="9" width="18" height="6" rx="1"/><path d="M4 12h9" stroke-width="4"/>', timer: '<circle cx="12" cy="13" r="7"/><path d="M12 13V9M10 3h4"/>',
+  rect: '<rect x="4" y="6" width="16" height="12" rx="1"/>', circle: '<circle cx="12" cy="12" r="7"/>',
+  image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-8 8"/>',
+};
+const KIND_LABEL = { text: 'Text', value: 'Wert', bar: 'Balken', timer: 'Timer', rect: 'Rechteck', circle: 'Kreis', image: 'Bild' };
+
+function buildSide() {
+  const side = $('side');
+  if (S.type === 'widget') {
+    const w = S.widget;
+    side.innerHTML = `<div class="panel"><h2>Widget</h2>
+      <div class="grid2">${field('Anzeigename', inp('wName', w.name, 'text', 'maxlength="10"'))}${field('Ordner', inp('wFolder', w.folder, 'text', 'maxlength="8"'))}</div>
+      ${field('Zonengröße auf der TX15', selectBox('wZone', ZONES, w.zone))}
+      <div class="grid2" id="wCustom"${w.zone === 'custom' ? '' : ' hidden'}>${field('Breite', inp('wZw', w.zw, 'number', 'min="20" max="480"'))}${field('Höhe', inp('wZh', w.zh, 'number', 'min="20" max="320"'))}</div>
+      ${check('wScale', 'An jede Zonengröße anpassen', w.scale)}
+      <p class="hint">Positionen werden im Code relativ zur Zone berechnet. Dasselbe Widget passt so in große und kleine Felder. Die Schriftgröße bleibt dabei fest.</p>
+      ${check('wBg', 'Hintergrund füllen', w.bg)}
+      <div id="wBgBox"${w.bg ? '' : ' hidden'}>${colorField('wBgC', 'Hintergrund', w.bgColor)}</div>
+    </div>` + paletteHTML() + propsShell();
+    bindVal('wName', w, 'name'); bindVal('wFolder', w, 'folder');
+    $('wZone').onchange = e => { w.zone = e.target.value; if (w.zone !== 'custom') { const [a, b] = w.zone.split('x').map(Number); w.zw = a; w.zh = b; } $('wCustom').hidden = w.zone !== 'custom'; $('wZw').value = w.zw; $('wZh').value = w.zh; changed(); };
+    bindVal('wZw', w, 'zw', 'num'); bindVal('wZh', w, 'zh', 'num');
+    bindVal('wScale', w, 'scale'); bindVal('wBg', w, 'bg', 'text', () => { $('wBgBox').hidden = !w.bg; });
+    bindColor('wBgC', () => w.bgColor, v => { w.bgColor = v; });
+    bindPalette(); buildProps();
+  } else if (S.type === 'tool') {
+    const t = S.tool;
+    side.innerHTML = `<div class="panel"><h2>Tool</h2>
+      <div class="grid2">${field('Name in der Liste', inp('tName', t.name, 'text', 'maxlength="20"'))}${field('Dateiname', inp('tFile', t.file, 'text', 'maxlength="12"'))}</div>
+      ${colorField('tBg', 'Seitenhintergrund', t.bgColor)}
+      <p class="hint">Das Tool füllt das ganze Display mit 480×320. Mit RTN kommt man zurück.</p>
+    </div>` + paletteHTML() + propsShell();
+    bindVal('tName', t, 'name'); bindVal('tFile', t, 'file');
+    bindColor('tBg', () => t.bgColor, v => { t.bgColor = v; });
+    bindPalette(); buildProps();
+  } else if (S.type === 'func') {
+    const f = S.func;
+    side.innerHTML = `<div class="panel"><h2>Funktions-Skript</h2>
+      ${field('Dateiname (max. 6 Zeichen)', inp('fFile', f.file, 'text', 'maxlength="6"'))}
+      ${field('Vorlage', selectBox('fTpl', [['announce', 'Wert regelmäßig ansagen'], ['alarm', 'Alarm unter Grenzwert'], ['empty', 'Leeres Gerüst']], f.tpl))}
+      <div id="fOpts">
+        ${field('Quelle', inp('fSrc', f.source, 'text', 'list="sources"'))}
+        <div class="grid2">${field('Intervall (s)', inp('fInt', f.interval, 'number', 'min="1" max="600"'))}${field('Nachkommastellen', selectBox('fDec', [[0, '0'], [1, '1'], [2, '2']], f.decimals))}</div>
+        ${field('Einheit der Ansage', selectBox('fUnit', UNITS, f.unit))}
+        <div id="fAlarm">
+          ${field('Grenzwert', inp('fLim', f.limit, 'number', 'step="0.1"'))}
+          ${field('Sounddatei (leer = Piepton)', inp('fSnd', f.sound, 'text', 'placeholder="/SOUNDS/de/lowbat.wav"'))}
+          ${check('fHap', 'Vibration', f.haptic)}
+        </div>
+      </div>
+    </div>`;
+    bindVal('fFile', f, 'file'); bindVal('fTpl', f, 'tpl', 'text', funcVis); bindVal('fSrc', f, 'source');
+    bindVal('fInt', f, 'interval', 'num'); bindVal('fDec', f, 'decimals', 'num'); bindVal('fUnit', f, 'unit');
+    bindVal('fLim', f, 'limit', 'num'); bindVal('fSnd', f, 'sound'); bindVal('fHap', f, 'haptic');
+    funcVis();
+  } else {
+    const m = S.mix;
+    side.innerHTML = `<div class="panel"><h2>Mischer-Skript</h2>
+      ${field('Dateiname (max. 6 Zeichen)', inp('mFile', m.file, 'text', 'maxlength="6"'))}
+      ${field('Vorlage laden', selectBox('mTpl', Object.entries(MIX_TPL).map(([k, v]) => [k, v.label]), m.tpl))}
+      <p class="hint">Eine Vorlage ersetzt Eingänge, Ausgänge und Logik.</p>
+    </div>
+    <div class="panel"><h2>Eingänge (max. 6)</h2>
+      <div class="inputs-table" id="mInputs"></div>
+      <button class="btn small" type="button" id="mAdd">Eingang hinzufügen</button>
+      <p class="hint" style="margin-top:8px">SOURCE wählt man am Sender (Knüppel, Schalter, Kanal). VALUE ist eine Zahl mit Min, Max und Standardwert. Werte laufen von −1024 bis 1024.</p>
+    </div>
+    <div class="panel"><h2>Ausgänge & Logik</h2>
+      ${field('Ausgänge, kommagetrennt (max. 6, je 4 Zeichen)', inp('mOut', m.outputs))}
+      ${field('Inhalt von run()', `<textarea id="mBody" rows="9" spellcheck="false">${esc(m.body)}</textarea>`)}
+      <p class="hint">Die Eingänge stehen als Variablen bereit. Die letzte Zeile gibt die Ausgänge mit <code>return</code> zurück.</p>
+    </div>`;
+    bindVal('mFile', m, 'file'); bindVal('mOut', m, 'outputs'); bindVal('mBody', m, 'body');
+    $('mTpl').onchange = e => { const t = MIX_TPL[e.target.value]; m.tpl = e.target.value; m.inputs = structuredClone(t.inputs); m.outputs = t.outputs; m.body = t.body; buildSide(); changed(); };
+    $('mAdd').onclick = () => { if (m.inputs.length >= 6) return toast('Mehr als 6 Eingänge erlaubt EdgeTX nicht.', 'err'); m.inputs.push({ name: 'In' + (m.inputs.length + 1), type: 'SOURCE', min: 0, max: 100, def: 0 }); buildInputs(); changed(); };
+    buildInputs();
+  }
+}
+function funcVis() { const t = S.func.tpl; $('fOpts').hidden = t === 'empty'; $('fAlarm').hidden = t !== 'alarm'; }
+function buildInputs() {
+  const m = S.mix, host = $('mInputs');
+  host.innerHTML = `<div class="irow head"><span>Name</span><span>Typ</span><span>Min</span><span>Max</span><span>Std.</span><span></span></div>` +
+    m.inputs.map((p, i) => `<div class="irow">
+      <input type="text" id="mi_n${i}" value="${esc(p.name)}" maxlength="8" aria-label="Name">
+      ${selectBox('mi_t' + i, [['SOURCE', 'SOURCE'], ['VALUE', 'VALUE']], p.type)}
+      <input type="number" id="mi_a${i}" value="${p.min}" ${p.type === 'SOURCE' ? 'disabled' : ''} aria-label="Min">
+      <input type="number" id="mi_b${i}" value="${p.max}" ${p.type === 'SOURCE' ? 'disabled' : ''} aria-label="Max">
+      <input type="number" id="mi_d${i}" value="${p.def}" ${p.type === 'SOURCE' ? 'disabled' : ''} aria-label="Standard">
+      <button class="btn small danger x" type="button" id="mi_x${i}" aria-label="Entfernen">✕</button></div>`).join('');
+  m.inputs.forEach((p, i) => {
+    bindVal('mi_n' + i, p, 'name'); bindVal('mi_a' + i, p, 'min', 'num'); bindVal('mi_b' + i, p, 'max', 'num'); bindVal('mi_d' + i, p, 'def', 'num');
+    $('mi_t' + i).onchange = e => { p.type = e.target.value; buildInputs(); changed(); };
+    $('mi_x' + i).onclick = () => { m.inputs.splice(i, 1); buildInputs(); changed(); };
+  });
+}
+
+function paletteHTML() {
+  return `<div class="panel"><h2>Elemente</h2><div class="palette">${Object.keys(KIND_LABEL).map(k =>
+    `<button type="button" data-add="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${KIND_LABEL[k]}</button>`).join('')}</div>
+    <div class="layers" id="layers"></div></div>`;
+}
+function bindPalette() { document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addElement(b.dataset.add)); }
+function propsShell() { return `<div class="panel" id="propsPanel"><h2 id="propsTitle">Eigenschaften</h2><div id="props"></div></div>`; }
+
+function addElement(kind) {
+  if (kind === 'image') return addImage();
+  const zw = zoneW(), zh = zoneH();
+  const base = { x: Math.round(zw * .1), y: Math.round(zh * .3), color: 'PRIMARY1' };
+  const txt = { font: '0', align: 'LEFT', bold: false, shadow: false };
+  const p = {
+    text: { ...txt, text: 'Text', w: Math.min(120, zw - base.x), h: 16 },
+    value: { ...txt, source: 'RxBt', asOption: false, optName: 'Quelle', decimals: 1, unit: ' V', w: Math.min(120, zw - base.x), h: 16, test: 7.9 },
+    bar: { source: 'RQly', asOption: false, optName: 'Quelle', min: 0, max: 100, warn: false, warnBelow: 30, w: Math.round(zw * .8), h: 12, color: 'ACTIVE', bgColor: 'SECONDARY2', test: 70 },
+    timer: { ...txt, timer: 0, w: 90, h: 16, test: 95 },
+    rect: { w: Math.round(zw * .4), h: Math.round(zh * .3), filled: true, thick: 1, color: 'SECONDARY2' },
+    circle: { w: Math.round(Math.min(zw, zh) * .3), h: Math.round(Math.min(zw, zh) * .3), filled: true, color: 'FOCUS' },
+  }[kind];
+  const e = mk(kind, { ...base, ...p });
+  if (e.h) e.h = kind === 'text' || kind === 'value' || kind === 'timer' ? fontPx(e.font) : e.h;
+  doc().elements.push(e); selId = e.id; buildProps(); changed();
+}
+
+function buildLayers() {
+  const host = $('layers'); if (!host) return;
+  host.innerHTML = doc().elements.slice().reverse().map(e => {
+    const label = e.kind === 'text' ? `„${e.text}“` : e.kind === 'value' || e.kind === 'bar' ? (e.asOption ? `Option ${e.optName}` : e.source) : e.kind === 'timer' ? `Timer ${e.timer + 1}` : e.kind === 'image' ? (files.has(e.file) ? files.get(e.file).path.split('/').pop() : 'Datei fehlt') : '';
+    return `<button type="button" data-l="${e.id}" class="${e.id === selId ? 'on' : ''}"><span>${KIND_LABEL[e.kind]} ${esc(label)}</span><span>${e.x},${e.y}</span></button>`;
+  }).join('') || '<p class="hint">Noch keine Elemente. Füge oben eins hinzu.</p>';
+  host.querySelectorAll('[data-l]').forEach(b => b.onclick = () => { selId = Number(b.dataset.l); buildProps(); changed(); });
+}
+
+function buildProps() {
+  const host = $('props'); if (!host) return;
+  const e = sel();
+  if (!e) { $('propsTitle').textContent = 'Eigenschaften'; host.innerHTML = '<p class="hint">Klicke ein Element in der Zeichenfläche an. Verschieben geht per Ziehen oder mit den Pfeiltasten, die Größe änderst du am Eck-Griff, Entf löscht.</p>'; return; }
+  $('propsTitle').textContent = KIND_LABEL[e.kind];
+  const isTxt = ['text', 'value', 'timer'].includes(e.kind);
+  let h = `<div class="grid4">${field('X', inp('p_x', e.x, 'number'))}${field('Y', inp('p_y', e.y, 'number'))}${field('Breite', inp('p_w', e.w, 'number', 'min="0"'))}${e.kind === 'circle' || e.kind === 'image' || isTxt ? '' : field('Höhe', inp('p_h', e.h, 'number', 'min="1"'))}</div>`;
+  if (e.kind === 'image') {
+    const imgs = [...files].filter(([, f]) => IMAGE_EXT.test(f.path)).map(([k, f]) => [k, fullPath(f)]);
+    if (!files.has(e.file)) imgs.unshift([e.file, 'Datei fehlt']);
+    h += field('Bild', selectBox('p_file', imgs, e.file));
+    h += `<div class="btn-row" style="margin-bottom:10px"><button class="btn small" type="button" id="p_orig">Originalgröße${e.iw ? ` (${e.iw}×${e.ih})` : ''}</button></div>`;
+    h += '<p class="hint">EdgeTX skaliert Bilder nur gleichmäßig – die Höhe folgt der Breite. Am schärfsten in Originalgröße.</p>';
+  }
+  if (e.kind === 'text') h += field('Text', inp('p_text', e.text, 'text', 'maxlength="40"'));
+  if (e.kind === 'value' || e.kind === 'bar') {
+    h += check('p_opt', 'Quelle am Sender wählbar (Widget-Option)', e.asOption);
+    h += `<div id="p_optBox"${e.asOption && S.type === 'widget' ? '' : ' hidden'}>${field('Name der Option', inp('p_optName', e.optName, 'text', 'maxlength="10"'))}</div>`;
+    h += `<div id="p_srcBox"${e.asOption && S.type === 'widget' ? ' hidden' : ''}>${field('Quelle', inp('p_src', e.source, 'text', 'list="sources"'))}</div>`;
+    if (S.type === 'tool' && e.asOption) h += '<p class="warnline">Optionen gibt es nur bei Widgets. Im Tool zählt die feste Quelle.</p>';
+  }
+  if (e.kind === 'value') h += `<div class="grid2">${field('Nachkommastellen', selectBox('p_dec', [[0, '0'], [1, '1'], [2, '2']], e.decimals))}${field('Einheit', inp('p_unit', e.unit, 'text', 'maxlength="8"'))}</div>`;
+  if (e.kind === 'bar') h += `<div class="grid2">${field('Minimum', inp('p_min', e.min, 'number', 'step="any"'))}${field('Maximum', inp('p_max', e.max, 'number', 'step="any"'))}</div>
+    ${check('p_warn', 'Unter einem Grenzwert in WARNING-Farbe', e.warn)}<div id="p_warnBox"${e.warn ? '' : ' hidden'}>${field('Grenzwert', inp('p_warnBelow', e.warnBelow, 'number', 'step="any"'))}</div>`;
+  if (e.kind === 'timer') h += field('Timer', selectBox('p_timer', [[0, 'Timer 1'], [1, 'Timer 2'], [2, 'Timer 3']], e.timer));
+  if (isTxt) h += `<div class="grid2">${field('Schrift', selectBox('p_font', FONTS.map(([v, l]) => [v, l]), e.font))}${field('Ausrichtung', selectBox('p_align', [['LEFT', 'Links'], ['CENTER', 'Mitte'], ['RIGHT', 'Rechts']], e.align))}</div>
+    <div class="grid2">${check('p_bold', 'Fett', e.bold)}${check('p_shadow', 'Schatten', e.shadow)}</div>`;
+  if (e.kind === 'rect' || e.kind === 'circle') h += check('p_filled', 'Gefüllt', e.filled);
+  if (e.kind === 'rect') h += `<div id="p_thickBox"${e.filled ? ' hidden' : ''}>${field('Linienstärke', inp('p_thick', e.thick, 'number', 'min="1" max="8"'))}</div>`;
+  if (e.kind !== 'image') h += colorField('p_col', e.kind === 'bar' ? 'Füllfarbe' : 'Farbe', e.color);
+  if (e.kind === 'bar') h += colorField('p_bgc', 'Hintergrund', e.bgColor);
+  if (e.kind === 'value' || e.kind === 'bar') h += field('Testwert für die Vorschau', inp('p_test', e.test, 'number', 'step="any"'));
+  if (e.kind === 'timer') h += field('Testwert in Sekunden', inp('p_test', e.test, 'number'));
+  h += `<div class="btn-row" style="margin-top:4px">
+    <button class="btn small" type="button" id="p_up">Nach vorn</button><button class="btn small" type="button" id="p_down">Nach hinten</button>
+    <button class="btn small" type="button" id="p_dup">Duplizieren</button><button class="btn small danger" type="button" id="p_del">Löschen</button></div>`;
+  host.innerHTML = h;
+
+  const fit = () => { if (isTxt) e.h = fontPx(e.font); };
+  bindVal('p_x', e, 'x', 'num'); bindVal('p_y', e, 'y', 'num'); bindVal('p_w', e, 'w', 'num', () => { if (e.kind === 'circle') e.h = e.w; else if (e.kind === 'image') e.h = imgH(e); }); bindVal('p_h', e, 'h', 'num');
+  bindVal('p_text', e, 'text'); bindVal('p_src', e, 'source'); bindVal('p_optName', e, 'optName');
+  bindVal('p_opt', e, 'asOption', 'text', () => { if (S.type === 'widget') { $('p_optBox').hidden = !e.asOption; $('p_srcBox').hidden = e.asOption; } });
+  bindVal('p_dec', e, 'decimals', 'num'); bindVal('p_unit', e, 'unit');
+  bindVal('p_min', e, 'min', 'num'); bindVal('p_max', e, 'max', 'num'); bindVal('p_warn', e, 'warn', 'text', () => { $('p_warnBox').hidden = !e.warn; }); bindVal('p_warnBelow', e, 'warnBelow', 'num');
+  bindVal('p_timer', e, 'timer', 'num'); bindVal('p_font', e, 'font', 'text', fit); bindVal('p_align', e, 'align');
+  bindVal('p_bold', e, 'bold'); bindVal('p_shadow', e, 'shadow');
+  bindVal('p_filled', e, 'filled', 'text', () => { const t = $('p_thickBox'); if (t) t.hidden = e.filled; }); bindVal('p_thick', e, 'thick', 'num');
+  bindVal('p_test', e, 'test', 'num');
+  if (e.kind !== 'image') bindColor('p_col', () => e.color, v => { e.color = v; });
+  if (e.kind === 'image') {
+    $('p_file').onchange = ev => { const f = files.get(ev.target.value); if (!f) return; e.file = ev.target.value; e.iw = f.iw; e.ih = f.ih; e.h = imgH(e); buildProps(); changed(); };
+    $('p_orig').onclick = () => { if (!e.iw) return; e.w = e.iw; e.h = e.ih; buildProps(); changed(); };
+  }
+  if (e.kind === 'bar') bindColor('p_bgc', () => e.bgColor, v => { e.bgColor = v; });
+  const els = doc().elements, idx = () => els.indexOf(e);
+  $('p_up').onclick = () => { const i = idx(); if (i < els.length - 1) { els.splice(i, 1); els.splice(i + 1, 0, e); changed(); } };
+  $('p_down').onclick = () => { const i = idx(); if (i > 0) { els.splice(i, 1); els.splice(i - 1, 0, e); changed(); } };
+  $('p_dup').onclick = () => { const c = { ...structuredClone(e), id: uid++ }; c.x += 6; c.y += 6; els.push(c); selId = c.id; buildProps(); changed(); };
+  $('p_del').onclick = deleteSel;
+}
+function syncPosFields() { const e = sel(); if (!e) return; for (const k of ['x', 'y', 'w', 'h']) { const f = $('p_' + k); if (f && document.activeElement !== f) f.value = e[k]; } }
+function deleteSel() { const els = doc().elements, i = els.findIndex(x => x.id === selId); if (i >= 0) { els.splice(i, 1); selId = null; buildProps(); changed(); } }
+
+// ---------- Mitte ----------
+function buildCenter() {
+  const c = $('center');
+  if (isDesign()) {
+    c.innerHTML = `<div class="radio">
+      <div class="brandline"><span>RadioMaster <em>TX15</em></span><span id="zoneLabel"></span></div>
+      <div class="stage" id="stage"><canvas id="design" aria-label="Zeichenfläche"></canvas></div>
+      <div class="stagebar">
+        <label><input type="checkbox" id="gridT"${showGrid ? ' checked' : ''}> Raster</label>
+        <label><input type="checkbox" id="prevT"${previewMode ? ' checked' : ''}> Ohne Rahmen</label>
+        <span class="sp"></span>
+        <button class="btn small" type="button" id="themeBtn">Eigene theme.yml laden</button>
+        <button class="btn small" type="button" id="resetBtn">Beispiel neu laden</button>
+      </div></div>
+      <div class="panel" style="margin-top:16px"><h2>Auf den Sender bringen</h2><div class="info">${S.type === 'widget' ? `<ol>
+        <li>ZIP ins Hauptverzeichnis der SD-Karte entpacken. Es entsteht <code>WIDGETS/${esc(widgetFolder())}/main.lua</code>.</li>
+        <li>Sender neu starten. Auf der Hauptansicht lange auf TELE drücken, dann <b>Hauptansichten einrichten</b>.</li>
+        <li>Ein Feld antippen und <b>${esc(S.widget.name || 'Widget')}</b> aus der Liste wählen.</li>
+        <li>Gibt es Widget-Optionen, stellst du die Quellen dort direkt am Sender ein.</li></ol>` : `<ol>
+        <li>ZIP entpacken. Es entsteht <code>SCRIPTS/TOOLS/${esc(toolFile())}.lua</code>.</li>
+        <li>Am Sender SYS drücken, dann die Seite <b>Tools</b> öffnen.</li>
+        <li><b>${esc(S.tool.name)}</b> starten. RTN beendet das Tool.</li></ol>`}</div></div>`;
+    $('gridT').onchange = e => { showGrid = e.target.checked; draw(); };
+    $('prevT').onchange = e => { previewMode = e.target.checked; draw(); };
+    $('themeBtn').onclick = () => $('themeFile').click();
+    $('resetBtn').onclick = () => { if (S.type === 'tool') S.tool = sampleTool(); else S.widget = sampleWidget(); selId = null; buildAll(); changed(); toast('Beispiel geladen.', 'ok'); };
+    bindCanvas();
+  } else if (S.type === 'func') {
+    c.innerHTML = `<div class="panel info"><h2>So läuft ein Funktions-Skript</h2>
+      <p>Ein Funktions-Skript startet über eine <b>Spezialfunktion</b>. Solange der zugeordnete Schalter aktiv ist, ruft EdgeTX <code>run()</code> etwa 20-mal pro Sekunde auf. Ist er aus, läuft <code>background()</code>.</p>
+      <h3>Einrichten</h3><ol>
+        <li>ZIP entpacken. Es entsteht <code>SCRIPTS/FUNCTIONS/${esc(funcFile())}.lua</code>.</li>
+        <li>MDL → <b>Spezialfunktionen</b> (oder SYS → Globale Funktionen) öffnen.</li>
+        <li>Einen Schalter wählen, z. B. <code>SF↓</code> oder <code>ON</code> für immer an.</li>
+        <li>Als Aktion <b>Lua-Skript</b> wählen, dann <b>${esc(funcFile())}</b>.</li></ol>
+      <h3>Was diese Vorlage tut</h3><p id="funcDesc"></p></div>`;
+  } else {
+    c.innerHTML = `<div class="panel info"><h2>So läuft ein Mischer-Skript</h2>
+      <p>Ein Mischer-Skript nimmt Eingänge (Knüppel, Schalter, feste Werte), rechnet und liefert bis zu sechs Ausgänge. Die Ausgänge tauchen danach als Quellen im Mischer auf. EdgeTX ruft <code>run()</code> in jedem Durchlauf auf, deshalb sollte es kurz und schnell bleiben.</p>
+      <h3>Einrichten</h3><ol>
+        <li>ZIP entpacken. Es entsteht <code>SCRIPTS/MIXES/${esc(mixFile())}.lua</code>.</li>
+        <li>Lua muss in der Firmware aktiv sein. Bei der TX15 ist es das normalerweise.</li>
+        <li>MDL → <b>Eigene Skripte</b>: einen freien Platz wählen, dann <b>${esc(mixFile())}</b>.</li>
+        <li>Eingänge dort zuordnen. Im Mischer eines Kanals als Quelle z. B. <code>LUA1 ${esc((S.mix.outputs.split(',')[0] || '').trim().slice(0, 4))}</code> wählen.</li></ol>
+      <h3>Wertebereich</h3><p>SOURCE-Eingänge liefern −1024 bis +1024, das entspricht −100 % bis +100 %. Ausgänge werden auf denselben Bereich begrenzt.</p></div>`;
+  }
+}
+
+// ---------- Zeichenfläche ----------
+let cv, g, dpr = 1, scale = 1;
+function bindCanvas() {
+  cv = $('design'); g = cv.getContext('2d');
+  let drag = null;
+  const pt = ev => { const r = cv.getBoundingClientRect(); return { x: (ev.clientX - r.left) / r.width * zoneW(), y: (ev.clientY - r.top) / r.height * zoneH() }; };
+  cv.addEventListener('pointerdown', ev => {
+    const p = pt(ev); const e = sel();
+    if (e && Math.abs(p.x - (e.x + boxW(e))) < 8 / scale + 3 && Math.abs(p.y - (e.y + e.h)) < 8 / scale + 3) {
+      drag = { mode: 'resize', e, sx: p.x, sy: p.y, w: e.w, h: e.h };
+    } else {
+      const hit = doc().elements.slice().reverse().find(x => p.x >= x.x - 2 && p.x <= x.x + boxW(x) + 2 && p.y >= x.y - 2 && p.y <= x.y + x.h + 2);
+      if (hit) { selId = hit.id; drag = { mode: 'move', e: hit, sx: p.x, sy: p.y, x: hit.x, y: hit.y }; }
+      else selId = null;
+      buildProps();
+    }
+    cv.setPointerCapture(ev.pointerId); changed();
+  });
+  cv.addEventListener('pointermove', ev => {
+    const p = pt(ev);
+    if (!drag) { const e = sel(); cv.style.cursor = e && Math.abs(p.x - (e.x + boxW(e))) < 8 / scale + 3 && Math.abs(p.y - (e.y + e.h)) < 8 / scale + 3 ? 'nwse-resize' : 'default'; return; }
+    const d = drag.e;
+    if (drag.mode === 'move') { d.x = Math.round(drag.x + p.x - drag.sx); d.y = Math.round(drag.y + p.y - drag.sy); }
+    else {
+      d.w = Math.max(4, Math.round(drag.w + p.x - drag.sx));
+      if (d.kind === 'circle') d.h = d.w;
+      else if (d.kind === 'image') d.h = imgH(d);
+      else if (!['text', 'value', 'timer'].includes(d.kind)) d.h = Math.max(2, Math.round(drag.h + p.y - drag.sy));
+    }
+    syncPosFields(); draw(); buildLayers();
+  });
+  const end = () => { if (drag) { drag = null; changed(); } };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  layoutCanvas();
+}
+const boxW = e => Math.max(e.w, 6);
+function layoutCanvas() {
+  if (!cv) return;
+  const stage = $('stage'); const avail = Math.max(200, stage.clientWidth - 28);
+  scale = Math.max(1, Math.min(4, avail / zoneW()));
+  if (zoneW() >= 400) scale = Math.min(scale, avail / zoneW());
+  dpr = window.devicePixelRatio || 1;
+  cv.style.width = Math.round(zoneW() * scale) + 'px'; cv.style.height = Math.round(zoneH() * scale) + 'px';
+  const pw = Math.round(zoneW() * scale * dpr), ph = Math.round(zoneH() * scale * dpr);
+  if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+  $('zoneLabel').textContent = S.type === 'tool' ? 'Tool · 480 × 320' : `Widget-Zone · ${zoneW()} × ${zoneH()}`;
+  draw();
+}
+window.addEventListener('resize', () => layoutCanvas());
+
+const FONTFACE = 'Roboto, "Segoe UI", Arial, sans-serif';
+function fmtVal(e) { const v = Number(e.test) || 0; return v.toFixed(e.decimals) + (e.unit || ''); }
+function fmtTimer(s) { s = Number(s) || 0; const a = Math.abs(Math.round(s)); return (s < 0 ? '-' : '') + String(Math.floor(a / 60)).padStart(2, '0') + ':' + String(a % 60).padStart(2, '0'); }
+function drawText(e, str) {
+  const px = fontPx(e.font);
+  g.font = `${e.bold ? 700 : 400} ${px}px ${FONTFACE}`; g.textBaseline = 'top';
+  g.textAlign = e.align === 'RIGHT' ? 'right' : e.align === 'CENTER' ? 'center' : 'left';
+  const ax = e.align === 'RIGHT' ? e.x + e.w : e.align === 'CENTER' ? e.x + e.w / 2 : e.x;
+  if (e.shadow) { g.fillStyle = 'rgba(0,0,0,.6)'; g.fillText(str, ax + 1, e.y + 1 - px * .08); }
+  g.fillStyle = colorHex(e.color); g.fillText(str, ax, e.y - px * .08);
+}
+function draw() {
+  if (!cv || !isDesign()) return;
+  const W = zoneW(), H = zoneH(), D = doc();
+  g.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  // Untergrund: was hinter dem Widget liegt
+  g.fillStyle = S.type === 'tool' ? colorHex(D.bgColor) : S.theme.SECONDARY3; g.fillRect(0, 0, W, H);
+  if (S.type === 'widget' && D.bg) { g.fillStyle = colorHex(D.bgColor); g.fillRect(0, 0, W, H); }
+  if (showGrid && !previewMode) {
+    g.strokeStyle = 'rgba(128,128,128,.18)'; g.lineWidth = 1 / scale;
+    const step = W > 300 ? 20 : 10;
+    for (let x = step; x < W; x += step) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+    for (let y = step; y < H; y += step) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  }
+  for (const e of D.elements) {
+    g.save();
+    if (e.kind === 'text') drawText(e, e.text);
+    else if (e.kind === 'value') drawText(e, fmtVal(e));
+    else if (e.kind === 'timer') drawText(e, fmtTimer(e.test));
+    else if (e.kind === 'rect') {
+      if (e.filled) { g.fillStyle = colorHex(e.color); g.fillRect(e.x, e.y, e.w, e.h); }
+      else { const t = Math.max(1, e.thick); g.strokeStyle = colorHex(e.color); g.lineWidth = t; g.strokeRect(e.x + t / 2, e.y + t / 2, e.w - t, e.h - t); }
+    } else if (e.kind === 'circle') {
+      const r = e.w / 2; g.beginPath(); g.arc(e.x + r, e.y + r, r, 0, Math.PI * 2);
+      if (e.filled) { g.fillStyle = colorHex(e.color); g.fill(); } else { g.strokeStyle = colorHex(e.color); g.lineWidth = 1; g.stroke(); }
+    } else if (e.kind === 'bar') {
+      const v = Number(e.test) || 0, span = (e.max - e.min) || 1, f = Math.max(0, Math.min(1, (v - e.min) / span));
+      g.fillStyle = colorHex(e.bgColor); g.fillRect(e.x, e.y, e.w, e.h);
+      g.fillStyle = e.warn && v < e.warnBelow ? S.theme.WARNING : colorHex(e.color); g.fillRect(e.x, e.y, Math.floor(e.w * f), e.h);
+    } else if (e.kind === 'image') {
+      const b = imgCache.get(e.file);
+      if (b) g.drawImage(b, e.x, e.y, e.w, e.h);
+      else {
+        g.strokeStyle = S.theme.WARNING; g.lineWidth = 1; g.setLineDash([3, 3]); g.strokeRect(e.x + .5, e.y + .5, e.w - 1, e.h - 1); g.setLineDash([]);
+        g.fillStyle = S.theme.WARNING; g.font = `11px ${FONTFACE}`; g.textBaseline = 'top'; g.textAlign = 'left'; g.fillText(files.has(e.file) ? 'Lade Bild …' : 'Bild fehlt', e.x + 4, e.y + 4);
+        if (files.has(e.file) && !imgCache.has(e.file)) ensureImage(e.file).then(() => draw());
+      }
+    }
+    g.restore();
+  }
+  if (!previewMode) {
+    const e = sel();
+    if (e) {
+      g.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--sel').trim() || '#ff7a1a';
+      g.lineWidth = 1.5 / scale; g.setLineDash([4 / scale, 3 / scale]);
+      g.strokeRect(e.x - 1, e.y - 1, boxW(e) + 2, e.h + 2); g.setLineDash([]);
+      const hs = 7 / scale; g.fillStyle = g.strokeStyle; g.fillRect(e.x + boxW(e) - hs / 2, e.y + e.h - hs / 2, hs, hs);
+    }
+    // Elemente außerhalb der Zone markieren
+    g.strokeStyle = 'rgba(255,0,0,.9)'; g.lineWidth = 2 / scale;
+    for (const x of D.elements) if (x.x < 0 || x.y < 0 || x.x + boxW(x) > W + .5 || x.y + x.h > H + .5) g.strokeRect(x.x, x.y, boxW(x), x.h);
+  }
+}
+
+document.addEventListener('keydown', ev => {
+  if (!isDesign() || !sel()) return;
+  const t = ev.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  const e = sel(), st = ev.shiftKey ? 10 : 1;
+  const mv = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[ev.key];
+  if (mv) { ev.preventDefault(); e.x += mv[0]; e.y += mv[1]; syncPosFields(); changed(); }
+  else if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); deleteSel(); }
+  else if (ev.key === 'Escape') { selId = null; buildProps(); changed(); }
+});
+
+// ---------- Theme laden ----------
+$('themeFile').onchange = async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  const txt = await f.text(); let n = 0;
+  for (const line of txt.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*:\s*(?:0x|#)([0-9a-fA-F]{6})\b/);
+    if (m && THEME_KEYS.includes(m[1])) { S.theme[m[1]] = '#' + m[2].toUpperCase(); n++; }
+  }
+  toast(n ? `${n} Theme-Farben übernommen. Die Vorschau zeigt jetzt dein Theme.` : 'Keine EdgeTX-Farben in der Datei gefunden.', n ? 'ok' : 'err');
+  ev.target.value = ''; buildProps(); changed();
+};
+
+// ---------- Codegenerator ----------
+const widgetFolder = () => (ident(S.widget.folder) || 'WIDGET').slice(0, 8);
+const toolFile = () => (ident(S.tool.file) || 'Tool').slice(0, 12);
+const funcFile = () => (ident(S.func.file) || 'func').slice(0, 6);
+const mixFile = () => (ident(S.mix.file) || 'mix').slice(0, 6);
+
+function flags(e, extra = []) {
+  const f = [];
+  if (e.font && e.font !== '0') f.push(e.font);
+  if (e.align && e.align !== 'LEFT') f.push(e.align);
+  if (e.bold) f.push('BOLD');
+  if (e.shadow) f.push('SHADOWED');
+  f.push(colorExpr(e.color), ...extra);
+  return f.join(' + ');
+}
+function optionList(els) {
+  const seen = new Map();
+  for (const e of els) if ((e.kind === 'value' || e.kind === 'bar') && e.asOption) {
+    const n = (ident(e.optName) || 'Quelle').slice(0, 10);
+    e._opt = n; if (!seen.has(n)) seen.set(n, e);
+  }
+  return [...seen.keys()];
+}
+function srcExpr(e, isWidget) { return isWidget && e.asOption ? `widget.options.${e._opt}` : luaStr(e.source || 'RxBt'); }
+
+function elementCode(els, isWidget, ind) {
+  const L = []; const p = s => L.push(ind + s);
+  const ax = e => e.align === 'RIGHT' ? `X(${num(e.x + e.w)})` : e.align === 'CENTER' ? `X(${num(e.x + e.w / 2)})` : `X(${num(e.x)})`;
+  els.forEach((e, i) => {
+    p(`-- ${i + 1}. ${KIND_LABEL[e.kind]}`);
+    if (e.kind === 'text') p(`lcd.drawText(${ax(e)}, Y(${num(e.y)}), ${luaStr(e.text)}, ${flags(e)})`);
+    else if (e.kind === 'value') {
+      p('do');
+      p(`  local v = getValue(${srcExpr(e, isWidget)})`);
+      p(`  local s = "---"`);
+      p(`  if type(v) == "number" then s = string.format("%.${e.decimals}f", v) .. ${luaStr(e.unit || '')} end`);
+      p(`  lcd.drawText(${ax(e)}, Y(${num(e.y)}), s, ${flags(e)})`);
+      p('end');
+    } else if (e.kind === 'timer') {
+      p('do');
+      p(`  local t = model.getTimer(${e.timer})`);
+      p(`  local s = math.abs(t.value)`);
+      p(`  local txt = string.format("%s%02d:%02d", t.value < 0 and "-" or "", math.floor(s / 60), s % 60)`);
+      p(`  lcd.drawText(${ax(e)}, Y(${num(e.y)}), txt, ${flags(e)})`);
+      p('end');
+    } else if (e.kind === 'bar') {
+      p('do');
+      p(`  local v = getValue(${srcExpr(e, isWidget)})`);
+      p(`  if type(v) ~= "number" then v = ${num(e.min)} end`);
+      p(`  local f = (v - ${num(e.min)}) / ${num((e.max - e.min) || 1)}`);
+      p(`  if f < 0 then f = 0 elseif f > 1 then f = 1 end`);
+      p(`  local x, y, w, h = X(${num(e.x)}), Y(${num(e.y)}), SW(${num(e.w)}), SH(${num(e.h)})`);
+      p(`  lcd.drawFilledRectangle(x, y, w, h, ${colorExpr(e.bgColor)})`);
+      if (e.warn) { p(`  local c = ${colorExpr(e.color)}`); p(`  if v < ${num(e.warnBelow)} then c = COLOR_THEME_WARNING end`); }
+      p(`  if f > 0 then lcd.drawFilledRectangle(x, y, math.floor(w * f), h, ${e.warn ? 'c' : colorExpr(e.color)}) end`);
+      p('end');
+    } else if (e.kind === 'rect') {
+      if (e.filled) p(`lcd.drawFilledRectangle(X(${num(e.x)}), Y(${num(e.y)}), SW(${num(e.w)}), SH(${num(e.h)}), ${colorExpr(e.color)})`);
+      else p(`lcd.drawRectangle(X(${num(e.x)}), Y(${num(e.y)}), SW(${num(e.w)}), SH(${num(e.h)}), ${colorExpr(e.color)}, ${Math.max(1, e.thick | 0)})`);
+    } else if (e.kind === 'circle') {
+      const r = e.w / 2;
+      p(`lcd.${e.filled ? 'drawFilledCircle' : 'drawCircle'}(X(${num(e.x + r)}), Y(${num(e.y + r)}), SR(${num(r)}), ${colorExpr(e.color)})`);
+    } else if (e.kind === 'image') {
+      const f = files.get(e.file);
+      if (!f) p('-- Bilddatei fehlt: im Bereich „Dateien“ hochladen');
+      else {
+        const pct = Math.max(1, Math.round(e.w / (e.iw || e.w || 1) * 100));
+        p(`do  -- ${fullPath(f).split('/').pop()}, ${pct} %`);
+        p(`  local b = bmp(${luaStr('/' + fullPath(f))})`);
+        p(`  if b then lcd.drawBitmap(b, X(${num(e.x)}), Y(${num(e.y)}), SP(${pct})) end`);
+        p('end');
+      }
+    }
+  });
+  return L.join('\n');
+}
+
+function genWidget() {
+  const w = S.widget, els = w.elements, opts = optionList(els);
+  const head = `-- ${w.name || 'Widget'} – EdgeTX-Widget für RadioMaster TX15\n-- Erstellt mit TX15 Lua Studio\n-- Datei: /WIDGETS/${widgetFolder()}/main.lua\n`;
+  let o = head + `\nlocal name = ${luaStr((w.name || 'Widget').slice(0, 10))}\n\n`;
+  o += 'local options = {\n';
+  for (const n of opts) o += `  { ${luaStr(n)}, SOURCE, 1 },\n`;
+  o += '}\n\n';
+  o += `local DW, DH = ${w.zw}, ${w.zh}  -- Größe, für die das Layout entworfen wurde\n\n`;
+  if (usesImages(els)) o += '-- Bilder nur einmal laden und danach wiederverwenden\nlocal bitmaps = {}\nlocal function bmp(path)\n  if bitmaps[path] == nil then\n    bitmaps[path] = Bitmap.open(path) or false\n  end\n  return bitmaps[path] or nil\nend\n\n';
+  o += 'local function create(zone, options)\n  return { zone = zone, options = options }\nend\n\n';
+  o += 'local function update(widget, options)\n  widget.options = options\nend\n\n';
+  o += 'local function background(widget)\nend\n\n';
+  o += 'local function refresh(widget, event, touchState)\n';
+  o += '  local z = widget.zone\n';
+  if (w.scale) {
+    o += '  local sx, sy = z.w / DW, z.h / DH\n';
+    o += '  local function X(v) return z.x + math.floor(v * sx + 0.5) end\n';
+    o += '  local function Y(v) return z.y + math.floor(v * sy + 0.5) end\n';
+    o += '  local function SW(v) return math.max(1, math.floor(v * sx + 0.5)) end\n';
+    o += '  local function SH(v) return math.max(1, math.floor(v * sy + 0.5)) end\n';
+    o += '  local function SR(v) return math.max(1, math.floor(v * math.min(sx, sy) + 0.5)) end\n';
+    if (usesImages(els)) o += '  local function SP(v) return math.max(1, math.floor(v * math.min(sx, sy) + 0.5)) end\n';
+    o += '\n';
+  } else {
+    o += '  local function X(v) return z.x + v end\n  local function Y(v) return z.y + v end\n';
+    o += '  local function SW(v) return v end\n  local function SH(v) return v end\n  local function SR(v) return v end\n';
+    if (usesImages(els)) o += '  local function SP(v) return v end\n';
+    o += '\n';
+  }
+  if (w.bg) o += `  lcd.drawFilledRectangle(z.x, z.y, z.w, z.h, ${colorExpr(w.bgColor)})\n\n`;
+  o += elementCode(els, true, '  ') + '\nend\n\n';
+  o += 'return {\n  name = name,\n  options = options,\n  create = create,\n  update = update,\n  background = background,\n  refresh = refresh,\n}\n';
+  return o;
+}
+function genTool() {
+  const t = S.tool;
+  let o = `local toolName = "TNS|${String(t.name || 'Tool').replace(/[|"\\]/g, '')}|TNE"\n`;
+  o += `-- ${t.name} – EdgeTX-Tool für RadioMaster TX15\n-- Erstellt mit TX15 Lua Studio\n-- Datei: /SCRIPTS/TOOLS/${toolFile()}.lua\n\n`;
+  o += 'local function X(v) return v end\nlocal function Y(v) return v end\n';
+  o += 'local function SW(v) return v end\nlocal function SH(v) return v end\nlocal function SR(v) return v end\n';
+  if (usesImages(t.elements)) o += 'local function SP(v) return v end\n\n' + '-- Bilder nur einmal laden und danach wiederverwenden\nlocal bitmaps = {}\nlocal function bmp(path)\n  if bitmaps[path] == nil then\n    bitmaps[path] = Bitmap.open(path) or false\n  end\n  return bitmaps[path] or nil\nend\n\n';
+  else o += '\n';
+  o += 'local function init()\nend\n\n';
+  o += 'local function run(event, touchState)\n';
+  o += '  if event == EVT_VIRTUAL_EXIT then\n    return 1  -- Tool beenden\n  end\n\n';
+  o += `  lcd.clear(${colorExpr(t.bgColor)})\n\n`;
+  o += elementCode(t.elements, false, '  ') + '\n\n  return 0\nend\n\n';
+  o += 'return { init = init, run = run }\n';
+  return o;
+}
+function genFunc() {
+  const f = S.func, head = `-- ${funcFile()}.lua – EdgeTX-Funktions-Skript\n-- Erstellt mit TX15 Lua Studio\n-- Datei: /SCRIPTS/FUNCTIONS/${funcFile()}.lua\n-- Start über MDL → Spezialfunktionen → Lua-Skript\n\n`;
+  const mult = Math.pow(10, f.decimals), prec = ['0', 'PREC1', 'PREC2'][f.decimals];
+  if (f.tpl === 'empty') return head + 'local function init()\n  -- einmal beim Laden\nend\n\nlocal function run()\n  -- solange der Schalter aktiv ist\nend\n\nlocal function background()\n  -- solange der Schalter aus ist\nend\n\nreturn { init = init, run = run, background = background }\n';
+  let o = head + `local SOURCE   = ${luaStr(f.source)}\nlocal INTERVAL = ${Math.max(1, f.interval | 0)}  -- Sekunden\n`;
+  if (f.tpl === 'alarm') o += `local LIMIT    = ${num(f.limit)}\n`;
+  o += '\nlocal last = 0\n\nlocal function init()\n  last = 0\nend\n\n';
+  o += 'local function run()\n  local now = getTime()  -- Einheit: 10 ms\n  if now - last < INTERVAL * 100 then return end\n\n';
+  o += '  local v = getValue(SOURCE)\n  if type(v) ~= "number" then return end\n';
+  if (f.tpl === 'announce') {
+    o += '  last = now\n';
+    o += `  playNumber(math.floor(v * ${mult} + 0.5), ${f.unit}, ${prec})\n`;
+  } else {
+    o += '  if v ~= 0 and v < LIMIT then\n    last = now\n';
+    o += f.sound ? `    playFile(${luaStr(f.sound)})\n` : '    playTone(1800, 300, 100)\n';
+    o += `    playNumber(math.floor(v * ${mult} + 0.5), ${f.unit}, ${prec})\n`;
+    if (f.haptic) o += '    playHaptic(40, 20)\n';
+    o += '  end\n';
+  }
+  o += 'end\n\nreturn { init = init, run = run }\n';
+  return o;
+}
+const MIX_TPL = {
+  limiter: { label: 'Gas-Begrenzer', inputs: [{ name: 'Gas', type: 'SOURCE', min: 0, max: 0, def: 0 }, { name: 'Limit', type: 'VALUE', min: 0, max: 100, def: 80 }], outputs: 'Gas',
+    body: '-- Gas auf Limit % begrenzen\nlocal max = -1024 + 2048 * limit / 100\nif gas > max then gas = max end\nreturn gas' },
+  average: { label: 'Mittelwert zweier Quellen', inputs: [{ name: 'A', type: 'SOURCE', min: 0, max: 0, def: 0 }, { name: 'B', type: 'SOURCE', min: 0, max: 0, def: 0 }], outputs: 'Mitt',
+    body: 'return (a + b) / 2' },
+  expo: { label: 'Eigene Expo-Kurve', inputs: [{ name: 'Ein', type: 'SOURCE', min: 0, max: 0, def: 0 }, { name: 'Expo', type: 'VALUE', min: 0, max: 100, def: 40 }], outputs: 'Aus',
+    body: '-- k = 0 linear, k = 1 volle Expo\nlocal x = ein / 1024\nlocal k = expo / 100\nlocal y = (1 - k) * x + k * x * x * x\nreturn y * 1024' },
+  delay: { label: 'Langsamer Übergang (Servo-Bremse)', inputs: [{ name: 'Ein', type: 'SOURCE', min: 0, max: 0, def: 0 }, { name: 'Tempo', type: 'VALUE', min: 1, max: 100, def: 10 }], outputs: 'Aus',
+    body: '-- nähert sich dem Eingang pro Durchlauf um "tempo" Schritte\nlocal step = tempo * 2\nif ein > pos + step then pos = pos + step\nelseif ein < pos - step then pos = pos - step\nelse pos = ein end\nreturn pos', state: true },
+  empty: { label: 'Leer', inputs: [{ name: 'Ein', type: 'SOURCE', min: 0, max: 0, def: 0 }], outputs: 'Aus', body: 'return ein' },
+};
+function genMix() {
+  const m = S.mix;
+  const ins = m.inputs.slice(0, 6).map(p => ({ ...p, n: (p.name || 'In').slice(0, 8), v: ident(p.name).toLowerCase() || 'x' }));
+  const outs = m.outputs.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6).map(s => s.slice(0, 4));
+  let o = `-- ${mixFile()}.lua – EdgeTX-Mischer-Skript\n-- Erstellt mit TX15 Lua Studio\n-- Datei: /SCRIPTS/MIXES/${mixFile()}.lua\n-- Einbinden über MDL → Eigene Skripte\n\n`;
+  o += 'local input = {\n' + ins.map(p => p.type === 'SOURCE' ? `  { ${luaStr(p.n)}, SOURCE },\n` : `  { ${luaStr(p.n)}, VALUE, ${p.min | 0}, ${p.max | 0}, ${p.def | 0} },\n`).join('') + '}\n\n';
+  o += 'local output = { ' + outs.map(luaStr).join(', ') + ' }\n\n';
+  if (/\bpos\b/.test(m.body)) o += 'local pos = 0  -- Zustand zwischen den Durchläufen\n\n';
+  o += 'local function init()\nend\n\n';
+  o += `local function run(${ins.map(p => p.v).join(', ')})\n`;
+  o += m.body.split('\n').map(l => '  ' + l).join('\n') + '\nend\n\n';
+  o += 'return { input = input, output = output, init = init, run = run }\n';
+  return o;
+}
+function generate() { return { widget: genWidget, tool: genTool, func: genFunc, mix: genMix }[S.type](); }
+function filePath() { return { widget: `WIDGETS/${widgetFolder()}/main.lua`, tool: `SCRIPTS/TOOLS/${toolFile()}.lua`, func: `SCRIPTS/FUNCTIONS/${funcFile()}.lua`, mix: `SCRIPTS/MIXES/${mixFile()}.lua` }[S.type]; }
+
+// Einfache Lua-Syntaxfärbung
+const KW = new Set('and break do else elseif end false for function goto if in local nil not or repeat return then true until while'.split(' '));
+function highlight(src) {
+  let out = '', i = 0;
+  while (i < src.length) {
+    const r = src.slice(i);
+    let m;
+    if ((m = r.match(/^--[^\n]*/))) { out += `<span class="c">${esc(m[0])}</span>`; }
+    else if ((m = r.match(/^"(?:\\.|[^"\\\n])*"/))) { out += `<span class="s">${esc(m[0])}</span>`; }
+    else if ((m = r.match(/^\d+(?:\.\d+)?/))) { out += `<span class="n">${m[0]}</span>`; }
+    else if ((m = r.match(/^[A-Za-z_][A-Za-z0-9_]*/))) { out += KW.has(m[0]) ? `<span class="k">${m[0]}</span>` : esc(m[0]); }
+    else { m = [r[0]]; out += esc(r[0]); }
+    i += m[0].length;
+  }
+  return out;
+}
+
+function warnings() {
+  const w = [];
+  if (S.type === 'widget') {
+    const opts = optionList(S.widget.elements);
+    if (opts.length > 5) w.push(`${opts.length} Widget-Optionen. Ältere EdgeTX-Versionen zeigen nur 5 an.`);
+    if (!S.widget.name.trim()) w.push('Das Widget braucht einen Anzeigenamen.');
+  }
+  if (isDesign()) {
+    const W = zoneW(), H = zoneH();
+    const out = doc().elements.filter(x => x.x < 0 || x.y < 0 || x.x + boxW(x) > W + .5 || x.y + x.h > H + .5).length;
+    if (out) w.push(`${out} Element(e) ragen über die Zone hinaus (rot markiert).`);
+    const missing = doc().elements.filter(x => x.kind === 'image' && !files.has(x.file)).length;
+    if (missing) w.push(`${missing} Bild-Element(e) ohne Datei. Lade das Bild unter „Dateien“ (wieder) hoch.`);
+  }
+  if (S.type === 'mix') {
+    const outs = S.mix.outputs.split(',').map(s => s.trim()).filter(Boolean);
+    if (!outs.length) w.push('Mindestens ein Ausgang ist nötig.');
+    if (!/\breturn\b/.test(S.mix.body)) w.push('run() gibt nichts zurück. Füge eine return-Zeile hinzu.');
+  }
+  return w;
+}
+
+// ---------- Ausgabe ----------
+function changed() {
+  save();
+  const code = generate(), path = filePath();
+  $('code').innerHTML = highlight(code);
+  $('tree').textContent = textTree([path, ...[...files.values()].map(fullPath)]);
+  const lines = code.split('\n').length, bytes = new TextEncoder().encode(code).length;
+  const warn = warnings();
+  $('stats').innerHTML = `<span><b>${lines}</b> Zeilen</span><span><b>${(bytes / 1024).toFixed(1)}</b> KB</span>` +
+    (isDesign() ? `<span><b>${doc().elements.length}</b> Elemente</span>` : '') +
+    (files.size ? `<span><b>${files.size}</b> Dateien · ${fmtSize(filesTotal())}</span>` : '') +
+    warn.map(x => `<span style="color:var(--bad);flex-basis:100%">${esc(x)}</span>`).join('');
+  if (isDesign()) { layoutCanvas(); buildLayers(); } else buildCenter();
+  renderFiles();
+  if (S.type === 'func' && $('funcDesc')) {
+    const f = S.func;
+    $('funcDesc').textContent = f.tpl === 'announce' ? `Liest „${f.source}“ und sagt den Wert alle ${f.interval} s an, solange der Schalter aktiv ist.`
+      : f.tpl === 'alarm' ? `Fällt „${f.source}“ unter ${f.limit}, gibt es ${f.sound ? 'die Sounddatei' : 'einen Piepton'}${f.haptic ? ' mit Vibration' : ''} und eine Wertansage, höchstens alle ${f.interval} s. Ein Wert von 0 gilt als „kein Signal“ und löst keinen Alarm aus.`
+      : 'Leeres Gerüst mit init(), run() und background() zum Selbstschreiben.';
+  }
+}
+
+// ---------- Dateien (Bilder, Sounds, weitere Lua-Dateien) ----------
+// Liegen getrennt vom Studio-Stand in IndexedDB – localStorage wäre für Bilder zu klein.
+// scope 'project': relativ zum Ordner des Skripts (wandert beim Umbenennen mit); 'sd': ab der SD-Wurzel.
+const FILE_MAX = 2 * 1024 * 1024, FILES_MAX = 8 * 1024 * 1024;
+const IMAGE_EXT = /\.(png|bmp|jpe?g)$/i;
+let files = new Map();          // key -> { scope, path, type, blob, size, iw, ih }
+const imgCache = new Map();     // key -> ImageBitmap (Vorschau)
+const thumbUrls = new Map();    // key -> Objekt-URL fürs Vorschaubild
+const fileKey = (scope, path) => scope + ':' + path;
+const projectDir = () => ({ widget: `WIDGETS/${widgetFolder()}/`, tool: `SCRIPTS/TOOLS/${toolFile()}/`, func: 'SCRIPTS/FUNCTIONS/', mix: 'SCRIPTS/MIXES/' }[S.type]);
+const fullPath = f => (f.scope === 'project' ? projectDir() : '') + f.path;
+const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(2) + ' MB';
+const imgH = e => e.iw ? Math.max(1, Math.round(e.w * e.ih / e.iw)) : e.h;
+const usesImages = els => els.some(e => e.kind === 'image' && files.has(e.file));
+function cleanPath(p) {
+  return String(p).replace(/\\/g, '/').split('/')
+    .map(s => s.trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9._-]/g, ''))
+    .filter(s => s && s !== '.' && s !== '..').join('/');
+}
+function filesTotal() { let t = 0; for (const f of files.values()) t += f.size; return t; }
+function exToast(m, k) { const t = $('exToast'); t.textContent = m; t.className = 'toast ' + (k || ''); }
+function clearThumbs() { for (const u of thumbUrls.values()) URL.revokeObjectURL(u); thumbUrls.clear(); }
+function dropThumb(key) { if (thumbUrls.has(key)) { URL.revokeObjectURL(thumbUrls.get(key)); thumbUrls.delete(key); } }
+function textTree(paths) {
+  const root = {};
+  for (const p of [...new Set(paths)].sort()) { let n = root; for (const part of p.split('/')) n = n[part] = n[part] || {}; }
+  const out = [];
+  const walk = (n, prefix, depth) => { const keys = Object.keys(n); keys.forEach((k, i) => { const last = i === keys.length - 1, dir = Object.keys(n[k]).length > 0;
+    out.push((depth ? prefix + (last ? '└─ ' : '├─ ') : '') + k + (dir ? '/' : '')); if (dir) walk(n[k], depth ? prefix + (last ? '   ' : '│  ') : '', depth + 1); }); };
+  walk(root, '', 0);
+  return out.join('\n');
+}
+function blobToB64(blob) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+}
+
+// IndexedDB
+let fdbp = null;
+function fdb() {
+  if (!fdbp) fdbp = new Promise((res, rej) => {
+    try { const r = indexedDB.open('tx15-lua-studio-files', 1); r.onupgradeneeded = () => r.result.createObjectStore('files', { keyPath: 'key' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }
+    catch (e) { rej(e); }
+  });
+  return fdbp;
+}
+async function persistFiles() {
+  try {
+    const d = await fdb();
+    await new Promise((res, rej) => {
+      const t = d.transaction('files', 'readwrite'), st = t.objectStore('files');
+      st.clear();
+      for (const [key, f] of files) st.put({ key, scope: f.scope, path: f.path, type: f.type, blob: f.blob, iw: f.iw || 0, ih: f.ih || 0 });
+      t.oncomplete = res; t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('Speicher voll?'));
+    });
+  } catch (e) { exToast('Dateien konnten im Browser nicht gesichert werden: ' + (e.message || e), 'err'); }
+}
+// Zähler gegen Wettläufe: Öffnet konto.js währenddessen ein Projekt aus dem Konto,
+// darf das (langsamere) Laden des lokalen Stands dessen Dateien nicht überschreiben.
+let filesGen = 0;
+async function loadFiles() {
+  const gen = filesGen;
+  try {
+    const d = await fdb();
+    const all = await new Promise((res, rej) => { const r = d.transaction('files').objectStore('files').getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    if (gen !== filesGen) return;
+    files = new Map(all.map(f => [f.key, { scope: f.scope, path: f.path, type: f.type, blob: f.blob, size: f.blob.size, iw: f.iw || 0, ih: f.ih || 0 }]));
+  } catch (e) {}
+}
+async function ensureImage(key) {
+  if (imgCache.has(key)) return imgCache.get(key);
+  const f = files.get(key); if (!f || !IMAGE_EXT.test(f.path)) return null;
+  try { const b = await createImageBitmap(f.blob); imgCache.set(key, b); return b; }
+  catch (e) { imgCache.set(key, null); return null; }
+}
+
+// Hochladen
+function buildTargetOptions() {
+  const sel = $('exTarget'), cur = sel.value || 'project';
+  sel.innerHTML = [['project', `Projektordner (${projectDir()})`], ['IMAGES/', 'Bilder (IMAGES/)'], ['SOUNDS/de/', 'Sounds (SOUNDS/de/)'], ['custom', 'Eigener Ordner …']]
+    .map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  $('exCustomBox').hidden = sel.value !== 'custom';
+}
+function targetDir() {
+  const v = $('exTarget').value;
+  if (v === 'project') return { scope: 'project', prefix: '' };
+  if (v === 'custom') {
+    const dir = cleanPath($('exCustom').value);
+    if (!dir) { exToast('Bitte einen Ordner angeben, z. B. IMAGES/flug.', 'err'); return null; }
+    return { scope: 'sd', prefix: dir + '/' };
+  }
+  return { scope: 'sd', prefix: v };
+}
+async function addFiles(list) {
+  const dir = targetDir(); if (!dir) return;
+  let added = 0, total = filesTotal();
+  for (const file of list) {
+    const name = cleanPath(String(file.name).split(/[\\/]/).pop());
+    if (!name) continue;
+    if (file.size > FILE_MAX) { exToast(`„${file.name}“ ist größer als 2 MB.`, 'err'); continue; }
+    const path = dir.prefix + name, key = fileKey(dir.scope, path);
+    if ((dir.scope === 'project' ? projectDir() : '') + path === filePath()) { exToast(`„${name}“ würde das erzeugte Skript überschreiben.`, 'err'); continue; }
+    const before = files.has(key) ? files.get(key).size : 0;
+    if (total - before + file.size > FILES_MAX) { exToast('Zusammen sind höchstens 8 MB an Dateien möglich.', 'err'); break; }
+    const entry = { scope: dir.scope, path, type: file.type || '', blob: file, size: file.size, iw: 0, ih: 0 };
+    if (IMAGE_EXT.test(name)) {
+      try { const b = await createImageBitmap(file); entry.iw = b.width; entry.ih = b.height; imgCache.set(key, b); }
+      catch (e) { exToast(`„${name}“ ist kein lesbares Bild.`, 'err'); continue; }
+    } else imgCache.delete(key);
+    dropThumb(key); files.set(key, entry); total += file.size - before; added++;
+    // Bild-Elemente, die schon auf diese Datei zeigen, an die neue Größe anpassen
+    for (const d of [S.widget, S.tool]) for (const e of d.elements) if (e.kind === 'image' && e.file === key) { e.iw = entry.iw; e.ih = entry.ih; e.h = imgH(e); }
+  }
+  if (added) { await persistFiles(); exToast(`${added} Datei${added === 1 ? '' : 'en'} hinzugefügt.`, 'ok'); }
+  changed();
+}
+function addImage(key) {
+  if (!isDesign()) return;
+  const k = key || [...files.keys()].find(x => IMAGE_EXT.test(files.get(x).path));
+  if (!k) return toast('Lade zuerst unter „Dateien“ ein Bild hoch (PNG, BMP oder JPG).', 'err');
+  const f = files.get(k), zw = zoneW(), zh = zoneH();
+  const iw = f.iw || 64, ih = f.ih || 64, fit = Math.min(1, zw * .6 / iw, zh * .6 / ih);
+  const w = Math.max(4, Math.round(iw * fit));
+  const e = mk('image', { x: 0, y: 0, w, h: 1, file: k, iw: f.iw, ih: f.ih, color: 'PRIMARY1' });
+  e.h = imgH(e); e.x = Math.max(0, Math.round((zw - e.w) / 2)); e.y = Math.max(0, Math.round((zh - e.h) / 2));
+  doc().elements.push(e); selId = e.id; buildProps(); changed();
+}
+async function fileAction(act, key) {
+  const f = files.get(key); if (!f) return;
+  if (act === 'dl') return saveFile(f.path.split('/').pop(), f.blob);
+  if (act === 'insert') return addImage(key);
+  const usedBy = () => [S.widget, S.tool].flatMap(d => d.elements).filter(e => e.kind === 'image' && e.file === key);
+  if (act === 'del') {
+    if (!confirm(`„${fullPath(f)}“ löschen?`)) return;
+    const used = usedBy().length;
+    files.delete(key); dropThumb(key); imgCache.delete(key);
+    await persistFiles(); changed();
+    exToast(used ? `Gelöscht. ${used} Bild-Element(e) zeigen jetzt auf eine fehlende Datei.` : 'Gelöscht.', used ? 'err' : 'ok');
+    return;
+  }
+  if (act === 'rename') {
+    const cur = f.path.split('/').pop(), dir = f.path.slice(0, f.path.length - cur.length);
+    const input = prompt('Neuer Dateiname', cur); if (input === null) return;
+    const name = cleanPath(input.split(/[\\/]/).pop()); if (!name) return;
+    const nk = fileKey(f.scope, dir + name); if (nk === key) return;
+    if (files.has(nk)) return exToast(`„${name}“ gibt es in diesem Ordner schon.`, 'err');
+    for (const e of usedBy()) e.file = nk;
+    files.delete(key); files.set(nk, { ...f, path: dir + name });
+    if (imgCache.has(key)) { imgCache.set(nk, imgCache.get(key)); imgCache.delete(key); }
+    dropThumb(key); await persistFiles(); buildProps(); changed();
+  }
+}
+function renderFiles() {
+  if (!$('exTree')) return;
+  buildTargetOptions();
+  const code = generate();
+  const rows = [{ locked: true, full: filePath(), size: new TextEncoder().encode(code).length },
+    ...[...files].map(([key, f]) => ({ key, f, full: fullPath(f), size: f.size }))].sort((a, b) => a.full.localeCompare(b.full));
+  const groups = new Map();
+  for (const r of rows) { const i = r.full.lastIndexOf('/'), dir = i < 0 ? '/' : r.full.slice(0, i + 1); if (!groups.has(dir)) groups.set(dir, []); groups.get(dir).push(r); }
+  let h = '';
+  for (const [dir, list] of groups) {
+    h += `<div class="dir">${esc(dir)}</div>`;
+    for (const r of list) {
+      const name = r.full.slice(r.full.lastIndexOf('/') + 1);
+      if (r.locked) { h += `<div class="file locked"><span class="thumb">LUA</span><span class="nm">${esc(name)}<small>wird erzeugt · ${fmtSize(r.size)}</small></span><span></span></div>`; continue; }
+      const f = r.f, isImg = IMAGE_EXT.test(f.path), ext = (name.includes('.') ? name.split('.').pop() : '').slice(0, 4).toUpperCase();
+      h += `<div class="file"><span class="thumb" data-thumb="${esc(r.key)}">${isImg ? '' : esc(ext || '?')}</span>
+        <span class="nm" title="${esc(r.full)}">${esc(name)}<small>${fmtSize(f.size)}${isImg && f.iw ? ` · ${f.iw}×${f.ih} px` : ''}${f.scope === 'project' ? ' · Projektordner' : ''}</small></span>
+        <span class="acts">${isImg && isDesign() ? `<button class="btn small" type="button" data-fact="insert" data-key="${esc(r.key)}">Einfügen</button>` : ''}<button class="btn small" type="button" data-fact="rename" data-key="${esc(r.key)}" title="Umbenennen" aria-label="Umbenennen">✎</button><button class="btn small" type="button" data-fact="dl" data-key="${esc(r.key)}" title="Herunterladen" aria-label="Herunterladen">↓</button><button class="btn small danger" type="button" data-fact="del" data-key="${esc(r.key)}" title="Löschen" aria-label="Löschen">✕</button></span></div>`;
+    }
+  }
+  const host = $('exTree');
+  host.innerHTML = h;
+  host.querySelectorAll('[data-thumb]').forEach(t => {
+    const f = files.get(t.dataset.thumb); if (!f || !IMAGE_EXT.test(f.path)) return;
+    if (!thumbUrls.has(t.dataset.thumb)) thumbUrls.set(t.dataset.thumb, URL.createObjectURL(f.blob));
+    t.style.backgroundImage = `url(${thumbUrls.get(t.dataset.thumb)})`;
+  });
+  host.querySelectorAll('[data-fact]').forEach(b => b.onclick = () => fileAction(b.dataset.fact, b.dataset.key));
+}
+$('exTarget').onchange = () => { $('exCustomBox').hidden = $('exTarget').value !== 'custom'; };
+$('exDrop').onclick = () => $('exInput').click();
+$('exDrop').onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); $('exInput').click(); } };
+$('exInput').onchange = ev => { addFiles([...ev.target.files]); ev.target.value = ''; };
+const filesPanelEl = $('filesPanel');
+filesPanelEl.addEventListener('dragover', ev => { if ([...ev.dataTransfer.types].includes('Files')) { ev.preventDefault(); $('exDrop').classList.add('over'); } });
+filesPanelEl.addEventListener('dragleave', ev => { if (!filesPanelEl.contains(ev.relatedTarget)) $('exDrop').classList.remove('over'); });
+filesPanelEl.addEventListener('drop', ev => { if (!ev.dataTransfer.files.length) return; ev.preventDefault(); $('exDrop').classList.remove('over'); addFiles([...ev.dataTransfer.files]); });
+
+// ---------- ZIP & Speichern ----------
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(entries) {
+  const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
+  const d = new Date(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dt = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const { name, data } of entries) {
+    const nb = enc.encode(name), crc = crc32(data), sz = data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(10, tm, true); lh.setUint16(12, dt, true); lh.setUint32(14, crc, true); lh.setUint32(18, sz, true); lh.setUint32(22, sz, true); lh.setUint16(26, nb.length, true);
+    parts.push(new Uint8Array(lh.buffer), nb, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(12, tm, true); ch.setUint16(14, dt, true); ch.setUint32(16, crc, true); ch.setUint32(20, sz, true); ch.setUint32(24, sz, true); ch.setUint16(28, nb.length, true);
+    ch.setUint32(38, name.endsWith('/') ? 0x10 : 0, true); ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), nb); offset += 30 + nb.length + sz;
+  }
+  const cd = central.reduce((a, p) => a + p.length, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true); end.setUint32(12, cd, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+let downloads = null;
+const inClaude = !!(window.claude && typeof window.claude.use === 'function');
+if (inClaude) { window.claude.use('downloads').then(d => { downloads = d; }).catch(() => {}); $('dlLua').hidden = true; }
+async function saveFile(filename, blob) {
+  if (downloads) {
+    try { await downloads.save({ filename, data: blob }); toast(`${filename} gespeichert.`, 'ok'); }
+    catch (e) { toast(e && e.code === 'declined' ? 'Speichern abgebrochen.' : 'Speichern ist in dieser Ansicht nicht möglich. Kopiere den Code stattdessen.', 'err'); }
+    return;
+  }
+  if (inClaude) return toast('Speichern ist in dieser Ansicht nicht verfügbar. Kopiere den Code stattdessen.', 'err');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast(`${filename} gespeichert.`, 'ok');
+}
+async function buildZip() {
+  const path = filePath(), parts = path.split('/'), enc = new TextEncoder(), entries = [], dirs = new Set();
+  const addDirs = p => { const ps = p.split('/'); for (let i = 1; i < ps.length; i++) { const d = ps.slice(0, i).join('/') + '/'; if (!dirs.has(d)) { dirs.add(d); entries.push({ name: d, data: new Uint8Array() }); } } };
+  addDirs(path); entries.push({ name: path, data: enc.encode(generate().replace(/\n/g, '\r\n')) });
+  for (const f of files.values()) { const fp = fullPath(f); if (fp === path) continue; addDirs(fp); entries.push({ name: fp, data: new Uint8Array(await f.blob.arrayBuffer()) }); }
+  const base = parts[parts.length - 1] === 'main.lua' ? parts[parts.length - 2] : parts[parts.length - 1].replace('.lua', '');
+  return { base, path, entries, blob: makeZip(entries) };
+}
+$('dlZip').onclick = async () => { const z = await buildZip(); saveFile(`${z.base}.zip`, z.blob); };
+$('dlLua').onclick = () => { const p = filePath().split('/'); saveFile(p[p.length - 1], new Blob([generate()], { type: 'text/plain' })); };
+$('copyLua').onclick = () => {
+  navigator.clipboard.writeText(generate()).then(() => toast('Code kopiert.', 'ok')).catch(() => {
+    const r = document.createRange(); r.selectNodeContents($('code')); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    toast('Code markiert – mit Strg+C kopieren.', 'ok');
+  });
+};
+let tt; function toast(m, k) { const t = $('toast'); t.textContent = m; t.className = 'toast ' + (k || ''); clearTimeout(tt); tt = setTimeout(() => { t.textContent = ''; }, 5000); }
+
+const SD_NEXT = {
+  widget: 'Sender neu starten, auf der Hauptansicht lange TELE drücken, „Hauptansichten einrichten“ und das Widget wählen.',
+  tool: 'Am Sender SYS → Tools öffnen und das Tool starten.',
+  func: 'Unter MDL → Spezialfunktionen die Aktion „Lua-Skript“ wählen.',
+  mix: 'Unter MDL → Eigene Skripte das Skript wählen.',
+};
+// ---------- Direkt auf die SD-Karte (sdkarte.js) ----------
+if (!window.WerkstattSD || !window.WerkstattSD.supported) {
+  $('sdRow').hidden = true;
+  $('sdHint').textContent = 'Direkt auf die SD-Karte schreiben geht in Chrome oder Edge am PC. Sonst: ZIP herunterladen und ins Hauptverzeichnis der Karte entpacken.';
+}
+async function writeToCard(pickNew) {
+  const btn = $('sdWrite'); btn.disabled = true;
+  try {
+    const entries = (await buildZip()).entries;
+    const r = await window.WerkstattSD.write(entries, { pickNew, onProgress: (v, name) => { if (name) toast(`Schreibe ${name} …`); } });
+    if (r.cancelled) toast('Abgebrochen – es wurde nichts geschrieben.');
+    else toast(`${filePath()} ${files.size ? `und ${files.size} Datei${files.size === 1 ? '' : 'en'} ` : ''}auf die Karte geschrieben${r.replaced ? ` (${r.replaced} ersetzt)` : ''}. Karte auswerfen, dann: ${SD_NEXT[S.type]}`, 'ok');
+  } catch (e) { toast(e.message || 'Schreiben fehlgeschlagen. Ist die Karte noch verbunden?', 'err'); }
+  btn.disabled = false;
+}
+$('sdWrite').onclick = () => writeToCard(false);
+$('sdOther').onclick = () => writeToCard(true);
+
+// ---------- Im Bollisoft-Konto speichern (konto.js) ----------
+const TYPE_LABEL = { widget: 'Widget', tool: 'Tool', func: 'Funktion', mix: 'Mischer' };
+async function applyState(saved) {
+  const { files: savedFiles, ...s } = saved || {};
+  const d = DEFAULT();
+  S = { ...d, ...s, func: { ...d.func, ...s.func }, mix: { ...d.mix, ...s.mix }, theme: { ...d.theme, ...s.theme } };
+  for (const doc of [S.widget, S.tool]) for (const e of doc.elements) uid = Math.max(uid, e.id + 1);
+  if (!S.mix.body) S.mix.body = MIX_TPL[S.mix.tpl]?.body || MIX_TPL.limiter.body;
+  // Dateien des Projekts übernehmen (ältere Stände ohne Dateien: leer)
+  filesGen++;
+  files = new Map();
+  for (const f of Array.isArray(savedFiles) ? savedFiles : []) {
+    if (!f || !f.path || typeof f.b64 !== 'string') continue;
+    const blob = new Blob([Uint8Array.from(atob(f.b64), c => c.charCodeAt(0))], { type: f.type || '' });
+    const scope = f.scope === 'sd' ? 'sd' : 'project', path = cleanPath(f.path);
+    if (path) files.set(fileKey(scope, path), { scope, path, type: f.type || '', blob, size: blob.size, iw: f.iw || 0, ih: f.ih || 0 });
+  }
+  imgCache.clear(); clearThumbs(); await persistFiles();
+  selId = null; buildAll(); changed();
+}
+if (window.WerkstattKonto && !window.claude) {
+  window.WerkstattKonto.mount({
+    kind: 'lua', label: 'Lua-Skript', storageKey: 'tx15-lua-studio-konto',
+    saveBtn: $('srvSave'), newBtn: $('srvNew'), hint: $('srvHint'), toast,
+    collect: async () => {
+      const z = await buildZip();
+      const packed = await Promise.all([...files.values()].map(async f => ({ scope: f.scope, path: f.path, type: f.type, iw: f.iw || 0, ih: f.ih || 0, b64: await blobToB64(f.blob) })));
+      return { name: z.base, detail: `${TYPE_LABEL[S.type]} · ${z.path}${files.size ? ` + ${files.size} Dateien` : ''}`, state: { ...S, files: packed }, zip: z.blob };
+    },
+    apply: async saved => applyState(saved),
+  });
+} else { $('srvSave').closest('.btn-row').hidden = true; $('srvHint').hidden = true; }
+
+// ---------- Start ----------
+function buildAll() {
+  cv = null;
+  document.querySelectorAll('.types button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.type === S.type)));
+  buildSide(); buildCenter();
+}
+if (!S.mix.body) S.mix.body = MIX_TPL[S.mix.tpl]?.body || MIX_TPL.limiter.body;
+buildAll(); changed();
+loadFiles().then(() => changed());
+if (document.fonts && document.fonts.load) document.fonts.load('400 16px Roboto').then(draw, () => {});
+})();
+</script>

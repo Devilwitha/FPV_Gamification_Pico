@@ -1,0 +1,887 @@
+<title>TX15 ELRS Flasher</title>
+<script src="/site-nav.js" defer></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+<style>
+/* Layout: Configurator in drei Spalten – Firmware & Gerät | Optionen | Flashen mit Protokoll */
+:root {
+  --bg: #eff0f4; --panel: #ffffff; --ink: #1c1e26; --muted: #5d6170; --line: #d6d8e1;
+  --accent: #5b45c9; --accent-ink: #ffffff; --accent-soft: rgba(91, 69, 201, .1);
+  --good: #1f8a4c; --warn: #b7791f; --bad: #c43c2c; --code-bg: #f5f5f8; --term-bg: #12131a; --term-ink: #c9cbe0;
+  --f-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14151b; --panel: #1d1f27; --ink: #e6e7ee; --muted: #9a9db0; --line: #323543;
+    --accent: #a08cff; --accent-ink: #120c2b; --accent-soft: rgba(160, 140, 255, .12);
+    --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a; --code-bg: #181a21; --term-bg: #0c0d12; --term-ink: #c9cbe0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14151b; --panel: #1d1f27; --ink: #e6e7ee; --muted: #9a9db0; --line: #323543;
+  --accent: #a08cff; --accent-ink: #120c2b; --accent-soft: rgba(160, 140, 255, .12);
+  --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a; --code-bg: #181a21; --term-bg: #0c0d12; --term-ink: #c9cbe0;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); padding: 0 16px 32px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; margin: 0; text-wrap: balance; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code { font-family: var(--f-mono); font-size: .9em; }
+a { color: var(--accent); }
+
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding-block: 18px 14px; max-width: 1500px; margin: 0 auto; }
+header.top h1 { font-size: 30px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+header.top h1 span { color: var(--accent); }
+header.top p { margin: 0; color: var(--muted); }
+header.top a.back { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 13px; }
+header.top a.back:hover { color: var(--accent); }
+
+.banner { max-width: 1500px; margin: 0 auto 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+.banner.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+.banner.off { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--panel)); }
+
+.wrap { max-width: 1500px; margin: 0 auto; display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+@media (max-width: 1180px) { .wrap { grid-template-columns: repeat(2, minmax(0, 1fr)); } .col-flash { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.panel + .panel { margin-top: 16px; }
+.step { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.step .n { font: 600 13px var(--f-mono); color: var(--accent); }
+.step h2 { font-size: 20px; text-transform: uppercase; letter-spacing: .05em; }
+.panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 8px; }
+.hint { font-size: 12px; color: var(--muted); margin: 4px 0 10px; }
+.err { color: var(--bad); font-size: 13px; }
+.ok { color: var(--good); font-size: 13px; }
+ol.how { margin: 0 0 12px; padding-left: 20px; font-size: 13px; }
+ol.how li { margin-bottom: 3px; }
+
+label.field { display: grid; gap: 3px; margin-bottom: 10px; min-width: 0; }
+label.field > span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+label.check { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; cursor: pointer; }
+label.check input { accent-color: var(--accent); margin: 0; }
+input[type="text"], input[type="password"], input[type="number"], input[type="search"], select { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 10px; }
+.uid { font: 12px var(--f-mono); color: var(--muted); margin: -6px 0 10px; overflow-wrap: anywhere; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-weight: 500; text-decoration: none; color: var(--ink); }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.small { padding: 3px 8px; font-size: 12px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.warn { background: var(--warn); border-color: var(--warn); color: #fff; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn-row .btn { flex: 1 1 auto; }
+
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); margin-bottom: 12px; }
+.seg button { padding: 7px; border: 0; border-radius: 5px; background: none; cursor: pointer; font-weight: 500; }
+.seg button[aria-pressed="true"] { background: var(--panel); box-shadow: 0 1px 3px rgba(0,0,0,.12); color: var(--accent); font-weight: 600; }
+
+.quick { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 10px; align-items: center; width: 100%; text-align: left; padding: 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft); cursor: pointer; margin-bottom: 12px; }
+.quick svg { width: 46px; height: 46px; }
+.quick b { display: block; font: 600 16px var(--f-display); letter-spacing: .04em; text-transform: uppercase; }
+.quick small { color: var(--muted); font-size: 12px; }
+
+.devinfo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 4px; }
+.devinfo div { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+.devinfo span { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.devinfo b { font: 600 13px var(--f-mono); overflow-wrap: anywhere; }
+
+.dropzone { display: grid; justify-items: center; gap: 4px; text-align: center; padding: 16px; border: 2px dashed var(--line); border-radius: 8px; background: var(--bg); cursor: pointer; margin-top: 8px; }
+.dropzone:hover, body.dragging .dropzone { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone b { font-weight: 600; }
+.dropzone small { color: var(--muted); font-size: 12px; }
+
+details.adv { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; }
+details.adv summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 4px 0 10px; }
+
+.method { display: grid; gap: 6px; margin-bottom: 12px; }
+.method label { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.method label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.method input { accent-color: var(--accent); margin: 3px 0 0; }
+.method b { font-weight: 600; font-size: 13px; }
+.method small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+.term { background: var(--term-bg); color: var(--term-ink); font: 12px/1.5 var(--f-mono); border-radius: 6px; padding: 10px; min-height: 140px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 10px; }
+.prog { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-top: 10px; font: 12px var(--f-mono); font-variant-numeric: tabular-nums; }
+progress { width: 100%; height: 10px; accent-color: var(--accent); }
+.summary { font-size: 13px; border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin-bottom: 12px; display: grid; gap: 2px; }
+.summary b { font-weight: 600; }
+input[type="file"] { display: none; }
+</style>
+
+<header class="top">
+  <h1>TX15 <span>ELRS</span> Flasher</h1>
+  <p>ExpressLRS-Firmware für das interne Modul der TX15 und für Empfänger einstellen und flashen, direkt im Browser.</p>
+  <a class="back" id="backLink" href="index.html">← Übersicht</a>
+</header>
+<script>if (window.claude) document.getElementById('backLink').hidden = true;</script>
+
+<div class="banner" id="banner" hidden></div>
+
+<main class="wrap" id="app">
+  <section>
+    <div class="panel">
+      <div class="step"><span class="n">01</span><h2>Firmware</h2></div>
+      <div id="srcBox"></div>
+    </div>
+    <div class="panel">
+      <div class="step"><span class="n">02</span><h2>Gerät</h2></div>
+      <div class="seg" role="group" aria-label="Gerätetyp">
+        <button type="button" data-kind="tx" aria-pressed="true">Sender-Modul</button>
+        <button type="button" data-kind="rx" aria-pressed="false">Empfänger</button>
+      </div>
+      <button type="button" class="quick" id="quickTx15">
+        <svg viewBox="0 0 46 46" fill="none" aria-hidden="true"><rect x="6" y="12" width="34" height="24" rx="5" stroke="currentColor" stroke-width="1.6"/><rect x="12" y="16" width="22" height="13" rx="1.5" fill="currentColor" opacity=".18"/><path d="M14 12V5M32 12V5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="32" r="1.6" fill="currentColor"/><circle cx="34" cy="32" r="1.6" fill="currentColor"/></svg>
+        <span><b>TX15 internes Modul</b><small>RadioMaster TX15 2.4/900 TX · ESP32 · LR1121</small></span>
+      </button>
+      <label class="field"><span>Hersteller</span><select id="vendor"></select></label>
+      <label class="field"><span>Frequenz</span><select id="radio"></select></label>
+      <label class="field"><span>Gerät</span><input type="search" id="tFilter" placeholder="Suchen, z. B. RP3 oder EP2"></label>
+      <select id="target" size="6" aria-label="Gerät wählen" style="margin-top:-4px"></select>
+      <div class="devinfo" id="devinfo"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="panel">
+      <div class="step"><span class="n">03</span><h2>Optionen</h2></div>
+      <div id="optBox"></div>
+    </div>
+  </section>
+
+  <section class="col-flash">
+    <div class="panel">
+      <div class="step"><span class="n">04</span><h2>Flashen</h2></div>
+      <div id="flashBox"></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">ELRS-Lua-Skript</h3>
+      <p class="hint">Mit dem Skript stellst du am Sender Paketrate, Leistung und WLAN ein. Es kommt nach <code>SCRIPTS/TOOLS/</code> und erscheint dann unter SYS → Tools.</p>
+      <button class="btn" type="button" id="luaBtn">Lua-Skript als ZIP</button>
+      <div class="hint" id="luaMsg"></div>
+    </div>
+  </section>
+</main>
+<input type="file" id="zipInput" accept=".zip,application/zip">
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const enc = new TextEncoder(), dec = new TextDecoder();
+
+// ---------- Schalter aus config.js ----------
+const CFG = window.WERKSTATT_CONFIG || {};
+if (CFG.webflasher === false) {
+  $('app').hidden = true;
+  const b = $('banner'); b.hidden = false; b.className = 'banner off';
+  b.innerHTML = '<span>Der ELRS Flasher ist ausgeschaltet. Setze in <code>config.js</code> den Wert <code>webflasher: true</code>, um ihn zu nutzen.</span>';
+  return;
+}
+
+// ---------- Konstanten ----------
+const ASSET_BASE = 'elrs/firmware';
+const ARTIFACTORY = 'https://artifactory.expresslrs.org/ExpressLRS';
+const ESPTOOL_URL = 'https://cdn.jsdelivr.net/npm/esptool-js@0.6.0/bundle.js';
+// Stand der Versionsliste des ExpressLRS-Servers vom 18.10.2026 (für den Paket-Upload)
+const SNAPSHOT_TAGS = {"3.0.0":"8aa1b03e804ee896e974a05c3d9aadfb93d17069","3.0.1":"2470fce853f0f9d389aada1e249c4fa1c775b9f9","3.1.0":"a60040e8049e9fc2faedea3ffbbe2dc98690195c","3.1.1":"2909ba2db2909b5c38a299eed575082f2894baf1","3.1.2":"4da3aa7a6efc2f175b052647aa151e6c337e7b07","3.2.0":"8d3388ef3369a2d8a64f92a80e42acb29f8e513e","3.2.1":"8dbbdbe442660713ba1de07828ceb20cdaa5e26a","3.3.0":"ae9df3d202aa905358f0fdc1ca36718736ebdf38","3.3.1":"e051b89b23b5935b959ea9beddf685d857d03af9","3.3.2":"2d98919b5a4c780d3d1c8400dd478ef99a4b3025","3.4.0":"499697ca7efc099050868d30578368a75df63d72","3.4.1":"a7f27a5b9614c1c24d36bc7d761b0d1c7df3191c","3.4.2":"9cf33883fee5356898737ce3dc2680100408c28c","3.4.3":"41daca2a4ff782188c38fbef3c4f1a36e320b1a3","3.5.0":"b3b43ddfe5f066ae6aa73b8a319094ce8a7b2eea","3.5.0-RC2":"b3b43ddfe5f066ae6aa73b8a319094ce8a7b2eea","3.5.1":"e248004697a0ab2f930d462747cc5da38faf644c","3.5.2":"7ac5f4d21cb18fb77cf2f5a60bf71716e861e533","3.5.3":"40555e141efb0c93ea8d075ec47a27592355f924","3.5.4":"a6f9a2a76c688de1999a8697c33e363b300a76ed","3.5.5":"2dd88468a753696a37e6954ab80a0dcd231e2afa","3.5.6":"ee188b4efb9a707f682e8b2d966cd670de92ab50","3.6.0":"ff41f67aec3cb8c0be531ff66a9abba3f215285a","3.6.1":"4744570a8b37ac2a5e92b240192ca0fae1ff16af","3.6.2":"0b0cce68253b6653a608566094dce6414a977e71","3.6.3":"288efe1acf223e479f81349d68dda5505135301a","3.6.4":"b61c9e24305b2f80046a5e0b3c4edf56c4f059a3","4.0.0":"ed9fc3e637207e8d656ffe9b1b3e8eef418573c6","4.0.0-RC1":"c7d578c662d77c4e742a75a9621cfc9749c8c1d5","4.0.0-RC2":"ae32b104f0efe20185f0057385d2d10179ce07af","4.0.0-RC3":"9bb96f624b80e30bc7d59ad2cd67802dac96e400","4.0.0-RC4":"a23b920f681d3618c32f73ff69e8734ef021cdda","4.0.1":"b5a5b5fdbed0d8420d0b4f5a3c55f380557def74","4.1.0":"a9d4a9cb5b5687c4c9d7e9e7fbdf44ad93651da6","4.1.0-RC1":"3069ab605e163739d5aa9b56443355e3d1032485"};
+const RADIO_TITLES = { tx_2400: '2,4 GHz', tx_900: '900 MHz', tx_dual: '2,4 GHz + 900 MHz (Dual)', rx_2400: '2,4 GHz', rx_900: '900 MHz', rx_dual: '2,4 GHz + 900 MHz (Dual)' };
+const DOMAINS = [[0, 'AU915'], [1, 'FCC915'], [2, 'EU868'], [3, 'IN866'], [4, 'AU433'], [5, 'EU433'], [6, 'US433'], [7, 'US433-Wide']];
+const METHODS = {
+  etx: ['EdgeTX Passthrough (USB)', 'Der Sender bleibt eingeschaltet und reicht die Daten über USB an das interne Modul durch. Empfohlen für die TX15.'],
+  uart: ['USB / Serieller UART', 'Gerät direkt per USB oder USB-Seriell-Adapter anschließen.'],
+  betaflight: ['Betaflight Passthrough', 'Empfänger über den Flugcontroller flashen. Der FC muss per USB verbunden sein.'],
+  passthru: ['Passthrough', 'Durchreichen über einen USB-Seriell-Adapter mit DTR/RTS.'],
+  wifi: ['WLAN', 'Firmware-Datei herunterladen und im WLAN-Modus des Geräts hochladen.'],
+  download: ['Nur herunterladen', 'Fertig eingestellte Firmware-Datei speichern, z. B. für den Configurator am PC.'],
+};
+
+// ---------- Hilfen ----------
+function cmpVer(a, b) {
+  const [v1, d1] = String(a).split('-'), [v2, d2] = String(b).split('-');
+  const s1 = v1.split('.'), s2 = v2.split('.');
+  for (let i = 0; i < Math.max(s1.length, s2.length); i++) {
+    const x = parseInt(s1[i] || 0, 10), y = parseInt(s2[i] || 0, 10);
+    if (x > y) return 1; if (x < y) return -1;
+  }
+  if (!d1 && d2) return 1; if (d1 && !d2) return -1; if (d1 && d2) return d1.localeCompare(d2);
+  return 0;
+}
+const fmtBytes = n => n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+const bstr = s => { const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i) & 255; return u; };
+const ui8str = u => { let s = ''; for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); return s; };
+const cat = (...a) => { const c = new Uint8Array(a.reduce((n, x) => n + x.length, 0)); let o = 0; for (const x of a) { c.set(x, o); o += x.length; } return c; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// MD5 wie im ExpressLRS-Configurator (für die Binding-Phrase)
+const md5 = (() => {
+  const k = []; for (let i = 0; i < 64;) k[i] = 0 | (Math.abs(Math.sin(++i)) * 4294967296);
+  return function (str) {
+    let b, c, d, j; const x = []; const str2 = unescape(encodeURIComponent(str)); let a = str2.length;
+    const h = [b = 1732584193, c = -271733879, ~b, ~c]; let i = 0;
+    for (; i <= a;) x[i >> 2] |= (str2.charCodeAt(i) || 128) << 8 * (i++ % 4);
+    x[str = (a + 8 >> 6) * 16 + 14] = a * 8; i = 0;
+    for (; i < str; i += 16) {
+      a = h; j = 0;
+      for (; j < 64;) {
+        a = [d = a[3], ((b = a[1] | 0) + ((d = ((a[0] + [b & (c = a[2]) | ~b & d, d & b | ~d & c, b ^ c ^ d, c ^ (b | ~d)][a = j >> 4]) + (k[j] + (x[[j, 5 * j + 1, 3 * j + 5, 7 * j][a] % 16 + i] | 0)))) << (a = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21][4 * a + j++ % 4]) | d >>> 32 - a)), b, c];
+      }
+      for (j = 4; j;) h[--j] = h[j] + a[j];
+    }
+    str = []; for (; j < 32;) str.push(((h[j >> 3] >> ((1 ^ j++ & 7) * 4)) & 15) * 16 + ((h[j >> 3] >> ((1 ^ j++ & 7) * 4)) & 15));
+    return new Uint8Array(str);
+  };
+})();
+const uidFromPhrase = t => Array.from(md5(`-DMY_BINDING_PHRASE="${t}"`).subarray(0, 6));
+
+// Melodien (Format „Noten Dauer|BPM|Transponierung“) wie im Configurator
+const NOTES = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'];
+function parseMelody(s) {
+  if (!s || s.indexOf('|') < 0) return [];
+  const [mel, bpmS, trS] = s.split('|'); const bpm = Number(bpmS) || 120, tr = Number(trS) || 0;
+  const dur = d => Math.floor((1000 * (60 * 4 / bpm)) / Number(d));
+  const freq = n => { const oct = Number(n.length === 3 ? n[2] : n[1]); let k = NOTES.indexOf(n.slice(0, -1)); k = k < 3 ? k + 12 + (oct - 1) * 12 + 1 : k + (oct - 1) * 12 + 1; k += tr; return Math.floor(440 * 2 ** ((k - 49) / 12)); };
+  const t = mel.trim().split(' '), out = [];
+  for (let i = 0; i < t.length; i++) {
+    if (t[i][0] === 'P') out.push([0, dur(t[i].substring(1))]);
+    else if ('ABCDEFG'.includes(t[i][0])) out.push([freq(t[i]), dur(t[i + 1])]);
+  }
+  return out.slice(0, 32);
+}
+
+// ---------- ZIP lesen / schreiben ----------
+async function inflate(raw) { return new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()); }
+async function readZip(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer()), dv = new DataView(buf.buffer);
+  let i = buf.length - 22; const stop = Math.max(0, buf.length - 65557);
+  while (i >= stop && dv.getUint32(i, true) !== 0x06054b50) i--;
+  if (i < stop) throw new Error('Das ist keine gültige ZIP-Datei.');
+  const n = dv.getUint16(i + 10, true); let p = dv.getUint32(i + 16, true);
+  const map = new Map();
+  for (let k = 0; k < n; k++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('Die ZIP-Datei ist beschädigt.');
+    const method = dv.getUint16(p + 10, true), cs = dv.getUint32(p + 20, true), us = dv.getUint32(p + 24, true);
+    const nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(buf.subarray(p + 46, p + 46 + nl)).replace(/\\/g, '/');
+    p += 46 + nl + el + cl;
+    if (name.endsWith('/')) continue;
+    map.set(name, { size: us, get: async () => {
+      const s = lho + 30 + dv.getUint16(lho + 26, true) + dv.getUint16(lho + 28, true), d = buf.subarray(s, s + cs);
+      if (method === 0) return d.slice(); if (method === 8) return inflate(d);
+      throw new Error(`Kompressionsart ${method} wird nicht unterstützt.`);
+    } });
+  }
+  return map;
+}
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+async function makeZip(entries) {
+  const parts = [], central = []; let offset = 0;
+  const d = new Date(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dt = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const { name, data } of entries) {
+    const nb = enc.encode(name), crc = crc32(data), sz = data.length;
+    let body = data, method = 0;
+    try { const z = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer()); if (z.length < sz) { body = z; method = 8; } } catch (e) {}
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, method, true);
+    lh.setUint16(10, tm, true); lh.setUint16(12, dt, true); lh.setUint32(14, crc, true); lh.setUint32(18, body.length, true); lh.setUint32(22, sz, true); lh.setUint16(26, nb.length, true);
+    parts.push(new Uint8Array(lh.buffer), nb, body);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, method, true);
+    ch.setUint16(12, tm, true); ch.setUint16(14, dt, true); ch.setUint32(16, crc, true); ch.setUint32(20, body.length, true); ch.setUint32(24, sz, true); ch.setUint16(28, nb.length, true); ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), nb); offset += 30 + nb.length + body.length;
+  }
+  const cd = central.reduce((a, x) => a + x.length, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true); end.setUint32(12, cd, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+
+// ---------- Zustand ----------
+const STORE = 'tx15-elrs-flasher-v1';
+const DEFAULT_OPTS = { phrase: '', region: 'LBT', domain: 2, ssid: '', wifiOn: 60, tlm: 240, fan: 30, higherPower: false, uartInverted: true, beep: 3, tune: '', rxBaud: 420000, lockFirst: true, sbusUart: false };
+let S = { kind: 'tx', vendor: null, radio: null, targetKey: null, method: null, showRC: false, opts: { ...DEFAULT_OPTS } };
+try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (s) S = { ...S, ...s, opts: { ...DEFAULT_OPTS, ...s.opts } }; } catch (e) {}
+let wifiPassword = '';
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} };
+
+// Quelle: { mode: 'hosted'|'zip', versions: [{title, hash}], version, targets, read(kind, path) }
+let src = null, zipEntries = null, zipVersion = null, targetsJson = null;
+
+// ---------- Firmware-Quelle ----------
+async function fetchBytes(url) { const r = await fetch(url); if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`); return new Uint8Array(await r.arrayBuffer()); }
+async function detectHosted() {
+  try {
+    const r = await fetch(`${ASSET_BASE}/index.json`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const idx = await r.json();
+    const t = await fetch(`${ASSET_BASE}/hardware/targets.json`).then(x => x.ok ? x.json() : null);
+    if (!t) return null;
+    // nur Versionen, deren Ordner wirklich vorhanden ist
+    const vers = [];
+    for (const [title, hash] of Object.entries(idx.tags || {})) vers.push({ title, hash });
+    return { idx, targets: t, versions: vers };
+  } catch (e) { return null; }
+}
+function versionList(all) {
+  const stable = all.filter(v => !v.title.includes('-')).sort((a, b) => cmpVer(b.title, a.title));
+  if (!S.showRC) return stable;
+  const rc = all.filter(v => v.title.includes('-')).sort((a, b) => cmpVer(b.title, a.title));
+  return [...rc.slice(0, 3), ...stable];
+}
+
+async function initSource() {
+  const box = $('srcBox');
+  box.innerHTML = '<p class="hint">Suche Firmware auf diesem Server …</p>';
+  const hosted = await detectHosted();
+  if (hosted) {
+    src = { mode: 'hosted', versions: hosted.versions, targets: hosted.targets, version: null,
+      read: (k, p) => fetchBytes(k === 'hw' ? `${ASSET_BASE}/hardware/${p}` : k === 'lua' ? `${ASSET_BASE}/${src.version.hash}/lua/${p}` : `${ASSET_BASE}/${src.version.hash}/${p}`) };
+    targetsJson = hosted.targets;
+    renderHosted();
+  } else {
+    src = null; renderUpload();
+  }
+}
+function renderHosted() {
+  const list = versionList(src.versions);
+  if (!src.version || !list.find(v => v.hash === src.version.hash)) src.version = list[0];
+  $('srcBox').innerHTML = `<p class="ok">Firmware liegt auf diesem Server (${src.versions.length} Versionen).</p>
+    <label class="field"><span>Version</span><select id="ver">${list.map(v => `<option value="${v.hash}"${v.hash === src.version.hash ? ' selected' : ''}>${esc(v.title)}</option>`).join('')}</select></label>
+    <label class="check"><input type="checkbox" id="rc"${S.showRC ? ' checked' : ''}> Release Candidates zeigen</label>`;
+  $('ver').onchange = e => { src.version = src.versions.find(v => v.hash === e.target.value); renderTargets(); renderFlash(); };
+  $('rc').onchange = e => { S.showRC = e.target.checked; save(); renderHosted(); };
+  renderTargets(); renderFlash();
+}
+function renderUpload() {
+  const all = Object.entries(SNAPSHOT_TAGS).map(([title, hash]) => ({ title, hash }));
+  const list = versionList(all);
+  if (!zipVersion || !list.find(v => v.hash === zipVersion.hash)) zipVersion = list[0];
+  const loaded = zipEntries && src && src.mode === 'zip';
+  $('srcBox').innerHTML = `${loaded ? `<p class="ok">Paket für ExpressLRS ${esc(src.version.title)} geladen (${zipEntries.size} Dateien).</p>` :
+      `<p class="hint">Auf diesem Server liegt keine Firmware. Lade das Paket einmal vom ExpressLRS-Server herunter und ziehe es hierher.</p>`}
+    <label class="field"><span>Version</span><select id="ver">${list.map(v => `<option value="${v.hash}"${v.hash === zipVersion.hash ? ' selected' : ''}>${esc(v.title)}</option>`).join('')}</select></label>
+    <label class="check"><input type="checkbox" id="rc"${S.showRC ? ' checked' : ''}> Release Candidates zeigen</label>
+    <ol class="how">
+      <li><a id="pkgLink" href="${ARTIFACTORY}/${zipVersion.hash}/firmware.zip" target="_blank" rel="noopener">firmware.zip für ${esc(zipVersion.title)} herunterladen</a> (ca. 30 MB, enthält alle Geräte).</li>
+      <li>Die Datei ungeöffnet hier ablegen.</li>
+    </ol>
+    <div class="dropzone" id="dz" role="button" tabindex="0"><b>firmware.zip hierher ziehen</b><small>oder klicken zum Auswählen</small></div>
+    <p class="hint" id="zipMsg"></p>
+    <p class="hint">Dauerhaft geht es ohne Upload: Das Skript <code>elrs/get-firmware.ps1</code> legt die Firmware auf deinen Webspace.</p>`;
+  $('ver').onchange = e => { zipVersion = all.find(v => v.hash === e.target.value); renderUpload(); };
+  $('rc').onchange = e => { S.showRC = e.target.checked; save(); renderUpload(); };
+  const dz = $('dz'); dz.onclick = () => $('zipInput').click();
+  dz.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('zipInput').click(); } };
+  if (!loaded) { renderTargets(); renderFlash(); }
+}
+async function loadZip(file) {
+  const msg = $('zipMsg'); if (msg) { msg.className = 'hint'; msg.textContent = 'Paket wird gelesen …'; }
+  try {
+    const raw = await readZip(file);
+    const m = new Map(); for (const [k, v] of raw) m.set(k.replace(/^firmware\//, ''), v);
+    const t = m.get('hardware/targets.json');
+    if (!t) throw new Error('In dieser ZIP fehlt hardware/targets.json. Ist das die firmware.zip von ExpressLRS?');
+    targetsJson = JSON.parse(dec.decode(await t.get()));
+    zipEntries = m;
+    src = { mode: 'zip', versions: [zipVersion], version: zipVersion, targets: targetsJson,
+      read: async (k, p) => { const e = m.get(k === 'hw' ? 'hardware/' + p : k === 'lua' ? 'lua/' + p : p); if (!e) throw new Error(`Datei fehlt im Paket: ${p}`); return e.get(); } };
+    // Version im Paket prüfen
+    const anyFw = [...m.keys()].find(k => /^(FCC|LBT)\/[^/]+\/firmware\.bin$/.test(k));
+    let note = '';
+    if (anyFw) { const fb = await m.get(anyFw).get(); if (!ui8str(fb.subarray(0, Math.min(fb.length, 2e6))).includes(zipVersion.title.split('-')[0])) note = ` Achtung: Im Paket wurde die Versionsnummer ${zipVersion.title} nicht gefunden. Prüfe, ob du die passende Version gewählt hast.`; }
+    renderUpload(); renderTargets(); renderFlash();
+    if (note) { const z = $('zipMsg'); z.className = 'err'; z.textContent = note.trim(); }
+  } catch (e) { if (msg) { msg.className = 'err'; msg.textContent = e.message; } }
+}
+$('zipInput').onchange = e => { const f = e.target.files[0]; if (f) loadZip(f); e.target.value = ''; };
+let dragN = 0; const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+document.addEventListener('dragenter', e => { if (hasFiles(e)) { dragN++; document.body.classList.add('dragging'); } });
+document.addEventListener('dragleave', e => { if (hasFiles(e) && --dragN <= 0) { dragN = 0; document.body.classList.remove('dragging'); } });
+document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener('drop', e => { if (!hasFiles(e)) return; e.preventDefault(); dragN = 0; document.body.classList.remove('dragging'); const f = e.dataTransfer.files[0]; if (f && (!src || src.mode !== 'hosted')) loadZip(f); });
+
+// ---------- Geräteauswahl ----------
+const curVersion = () => src && src.version ? src.version.title : (zipVersion ? zipVersion.title : '0');
+function allTargets() {
+  const out = []; if (!targetsJson) return out;
+  for (const [vk, v] of Object.entries(targetsJson)) {
+    for (const [rk, r] of Object.entries(v)) {
+      if (!rk.startsWith(S.kind + '_') || typeof r !== 'object') continue;
+      for (const [ck, c] of Object.entries(r)) {
+        if (!c || !c.product_name) continue;
+        if (cmpVer(curVersion(), c.min_version || '0') < 0) continue;
+        out.push({ vendor: vk, vendorName: v.name || vk, radio: rk, key: ck, config: c, id: `${vk}.${rk}.${ck}` });
+      }
+    }
+  }
+  return out;
+}
+const curTarget = () => allTargets().find(t => t.id === S.targetKey) || null;
+
+function renderTargets() {
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.kind === S.kind)));
+  $('quickTx15').hidden = S.kind !== 'tx';
+  const all = allTargets();
+  const vendors = [...new Map(all.map(t => [t.vendor, t.vendorName])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  if (S.vendor && !vendors.find(v => v[0] === S.vendor)) S.vendor = null;
+  $('vendor').innerHTML = `<option value="">Alle Hersteller</option>` + vendors.map(([k, n]) => `<option value="${esc(k)}"${k === S.vendor ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  const radios = [...new Set(all.filter(t => !S.vendor || t.vendor === S.vendor).map(t => t.radio))];
+  if (S.radio && !radios.includes(S.radio)) S.radio = null;
+  $('radio').innerHTML = `<option value="">Alle Frequenzen</option>` + radios.map(r => `<option value="${r}"${r === S.radio ? ' selected' : ''}>${RADIO_TITLES[r] || r}</option>`).join('');
+  const q = $('tFilter').value.trim().toLowerCase();
+  const list = all.filter(t => (!S.vendor || t.vendor === S.vendor) && (!S.radio || t.radio === S.radio) && (!q || t.config.product_name.toLowerCase().includes(q)))
+    .sort((a, b) => a.config.product_name.localeCompare(b.config.product_name));
+  $('target').innerHTML = list.length ? list.map(t => `<option value="${esc(t.id)}"${t.id === S.targetKey ? ' selected' : ''}>${esc(t.config.product_name)}</option>`).join('')
+    : `<option disabled>${targetsJson ? 'Kein passendes Gerät' : 'Zuerst Firmware laden'}</option>`;
+  const t = curTarget();
+  $('devinfo').innerHTML = t ? [['Plattform', t.config.platform], ['Firmware', t.config.firmware], ['Lua-Name', t.config.lua_name || '–'], ['Ab Version', t.config.min_version || '–']]
+    .map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('') : '';
+  renderOptions();
+}
+document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { S.kind = b.dataset.kind; S.vendor = S.radio = S.targetKey = null; S.method = null; save(); renderTargets(); renderFlash(); });
+$('vendor').onchange = e => { S.vendor = e.target.value || null; save(); renderTargets(); };
+$('radio').onchange = e => { S.radio = e.target.value || null; save(); renderTargets(); };
+$('tFilter').oninput = () => renderTargets();
+$('target').onchange = e => { S.targetKey = e.target.value; S.method = null; save(); renderTargets(); renderFlash(); };
+$('quickTx15').onclick = () => {
+  S.kind = 'tx'; S.vendor = 'radiomaster'; S.radio = 'tx_dual'; S.targetKey = 'radiomaster.tx_dual.tx15'; S.method = 'etx'; $('tFilter').value = ''; save();
+  renderTargets(); renderFlash();
+  if (!curTarget()) flashMsg(targetsJson ? 'Die TX15 wird erst ab ExpressLRS 3.5.0 unterstützt. Wähle eine neuere Version.' : 'Lade zuerst die Firmware (Schritt 01).', 'err');
+};
+
+// ---------- Optionen ----------
+const has = (t, f) => t && t.config.features && t.config.features.includes(f);
+const hi = r => r && (r.endsWith('2400') || r.endsWith('dual'));
+const lo = r => r && (r.endsWith('900') || r.endsWith('dual'));
+function renderOptions() {
+  const t = curTarget(), o = S.opts, box = $('optBox');
+  if (!t) { box.innerHTML = '<p class="hint">Wähle zuerst ein Gerät.</p>'; return; }
+  const stm = t.config.platform === 'stm32', isTx = S.kind === 'tx';
+  const uid = o.phrase ? uidFromPhrase(o.phrase).join(', ') : '';
+  let h = `<label class="field"><span>Binding-Phrase</span><input type="text" id="o_phrase" value="${esc(o.phrase)}" autocomplete="off" spellcheck="false" placeholder="leer = Binden per Knopf"></label>
+    <div class="uid">${uid ? 'UID: ' + uid : 'Ohne Phrase bindest du klassisch über den Bind-Modus.'}</div>
+    <p class="hint">Sender und Empfänger brauchen dieselbe Phrase. Dann verbinden sie sich ohne Binden.</p>`;
+  if (hi(t.radio)) h += `<label class="field"><span>Region 2,4 GHz</span><select id="o_region"><option value="LBT"${o.region === 'LBT' ? ' selected' : ''}>LBT · Schweiz, EU (CE)</option><option value="FCC"${o.region === 'FCC' ? ' selected' : ''}>FCC · USA und übrige Länder</option></select></label>`;
+  if (lo(t.radio)) h += `<label class="field"><span>Frequenzbereich 900 MHz</span><select id="o_domain">${DOMAINS.map(([v, n]) => `<option value="${v}"${v === o.domain ? ' selected' : ''}>${n}${v === 2 ? ' · Schweiz, EU' : ''}</option>`).join('')}</select></label>`;
+  if (hi(t.radio) || lo(t.radio)) h += '<p class="hint">Sender und Empfänger müssen dieselbe Region haben, sonst verbinden sie sich nicht.</p>';
+  if (!stm) h += `<h3>WLAN für Updates</h3><div class="grid2">
+      <label class="field"><span>WLAN-Name</span><input type="text" id="o_ssid" value="${esc(o.ssid)}" autocomplete="off"></label>
+      <label class="field"><span>Passwort</span><input type="password" id="o_pw" value="${esc(wifiPassword)}" autocomplete="new-password"></label></div>
+      <p class="hint">Optional. Das Gerät verbindet sich dann im WLAN-Modus mit deinem Heimnetz. Das Passwort wird nicht gespeichert.</p>`;
+  h += `<details class="adv"><summary>Erweitert</summary>`;
+  if (!stm) h += `<label class="field"><span>WLAN automatisch an nach (Sekunden ohne Verbindung)</span><input type="number" id="o_wifiOn" min="0" max="120" step="10" value="${o.wifiOn}"></label>`;
+  if (isTx) {
+    h += `<label class="field"><span>Telemetrie-Intervall (ms)</span><input type="number" id="o_tlm" min="100" max="1000" step="10" value="${o.tlm}"></label>`;
+    if (stm) h += `<label class="check"><input type="checkbox" id="o_uartInverted"${o.uartInverted ? ' checked' : ''}> UART invertiert</label>`;
+    if (has(t, 'fan')) h += `<label class="field"><span>Lüfter-Mindestlaufzeit (s)</span><input type="number" id="o_fan" min="0" max="3600" step="10" value="${o.fan}"></label>`;
+    if (has(t, 'unlock-higher-power')) h += `<label class="check"><input type="checkbox" id="o_higherPower"${o.higherPower ? ' checked' : ''}> Höhere Sendeleistung freischalten</label>`;
+    if (has(t, 'buzzer')) h += `<label class="field"><span>Piepser</span><select id="o_beep">${[[0, 'Stumm'], [1, 'Ein Piep'], [2, 'Nur Pieptöne'], [3, 'Standard-Melodie'], [4, 'Eigene Melodie']].map(([v, n]) => `<option value="${v}"${v === o.beep ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+      <label class="field" id="tuneBox"${o.beep === 4 ? '' : ' hidden'}><span>Melodie (Noten Dauer|BPM|Transponierung)</span><input type="text" id="o_tune" value="${esc(o.tune)}" placeholder="E5 40 E5 40 C5 120|20|0"></label>`;
+  } else {
+    h += `<label class="field"><span>UART-Baudrate</span><select id="o_rxBaud">${[115200, 400000, 420000, 460800, 921600].map(b => `<option${b === o.rxBaud ? ' selected' : ''}>${b}</option>`).join('')}</select></label>
+      <label class="check"><input type="checkbox" id="o_lockFirst"${o.lockFirst ? ' checked' : ''}> Paketrate bei erster Verbindung festhalten</label>`;
+    if (has(t, 'sbus-uart')) h += `<label class="check"><input type="checkbox" id="o_sbusUart"${o.sbusUart ? ' checked' : ''}> SBUS-Pins als UART nutzen</label>`;
+  }
+  h += `</details><button class="btn small" type="button" id="o_reset" style="margin-top:8px">Optionen zurücksetzen</button>`;
+  box.innerHTML = h;
+  const bind = (id, key, conv = v => v) => { const el = $(id); if (!el) return; el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', () => {
+    o[key] = el.type === 'checkbox' ? el.checked : conv(el.value); save();
+    if (key === 'phrase') { const u = o.phrase ? uidFromPhrase(o.phrase).join(', ') : ''; box.querySelector('.uid').textContent = u ? 'UID: ' + u : 'Ohne Phrase bindest du klassisch über den Bind-Modus.'; }
+    if (key === 'beep') $('tuneBox').hidden = o.beep !== 4;
+  }); };
+  bind('o_phrase', 'phrase'); bind('o_region', 'region'); bind('o_domain', 'domain', Number); bind('o_ssid', 'ssid');
+  bind('o_wifiOn', 'wifiOn', Number); bind('o_tlm', 'tlm', Number); bind('o_fan', 'fan', Number); bind('o_higherPower', 'higherPower'); bind('o_uartInverted', 'uartInverted');
+  bind('o_beep', 'beep', Number); bind('o_tune', 'tune'); bind('o_rxBaud', 'rxBaud', Number); bind('o_lockFirst', 'lockFirst'); bind('o_sbusUart', 'sbusUart');
+  const pw = $('o_pw'); if (pw) pw.oninput = () => { wifiPassword = pw.value; };
+  $('o_reset').onclick = () => { S.opts = { ...DEFAULT_OPTS }; wifiPassword = ''; save(); renderOptions(); };
+}
+
+// ---------- Firmware zusammenbauen (wie configure.js des Configurators) ----------
+const MAGIC = [0xBE, 0xEF, 0xBA, 0xBE, 0xCA, 0xFE, 0xF0, 0x0D];
+function findMagic(b) { outer: for (let i = 0; i < b.length - 8; i++) { for (let j = 0; j < 8; j++) if (b[i + j] !== MAGIC[j]) continue outer; return i; } return -1; }
+function w32(b, p, v) { if (v !== undefined) { b[p] = v & 255; b[p + 1] = (v >> 8) & 255; b[p + 2] = (v >> 16) & 255; b[p + 3] = (v >> 24) & 255; } return p + 4; }
+function configureSTM32(bin, devType, radioType, o, ver) {
+  let pos = findMagic(bin); if (pos < 0) throw new Error('Konfigurationsmarke nicht gefunden. Ist das eine Firmware ab 3.0?');
+  pos += 8; const v = bin[pos] + bin[pos + 1] << 8; pos += 2; if (v === 0) pos += 1;
+  if (radioType === 'sx127x' && o.domain !== undefined) bin[pos] = o.domain; pos += 1;
+  if (o.uid) { bin[pos] = 1; for (let i = 0; i < 6; i++) bin[pos + 1 + i] = o.uid[i]; } else bin[pos] = 0;
+  pos += 7;
+  if (cmpVer(ver, '3.4') >= 0) pos = w32(bin, pos, o['flash-discriminator']);
+  if (cmpVer(ver, '3.5') >= 0) pos = w32(bin, pos, o['fan-runtime']);
+  if (devType === 'TX') {
+    pos = w32(bin, pos, o['tlm-report']);
+    if (cmpVer(ver, '3.5') < 0) pos = w32(bin, pos, o['fan-runtime']);
+    let val = bin[pos];
+    if (o['uart-inverted']) { val &= ~1; val |= 1; }
+    if (o['unlock-higher-power']) { val &= ~2; val |= 2; }
+    bin[pos] = val; pos += 1;
+    if (o.beeptype) {
+      bin[pos] = o.beeptype; pos += 1;
+      for (let i = 0; i < 128; i++) bin[pos + i] = 0;
+      (o.melody || []).forEach((m, i) => { bin[pos + i * 4] = m[0] & 255; bin[pos + i * 4 + 1] = (m[0] >> 8) & 255; bin[pos + i * 4 + 2] = m[1] & 255; bin[pos + i * 4 + 3] = (m[1] >> 8) & 255; });
+    }
+  } else {
+    pos = w32(bin, pos, o['rcvr-uart-baud']);
+    let val = bin[pos];
+    if (o['rcvr-invert-tx']) { val &= ~1; val |= 1; }
+    if (o['lock-on-first-connection']) { val &= ~2; val |= 2; }
+    if (o['r9mm-mini-sbus']) { val &= ~4; val |= 4; }
+    bin[pos] = val;
+  }
+  return bin;
+}
+function firmwareEnd(bin, cfg) {
+  let pos = cfg.platform === 'esp8285' ? 0x1000 : 0;
+  if (bin[pos] !== 0xE9) throw new Error('Die Firmware-Datei hat nicht das erwartete Format.');
+  let seg = bin[pos + 1];
+  pos = cfg.platform.startsWith('esp32') ? 24 : 0x1008;
+  while (seg--) { const size = bin[pos + 4] + (bin[pos + 5] << 8) + (bin[pos + 6] << 16) + (bin[pos + 7] << 24); pos += 8 + size; }
+  pos = (pos + 16) & ~15;
+  if (cfg.platform.startsWith('esp32')) pos += 32;
+  return pos;
+}
+function buildOptions(t) {
+  const o = S.opts, c = t.config, isTx = S.kind === 'tx';
+  const opt = { 'flash-discriminator': Math.floor(Math.random() * ((2 ** 31) - 2) + 1) };
+  if (o.phrase) opt.uid = uidFromPhrase(o.phrase);
+  if (c.platform !== 'stm32') {
+    opt['wifi-on-interval'] = o.wifiOn;
+    if (o.ssid) { opt['wifi-ssid'] = o.ssid; opt['wifi-password'] = wifiPassword; }
+  }
+  if (!isTx) { opt['rcvr-uart-baud'] = o.rxBaud; opt['lock-on-first-connection'] = o.lockFirst; if (has(t, 'sbus-uart')) opt['r9mm-mini-sbus'] = o.sbusUart; }
+  else { opt['tlm-interval'] = o.tlm; opt['fan-runtime'] = o.fan; opt['uart-inverted'] = o.uartInverted; opt['unlock-higher-power'] = o.higherPower; }
+  if (lo(t.radio)) opt.domain = o.domain;
+  if (isTx && has(t, 'buzzer')) {
+    opt.beeptype = o.beep > 2 ? 2 : o.beep;
+    opt.melody = o.beep === 2 ? parseMelody('A4 20 B4 20|60|0') : o.beep === 3 ? parseMelody('E5 40 E5 40 C5 120 E5 40 G5 22 G4 21|20|0') : o.beep === 4 ? parseMelody(o.tune) : [];
+  }
+  return opt;
+}
+async function generateFirmware() {
+  const t = curTarget(); if (!t) throw new Error('Kein Gerät gewählt.');
+  if (!src || !src.version) throw new Error('Keine Firmware geladen.');
+  const c = t.config, devType = S.kind === 'tx' ? 'TX' : 'RX';
+  const radioType = t.radio.endsWith('_900') ? 'sx127x' : t.radio.endsWith('_2400') ? 'sx128x' : 'lr1121';
+  const region = hi(t.radio) ? S.opts.region : 'FCC';
+  const base = `${region}/${c.firmware}/`;
+  const opt = buildOptions(t), ver = src.version.title;
+  if (c.platform === 'stm32') {
+    const bin = configureSTM32(await src.read('fw', base + 'firmware.bin'), devType, radioType, opt, ver);
+    return { files: [{ data: bin, address: 0 }], config: c, opt, region };
+  }
+  let layout = new Uint8Array(0);
+  if (c.custom_layout) layout = bstr(JSON.stringify(c.custom_layout));
+  else if (c.layout_file) {
+    let l = JSON.parse(ui8str(await src.read('hw', `${devType}/${c.layout_file}`)));
+    if (c.overlay) l = { ...l, ...c.overlay };
+    layout = bstr(JSON.stringify(l));
+  }
+  if (layout.length > 2048) throw new Error('Hardware-Beschreibung ist zu groß.');
+  const configureESP = bin => {
+    const end = firmwareEnd(bin, c);
+    return cat(bin.slice(0, end), bstr(c.product_name.padEnd(128, '\x00')), bstr((c.lua_name || '').padEnd(16, '\x00')), bstr(JSON.stringify(opt).padEnd(512, '\x00')));
+  };
+  const files = [];
+  if (c.platform.startsWith('esp32')) {
+    const start = c.platform.startsWith('esp32-') ? 0x0000 : 0x1000;
+    files.push({ data: await src.read('fw', base + 'bootloader.bin'), address: start, name: 'bootloader.bin' });
+    files.push({ data: await src.read('fw', base + 'partitions.bin'), address: 0x8000, name: 'partitions.bin' });
+    files.push({ data: await src.read('fw', base + 'boot_app0.bin'), address: 0xE000, name: 'boot_app0.bin' });
+    files.push({ data: configureESP(await src.read('fw', base + 'firmware.bin')), address: 0x10000, name: 'firmware.bin' });
+  } else {
+    files.push({ data: configureESP(await src.read('fw', base + 'firmware.bin')), address: 0, name: 'firmware.bin' });
+  }
+  let logo = new Uint8Array(0);
+  if (c.logo_file) { try { logo = await src.read('hw', `logo/${c.logo_file}`); } catch (e) {} }
+  const last = files[files.length - 1];
+  last.data = cat(last.data, layout, new Uint8Array(2048 - layout.length), logo);
+  return { files, config: c, opt, region };
+}
+
+// ---------- Flashen über WebSerial (wie espflasher.js / passthrough.js) ----------
+let esp = null;
+async function loadEsptool() { if (!esp) esp = await import(ESPTOOL_URL); return esp; }
+function makeTransportEx(E) {
+  return class TransportEx extends E.Transport {
+    set_delimiters(ds = ['\n', 'CCC']) { this.delimiters = ds.map(bstr); }
+    async read_line(timeout = 0) {
+      let packet = this.buffer; this.buffer = new Uint8Array(0);
+      const ds = this.delimiters;
+      const find = pk => { for (let i = 0; i < pk.length; i++) for (const d of ds) { let ok = true; for (let j = 0; j < d.length; j++) if (pk[i + j] !== d[j]) { ok = false; break; } if (ok) return i + d.length; } return -1; };
+      let index = find(packet);
+      if (index === -1) {
+        if (!this.reader && this.device && this.device.readable) this.reader = this.device.readable.getReader();
+        const reader = this.reader; if (!reader) throw new Error('Serielle Schnittstelle nicht lesbar.');
+        let timedOut = false, t;
+        try {
+          if (timeout > 0) t = setTimeout(() => { timedOut = true; reader.cancel().catch(() => {}); }, timeout);
+          do {
+            let res;
+            try { res = await reader.read(); } catch (e) { if (timedOut) { try { reader.releaseLock(); } catch (x) {} this.reader = undefined; return ''; } throw e; }
+            if (res.done) { if (timedOut) { try { reader.releaseLock(); } catch (x) {} this.reader = undefined; return ''; } await this.disconnect(); await this.connect(this.baudrate); return ''; }
+            packet = this.appendArray(packet, res.value); index = find(packet);
+          } while (index === -1);
+        } finally { if (timeout > 0) clearTimeout(t); }
+      }
+      this.buffer = packet.slice(index);
+      return ui8str(packet.slice(0, index));
+    }
+    async write_string(s) { const w = this.device.writable.getWriter(); await w.write(bstr(s).buffer); w.releaseLock(); }
+    async write_array(a) { const w = this.device.writable.getWriter(); await w.write(a.buffer); w.releaseLock(); }
+  };
+}
+class Mismatch extends Error {}
+function crc8(p, poly = 0xD5) { let c = 0; for (let i = 0; i < p.length; i++) { c ^= p[i]; for (let j = 0; j < 8; j++) c = (c & 0x80) ? ((c << 1) ^ poly) % 256 : (c << 1) % 256; } return c; }
+function initSeq(seq) { const tmp = new Uint8Array(seq.length + 1); tmp.set(seq); tmp[1] = seq[1]; tmp[seq.length] = crc8(tmp.slice(2, tmp.length - 1)); return tmp; }
+class Passthrough {
+  constructor(tr, log, target) { this.tr = tr; this.log = log; this.target = target; }
+  async sendExpect(send, expect, delay) {
+    await this.tr.write_string(send); const line = await this.tr.read_line(1000);
+    if (!line.includes(expect)) { this.log(`Passthrough fehlgeschlagen: erwartet „${expect}“, erhalten „${line.trim()}“`); throw new Error('Passthrough fehlgeschlagen'); }
+    await sleep(delay);
+  }
+  async edgeTX() {
+    this.log('Starte EdgeTX-Passthrough …');
+    this.tr.set_delimiters(['> ']);
+    await this.sendExpect('set pulses 0\n', 'set: ', 0);
+    await this.sendExpect('set rfmod 0 power off\n', 'set: ', 500);
+    await this.sendExpect('set rfmod 0 bootpin 1\n', 'set: ', 100);
+    await this.sendExpect('set rfmod 0 power on\n', 'set: ', 100);
+    await this.sendExpect('set rfmod 0 bootpin 0\n', 'set: ', 0);
+    this.tr.set_delimiters(['\n']);
+    const cmd = `serialpassthrough rfmod 0 ${this.tr.baudrate}`;
+    this.log(`  ${cmd}`); await this.tr.write_string(cmd + '\n'); await this.tr.read_line(200);
+    this.log('Passthrough aktiv.');
+  }
+  async betaflight() {
+    this.log('Starte Betaflight-Passthrough …');
+    await this.tr.write_string('#'); this.tr.set_delimiters(['# ', 'CCC']);
+    const line = await this.tr.read_line(200);
+    if (line.includes('CCC')) { this.log('Passthrough und Bootloader sind schon aktiv.'); return; }
+    if (!line.trim().endsWith('#')) { this.log('Keine CLI gefunden. Läuft das Passthrough schon? Sonst FC neu starten.'); return; }
+    this.tr.set_delimiters(['# ']);
+    const check = async (k, exp) => { await this.tr.write_string(`get ${k}\r\n`); const l = await this.tr.read_line(100); return exp.some(e => l.trim().includes(` = ${e}`)); };
+    const errs = [];
+    if (!await check('serialrx_provider', ['CRSF', 'ELRS'])) errs.push('Empfängerprotokoll ist nicht CRSF (set serialrx_provider = CRSF)');
+    if (!await check('serialrx_inverted', ['OFF'])) errs.push('UART ist invertiert (set serialrx_inverted = OFF)');
+    if (!await check('serialrx_halfduplex', ['OFF', 'AUTO'])) errs.push('UART ist nicht Vollduplex (set serialrx_halfduplex = OFF)');
+    if (errs.length) { errs.forEach(e => this.log('  ' + e)); throw new Error('FC-Einstellungen passen nicht'); }
+    await this.tr.write_string('serial\r\n'); this.tr.set_delimiters(['\n']);
+    let idx = false;
+    for (;;) { const l = await this.tr.read_line(200); if (l === '') break; const m = l.match(/serial (?<port>(UART)?[0-9]+) (?<cfg>[0-9]+) /); if (m && (m.groups.cfg & 64) === 64) { idx = m.groups.port; break; } }
+    if (!idx) { this.log('Kein Empfänger-UART am FC gefunden.'); throw new Error('RX-UART nicht gefunden'); }
+    await this.tr.write_string(`serialpassthrough ${idx} ${this.tr.baudrate}\r\n`); await sleep(200);
+    try { for (let i = 0; i < 10; i++) await this.tr.read_line(200); } catch (e) {}
+    this.log('Passthrough aktiv.');
+  }
+  async resetToBootloader() {
+    this.log('Setze Empfänger in den Bootloader …');
+    while (await this.tr.read_line(100) !== '') {}
+    const train = new Uint8Array(32).fill(0x55);
+    await this.tr.write_array(new Uint8Array([0x07, 0x07, 0x12, 0x20])); await this.tr.write_array(train); await sleep(200);
+    await this.tr.write_array(initSeq([0xEC, 0x04, 0x32, 98, 108])); await sleep(200);
+    this.tr.set_delimiters(['\n']);
+    const rx = (await this.tr.read_line(200)).trim();
+    if (rx === '') this.log('Empfängertyp nicht erkannt, flashe trotzdem.');
+    else if (rx.toUpperCase() !== this.target.toUpperCase()) { this.log(`Falsches Gerät: erkannt „${rx}“, gewählt „${this.target}“.`); throw new Mismatch(); }
+    else this.log(`Gerät bestätigt: ${rx}`);
+    await sleep(500);
+  }
+}
+
+let port = null, loader = null, built = null, busy = false;
+function log(s) { const t = $('term'); if (!t) return; t.textContent += s + '\n'; t.scrollTop = t.scrollHeight; }
+function flashMsg(m, k) { const e = $('flashMsg'); if (e) { e.textContent = m; e.className = k === 'err' ? 'err' : k === 'ok' ? 'ok' : 'hint'; } }
+async function closePort() { try { if (loader) await loader.transport.disconnect(); } catch (e) {} try { if (port) await port.close(); } catch (e) {} loader = null; port = null; }
+
+async function connectAndPrepare() {
+  const t = curTarget(), method = S.method;
+  if (!('serial' in navigator)) return flashMsg('Dieser Browser kann nicht über USB flashen. Öffne die Seite lokal in Chrome oder Edge oder nutze „Nur herunterladen“.', 'err');
+  busy = true; renderFlashButtons(); $('term').textContent = '';
+  try {
+    log('Firmware wird zusammengestellt …');
+    built = await generateFirmware();
+    if (t.config.platform === 'stm32') throw new Error('STM32-Geräte lassen sich hier nicht über USB flashen. Nutze „Nur herunterladen“ und den Configurator am PC.');
+    if (t.config.platform.startsWith('esp32') && method === 'betaflight') built.files = built.files.slice(-1);
+    log(`Fertig: ${built.files.length} Datei(en), ${fmtBytes(built.files.reduce((a, f) => a + f.data.length, 0))}.`);
+    try { port = await navigator.serial.requestPort(); }
+    catch (e) { throw new Error(e && e.name === 'SecurityError' ? 'USB-Zugriff ist in dieser Ansicht gesperrt. Öffne die Seite lokal in Chrome oder Edge.' : 'Kein Gerät ausgewählt.'); }
+    const E = await loadEsptool(); const TransportEx = makeTransportEx(E);
+    const main = true;
+    let mode = 'default_reset', baud = 460800, initbaud;
+    if (method === 'betaflight') { baud = 420000; mode = 'no_reset'; }
+    else if (method === 'etx') { baud = main ? 230400 : 460800; mode = 'no_reset'; }
+    else if (method === 'passthru') { baud = 230400; mode = 'no_reset'; }
+    else if (method === 'uart' && t.config.platform.startsWith('esp32')) initbaud = 115200;
+    if (t.config.baud) { baud = t.config.baud; initbaud = t.config.baud; }
+    const tr = new TransportEx(port, false);
+    const term = { clean() {}, writeLine: s => log(s), write: s => { const x = $('term'); if (x) { x.textContent += s; x.scrollTop = x.scrollHeight; } } };
+    loader = new E.ESPLoader({ transport: tr, baudrate: baud, terminal: term, romBaudrate: initbaud ?? baud });
+    loader.romBaudrate = initbaud ?? baud; loader.baudrate = baud; loader.ESP_RAM_BLOCK = 0x0800;
+    const pt = new Passthrough(tr, log, t.config.firmware);
+    let mismatch = null;
+    try {
+      if (method === 'uart') {
+        if (S.kind === 'rx' && !t.config.platform.startsWith('esp32')) {
+          await tr.connect(baud);
+          const ret = await loader._connectAttempt(mode = 'no_reset', new E.CustomReset(tr, 'W0'));
+          if (ret !== 'success') { await tr.disconnect(); await tr.connect(420000); await pt.resetToBootloader(); }
+        } else await tr.connect(115200);
+      } else if (method === 'betaflight') { await tr.connect(baud); await pt.betaflight(); await pt.resetToBootloader(); }
+      else if (method === 'etx') { await tr.connect(baud); await pt.edgeTX(); }
+      else if (method === 'passthru') { await tr.connect(baud); await tr.setDTR(false); await sleep(100); await tr.setRTS(false); await sleep(5000); await tr.setDTR(true); await sleep(200); await tr.setDTR(false); await sleep(100); }
+    } catch (e) { if (e instanceof Mismatch) mismatch = e; else throw e; }
+    await tr.disconnect();
+    const chip = await loader.main(mode);
+    const name = loader.chip.CHIP_NAME, pf = t.config.platform;
+    if ((name === 'ESP8266' && pf !== 'esp8285') || (name === 'ESP32-C3' && pf !== 'esp32-c3') || (name === 'ESP32-S3' && pf !== 'esp32-s3') || (name === 'ESP32' && pf !== 'esp32'))
+      throw new Error(`Falsches Gerät gewählt: angeschlossen ist ein ${chip}, die Firmware ist für ${pf}.`);
+    log(`Verbunden mit ${chip}.`);
+    connected = true; mismatched = !!mismatch;
+    flashMsg(mismatch ? 'Das erkannte Gerät passt nicht zur Auswahl. Flashe nur, wenn du sicher bist.' : 'Bereit zum Flashen.', mismatch ? 'err' : 'ok');
+  } catch (e) {
+    log('Fehler: ' + (e.message || e)); flashMsg((e.message || 'Verbindung fehlgeschlagen.') + ' Gerät neu starten und erneut versuchen.', 'err');
+    await closePort(); connected = false;
+  }
+  busy = false; renderFlashButtons();
+}
+let connected = false, mismatched = false;
+async function doFlash() {
+  if (!loader || !built) return;
+  busy = true; renderFlashButtons();
+  const erase = $('fullErase') && $('fullErase').checked;
+  const files = built.files.map(f => ({ data: f.data, address: f.address }));
+  const bar = $('bar'), txt = $('barTxt');
+  try {
+    if (S.method === 'etx' || S.method === 'betaflight') loader.FLASH_WRITE_SIZE = 0x0800;
+    loader.IS_STUB = true;
+    txt.textContent = 'Lösche Flash …';
+    await loader.writeFlash({
+      fileArray: files, flashSize: 'keep', flashMode: 'keep', flashFreq: 'keep', eraseAll: !!erase, compress: true,
+      reportProgress: (i, w, tot) => { bar.value = w / tot; txt.textContent = `Datei ${i + 1} von ${files.length} · ${Math.round(w / tot * 100)} %`; },
+      calculateMD5Hash: img => window.CryptoJS ? CryptoJS.MD5(CryptoJS.enc.Latin1.parse(ui8str(img))).toString() : undefined,
+    });
+    bar.value = 1; txt.textContent = 'Fertig · 100 %';
+    try { await loader.after(curTarget().config.platform.startsWith('esp32') ? 'hard_reset' : 'soft_reset'); } catch (e) {}
+    log('Flashen abgeschlossen.');
+    flashMsg(S.method === 'etx' ? 'Fertig. USB trennen und den Sender neu starten. Im ELRS-Lua-Skript siehst du die neue Version.' : 'Fertig. Gerät trennen und neu starten.', 'ok');
+  } catch (e) { log('Fehler beim Flashen: ' + (e.message || e)); flashMsg('Flashen fehlgeschlagen. Gerät neu starten und erneut versuchen.', 'err'); }
+  await closePort(); connected = false; busy = false; renderFlashButtons();
+}
+
+// ---------- Herunterladen ----------
+let downloads = null;
+const inClaude = !!(window.claude && typeof window.claude.use === 'function');
+if (inClaude) window.claude.use('downloads').then(d => { downloads = d; }).catch(() => {});
+async function saveBlob(name, blob, onMsg) {
+  if (inClaude) {
+    // Im Claude-Fenster sind nur bestimmte Dateitypen erlaubt: alles andere kommt verpackt als ZIP.
+    if (!/\.zip$/i.test(name)) { blob = await makeZip([{ name, data: new Uint8Array(await blob.arrayBuffer()) }]); name = name + '.zip'; }
+    if (!downloads) return onMsg('Speichern ist in dieser Ansicht nicht verfügbar.', 'err');
+    try { await downloads.save({ filename: name, data: blob }); onMsg(`${name} gespeichert.`, 'ok'); }
+    catch (e) { onMsg(e && e.code === 'declined' ? 'Speichern abgebrochen.' : 'Speichern ist in dieser Ansicht nicht möglich.', 'err'); }
+    return;
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000); onMsg(`${name} gespeichert.`, 'ok');
+}
+function dlName(t, ext, region) {
+  const clean = s => String(s).replace(/[^a-zA-Z0-9._-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  const label = S.opts.phrase ? 'bindphrase' : S.opts.ssid ? 'custom' : 'default';
+  return ['ELRS', 'v' + src.version.title, clean(t.id), region, label].join('-') + ext;
+}
+async function doDownload() {
+  const t = curTarget(); busy = true; renderFlashButtons();
+  try {
+    const b = await generateFirmware(), c = t.config, msg = (m, k) => flashMsg(m, k);
+    if (c.platform === 'esp8285') {
+      const gz = new Uint8Array(await new Response(new Blob([b.files[0].data]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+      await saveBlob(dlName(t, '.bin.gz', b.region), new Blob([gz]), msg);
+    } else if ((c.upload_methods || []).includes('zip')) {
+      await saveBlob(dlName(t, '.zip', b.region), await makeZip(b.files.map(f => ({ name: f.name, data: f.data }))), msg);
+    } else {
+      await saveBlob(dlName(t, '.bin', b.region), new Blob([b.files[b.files.length - 1].data]), msg);
+    }
+  } catch (e) { flashMsg(e.message || 'Firmware konnte nicht erstellt werden.', 'err'); }
+  busy = false; renderFlashButtons();
+}
+
+// ---------- Flash-Bereich ----------
+function methodsFor(t) {
+  const m = (t.config.upload_methods || []).filter(x => METHODS[x] && x !== 'download');
+  const serial = t.config.platform !== 'stm32' ? m.filter(x => ['etx', 'uart', 'betaflight', 'passthru'].includes(x)) : [];
+  const out = [...serial]; if (m.includes('wifi')) out.push('wifi'); out.push('download');
+  return out;
+}
+function renderFlash() {
+  const box = $('flashBox'), t = curTarget();
+  if (!t || !src || !src.version) { box.innerHTML = `<p class="hint">${!src ? 'Lade zuerst die Firmware (Schritt 01).' : 'Wähle ein Gerät (Schritt 02).'}</p><div class="hint" id="flashMsg"></div>`; return; }
+  const ms = methodsFor(t); if (!S.method || !ms.includes(S.method)) S.method = ms[0];
+  const serialOk = 'serial' in navigator;
+  let h = `<div class="summary"><span><b>${esc(t.config.product_name)}</b></span><span>ExpressLRS ${esc(src.version.title)} · ${hi(t.radio) ? 'Region ' + esc(S.opts.region) : ''}${lo(t.radio) ? ' · ' + DOMAINS.find(d => d[0] === S.opts.domain)[1] : ''}${S.opts.phrase ? ' · mit Binding-Phrase' : ''}</span></div>
+    <div class="method" role="radiogroup" aria-label="Flash-Methode">${ms.map(m => `<label><input type="radio" name="method" value="${m}"${m === S.method ? ' checked' : ''}><span><b>${METHODS[m][0]}</b><small>${METHODS[m][1]}</small></span></label>`).join('')}</div>`;
+  const isSerial = ['etx', 'uart', 'betaflight', 'passthru'].includes(S.method);
+  if (S.method === 'etx') h += `<h3>So geht es mit der TX15</h3><ol class="how">
+      <li>Am Sender SYS → Hardware: <b>USB-VCP</b> auf <b>CLI</b> stellen.</li>
+      <li>Sender eingeschaltet lassen und per USB-C verbinden. In der Abfrage <b>USB Serial (VCP)</b> wählen.</li>
+      <li><b>Verbinden</b> klicken und den Anschluss des Senders wählen.</li>
+      <li>Wenn „Bereit zum Flashen“ erscheint: <b>Flashen</b>. Dauer etwa 1 bis 2 Minuten. Den Sender dabei nicht trennen.</li></ol>`;
+  else if (S.method === 'wifi') h += `<h3>So geht es per WLAN</h3><ol class="how">
+      <li>Firmware unten herunterladen.</li>
+      <li>Am Sender das ELRS-Lua-Skript öffnen, dann <b>WiFi Connectivity → Enable WiFi</b>. Beim Empfänger 60 Sekunden ohne Verbindung warten.</li>
+      <li>Mit dem WLAN <b>ExpressLRS TX</b> bzw. <b>ExpressLRS RX</b> verbinden (Passwort <code>expresslrs</code>) und <code>http://10.0.0.1</code> öffnen.</li>
+      <li>Im Reiter <b>Update</b> die Datei hochladen. Bei <code>.bin.gz</code> die Datei nicht entpacken.</li></ol>`;
+  if (isSerial) {
+    if (!serialOk) h += `<p class="err">Dieser Browser kann nicht über USB flashen${inClaude ? ' (im Claude-Fenster gesperrt)' : ''}. Öffne die Seite lokal in Chrome oder Edge, oder nutze „Nur herunterladen“.</p>`;
+    h += `<label class="check"><input type="checkbox" id="fullErase"> Flash vorher komplett löschen (setzt alle Einstellungen des Geräts zurück)</label>
+      <div class="btn-row"><button class="btn primary" type="button" id="connBtn">Verbinden</button><button class="btn" type="button" id="flashBtn" disabled>Flashen</button></div>
+      <div class="prog"><progress id="bar" value="0" max="1"></progress><span id="barTxt">–</span></div>
+      <div class="term" id="term" aria-live="polite"></div>`;
+  } else h += `<div class="btn-row"><button class="btn primary" type="button" id="dlBtn">Firmware herunterladen</button></div>`;
+  h += `<div class="hint" id="flashMsg" style="margin-top:8px"></div>`;
+  box.innerHTML = h;
+  box.querySelectorAll('input[name=method]').forEach(r => r.onchange = async () => { S.method = r.value; save(); await closePort(); connected = false; renderFlash(); });
+  if ($('connBtn')) { $('connBtn').onclick = connectAndPrepare; $('flashBtn').onclick = doFlash; }
+  if ($('dlBtn')) $('dlBtn').onclick = doDownload;
+  renderFlashButtons();
+}
+function renderFlashButtons() {
+  const c = $('connBtn'), f = $('flashBtn'), d = $('dlBtn');
+  if (c) { c.disabled = busy; c.textContent = connected ? 'Neu verbinden' : 'Verbinden'; }
+  if (f) { f.disabled = busy || !connected; f.textContent = mismatched ? 'Trotzdem flashen' : 'Flashen'; f.className = 'btn ' + (connected ? (mismatched ? 'warn' : 'primary') : ''); }
+  if (d) d.disabled = busy;
+}
+
+// ---------- Lua-Skript ----------
+$('luaBtn').onclick = async () => {
+  const m = $('luaMsg'), say = (s, k) => { m.textContent = s; m.className = k === 'err' ? 'err' : 'hint'; };
+  if (!src || !src.version) return say('Lade zuerst die Firmware (Schritt 01).', 'err');
+  const name = cmpVer(src.version.title, '4.0.0') < 0 ? 'elrsV3.lua' : 'elrs.lua';
+  try {
+    let data; try { data = await src.read('lua', name); } catch (e) { data = await src.read('lua', name === 'elrs.lua' ? 'elrsV3.lua' : 'elrs.lua'); }
+    await saveBlob(`ELRS-Lua-${src.version.title}.zip`, await makeZip([{ name: 'SCRIPTS/TOOLS/' + name, data }]), say);
+  } catch (e) { say('Das Lua-Skript fehlt in diesem Firmware-Paket.', 'err'); }
+};
+
+// ---------- Start ----------
+if (!('serial' in navigator)) {
+  const b = $('banner'); b.hidden = false; b.className = 'banner warn';
+  b.innerHTML = inClaude ? '<span>Im Claude-Fenster ist der USB-Zugriff gesperrt. Firmware einstellen und herunterladen geht hier. Zum direkten Flashen die Datei <code>elrs-flasher.html</code> lokal in Chrome oder Edge öffnen.</span>'
+    : '<span>Dieser Browser unterstützt kein WebSerial. Zum Flashen über USB brauchst du Chrome oder Edge am PC. Herunterladen für das Flashen per WLAN geht trotzdem.</span>';
+}
+renderTargets(); renderFlash();
+initSource();
+})();
+</script>

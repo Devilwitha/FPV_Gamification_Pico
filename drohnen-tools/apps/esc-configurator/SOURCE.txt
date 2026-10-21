@@ -1,0 +1,5 @@
+esc-configurator – unverändert gebaut aus dem offiziellen Quellcode.
+Quellcode: https://github.com/stylesuxx/esc-configurator.git
+Commit:    21b407a3f30aaff1b079496f4d13d82544c667c4
+Lizenz:    AGPL-3.0 (siehe LICENSE.txt)
+Gebaut am: 2026-10-18 11:51

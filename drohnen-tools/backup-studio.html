@@ -1,0 +1,1038 @@
+<title>TX15 Backup Studio</title>
+<script src="/site-nav.js" defer></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: drei Arbeitsschritte nebeneinander – Karte verbinden & sichern | gespeicherte Backups | wiederherstellen */
+:root {
+  --bg: #eef1f0; --panel: #ffffff; --ink: #1a2220; --muted: #5b6b66; --line: #d3dcd9;
+  --accent: #14896a; --accent-ink: #ffffff; --accent-soft: rgba(20, 137, 106, .1);
+  --good: #1f8a4c; --warn: #b7791f; --bad: #c43c2c; --info: #2f6fb5; --code-bg: #f4f7f6;
+  --f-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131917; --panel: #1b2321; --ink: #e5ece9; --muted: #93a39e; --line: #2f3b38;
+    --accent: #48cfa3; --accent-ink: #06150f; --accent-soft: rgba(72, 207, 163, .12);
+    --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a; --info: #6aa8ec; --code-bg: #161d1b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131917; --panel: #1b2321; --ink: #e5ece9; --muted: #93a39e; --line: #2f3b38;
+  --accent: #48cfa3; --accent-ink: #06150f; --accent-soft: rgba(72, 207, 163, .12);
+  --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a; --info: #6aa8ec; --code-bg: #161d1b;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); padding: 0 16px 32px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; margin: 0; text-wrap: balance; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code { font-family: var(--f-mono); font-size: .9em; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding-block: 18px 14px; max-width: 1500px; margin: 0 auto; }
+header.top h1 { font-size: 30px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+header.top h1 span { color: var(--accent); }
+header.top p { margin: 0; color: var(--muted); }
+header.top a.back { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 13px; }
+header.top a.back:hover { color: var(--accent); }
+
+.banner { max-width: 1500px; margin: 0 auto 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+.banner.demo { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+.banner b { font-weight: 600; }
+.banner .sp { flex: 1; }
+
+.wrap { max-width: 1500px; margin: 0 auto; display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+@media (max-width: 1180px) { .wrap { grid-template-columns: repeat(2, minmax(0, 1fr)); } .col-restore { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.panel + .panel { margin-top: 16px; }
+.step { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.step .n { font: 600 13px var(--f-mono); color: var(--accent); }
+.step h2 { font-size: 20px; text-transform: uppercase; letter-spacing: .05em; }
+.panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 8px; }
+.hint { font-size: 12px; color: var(--muted); margin: 6px 0 10px; }
+ol.how { margin: 0 0 12px; padding-left: 20px; font-size: 13px; }
+ol.how li { margin-bottom: 3px; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-weight: 500; }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.small { padding: 3px 8px; font-size: 12px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.danger { color: var(--bad); }
+.btn.danger.armed { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn-row .btn { flex: 1 1 auto; }
+
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0 4px; }
+.fact { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.fact span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.fact b { font: 600 18px var(--f-display); letter-spacing: .02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.cats { display: grid; gap: 2px; }
+.cat { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.cat:hover { background: var(--bg); }
+.cat .t { min-width: 0; }
+.cat .t b { font-weight: 600; font-size: 13px; }
+.cat .t small { display: block; color: var(--muted); font-size: 11px; line-height: 1.3; }
+.cat .sz { font: 12px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.cat input { margin: 0; accent-color: var(--accent); }
+.sum { display: flex; justify-content: space-between; gap: 8px; padding: 8px; border-top: 1px solid var(--line); margin-top: 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.sum b { font-weight: 600; }
+
+label.field { display: grid; gap: 3px; margin: 10px 0; }
+label.field > span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+input[type="text"], select { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); }
+.fw-warn { border: 1px solid var(--warn); border-radius: 6px; padding: 8px 10px; font-size: 12px; margin: 10px 0; background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+
+.models { display: grid; gap: 2px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px; }
+.model { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 4px; font-size: 13px; }
+.model:hover { background: var(--bg); }
+.model .f { font: 11px var(--f-mono); color: var(--muted); }
+.model .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model input { margin: 0; accent-color: var(--accent); }
+
+.blist { display: grid; gap: 8px; }
+.bk { border: 1px solid var(--line); border-radius: 6px; padding: 10px; display: grid; gap: 6px; }
+.bk.auto { border-style: dashed; }
+.bk .hd { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.bk .hd b { font-weight: 600; overflow-wrap: anywhere; }
+.bk .when { font: 12px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.bk .meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.bk .btn-row .btn { flex: 0 1 auto; }
+.empty { border: 1px dashed var(--line); border-radius: 6px; padding: 18px; text-align: center; color: var(--muted); font-size: 13px; }
+
+.pill { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 1px 7px; border-radius: 9px; white-space: nowrap; }
+.pill.new { background: color-mix(in srgb, var(--info) 18%, transparent); color: var(--info); }
+.pill.chg { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.pill.same { background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted); }
+.pill.auto { background: var(--accent-soft); color: var(--accent); }
+
+.restore-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); margin: 8px 0; font-variant-numeric: tabular-nums; }
+progress { width: 100%; height: 8px; accent-color: var(--accent); margin-top: 10px; }
+.toast { min-height: 1.4em; font-size: 13px; margin-top: 8px; color: var(--muted); }
+.toast.ok { color: var(--good); } .toast.err { color: var(--bad); }
+.storage { font-size: 12px; color: var(--muted); margin-top: 10px; font-variant-numeric: tabular-nums; }
+.account { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 13px; margin: 10px 0 0; background: var(--accent-soft); }
+.account a, .empty a { color: var(--accent); font-weight: 600; }
+.legacy { margin-top: 16px; }
+.legacy:empty { display: none; }
+input[type="file"] { display: none; }
+.dropzone { display: grid; justify-items: center; gap: 6px; text-align: center; padding: 22px 16px; border: 2px dashed var(--line); border-radius: 8px; background: var(--bg); cursor: pointer; transition: border-color .15s, background .15s; }
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone svg { width: 34px; height: 34px; stroke: var(--accent); fill: none; stroke-width: 1.6; }
+.dropzone b { font-weight: 600; }
+.dropzone small { color: var(--muted); font-size: 12px; }
+body.dragging .dropzone { border-color: var(--accent); background: var(--accent-soft); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top">
+  <h1>TX15 <span>Backup</span> Studio</h1>
+  <p>SD-Karte der TX15 sichern, Backups aufbewahren und Einstellungen oder einzelne Modelle zurückspielen.</p>
+  <a class="back" id="backLink" href="index.html">← Übersicht</a>
+</header>
+<script>if (window.claude) document.getElementById('backLink').hidden = true;</script>
+
+<div class="banner" id="banner"></div>
+
+<main class="wrap">
+  <!-- 1: Verbinden & Sichern -->
+  <section class="col-backup">
+    <div class="panel">
+      <div class="step"><span class="n">01</span><h2>Sender verbinden</h2></div>
+      <ol class="how">
+        <li>TX15 einschalten und per USB-C mit dem PC verbinden.</li>
+        <li>Am Sender <b>USB Storage (SD)</b> wählen. Die SD-Karte erscheint als Laufwerk.</li>
+        <li>Hier <b>SD-Karte wählen</b> klicken und das Laufwerk selbst auswählen, nicht einen Unterordner.</li>
+      </ol>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="pickCard">SD-Karte wählen</button>
+        <button class="btn" type="button" id="demoBtn">Beispiel-Karte</button>
+      </div>
+      <input type="file" id="dirInput" webkitdirectory multiple>
+      <p class="hint" id="writeHint"></p>
+      <div class="facts" id="facts"></div>
+    </div>
+
+    <div class="panel">
+      <div class="step"><span class="n">02</span><h2>Backup erstellen</h2></div>
+      <div class="cats" id="cats"></div>
+      <div class="sum" id="sum"></div>
+      <label class="field"><span>Bezeichnung</span><input type="text" id="label" maxlength="60" placeholder="z. B. vor Firmware-Update 2.11"></label>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="mkDownload">Als ZIP herunterladen</button>
+        <button class="btn" type="button" id="mkStore">Auf dem Server speichern</button>
+      </div>
+      <p class="account" id="storeHint" hidden></p>
+      <progress id="mkProg" value="0" max="1" hidden></progress>
+      <div class="toast" id="mkToast" role="status"></div>
+    </div>
+  </section>
+
+  <!-- 2: Gespeicherte Backups -->
+  <section class="col-list">
+    <div class="panel">
+      <div class="step"><span class="n">03</span><h2>Deine Backups</h2></div>
+      <div class="blist" id="blist"></div>
+      <div class="storage" id="storage"></div>
+      <div class="toast" id="listToast" role="status"></div>
+      <p class="hint">Backups liegen in deinem Bollisoft-Konto auf dem Server. Nur du siehst sie, und du erreichst sie von jedem PC aus, sobald du eingeloggt bist.</p>
+      <div class="legacy" id="legacy"></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Modelle auf der Karte</h3>
+      <div class="models" id="cardModels"></div>
+    </div>
+  </section>
+
+  <!-- 3: Wiederherstellen -->
+  <section class="col-restore">
+    <div class="panel">
+      <div class="step"><span class="n">04</span><h2>Wiederherstellen</h2></div>
+      <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Backup-ZIP hochladen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/></svg>
+        <b>Backup-ZIP hochladen</b>
+        <small>ZIP hierher ziehen oder klicken. Sie wird geprüft, gleich zum Wiederherstellen geöffnet und – wenn du eingeloggt bist – in deinem Konto gespeichert.</small>
+      </div>
+      <input type="file" id="zipInput" accept=".zip,application/zip">
+      <div class="toast" id="upToast" role="status"></div>
+      <p class="hint">Oder bei einem gespeicherten Backup auf <b>Wiederherstellen</b> klicken.</p>
+      <div id="restore"></div>
+    </div>
+
+    <div class="panel">
+      <div class="step"><span class="n">05</span><h2>Firmware aktualisieren</h2></div>
+      <p class="hint">Offizielle <a href="https://github.com/EdgeTX/edgetx/releases" target="_blank" rel="noopener">EdgeTX-Firmware</a> für die RadioMaster TX15 – die Firmware, mit der RadioMaster den Sender ausliefert.</p>
+      <label class="field"><span>Version</span><select id="fwVersion" disabled><option>Lade Versionen …</option></select></label>
+      <p class="hint" id="fwNotes"></p>
+      <ol class="how">
+        <li>Vorher ein Backup der SD-Karte erstellen (Schritt 02).</li>
+        <li>Sender ausschalten. Beide <b>horizontalen Trimmtasten nach innen</b> halten und einschalten – der Bootloader erscheint.</li>
+        <li>Mit einem <b>USB-A-auf-USB-C-Kabel</b> verbinden (kein USB-C-auf-USB-C). Am PC erscheint das Laufwerk <b>EDGETX_UF2</b>.</li>
+        <li><b>Direkt installieren</b> klicken und das Laufwerk EDGETX_UF2 auswählen. Den Sender bis zum Neustart nicht trennen.</li>
+      </ol>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="fwInstall" disabled>Direkt installieren</button>
+        <button class="btn" type="button" id="fwDownload" disabled>Firmware herunterladen</button>
+      </div>
+      <progress id="fwProg" value="0" max="1" hidden></progress>
+      <div class="toast" id="fwToast" role="status"></div>
+      <p class="hint">Ohne Chrome/Edge: Firmware herunterladen und die .uf2-Datei selbst auf das Laufwerk EDGETX_UF2 kopieren. Den Bootloader aktualisiert das Studio bewusst nicht – laut EdgeTX ist das nur bei Problemen nötig.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const enc = new TextEncoder(), dec = new TextDecoder();
+
+// ---------- Kategorien der EdgeTX-SD-Karte ----------
+const CATS = [
+  ['RADIO',       'Sender-Einstellungen', 'radio.yml: Kalibrierung, Systemeinstellungen', true],
+  ['MODELS',      'Modelle',              'Alle Modellspeicher und Labels', true],
+  ['THEMES',      'Themes',               'Farbschemata', true],
+  ['WIDGETS',     'Widgets',              'Lua-Widgets der Hauptansicht', true],
+  ['SCRIPTS',     'Skripte',              'Tools, Funktionen, Mischer', true],
+  ['IMAGES',      'Bilder',               'Modellbilder', true],
+  ['SOUNDS',      'Sounds',               'Sprachpaket und Töne, meist groß', false],
+  ['LOGS',        'Logs',                 'Telemetrie-Aufzeichnungen', false],
+  ['SCREENSHOTS', 'Screenshots',          'Bildschirmfotos vom Sender', false],
+  ['FIRMWARE',    'Firmware',             'Firmware-Dateien zum Flashen', false],
+  ['OTHER',       'Sonstiges',            'Alles andere im Hauptverzeichnis', false],
+];
+const CAT_KEYS = CATS.map(c => c[0]);
+const SKIP = /^(System Volume Information|\$RECYCLE\.BIN|\.Spotlight-V100|\.Trashes|\.fseventsd)(\/|$)|(^|\/)\._|(^|\/)(Thumbs\.db|desktop\.ini|\.DS_Store)$/i;
+const catOf = p => { const i = p.indexOf('/'); if (i < 0) return 'OTHER'; const t = p.slice(0, i).toUpperCase(); return CAT_KEYS.includes(t) && t !== 'OTHER' ? t : 'OTHER'; };
+
+const fmtBytes = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB';
+const fmtDate = t => new Date(t).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const stamp = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; };
+
+// ---------- Zustand ----------
+let card = null;        // { name, files: Map(path -> {size, get()}), dir, demo }
+let source = null;      // Wiederherstellungsquelle { label, entries: Map(path -> {size, get()}), info }
+let selCats = new Set(CATS.filter(c => c[3]).map(c => c[0]));
+const canWrite = 'showDirectoryPicker' in window;
+
+// ---------- EdgeTX-Dateien lesen ----------
+function modelName(txt) { const m = txt.match(/header:\s*\r?\n(?:[ \t]+[^\n]*\n)*?[ \t]+name:\s*"?([^"\r\n]*)"?/); return m ? m[1].trim() : ''; }
+function radioInfo(txt) {
+  const g = k => { const m = txt.match(new RegExp('^' + k + ':\\s*"?([^"\\r\\n]*)"?', 'm')); return m ? m[1].trim() : ''; };
+  return { semver: g('semver'), board: g('board') };
+}
+const isModelFile = p => /^MODELS\/model\d+\.yml$/i.test(p);
+
+async function readText(getter, max = 4096) {
+  const v = await getter(); const u8 = v instanceof Uint8Array ? v : new Uint8Array(await v.slice(0, max).arrayBuffer());
+  return dec.decode(u8.subarray(0, max));
+}
+async function modelsOf(files) {
+  const out = [];
+  for (const [p, f] of files) if (isModelFile(p)) {
+    let name = ''; try { name = modelName(await readText(f.get)); } catch (e) {}
+    out.push({ file: p, name: name || '(ohne Namen)' });
+  }
+  return out.sort((a, b) => a.file.localeCompare(b.file, undefined, { numeric: true }));
+}
+
+// ---------- SD-Karte verbinden ----------
+async function walk(dir, prefix, files) {
+  for await (const [name, h] of dir.entries()) {
+    const p = prefix + name;
+    if (SKIP.test(p)) continue;
+    if (h.kind === 'directory') await walk(h, p + '/', files);
+    else { const f = await h.getFile(); files.set(p, { size: f.size, get: () => h.getFile() }); }
+  }
+}
+$('pickCard').onclick = async () => {
+  if (canWrite) {
+    try {
+      const dir = await window.showDirectoryPicker({ id: 'tx15sd', mode: 'readwrite' });
+      const files = new Map(); toastMk('Karte wird eingelesen …');
+      await walk(dir, '', files);
+      await setCard({ name: dir.name, files, dir, demo: false });
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      // Ordnerauswahl hier nicht erlaubt (z. B. eingebettete Ansicht): auf Ordner-Upload ausweichen
+    }
+  }
+  $('dirInput').click();
+};
+$('dirInput').onchange = async e => {
+  const list = [...e.target.files]; if (!list.length) return;
+  const root = list[0].webkitRelativePath.split('/')[0];
+  const files = new Map();
+  for (const f of list) {
+    const p = f.webkitRelativePath.split('/').slice(1).join('/');
+    if (!p || SKIP.test(p)) continue;
+    files.set(p, { size: f.size, get: async () => f });
+  }
+  e.target.value = '';
+  await setCard({ name: root, files, dir: null, demo: false });
+};
+
+async function setCard(c) {
+  card = c;
+  const top = new Set([...c.files.keys()].map(p => p.split('/')[0].toUpperCase()));
+  card.looksEdgeTX = top.has('RADIO') || top.has('MODELS');
+  card.models = await modelsOf(c.files);
+  card.info = { semver: '', board: '' };
+  const r = c.files.get('RADIO/radio.yml');
+  if (r) try { card.info = radioInfo(await readText(r.get)); } catch (e) {}
+  if (!card.info.semver && card.models.length) try {
+    const m = c.files.get(card.models[0].file); card.info.semver = radioInfo(await readText(m.get)).semver;
+  } catch (e) {}
+  renderAll();
+  if (!c.demo) toastMk(card.looksEdgeTX ? `${c.files.size} Dateien eingelesen.` : 'Hier fehlen die Ordner RADIO und MODELS. Wähle das Hauptverzeichnis der SD-Karte.', card.looksEdgeTX ? 'ok' : 'err');
+  if (source) compareSource();
+}
+
+// ---------- Beispiel-Karte ----------
+function demoCard() {
+  const files = new Map();
+  const add = (p, data) => { const b = new Blob([data]); files.set(p, { size: b.size, get: async () => b }); };
+  add('RADIO/radio.yml', 'semver: 2.10.5\nboard: tx15\nmanuallyEdited: 0\ntimezone: 1\nbacklightMode: 3\ncalib:\n  Rud:\n    mid: 1024\n');
+  const models = [['Quad 5" Freestyle', 'FPV'], ['Cinewhoop 3"', 'FPV'], ['Segler ASW 28', 'Segler'], ['Trainer Clik', 'Flug'], ['Heli Goblin 380', 'Heli'], ['Crawler TRX4', 'Auto']];
+  models.forEach(([n, l], i) => add(`MODELS/model${String(i).padStart(2, '0')}.yml`, `semver: 2.10.5\nheader:\n  name: "${n}"\n  bitmap: ""\n  labels: "${l}"\ntimers:\n  0:\n    mode: ON\n`.padEnd(2400 + i * 300, ' ')));
+  add('MODELS/labels.yml', 'labels:\n  FPV: { selected: false }\n  Segler: { selected: false }\n');
+  add('THEMES/EdgeTX/theme.yml', '---\nsummary:\n  name: EdgeTX\n');
+  add('THEMES/Nachtflug/theme.yml', '---\nsummary:\n  name: Nachtflug\n');
+  add('WIDGETS/FLUGDAT/main.lua', '-- Flugdaten\n'.padEnd(5200, ' '));
+  add('SCRIPTS/TOOLS/Flugbuch.lua', '-- Flugbuch\n'.padEnd(3100, ' '));
+  add('SCRIPTS/FUNCTIONS/akku.lua', '-- akku\n'.padEnd(900, ' '));
+  for (let i = 0; i < 24; i++) add(`SOUNDS/de/sys${i}.wav`, new Uint8Array(38000 + i * 1200));
+  add('IMAGES/quad5.png', new Uint8Array(14800));
+  for (let i = 0; i < 3; i++) add(`LOGS/Quad5-2026-10-${12 + i}.csv`, new Uint8Array(52000 + i * 9000));
+  add('SCREENSHOTS/screen-2026-10-14.png', new Uint8Array(31000));
+  add('FIRMWARE/edgetx-tx15-2.10.5.bin', new Uint8Array(1800000));
+  return { name: 'Beispiel-Karte', files, dir: null, demo: true };
+}
+$('demoBtn').onclick = () => setCard(demoCard());
+
+// ---------- Anzeige: Karte ----------
+function catStats(files) {
+  const s = Object.fromEntries(CAT_KEYS.map(k => [k, { n: 0, b: 0 }]));
+  for (const [p, f] of files) { const c = s[catOf(p)]; c.n++; c.b += f.size; }
+  return s;
+}
+function renderBanner() {
+  const b = $('banner');
+  if (!card) { b.className = 'banner'; b.innerHTML = '<span>Noch keine SD-Karte verbunden.</span>'; return; }
+  if (card.demo) {
+    b.className = 'banner demo';
+    b.innerHTML = `<span><b>Beispiel-Karte.</b> Diese Daten sind erfunden und zeigen nur, wie das Studio arbeitet. Auf die Beispiel-Karte wird nichts geschrieben.</span><span class="sp"></span><button class="btn small" type="button" id="bannerPick">Eigene SD-Karte wählen</button>`;
+    $('bannerPick').onclick = () => $('pickCard').click();
+  } else {
+    b.className = 'banner';
+    b.innerHTML = `<span>Verbunden: <b>${esc(card.name)}</b> · ${card.files.size} Dateien · ${card.dir ? 'Lesen und Schreiben' : 'nur Lesen'}</span>`;
+  }
+}
+function renderFacts() {
+  $('writeHint').textContent = canWrite
+    ? 'Chrome oder Edge kann direkt auf die Karte zurückschreiben. Der Browser fragt dafür einmal nach Erlaubnis.'
+    : 'Dieser Browser kann die Karte nur lesen. Zum Wiederherstellen bekommst du ein ZIP zum Entpacken auf die Karte.';
+  if (!card) { $('facts').innerHTML = ''; return; }
+  const total = [...card.files.values()].reduce((a, f) => a + f.size, 0);
+  $('facts').innerHTML = [
+    ['Laufwerk', card.name], ['EdgeTX', card.info.semver || 'unbekannt'],
+    ['Modelle', card.models.length], ['Belegt', fmtBytes(total)],
+  ].map(([k, v]) => `<div class="fact"><span>${k}</span><b>${esc(v)}</b></div>`).join('');
+}
+function renderCats() {
+  const st = card ? catStats(card.files) : null;
+  $('cats').innerHTML = CATS.map(([k, name, desc]) => {
+    const s = st ? st[k] : { n: 0, b: 0 };
+    return `<label class="cat"${st && !s.n ? ' style="opacity:.5"' : ''}><input type="checkbox" data-cat="${k}"${selCats.has(k) ? ' checked' : ''}${st && !s.n ? ' disabled' : ''}>
+      <span class="t"><b>${name}</b><small>${desc}</small></span><span class="sz">${st ? `${s.n} · ${fmtBytes(s.b)}` : '–'}</span></label>`;
+  }).join('');
+  $('cats').querySelectorAll('[data-cat]').forEach(c => c.onchange = () => { c.checked ? selCats.add(c.dataset.cat) : selCats.delete(c.dataset.cat); renderSum(); });
+  renderSum();
+}
+function backupFiles() { return card ? [...card.files].filter(([p]) => selCats.has(catOf(p))) : []; }
+function renderSum() {
+  const f = backupFiles(), b = f.reduce((a, [, x]) => a + x.size, 0);
+  $('sum').innerHTML = `<span>Ausgewählt</span><span><b>${f.length}</b> Dateien · <b>${fmtBytes(b)}</b></span>`;
+  $('mkDownload').disabled = !f.length;
+  renderStoreState();
+}
+function renderCardModels() {
+  const host = $('cardModels');
+  if (!card || !card.models.length) { host.innerHTML = `<div class="empty">${card ? 'Auf dieser Karte liegen keine Modelle.' : 'Verbinde eine SD-Karte, um die Modelle zu sehen.'}</div>`; return; }
+  host.innerHTML = card.models.map(m => `<div class="model" style="grid-template-columns:minmax(0,1fr) auto"><span class="nm">${esc(m.name)}</span><span class="f">${esc(m.file.split('/')[1])}</span></div>`).join('');
+}
+
+// ---------- ZIP schreiben ----------
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+const canDeflate = typeof CompressionStream === 'function';
+async function deflate(u8) {
+  try { return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer()); }
+  catch (e) { return null; }
+}
+// Packt die Dateien als ZIP. Komprimiert mit Deflate, wenn es kleiner wird, sonst unkomprimiert.
+async function makeZip(entries, prog) {
+  const parts = [], central = []; let offset = 0;
+  const total = entries.reduce((a, e) => a + e.data.length, 0) || 1; let done = 0;
+  const d = new Date(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dt = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const { name, data } of entries) {
+    const nb = enc.encode(name), crc = crc32(data), sz = data.length;
+    let body = data, method = 0;
+    if (canDeflate && sz > 64) { const z = await deflate(data); if (z && z.length < sz) { body = z; method = 8; } }
+    const cs = body.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, method, true);
+    lh.setUint16(10, tm, true); lh.setUint16(12, dt, true); lh.setUint32(14, crc, true); lh.setUint32(18, cs, true); lh.setUint32(22, sz, true); lh.setUint16(26, nb.length, true);
+    parts.push(new Uint8Array(lh.buffer), nb, body);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, method, true);
+    ch.setUint16(12, tm, true); ch.setUint16(14, dt, true); ch.setUint32(16, crc, true); ch.setUint32(20, cs, true); ch.setUint32(24, sz, true); ch.setUint16(28, nb.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), nb); offset += 30 + nb.length + cs;
+    done += sz; if (prog) prog(done / total);
+  }
+  const cd = central.reduce((a, p) => a + p.length, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true); end.setUint32(12, cd, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+async function toBytes(v) { return v instanceof Uint8Array ? v : new Uint8Array(await v.arrayBuffer()); }
+
+async function buildBackup(list, label, models, info, prog) {
+  const total = list.reduce((a, [, f]) => a + f.size, 0);
+  if (total > 3.8e9) throw new Error('Das Backup wäre größer als 4 GB. Wähle Sounds oder Firmware ab.');
+  if (list.length > 65000) throw new Error('Zu viele Dateien für ein ZIP. Wähle Kategorien ab.');
+  const entries = []; let done = 0;
+  for (const [p, f] of list) {
+    entries.push({ name: p, data: await toBytes(await f.get()) });
+    done += f.size; if (prog) { prog.value = total ? done / total / 2 : .5; }
+  }
+  const meta = { app: 'TX15 Backup Studio', version: 1, created: new Date().toISOString(), label, edgetx: info.semver || null, board: info.board || null,
+    files: list.length, bytes: total, categories: [...new Set(list.map(([p]) => catOf(p)))], models };
+  entries.push({ name: 'backup-info.json', data: enc.encode(JSON.stringify(meta, null, 2)) });
+  const blob = await makeZip(entries, prog ? v => { prog.value = .5 + v / 2; } : null);
+  meta.zipBytes = blob.size;
+  return { blob, meta };
+}
+
+async function createBackup(mode) {
+  const list = backupFiles(); if (!list.length) return;
+  if (mode === 'store' && !acct.loggedIn) return toastMk('Zum Speichern auf dem Server bitte einloggen.', 'err');
+  if (mode === 'store' && card.demo) return toastMk('Die Beispiel-Karte wird nicht auf dem Server gespeichert.', 'err');
+  const label = $('label').value.trim() || (card.demo ? 'Beispiel-Backup' : 'Backup ' + fmtDate(Date.now()));
+  const prog = $('mkProg'); prog.hidden = false; prog.value = 0;
+  $('mkDownload').disabled = $('mkStore').disabled = true;
+  try {
+    const sel = new Set(list.map(([p]) => p));
+    const { blob, meta } = await buildBackup(list, label, card.models.filter(m => sel.has(m.file)), card.info, prog);
+    if (mode === 'store') {
+      toastMk(`Lade „${label}“ auf den Server …`); prog.value = 0;
+      await storeOnServer(blob, { label, meta, created: Date.now() }, v => { prog.value = v; });
+      toastMk(`„${label}“ auf dem Server gespeichert. ${fmtBytes(meta.bytes)} auf ${fmtBytes(blob.size)} gepackt.`, 'ok');
+    }
+    else await saveFile(`TX15-Backup_${stamp()}.zip`, blob, toastMk);
+  } catch (e) { toastMk(e.message || 'Backup fehlgeschlagen.', 'err'); }
+  prog.hidden = true; renderSum();
+}
+$('mkDownload').onclick = () => createBackup('download');
+$('mkStore').onclick = () => createBackup('store');
+
+// ---------- ZIP lesen ----------
+async function inflate(raw) { return new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()); }
+async function readZip(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer()), dv = new DataView(buf.buffer);
+  let i = buf.length - 22; const stop = Math.max(0, buf.length - 65557);
+  while (i >= stop && dv.getUint32(i, true) !== 0x06054b50) i--;
+  if (i < stop) throw new Error('Das ist keine gültige ZIP-Datei.');
+  const n = dv.getUint16(i + 10, true), cdOff = dv.getUint32(i + 16, true);
+  if (cdOff === 0xFFFFFFFF) throw new Error('ZIP-Dateien über 4 GB (ZIP64) werden nicht unterstützt.');
+  const raw = []; let p = cdOff;
+  for (let k = 0; k < n; k++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('Das Inhaltsverzeichnis der ZIP-Datei ist beschädigt.');
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), usize = dv.getUint32(p + 24, true);
+    const nl = dv.getUint16(p + 28, true), el = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(buf.subarray(p + 46, p + 46 + nl)).replace(/\\/g, '/');
+    p += 46 + nl + el + cl;
+    if (name.endsWith('/')) continue;
+    raw.push({ name, method, csize, usize, lho });
+  }
+  // gemeinsamen Oberordner entfernen (z. B. „SDCARD/RADIO/…“)
+  const firsts = new Set(raw.filter(r => r.name !== 'backup-info.json').map(r => r.name.split('/')[0]));
+  let strip = '';
+  if (firsts.size === 1) { const f = [...firsts][0]; if (!CAT_KEYS.includes(f.toUpperCase()) && raw.every(r => r.name.includes('/'))) strip = f + '/'; }
+  const entries = new Map(); let info = null;
+  for (const r of raw) {
+    const get = async () => {
+      const nl2 = dv.getUint16(r.lho + 26, true), el2 = dv.getUint16(r.lho + 28, true), s = r.lho + 30 + nl2 + el2;
+      const data = buf.subarray(s, s + r.csize);
+      if (r.method === 0) return data;
+      if (r.method === 8) return inflate(data);
+      throw new Error(`${r.name}: Kompressionsart ${r.method} wird nicht unterstützt.`);
+    };
+    let path = r.name.startsWith(strip) ? r.name.slice(strip.length) : r.name;
+    if (path === 'backup-info.json') { try { info = JSON.parse(dec.decode(await get())); } catch (e) {} continue; }
+    if (!path || SKIP.test(path)) continue;
+    entries.set(path, { size: r.usize, get });
+  }
+  return { entries, info };
+}
+
+// ---------- Wiederherstellen ----------
+let restoreSel = new Set(), restoreModels = new Set(), status = new Map(), busy = false;
+async function openSource(label, blob, created) {
+  try {
+    const { entries, info } = await readZip(blob);
+    if (!entries.size) throw new Error('Das Backup ist leer.');
+    source = { label, entries, info, created };
+    source.models = await modelsOf(entries);
+    restoreSel = new Set([...entries.keys()].map(catOf));
+    restoreModels = new Set(source.models.map(m => m.file));
+    status = new Map();
+    renderRestore(); compareSource();
+    $('restore').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+  } catch (e) { $('restore').innerHTML = `<p class="toast err">${esc(e.message)}</p>`; }
+}
+// ---------- Backup-ZIP hochladen ----------
+function upToast(m, k) { const t = $('upToast'); t.textContent = m; t.className = 'toast ' + (k || ''); }
+async function uploadZip(file) {
+  if (!file) return;
+  if (!/\.zip$/i.test(file.name) && !/zip/.test(file.type)) return upToast(`„${file.name}“ ist keine ZIP-Datei.`, 'err');
+  upToast(`Prüfe ${file.name} …`);
+  let parsed;
+  try { parsed = await readZip(file); } catch (e) { return upToast(e.message, 'err'); }
+  const paths = [...parsed.entries.keys()];
+  if (!paths.length) return upToast('Die ZIP-Datei ist leer.', 'err');
+  const looksTx = paths.some(p => /^(RADIO|MODELS)\//i.test(p));
+  const inf = parsed.info || {};
+  const models = await modelsOf(parsed.entries);
+  const bytes = [...parsed.entries.values()].reduce((a, f) => a + f.size, 0);
+  const label = inf.label || file.name.replace(/\.zip$/i, '');
+  const meta = { ...inf, label, files: parsed.entries.size, bytes, models: inf.models || models, edgetx: inf.edgetx || null, imported: file.name };
+  const created = inf.created ? (Date.parse(inf.created) || file.lastModified) : file.lastModified;
+  openSource(label, file, created);
+  const summary = `${parsed.entries.size} Dateien, ${models.length} Modelle`;
+  if (!looksTx) return upToast('Achtung: In dieser ZIP fehlen die Ordner RADIO und MODELS. Prüfe, ob es wirklich ein TX15-Backup ist. Sie wird deshalb nicht gespeichert.', 'err');
+  if (!acct.loggedIn) return upToast(`„${label}“ geöffnet: ${summary}. Zum Speichern in deinem Konto einloggen.`, 'ok');
+  upToast(`„${label}“ geöffnet: ${summary}. Speichere auf dem Server …`);
+  try {
+    await storeOnServer(file, { label, meta, created, uploaded: true }, v => upToast(`„${label}“ geöffnet: ${summary}. Speichere auf dem Server … ${Math.round(v * 100)} %`));
+    upToast(`„${label}“ geöffnet und in deinem Konto gespeichert: ${summary}.`, 'ok');
+  } catch (e) { upToast(`„${label}“ geöffnet. Speichern auf dem Server fehlgeschlagen: ${e.message}`, 'err'); }
+}
+const dz = $('dropzone');
+dz.onclick = () => $('zipInput').click();
+dz.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('zipInput').click(); } };
+$('zipInput').onchange = e => { uploadZip(e.target.files[0]); e.target.value = ''; };
+let dragDepth = 0;
+const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+document.addEventListener('dragenter', e => { if (hasFiles(e)) { dragDepth++; document.body.classList.add('dragging'); } });
+document.addEventListener('dragleave', e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+document.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener('drop', e => {
+  if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
+  const f = [...e.dataTransfer.files].find(x => /\.zip$/i.test(x.name)) || e.dataTransfer.files[0];
+  uploadZip(f);
+});
+
+async function compareSource() {
+  if (!source || !card) { renderRestore(); return; }
+  status = new Map();
+  for (const [p, f] of source.entries) {
+    const c = card.files.get(p);
+    if (!c) { status.set(p, 'new'); continue; }
+    if (c.size !== f.size) { status.set(p, 'chg'); continue; }
+    if (f.size > 2e6) { status.set(p, 'same'); continue; }
+    try {
+      const [a, b] = await Promise.all([toBytes(await f.get()), toBytes(await c.get())]);
+      let same = a.length === b.length; for (let i = 0; same && i < a.length; i++) if (a[i] !== b[i]) same = false;
+      status.set(p, same ? 'same' : 'chg');
+    } catch (e) { status.set(p, 'chg'); }
+  }
+  renderRestore();
+}
+const PILL = { new: ['new', 'neu'], chg: ['chg', 'anders'], same: ['same', 'gleich'] };
+const pill = s => s ? `<span class="pill ${PILL[s][0]}">${PILL[s][1]}</span>` : '';
+
+function restoreList() {
+  if (!source) return [];
+  return [...source.entries].filter(([p]) => restoreSel.has(catOf(p)) && (!isModelFile(p) || restoreModels.has(p)));
+}
+function renderRestore() {
+  const host = $('restore');
+  if (!source) { host.innerHTML = '<div class="empty">Noch kein Backup geöffnet.</div>'; return; }
+  const st = catStats(source.entries), inf = source.info;
+  const counts = { new: 0, chg: 0, same: 0 };
+  let h = `<div class="facts">
+    <div class="fact"><span>Backup</span><b>${esc(inf && inf.label || source.label)}</b></div>
+    <div class="fact"><span>Erstellt</span><b>${inf && inf.created ? fmtDate(inf.created) : source.created ? fmtDate(source.created) : 'unbekannt'}</b></div>
+    <div class="fact"><span>EdgeTX</span><b>${esc(inf && inf.edgetx || 'unbekannt')}</b></div>
+    <div class="fact"><span>Inhalt</span><b>${source.entries.size} Dateien</b></div></div>`;
+  if (card && inf && inf.edgetx && card.info.semver && inf.edgetx.split('.').slice(0, 2).join('.') !== card.info.semver.split('.').slice(0, 2).join('.'))
+    h += `<p class="toast err">Das Backup stammt von EdgeTX ${esc(inf.edgetx)}, auf der Karte läuft ${esc(card.info.semver)}. Modelle aus älteren Versionen wandelt EdgeTX meist beim Laden um. Sender-Einstellungen spielst du über Versionsgrenzen besser nicht zurück.</p>`;
+  h += '<h3>Was zurückgespielt wird</h3><div class="cats">';
+  for (const [k, name, desc] of CATS) {
+    const s = st[k]; if (!s.n) continue;
+    let ch = 0; for (const [p] of source.entries) if (catOf(p) === k && status.get(p) && status.get(p) !== 'same') ch++;
+    h += `<label class="cat"><input type="checkbox" data-rc="${k}"${restoreSel.has(k) ? ' checked' : ''}>
+      <span class="t"><b>${name}</b><small>${desc}${card && status.size ? ` · ${ch ? ch + ' abweichend' : 'alles gleich'}` : ''}</small></span><span class="sz">${s.n} · ${fmtBytes(s.b)}</span></label>`;
+  }
+  h += '</div>';
+  if (source.models.length && restoreSel.has('MODELS')) {
+    h += `<h3>Modelle einzeln wählen</h3><div class="btn-row" style="margin-bottom:6px"><button class="btn small" type="button" id="mAll">Alle</button><button class="btn small" type="button" id="mNone">Keine</button><button class="btn small" type="button" id="mChanged"${card ? '' : ' disabled'}>Nur abweichende</button></div><div class="models">`;
+    for (const m of source.models) {
+      const onCard = card && card.files.has(m.file) ? card.models.find(x => x.file === m.file) : null;
+      const note = onCard && onCard.name !== m.name ? `<span class="f">ersetzt „${esc(onCard.name)}“</span>` : `<span class="f">${esc(m.file.split('/')[1])}</span>`;
+      h += `<label class="model"><input type="checkbox" data-rm="${esc(m.file)}"${restoreModels.has(m.file) ? ' checked' : ''}><span class="nm">${esc(m.name)} ${pill(status.get(m.file))}</span>${note}</label>`;
+    }
+    h += '</div>';
+  }
+  const list = restoreList();
+  for (const [p] of list) { const s = status.get(p); if (s) counts[s]++; }
+  const write = list.filter(([p]) => status.get(p) !== 'same');
+  h += `<div class="legend">${card && status.size ? `<span>${pill('new')} ${counts.new} neu</span><span>${pill('chg')} ${counts.chg} anders</span><span>${pill('same')} ${counts.same} gleich, wird übersprungen</span>` : '<span>Verbinde die SD-Karte, um das Backup mit dem aktuellen Stand zu vergleichen.</span>'}</div>`;
+  const direct = card && card.dir && !card.demo;
+  h += `<div class="btn-row">
+    <button class="btn primary" type="button" id="rWrite"${direct && write.length ? '' : ' disabled'}>${write.length} Dateien auf die SD-Karte schreiben</button>
+    <button class="btn" type="button" id="rZip"${list.length ? '' : ' disabled'}>Auswahl als ZIP</button></div>
+    <p class="hint">${direct ? 'Vor dem Schreiben sichert das Studio jede Datei, die überschrieben wird, als eigenes Backup. Dateien, die nur auf der Karte liegen, bleiben unangetastet.'
+      : card && card.demo ? 'Auf die Beispiel-Karte wird nicht geschrieben. Mit „Auswahl als ZIP“ bekommst du die Dateien zum Entpacken auf die Karte.'
+      : 'Direktes Schreiben braucht Chrome oder Edge und eine Karte, die über „SD-Karte wählen“ verbunden wurde. Sonst „Auswahl als ZIP“ ins Hauptverzeichnis der Karte entpacken und vorhandene Dateien ersetzen.'}</p>
+    <progress id="rProg" value="0" max="1" hidden></progress><div class="toast" id="rToast" role="status"></div>`;
+  host.innerHTML = h;
+
+  host.querySelectorAll('[data-rc]').forEach(c => c.onchange = () => { c.checked ? restoreSel.add(c.dataset.rc) : restoreSel.delete(c.dataset.rc); renderRestore(); });
+  host.querySelectorAll('[data-rm]').forEach(c => c.onchange = () => { c.checked ? restoreModels.add(c.dataset.rm) : restoreModels.delete(c.dataset.rm); renderRestore(); });
+  if ($('mAll')) {
+    $('mAll').onclick = () => { restoreModels = new Set(source.models.map(m => m.file)); renderRestore(); };
+    $('mNone').onclick = () => { restoreModels = new Set(); renderRestore(); };
+    $('mChanged').onclick = () => { restoreModels = new Set(source.models.filter(m => status.get(m.file) && status.get(m.file) !== 'same').map(m => m.file)); renderRestore(); };
+  }
+  $('rWrite').onclick = () => writeRestore(write);
+  $('rZip').onclick = async () => {
+    try {
+      const entries = []; for (const [p, f] of list) entries.push({ name: p, data: await toBytes(await f.get()) });
+      await saveFile(`TX15-Wiederherstellung_${stamp()}.zip`, await makeZip(entries), (m, k) => setRT(m, k));
+    } catch (e) { setRT(e.message, 'err'); }
+  };
+}
+function setRT(msg, kind) { const t = $('rToast'); if (t) { t.textContent = msg; t.className = 'toast ' + (kind || 'ok'); } }
+
+async function writeFileTo(dir, path, data) {
+  const parts = path.split('/'); let d = dir;
+  for (const seg of parts.slice(0, -1)) d = await d.getDirectoryHandle(seg, { create: true });
+  const fh = await d.getFileHandle(parts[parts.length - 1], { create: true });
+  const w = await fh.createWritable(); await w.write(data); await w.close();
+}
+async function writeRestore(list) {
+  if (busy || !list.length || !card || !card.dir) return;
+  busy = true; const prog = $('rProg'); prog.hidden = false; prog.value = 0; $('rWrite').disabled = true;
+  try {
+    if (card.dir.requestPermission && (await card.dir.requestPermission({ mode: 'readwrite' })) !== 'granted')
+      throw new Error('Ohne Schreibrecht kann nichts auf die Karte geschrieben werden. Erlaube den Zugriff oder nutze „Auswahl als ZIP“.');
+    // 1. Sicherung der Dateien, die überschrieben werden
+    const over = list.filter(([p]) => card.files.has(p)).map(([p]) => [p, card.files.get(p)]);
+    let safety = '';
+    if (over.length) {
+      setRT(`Sichere ${over.length} vorhandene Dateien …`);
+      const sel = new Set(over.map(([p]) => p));
+      const { blob, meta } = await buildBackup(over, `Automatisch vor Wiederherstellung von „${source.info && source.info.label || source.label}“`, card.models.filter(m => sel.has(m.file)), card.info, null);
+      // Eingeloggt: ins Konto. Sonst (oder wenn der Server nicht will) als ZIP auf den PC – die Sicherung darf nie fehlen.
+      let onServer = false;
+      if (acct.loggedIn) {
+        try { await storeOnServer(blob, { label: meta.label, meta, created: Date.now(), auto: true }); onServer = true; }
+        catch (e) { safety = ` (Server: ${e.message})`; }
+      }
+      if (onServer) safety = ' Der alte Stand liegt als automatisches Backup in deinem Konto.';
+      else { await saveFile(`TX15-Sicherung_${stamp()}.zip`, blob, () => {}); safety = ` Der alte Stand wurde als ZIP heruntergeladen${safety}.`; }
+    }
+    // 2. Schreiben
+    const total = list.reduce((a, [, f]) => a + f.size, 0); let done = 0, n = 0;
+    for (const [p, f] of list) {
+      setRT(`Schreibe ${p} …`);
+      await writeFileTo(card.dir, p, await toBytes(await f.get()));
+      done += f.size; n++; prog.value = total ? done / total : n / list.length;
+    }
+    // 3. Karte neu einlesen
+    const files = new Map(); await walk(card.dir, '', files);
+    await setCard({ name: card.name, files, dir: card.dir, demo: false });
+    setRT(`${n} Dateien geschrieben. Sender vom USB trennen und neu starten.${safety}`, 'ok');
+  } catch (e) { setRT(e.message || 'Schreiben fehlgeschlagen. Ist die Karte noch verbunden?', 'err'); }
+  busy = false; prog.hidden = true;
+}
+
+// ---------- Backups auf dem Server (Bollisoft-Konto) ----------
+// Speichern, Auflisten und Wiederherstellen nur für eingeloggte Konten (Webshop-Login),
+// siehe webshop/tx15_backups.py. Lokal ohne Webshop gibt es nur den ZIP-Download.
+const API = '/api/tx15-backups';
+const AJAX = { 'X-Requested-With': 'tx15-backup-studio' };
+const LOGIN_DEFAULT = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+let acct = { available: false, loggedIn: false, loginUrl: LOGIN_DEFAULT, backups: [], limits: null };
+const registerUrl = () => '/register' + (acct.loginUrl.includes('?') ? acct.loginUrl.slice(acct.loginUrl.indexOf('?')) : '');
+
+async function loadAccount() {
+  try {
+    const r = await fetch(API, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
+    if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error();
+    const d = await r.json();
+    acct = { available: true, loggedIn: d.logged_in === true, loginUrl: LOGIN_DEFAULT, backups: d.backups || [], limits: d.limits || null };
+  } catch (e) { acct = { available: false, loggedIn: false, loginUrl: LOGIN_DEFAULT, backups: [], limits: null }; }
+  renderStoreState(); renderList(); renderLegacy();
+  openFromUrl();
+}
+// Aus dem Konto öffnen: backup-studio.html?backup=<id>
+async function openFromUrl() {
+  const id = Number(new URLSearchParams(location.search).get('backup'));
+  if (!id || !acct.available) return;
+  if (!acct.loggedIn) return listToast('Zum Öffnen aus deinem Konto bitte einloggen.', 'err');
+  history.replaceState(null, '', location.pathname);
+  const b = acct.backups.find(x => x.id === id);
+  if (!b) return listToast('Dieses Backup gibt es in deinem Konto nicht mehr.', 'err');
+  try { listToast(`Lade „${b.label}“ …`); await openSource(b.label, await serverBlob(id), b.created); listToast(''); }
+  catch (e) { listToast(e.message, 'err'); }
+}
+function loggedOut() { acct = { ...acct, loggedIn: false, backups: [], limits: null }; renderStoreState(); renderList(); renderLegacy(); }
+
+// Upload mit Fortschritt (fetch kennt keinen Upload-Fortschritt).
+function serverUpload(blob, fields, onProgress) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    fd.append('file', blob, 'backup.zip');
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    const x = new XMLHttpRequest();
+    x.open('POST', API);
+    x.withCredentials = true;
+    for (const [k, v] of Object.entries(AJAX)) x.setRequestHeader(k, v);
+    if (onProgress) x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      let data = null; try { data = JSON.parse(x.responseText); } catch (e) {}
+      if (x.status === 201 && data) return resolve(data);
+      if (x.status === 401) loggedOut();
+      reject(new Error(data && data.error ? data.error : x.status === 404 || x.status === 413 ? 'Das Backup ist zu groß für den Server.' : `Speichern fehlgeschlagen (HTTP ${x.status}).`));
+    };
+    x.onerror = () => reject(new Error('Server nicht erreichbar.'));
+    x.send(fd);
+  });
+}
+async function storeOnServer(blob, { label, meta, created, auto = false, uploaded = false }, onProgress) {
+  const res = await serverUpload(blob, { label, meta: JSON.stringify(meta), created: String(Math.round(created || Date.now())), auto: auto ? '1' : '0', uploaded: uploaded ? '1' : '0' }, onProgress);
+  await loadAccount();
+  return res.backup;
+}
+async function serverBlob(id) {
+  const r = await fetch(`${API}/${id}/zip`, { credentials: 'same-origin', cache: 'no-store' });
+  if (r.status === 401) { loggedOut(); throw new Error('Bitte erneut einloggen.'); }
+  if (!r.ok) throw new Error('Das Backup konnte nicht geladen werden.');
+  return r.blob();
+}
+async function serverDelete(id) {
+  const r = await fetch(`${API}/${id}`, { method: 'DELETE', headers: AJAX, credentials: 'same-origin' });
+  if (r.status === 401) { loggedOut(); throw new Error('Bitte erneut einloggen.'); }
+  if (!r.ok && r.status !== 404) throw new Error('Löschen fehlgeschlagen.');
+}
+function listToast(m, k) { const t = $('listToast'); t.textContent = m; t.className = 'toast ' + (k || ''); }
+const loginLinks = () => `<a href="${esc(acct.loginUrl)}">Einloggen</a> oder <a href="${esc(registerUrl())}">Konto erstellen</a>`;
+
+function renderStoreState() {
+  const btn = $('mkStore'), hint = $('storeHint');
+  const hasFiles = backupFiles().length > 0;
+  btn.disabled = !hasFiles || !acct.loggedIn || !!(card && card.demo);
+  if (!acct.available) { hint.hidden = false; hint.innerHTML = 'Speichern auf dem Server gibt es nur auf <a href="https://www.bollisoft.ch/tx15-werkstatt/backup-studio.html">bollisoft.ch</a>. Hier kannst du das Backup als ZIP herunterladen.'; }
+  else if (!acct.loggedIn) { hint.hidden = false; hint.innerHTML = `Backups auf dem Server speichern kannst du nur mit Bollisoft-Konto. ${loginLinks()}.`; }
+  else if (card && card.demo) { hint.hidden = false; hint.textContent = 'Die Beispiel-Karte wird nicht auf dem Server gespeichert. Wähle deine eigene SD-Karte.'; }
+  else hint.hidden = true;
+}
+
+function backupCard(b, actions) {
+  const meta = b.meta || {};
+  return `<div class="bk${b.auto ? ' auto' : ''}">
+    <div class="hd"><b>${esc(b.label)}</b><span class="when">${fmtDate(b.created)}</span></div>
+    <div class="meta">${b.auto ? '<span class="pill auto">automatisch</span>' : ''}${b.uploaded ? '<span class="pill new">hochgeladen</span>' : ''}<span>ZIP ${fmtBytes(Number(b.size) || 0)}</span><span>${Number(meta.files) || 0} Dateien</span><span>${(meta.models || []).length} Modelle</span>${meta.edgetx ? `<span>EdgeTX ${esc(meta.edgetx)}</span>` : ''}</div>
+    <div class="btn-row">${actions}</div></div>`;
+}
+function armDelete(btn, label) {
+  if (btn.classList.contains('armed')) return true;
+  btn.classList.add('armed'); btn.textContent = 'Wirklich löschen?';
+  setTimeout(() => { btn.classList.remove('armed'); btn.textContent = label; }, 4000);
+  return false;
+}
+
+function renderList() {
+  const host = $('blist');
+  $('storage').textContent = '';
+  if (!acct.available) { host.innerHTML = '<div class="empty">Der Server-Speicher ist nur auf bollisoft.ch verfügbar. Lade Backups als ZIP herunter und unter 04 wieder hoch.</div>'; return; }
+  if (!acct.loggedIn) { host.innerHTML = `<div class="empty">Logge dich ein, um deine Backups auf dem Server zu speichern und von jedem PC aus wiederherzustellen.<br>${loginLinks()}.</div>`; return; }
+  const list = acct.backups;
+  host.innerHTML = list.length ? list.map(b => backupCard(b,
+    `<button class="btn small" type="button" data-act="restore" data-id="${b.id}">Wiederherstellen</button>
+     <button class="btn small" type="button" data-act="dl" data-id="${b.id}">ZIP herunterladen</button>
+     <button class="btn small danger" type="button" data-act="del" data-id="${b.id}">Löschen</button>`)).join('')
+    : '<div class="empty">Noch keine Backups in deinem Konto. Erstelle links eins mit „Auf dem Server speichern“.</div>';
+  host.querySelectorAll('[data-act]').forEach(btn => btn.onclick = async () => {
+    const id = Number(btn.dataset.id), b = acct.backups.find(x => x.id === id); if (!b) return;
+    try {
+      if (btn.dataset.act === 'del') {
+        if (!armDelete(btn, 'Löschen')) return;
+        btn.disabled = true; await serverDelete(id); listToast(`„${b.label}“ gelöscht.`, 'ok'); await loadAccount(); return;
+      }
+      if (btn.dataset.act === 'dl') {
+        const a = document.createElement('a'); a.href = `${API}/${id}/zip`; a.download = '';
+        document.body.appendChild(a); a.click(); a.remove(); return;
+      }
+      btn.disabled = true; listToast(`Lade „${b.label}“ …`);
+      openSource(b.label, await serverBlob(id), b.created);
+      listToast('');
+    } catch (e) { listToast(e.message, 'err'); }
+    btn.disabled = false;
+  });
+  const l = acct.limits;
+  if (l) $('storage').textContent = `${l.count} von ${l.max_count} Backups · ${fmtBytes(l.used)} von ${fmtBytes(l.quota)} belegt · höchstens ${fmtBytes(l.max_backup)} je Backup`;
+}
+
+// ---------- Ältere Backups aus dem Browser (IndexedDB) ----------
+// Früher wurden Backups nur im Browser gespeichert. Sie bleiben erreichbar und lassen sich ins Konto übertragen.
+let dbp = null;
+function db() {
+  if (!dbp) dbp = new Promise((res, rej) => {
+    try {
+      const r = indexedDB.open('tx15-backup-studio', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('backups', { keyPath: 'id', autoIncrement: true });
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    } catch (e) { rej(e); }
+  });
+  return dbp;
+}
+async function tx(mode, fn) { const d = await db(); return new Promise((res, rej) => { const t = d.transaction('backups', mode); const st = t.objectStore('backups'); const r = fn(st); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('Speicher voll?')); }); }
+const dbDel = id => tx('readwrite', s => s.delete(id));
+const dbGet = id => tx('readonly', s => s.get(id));
+async function dbList() {
+  const d = await db();
+  return new Promise((res, rej) => {
+    const out = [], r = d.transaction('backups').objectStore('backups').openCursor();
+    r.onsuccess = () => { const c = r.result; if (c) { const { blob, ...rest } = c.value; out.push(rest); c.continue(); } else res(out); };
+    r.onerror = () => rej(r.error);
+  });
+}
+async function moveToServer(id) {
+  const rec = await dbGet(id); if (!rec) return;
+  await storeOnServer(rec.blob, { label: rec.label, meta: rec.meta || {}, created: rec.created, auto: !!rec.auto, uploaded: !!rec.uploaded });
+  await dbDel(id);
+}
+async function renderLegacy() {
+  const host = $('legacy');
+  let list = [];
+  try { list = await dbList(); } catch (e) {}
+  if (!list.length) { host.innerHTML = ''; return; }
+  list.sort((a, b) => b.created - a.created);
+  const used = list.reduce((a, b) => a + (b.size || 0), 0);
+  host.innerHTML = `<h3>Ältere Backups in diesem Browser</h3>
+    <p class="hint">${list.length} Backups (${fmtBytes(used)}) liegen noch nur in diesem Browser. ${acct.loggedIn ? 'Übertrage sie in dein Konto, dann sind sie überall verfügbar.' : acct.available ? `${loginLinks()}, um sie in dein Konto zu übertragen. Bis dahin kannst du sie als ZIP herunterladen.` : 'Lade sie als ZIP herunter.'}</p>
+    ${acct.loggedIn && list.length > 1 ? '<div class="btn-row" style="margin-bottom:8px"><button class="btn small primary" type="button" id="legacyAll">Alle ins Konto übertragen</button></div>' : ''}
+    <div class="blist">${list.map(b => backupCard(b,
+      `${acct.loggedIn ? `<button class="btn small" type="button" data-lact="move" data-id="${b.id}">Ins Konto übertragen</button>` : ''}
+       <button class="btn small" type="button" data-lact="dl" data-id="${b.id}">ZIP herunterladen</button>
+       <button class="btn small danger" type="button" data-lact="del" data-id="${b.id}">Aus dem Browser löschen</button>`)).join('')}</div>`;
+  host.querySelectorAll('[data-lact]').forEach(btn => btn.onclick = async () => {
+    const id = Number(btn.dataset.id);
+    try {
+      if (btn.dataset.lact === 'del') { if (!armDelete(btn, 'Aus dem Browser löschen')) return; await dbDel(id); renderLegacy(); return; }
+      const rec = await dbGet(id); if (!rec) return;
+      if (btn.dataset.lact === 'dl') return saveFile(`TX15-Backup_${new Date(rec.created).toISOString().slice(0, 16).replace(/[T:]/g, '-')}.zip`, rec.blob, listToast);
+      btn.disabled = true; listToast(`Übertrage „${rec.label}“ …`);
+      await moveToServer(id); listToast(`„${rec.label}“ ist jetzt in deinem Konto.`, 'ok'); renderLegacy();
+    } catch (e) { listToast(e.message, 'err'); btn.disabled = false; }
+  });
+  if ($('legacyAll')) $('legacyAll').onclick = async () => {
+    $('legacyAll').disabled = true; let n = 0;
+    try { for (const b of list) { listToast(`Übertrage ${n + 1} von ${list.length} …`); await moveToServer(b.id); n++; } listToast(`${n} Backups in dein Konto übertragen.`, 'ok'); }
+    catch (e) { listToast(`${n} übertragen, dann Fehler: ${e.message}`, 'err'); }
+    renderLegacy();
+  };
+}
+
+// ---------- Speichern ----------
+let downloads = null;
+const inClaude = !!(window.claude && typeof window.claude.use === 'function');
+if (inClaude) window.claude.use('downloads').then(d => { downloads = d; }).catch(() => {});
+async function saveFile(filename, blob, report) {
+  if (downloads) {
+    try { await downloads.save({ filename, data: blob }); report(`${filename} gespeichert.`, 'ok'); }
+    catch (e) { report(e && e.code === 'declined' ? 'Speichern abgebrochen.' : e && e.code === 'too_large' ? 'Die Datei ist für diese Ansicht zu groß. Öffne das Studio lokal.' : 'Speichern ist in dieser Ansicht nicht möglich.', 'err'); }
+    return;
+  }
+  if (inClaude) return report('Speichern ist in dieser Ansicht nicht verfügbar.', 'err');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  report(`${filename} gespeichert.`, 'ok');
+}
+let mt; function toastMk(m, k) { const t = $('mkToast'); t.textContent = m; t.className = 'toast ' + (k || ''); clearTimeout(mt); if (k) mt = setTimeout(() => { t.textContent = ''; }, 6000); }
+
+// ---------- Firmware (EdgeTX für die TX15) ----------
+// Server: webshop/tx15_firmware.py holt die TX15-Datei aus dem offiziellen EdgeTX-Release.
+// Installation wie im EdgeTX-Handbuch: Sender im Bootloader, Datei auf das Laufwerk EDGETX_UF2.
+// Der Bootloader flasht jeden geschriebenen UF2-Block (unabhängig vom Dateinamen) und
+// verwirft Blöcke für andere Geräte; zusätzlich prüfen wir vorher die Board-ID.
+const FW_API = '/api/tx15-firmware';
+let fwReleases = [], fwBusy = false;
+function fwToast(m, k) { const t = $('fwToast'); t.textContent = m; t.className = 'toast ' + (k || ''); }
+function fwButtons() {
+  const ok = !fwBusy && fwReleases.length > 0;
+  $('fwDownload').disabled = !ok;
+  $('fwInstall').disabled = !ok || !canWrite || inClaude;
+}
+function fwRelease() { return fwReleases.find(r => r.tag === $('fwVersion').value) || null; }
+function renderFwNotes() {
+  const r = fwRelease(); if (!r) { $('fwNotes').innerHTML = ''; return; }
+  const latest = fwReleases[0] && fwReleases[0].tag === r.tag;
+  let h = `Veröffentlicht am ${esc(r.published.split('-').reverse().join('.'))} · <a href="${esc(r.url)}" target="_blank" rel="noopener">Änderungen ansehen</a>`;
+  if (!latest) h += ' · <b>nicht die neueste Version</b>';
+  const cardVer = card && !card.demo && card.info.semver;
+  if (cardVer && cardVer.split('.').slice(0, 2).join('.') !== r.tag.slice(1).split('.').slice(0, 2).join('.'))
+    h += `<div class="fw-warn">Auf der verbundenen Karte läuft EdgeTX ${esc(cardVer)}. Beim Wechsel der Hauptversion wandelt EdgeTX Modelle und Einstellungen beim ersten Start um – erstelle vorher unbedingt ein Backup.</div>`;
+  $('fwNotes').innerHTML = h;
+}
+async function loadFirmwareList() {
+  const sel = $('fwVersion');
+  try {
+    const r = await fetch(FW_API, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) throw new Error();
+    fwReleases = (await r.json()).releases || [];
+    if (!fwReleases.length) throw new Error();
+    sel.innerHTML = fwReleases.map((x, i) => `<option value="${esc(x.tag)}">EdgeTX ${esc(x.tag)}${i === 0 ? ' (neueste)' : ''}</option>`).join('');
+    sel.disabled = false;
+  } catch (e) {
+    sel.innerHTML = '<option>nicht verfügbar</option>';
+    $('fwNotes').innerHTML = 'Die Firmware-Liste gibt es nur auf <a href="https://www.bollisoft.ch/tx15-werkstatt/backup-studio.html">bollisoft.ch</a>. Alternativ direkt bei <a href="https://github.com/EdgeTX/edgetx/releases" target="_blank" rel="noopener">EdgeTX</a> laden (Datei tx15-….uf2 im Firmware-ZIP).';
+  }
+  renderFwNotes(); fwButtons();
+}
+$('fwVersion').onchange = renderFwNotes;
+
+// UF2 prüfen: Größe ein Vielfaches von 512, Magic-Werte in jedem Block.
+function checkUf2(u8) {
+  if (!u8.length || u8.length % 512) return false;
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  for (let o = 0; o < u8.length; o += 512)
+    if (dv.getUint32(o, true) !== 0x0A324655 || dv.getUint32(o + 4, true) !== 0x9E5D5157 || dv.getUint32(o + 508, true) !== 0x0AB16F30) return false;
+  return true;
+}
+async function fetchFirmware(r, onProgress) {
+  const res = await fetch(`${FW_API}/${encodeURIComponent(r.tag)}/tx15.uf2`);
+  if (!res.ok) { let m = ''; try { m = (await res.json()).error; } catch (e) {} throw new Error(m || `Firmware konnte nicht geladen werden (HTTP ${res.status}).`); }
+  const total = Number(res.headers.get('content-length')) || 0, parts = []; let got = 0;
+  const reader = res.body.getReader();
+  for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; if (total && onProgress) onProgress(got / total); }
+  const u8 = new Uint8Array(got); let o = 0; for (const p of parts) { u8.set(p, o); o += p.length; }
+  if (!checkUf2(u8)) throw new Error('Die geladene Datei ist keine gültige UF2-Firmware. Abgebrochen.');
+  return u8;
+}
+
+$('fwDownload').onclick = async () => {
+  const r = fwRelease(); if (!r || fwBusy) return;
+  fwBusy = true; fwButtons(); const prog = $('fwProg'); prog.hidden = false; prog.value = 0;
+  try {
+    fwToast(`Lade EdgeTX ${r.tag} …`);
+    const u8 = await fetchFirmware(r, v => { prog.value = v; });
+    await saveFile(`edgetx-tx15-${r.tag}.uf2`, new Blob([u8]), fwToast);
+  } catch (e) { fwToast(e.message, 'err'); }
+  fwBusy = false; prog.hidden = true; fwButtons();
+};
+
+$('fwInstall').onclick = async () => {
+  const r = fwRelease(); if (!r || fwBusy) return;
+  if (!canWrite) return fwToast('Direktes Installieren braucht Chrome oder Edge. Lade die Firmware herunter und kopiere sie auf das Laufwerk EDGETX_UF2.', 'err');
+  // Erst das Laufwerk wählen (braucht den Klick), dann laden und schreiben.
+  let dir;
+  try { dir = await window.showDirectoryPicker({ id: 'edgetx-uf2', mode: 'readwrite' }); }
+  catch (e) { if (e && e.name === 'AbortError') return; return fwToast(e.message || 'Laufwerk konnte nicht geöffnet werden.', 'err'); }
+  fwBusy = true; fwButtons(); const prog = $('fwProg'); prog.hidden = false; prog.value = 0;
+  let written = 0, total = 0;
+  try {
+    let info = '';
+    try { info = await (await (await dir.getFileHandle('INFO_UF2.TXT')).getFile()).text(); }
+    catch (e) { throw new Error('Das ist nicht das Laufwerk EDGETX_UF2. Ist der Sender im Bootloader (horizontale Trimmtasten nach innen halten und einschalten)?'); }
+    const board = (info.match(/Board-ID:\s*(\S+)/i) || [])[1] || '';
+    if (board.toLowerCase() !== 'tx15') throw new Error(`Dieses Laufwerk gehört zu „${board || 'unbekannt'}“, nicht zu einer RadioMaster TX15. Abgebrochen – es wurde nichts geschrieben.`);
+    if (dir.requestPermission && (await dir.requestPermission({ mode: 'readwrite' })) !== 'granted')
+      throw new Error('Ohne Schreibrecht kann die Firmware nicht installiert werden.');
+    fwToast(`Lade EdgeTX ${r.tag} …`);
+    const u8 = await fetchFirmware(r, v => { prog.value = v / 2; });
+    if (!confirm(`EdgeTX ${r.tag} jetzt auf die TX15 installieren?\n\nDen Sender während der Installation nicht trennen und nicht ausschalten.`)) { fwToast('Abgebrochen – es wurde nichts geschrieben.'); return; }
+    total = u8.length;
+    fwToast('Installiere … Sender nicht trennen.');
+    const fh = await dir.getFileHandle('FIRMWARE.UF2', { create: true });
+    const w = await fh.createWritable();
+    const CHUNK = 64 * 1024;
+    for (let o = 0; o < total; o += CHUNK) { await w.write(u8.subarray(o, Math.min(total, o + CHUNK))); written = Math.min(total, o + CHUNK); prog.value = .5 + written / total / 2; }
+    try { await w.close(); }
+    catch (e) { /* Der Sender startet nach dem letzten Block neu – das Laufwerk verschwindet dabei. */ }
+    prog.value = 1;
+    fwToast(`EdgeTX ${r.tag} übertragen. Die TX15 startet neu – danach unter SYS → Version prüfen. Startet sie nicht von selbst, Laufwerk auswerfen und Sender neu einschalten.`, 'ok');
+  } catch (e) {
+    if (total && written >= total) fwToast(`EdgeTX ${r.tag} übertragen. Die TX15 startet neu – danach unter SYS → Version prüfen.`, 'ok');
+    else if (written) fwToast(`Übertragung bei ${Math.round(written / total * 100)} % abgebrochen (${e.message}). Sender im Bootloader lassen und erneut „Direkt installieren“ wählen.`, 'err');
+    else fwToast(e.message || 'Installation fehlgeschlagen.', 'err');
+  } finally { fwBusy = false; prog.hidden = true; fwButtons(); }
+};
+
+// ---------- Start ----------
+function renderAll() { renderBanner(); renderFacts(); renderCats(); renderCardModels(); renderRestore(); renderFwNotes(); }
+renderAll(); renderList(); renderLegacy();
+setCard(demoCard());
+loadAccount();
+loadFirmwareList();
+// Nach dem Einloggen in einem anderen Tab beim Zurückkehren neu laden.
+window.addEventListener('focus', () => { if (!acct.loggedIn) loadAccount(); });
+})();
+</script>

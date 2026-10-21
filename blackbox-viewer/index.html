@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blackbox Arena</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23080b0d'/%3E%3Cpath d='M9 9l14 14M23 9L9 23' stroke='%2358f0a8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cg fill='none' stroke='%2358f0a8' stroke-width='2'%3E%3Ccircle cx='8' cy='8' r='4'/%3E%3Ccircle cx='24' cy='8' r='4'/%3E%3Ccircle cx='8' cy='24' r='4'/%3E%3Ccircle cx='24' cy='24' r='4'/%3E%3C/g%3E%3C/svg%3E" />
+    <!-- Bollisoft-Hauptnavigation (nur auf bollisoft.ch vorhanden, lokal ohne Wirkung) -->
+    <script src="/site-nav.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="home" href="/tx15-werkstatt/">← Drohnen Tools</a>
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+          <path d="M8.5 8.5l11 11M19.5 8.5l-11 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <rect x="11" y="11" width="6" height="6" rx="1.5" fill="currentColor" fill-opacity=".22" stroke="currentColor" stroke-width="1.4" />
+          <circle cx="6.5" cy="6.5" r="4" stroke="currentColor" stroke-width="1.6" />
+          <circle cx="21.5" cy="6.5" r="4" stroke="currentColor" stroke-width="1.6" />
+          <circle cx="6.5" cy="21.5" r="4" stroke="currentColor" stroke-width="1.6" />
+          <circle cx="21.5" cy="21.5" r="4" stroke="currentColor" stroke-width="1.6" />
+        </svg>
+        <div>
+          <strong>Blackbox Arena</strong>
+          <small>FPV Trick Scoring</small>
+        </div>
+      </div>
+      <nav class="actions">
+        <label class="btn primary" title="Betaflight .bbl/.bfl oder CSV (blackbox_decode / Explorer)">
+          Log öffnen
+          <input type="file" id="fileLog" accept=".bbl,.bfl,.txt,.csv,.BBL,.BFL,.TXT,.CSV" hidden />
+        </label>
+        <label class="btn" title="Video (MP4/WebM) des Flugs">
+          Video laden
+          <input type="file" id="fileVideo" accept="video/*" hidden />
+        </label>
+        <button class="btn" id="btnUsb" title="Flash des Flight Controllers per USB auslesen (Web Serial)">FC via USB</button>
+        <button class="btn" id="btnDemo">Demo-Flug</button>
+        <div class="menu">
+          <button class="btn" id="btnExport" aria-haspopup="true" aria-expanded="false" disabled>Export ▾</button>
+          <div class="menu-list" id="exportMenu" role="menu" hidden>
+            <button role="menuitem" data-export="csv">Rohdaten als CSV</button>
+            <button role="menuitem" data-export="json">Flugdaten + Tricks (JSON)</button>
+            <button role="menuitem" data-export="tricks">Nur Tricks (JSON)</button>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <section class="stage-wrap">
+        <div class="stage" id="stage">
+          <canvas id="stageCanvas"></canvas>
+          <div class="empty" id="emptyState">
+            <h1>Fliegen. Loggen. Punkten.</h1>
+            <p>Zieh eine Blackbox-Datei (<code>.bbl</code>, <code>.bfl</code>, <code>.csv</code>) und optional das Flugvideo hierher – oder starte den Demo-Flug.</p>
+            <div class="empty-actions">
+              <button class="btn primary" id="btnDemo2">Demo-Flug starten</button>
+              <label class="btn">Log öffnen<input type="file" id="fileLog2" accept=".bbl,.bfl,.txt,.csv,.BBL,.BFL,.TXT,.CSV" hidden /></label>
+            </div>
+          </div>
+          <div class="busy" id="busy" hidden>
+            <div class="spinner"></div>
+            <span id="busyLabel">Lade…</span>
+            <div class="bar"><div id="busyBar"></div></div>
+          </div>
+          <div class="drop-hint" id="dropHint" hidden>Datei loslassen</div>
+        </div>
+        <div class="transport">
+          <button class="icon-btn" id="btnPlay" title="Abspielen/Pause (Leertaste)" disabled>▶</button>
+          <button class="icon-btn small" id="btnBack" title="−2 s (←)" disabled>⟲</button>
+          <button class="icon-btn small" id="btnFwd" title="+2 s (→)" disabled>⟳</button>
+          <span class="time" id="timeLabel">0:00.00 / 0:00.00</span>
+          <select id="speed" title="Wiedergabegeschwindigkeit">
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+          </select>
+          <span class="spacer"></span>
+          <details class="hud-toggles">
+            <summary>HUD</summary>
+            <div id="hudToggles"></div>
+          </details>
+          <button class="btn rec" id="btnRec" title="Video inkl. HUD als WebM aufnehmen" disabled>● Aufnehmen</button>
+        </div>
+      </section>
+
+      <aside class="side">
+        <div class="card score-card">
+          <div class="score-head">
+            <span class="label">Gesamtpunktzahl</span>
+            <span class="source-chip" id="sourceChip"></span>
+          </div>
+          <div class="score-total" id="scoreTotal">0</div>
+          <div class="score-stats">
+            <div><span id="statTricks">0</span><small>Tricks</small></div>
+            <div><span id="statCombo">0</span><small>Max. Combo</small></div>
+            <div><span id="statBest">–</span><small>Bester Trick</small></div>
+          </div>
+          <form class="submit-row" id="submitForm">
+            <input id="pilotName" placeholder="Pilotname" maxlength="32" autocomplete="nickname" />
+            <button class="btn primary" id="btnSubmit" disabled>Einreichen</button>
+          </form>
+          <p class="login-hint" id="demoHint" hidden>
+            Demo-Flüge zählen nicht fürs Leaderboard – lade ein eigenes Blackbox-Log, um Punkte einzureichen.
+          </p>
+          <p class="login-hint" id="loginHint" hidden>
+            Punkte einreichen geht nur mit Konto. <a id="loginLink" href="/login">Jetzt einloggen</a>
+          </p>
+        </div>
+        <div class="card tricks-card">
+          <div class="card-head">
+            <h2>Erkannte Tricks</h2>
+            <label class="check"><input type="checkbox" id="showRejected" /> Kandidaten</label>
+          </div>
+          <ol class="trick-list" id="trickList"></ol>
+        </div>
+      </aside>
+
+      <section class="timeline-wrap card">
+        <div class="legend">
+          <span><i style="background:#ff4d6d"></i>Roll</span>
+          <span><i style="background:#3ddc97"></i>Pitch</span>
+          <span><i style="background:#4cc9f0"></i>Yaw</span>
+          <span><i style="background:#ffb703"></i>Gas</span>
+          <span><i style="background:#fee440"></i>Arm-Beep</span>
+          <span class="hint">Klick = springen · Ziehen = verschieben · Mausrad = Zoom · Doppelklick = alles</span>
+        </div>
+        <canvas id="timeline"></canvas>
+      </section>
+
+      <section class="panels card">
+        <div class="tabs" role="tablist">
+          <button role="tab" data-tab="sync" aria-selected="true">Video-Sync</button>
+          <button role="tab" data-tab="detect">Erkennung</button>
+          <button role="tab" data-tab="ml">ML-Training</button>
+          <button role="tab" data-tab="board">Leaderboard</button>
+          <button role="tab" data-tab="info">Log-Info</button>
+        </div>
+
+        <div class="tab" data-panel="sync">
+          <p class="muted" id="videoStatus">Kein Video geladen. Ohne Video zeigt die Bühne eine synthetische FPV-Ansicht aus den Lagedaten.</p>
+          <div class="grid3">
+            <div class="group">
+              <h3>Versatz</h3>
+              <p class="muted small">Videozeit = Logzeit + Versatz</p>
+              <div class="row">
+                <input type="number" id="offset" step="0.01" value="0" />
+                <span>s</span>
+              </div>
+              <div class="row wrap">
+                <button class="btn tiny" data-nudge="-1">−1 s</button>
+                <button class="btn tiny" data-nudge="-0.1">−0.1</button>
+                <button class="btn tiny" data-nudge="-0.0333">−1 F</button>
+                <button class="btn tiny" data-nudge="0.0333">+1 F</button>
+                <button class="btn tiny" data-nudge="0.1">+0.1</button>
+                <button class="btn tiny" data-nudge="1">+1 s</button>
+              </div>
+            </div>
+            <div class="group">
+              <h3>Auto-Sync (Audio)</h3>
+              <p class="muted small">Korreliert das Motorgeräusch der Tonspur mit den Motorwerten im Log.</p>
+              <button class="btn" id="btnAutoSync" disabled>Audio ↔ Motor korrelieren</button>
+              <p class="small" id="syncResult"></p>
+              <canvas id="syncCurve" class="sync-curve" hidden></canvas>
+            </div>
+            <div class="group">
+              <h3>Anker (Throttle / Beep)</h3>
+              <p class="muted small">Video an markantem Moment pausieren (Gas-Stoß, Arm-Piepser), dann die Stelle im Log wählen.</p>
+              <div class="row wrap">
+                <button class="btn tiny" id="btnMarkVideo" disabled>Videozeit merken</button>
+                <span class="small" id="markVideo">–</span>
+              </div>
+              <div class="row wrap">
+                <button class="btn tiny" id="btnPickLog" disabled>In Timeline wählen</button>
+                <button class="btn tiny" id="btnBeep" disabled>Arm-Beep</button>
+                <button class="btn tiny" id="btnSnap" disabled>→ Gas-Stoß</button>
+                <span class="small" id="markLog">–</span>
+              </div>
+              <button class="btn primary tiny" id="btnApplyAnchor" disabled>Anker anwenden</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab" data-panel="detect" hidden>
+          <p class="muted small">Schwellwerte der regelbasierten Erkennung. Änderungen werden sofort neu ausgewertet.</p>
+          <div class="settings" id="settings"></div>
+          <button class="btn tiny" id="btnResetSettings">Standardwerte</button>
+        </div>
+
+        <div class="tab" data-panel="ml" hidden>
+          <p class="muted small">
+            Korrigiere in der Trickliste falsche Erkennungen (Dropdown je Trick, „Kandidaten“ zeigt verworfene Rotationen).
+            Jede Korrektur wird als Trainingsbeispiel gespeichert. Ein k-Nearest-Neighbour-Modell klassifiziert damit alle Kandidaten neu.
+          </p>
+          <label class="check"><input type="checkbox" id="mlEnabled" /> ML-Klassifizierung aktiv</label>
+          <div id="mlStats" class="ml-stats"></div>
+          <div class="row wrap">
+            <button class="btn tiny" id="btnMlExport">Trainingsdaten exportieren</button>
+            <label class="btn tiny">Importieren<input type="file" id="mlImport" accept=".json" hidden /></label>
+            <button class="btn tiny danger" id="btnMlClear">Alle löschen</button>
+          </div>
+        </div>
+
+        <div class="tab" data-panel="board" hidden>
+          <div class="row">
+            <span class="small" id="boardMode"></span>
+            <span class="spacer"></span>
+            <button class="btn tiny" id="btnBoardRefresh">Aktualisieren</button>
+          </div>
+          <table class="board">
+            <thead><tr><th>#</th><th>Pilot</th><th>Punkte</th><th>Tricks</th><th>Bester Trick</th><th>Combo</th><th>Datum</th></tr></thead>
+            <tbody id="boardBody"></tbody>
+          </table>
+        </div>
+
+        <div class="tab" data-panel="info" hidden>
+          <div class="row" id="logSelectRow" hidden>
+            <label for="logSelect">Log in Datei:</label>
+            <select id="logSelect"></select>
+          </div>
+          <dl class="info" id="infoList"></dl>
+          <details>
+            <summary>Alle Header</summary>
+            <pre id="headerDump"></pre>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <video id="video" class="offscreen-video" playsinline preload="auto"></video>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <dialog id="usbDialog">
+      <form method="dialog" class="dialog-body">
+        <h2>Flight Controller per USB</h2>
+        <p class="muted small">
+          Liest den Onboard-Flash (Dataflash) eines Betaflight-FCs per MSP über Web Serial aus (Chrome/Edge).
+          Betaflight Configurator vorher schließen. FCs mit SD-Karte: im Configurator „Mass Storage“ aktivieren und die Datei direkt öffnen.
+        </p>
+        <div id="usbStatus" class="usb-status">Nicht verbunden.</div>
+        <div class="bar"><div id="usbBar"></div></div>
+        <div class="row wrap">
+          <button type="button" class="btn primary" id="usbConnect">Verbinden</button>
+          <button type="button" class="btn" id="usbDownload" disabled>Flash herunterladen</button>
+          <button type="button" class="btn" id="usbSave" disabled>Als .bbl speichern</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn" id="usbClose">Schließen</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

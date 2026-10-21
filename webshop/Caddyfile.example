@@ -14,7 +14,7 @@ bollisoft.ch {
     redir /tx15-werkstatt /tx15-werkstatt/ 308
 
     handle_path /tx15-werkstatt/* {
-        root * /srv/txtheme-maker
+        root * /opt/fpv-gamification-pico/drohnen-tools
         file_server {
             hide .git
         }

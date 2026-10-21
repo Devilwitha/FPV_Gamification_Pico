@@ -4,12 +4,12 @@ Startet aus einer einzigen Datei:
 
 - den Flask-Webshop per Waitress (FLASK_HOST:FLASK_PORT, Default
   127.0.0.1:5000),
-- die statische TX15 Werkstatt (Repo github.com/Devilwitha/txtheme-maker)
+- die statischen Drohnen Tools (Ordner drohnen-tools/ in diesem Repo)
   im selben Waitress-Prozess unter /tx15-werkstatt/,
 - den Cover Store/Maker (SteamOs_Pogram) als ueberwachten Unterprozess auf
   COVERSTORE_HOST:COVERSTORE_PORT (Default 127.0.0.1:9090). Stuerzt er ab,
   wird er automatisch neu gestartet.
-- den Blackbox Viewer (Repo github.com/Devilwitha/BlackboxViewer, Node.js)
+- den Blackbox Viewer (Ordner blackbox-viewer/ in diesem Repo, Node.js)
   als ueberwachten Unterprozess auf 127.0.0.1:BLACKBOX_VIEWER_PORT (Default
   8787) unter /blackbox-viewer/. Fehlt der Build (dist/), wird er vor dem
   ersten Start mit npm erzeugt. Punkte ins Leaderboard einreichen koennen
@@ -34,7 +34,10 @@ from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from werkzeug.utils import redirect, send_from_directory
 
 BASE_DIR = Path(__file__).resolve().parent
-GITHUB_DIR = BASE_DIR.parent.parent
+# Repo-Wurzel: enthaelt auch die Drohnen Tools und den Blackbox Viewer.
+REPO_DIR = BASE_DIR.parent
+# Ordner neben diesem Repo (nur noch fuer den Cover Store aus SteamOs_Pogram).
+GITHUB_DIR = REPO_DIR.parent
 
 # .env explizit aus dem Webshop-Ordner laden, damit der Start unabhaengig
 # vom aktuellen Arbeitsverzeichnis (z. B. aus der Aufgabenplanung) klappt.
@@ -118,7 +121,7 @@ def make_static_app(root):
 
 def build_wsgi_app():
     mounts = {}
-    tx15_dir = _env_path("TX15_WERKSTATT_DIR", GITHUB_DIR / "txtheme-maker")
+    tx15_dir = _env_path("TX15_WERKSTATT_DIR", REPO_DIR / "drohnen-tools")
     if (tx15_dir / "index.html").is_file():
         mounts[TX15_MOUNT_PATH] = make_static_app(tx15_dir)
         _log(f"TX15 Werkstatt: {tx15_dir} -> {TX15_MOUNT_PATH}/")
@@ -350,7 +353,7 @@ def start_blackbox_viewer():
         _log("Blackbox Viewer: per BLACKBOX_VIEWER_ENABLED deaktiviert")
         return None
 
-    app_dir = _env_path("BLACKBOX_VIEWER_DIR", GITHUB_DIR / "BlackboxViewer")
+    app_dir = _env_path("BLACKBOX_VIEWER_DIR", REPO_DIR / "blackbox-viewer")
     server_script = app_dir / "server" / "server.mjs"
     if not server_script.is_file():
         _log(

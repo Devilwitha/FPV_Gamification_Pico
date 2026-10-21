@@ -17,7 +17,7 @@ Im Repo liegen dafuer jetzt direkt nutzbare Produktionsdateien:
 
 Zusatz: Der Link `https://bollisoft.ch/coverstore-maker/` wird per Caddy intern
 an `127.0.0.1:9090` weitergeleitet. Die statische TX15 Werkstatt aus
-`github.com/Devilwitha/txtheme-maker` wird unter
+`drohnen-tools/` (Ordner in diesem Repo) wird unter
 `https://bollisoft.ch/tx15-werkstatt/` ausgeliefert.
 
 ## Voraussetzungen
@@ -27,20 +27,11 @@ an `127.0.0.1:9090` weitergeleitet. Die statische TX15 Werkstatt aus
 - Port `80` und `443` sind von aussen erreichbar
 - Flask laeuft lokal auf `127.0.0.1:5000`
 - Caddy ist installiert
-- Das TX15-Werkstatt-Repository liegt unter `/srv/txtheme-maker`
+- Das Repo liegt unter `/opt/fpv-gamification-pico` (die Drohnen Tools im
+  Unterordner `drohnen-tools/`)
 
-Die TX15 Werkstatt wird einmalig so bereitgestellt:
-
-```bash
-sudo git clone https://github.com/Devilwitha/txtheme-maker.git /srv/txtheme-maker
-sudo chown -R caddy:caddy /srv/txtheme-maker
-```
-
-Spaetere Aktualisierungen werden direkt aus dem Repository uebernommen:
-
-```bash
-sudo -u caddy git -C /srv/txtheme-maker pull --ff-only
-```
+Die Drohnen Tools liegen im Repo (`drohnen-tools/`) und kommen mit jedem
+`git pull` des Repos mit - ein eigenes Klonen ist nicht mehr noetig.
 
 Es ist kein separater App-Prozess notwendig. Caddy liefert die statischen
 HTML-, JavaScript- und Asset-Dateien direkt aus; `.git` bleibt dabei gesperrt.
@@ -104,7 +95,7 @@ bollisoft.ch {
     redir /tx15-werkstatt /tx15-werkstatt/ 308
 
     handle_path /tx15-werkstatt/* {
-        root * /srv/txtheme-maker
+        root * /opt/fpv-gamification-pico/drohnen-tools
         file_server {
             hide .git
         }
@@ -139,14 +130,13 @@ Auf dem Windows-Produktivserver startet **eine einzige Datei** alle Server:
 Cover Store und Blackbox Viewer werden nach einem Absturz automatisch neu
 gestartet und enden immer zusammen mit `serve_production.py`.
 
-Erwartete Verzeichnisse (neben diesem Repo im selben `GitHub`-Ordner,
-abweichende Pfade per `.env`):
+Verzeichnisse (abweichende Pfade per `.env`):
 
-- `txtheme-maker` (`git clone https://github.com/Devilwitha/txtheme-maker.git`),
+- `drohnen-tools/` (Drohnen Tools, frueher eigenes Repo txtheme-maker),
   ueberschreibbar mit `TX15_WERKSTATT_DIR`
-- `SteamOs_Pogram`, Skript ueberschreibbar mit `COVERSTORE_SCRIPT`;
+- `SteamOs_Pogram` (eigenes Repo neben diesem), Skript ueberschreibbar mit `COVERSTORE_SCRIPT`;
   `COVERSTORE_ENABLED=false` schaltet den Cover Store ab
-- `BlackboxViewer` (`git clone https://github.com/Devilwitha/BlackboxViewer.git`),
+- `blackbox-viewer/` (Blackbox Viewer, frueher eigenes Repo BlackboxViewer),
   ueberschreibbar mit `BLACKBOX_VIEWER_DIR`; Port mit `BLACKBOX_VIEWER_PORT`
   (Default 8787), `BLACKBOX_VIEWER_ENABLED=false` schaltet ihn ab. Benoetigt
   **Node.js LTS** (`C:\Program Files\nodejs\node.exe` oder im PATH, sonst
@@ -205,13 +195,13 @@ Stop-ScheduledTask -TaskName 'Bollisoft Server'; Start-ScheduledTask -TaskName '
 TX15 Werkstatt aktualisieren (kein Neustart noetig):
 
 ```powershell
-git -C C:\Users\Administrator\Documents\GitHub\txtheme-maker pull --ff-only
+git -C C:\Users\Administrator\Documents\GitHub\FPV_Gamification_Pico pull --ff-only
 ```
 
 Blackbox Viewer aktualisieren (danach Neustart, siehe oben):
 
 ```powershell
-cd C:\Users\Administrator\Documents\GitHub\BlackboxViewer
+cd C:\Users\Administrator\Documents\GitHub\FPV_Gamification_Pico\blackbox-viewer
 git pull --ff-only; npm ci; npm run build
 ```
 

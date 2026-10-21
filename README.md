@@ -495,3 +495,13 @@ Der Workflow `.github/workflows/build-and-release-firmware.yml` läuft bei jedem
 
 ---
 *Guten Flug und möge der Highscore mit dir sein! 🛸💨*
+
+## 🌐 Webseite bollisoft.ch (Teil dieses Repos)
+
+| Ordner | Inhalt | Adresse |
+| --- | --- | --- |
+| `webshop/` | Flask-Webshop mit Konto, Forum, Lizenzen und Server-Ablage der Drohnen Tools; `serve_production.py` startet alle Server zusammen | `/` |
+| `drohnen-tools/` | Drohnen Tools: Theme Studio, Lua Studio, Backup Studio (Sender), ELRS Flasher, ESC/Betaflight Configurator (Drohne) – statische Seiten, früher Repo `txtheme-maker` | `/tx15-werkstatt/` |
+| `blackbox-viewer/` | Blackbox Viewer (Node.js/Vite) zur Auswertung nach dem Flug, früher Repo `BlackboxViewer` | `/blackbox-viewer/` |
+
+Betrieb und Einrichtung: siehe [`webshop/HTTPS_DEPLOYMENT.md`](webshop/HTTPS_DEPLOYMENT.md).

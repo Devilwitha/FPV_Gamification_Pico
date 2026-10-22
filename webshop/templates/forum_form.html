@@ -24,7 +24,7 @@
       {% if writer and mode != "edit" %}
         <p class="form-hint">Du schreibst als <strong>{{ writer }}</strong>.</p>
       {% endif %}
-      <form method="post" action="{% if mode == 'thread' %}{{ url_for('forum.new_thread', category=slug) }}{% elif mode == 'reply' %}{{ url_for('forum.reply', thread_id=topic.id) }}{% else %}{{ url_for('forum.edit_post', post_id=post.id) }}{% endif %}">
+      <form method="post" action="{% if mode == 'thread' %}{{ url_for('forum.new_thread', category=slug) }}{% elif mode == 'reply' %}{{ url_for('forum.reply', thread_id=topic.id) }}{% else %}{{ url_for('forum.edit_post', post_id=post.id) }}{% endif %}" enctype="multipart/form-data">
         {% if mode == "thread" or (mode == "edit" and post.is_first) %}
           <div class="form-field">
             <label for="forum-title">Titel</label>
@@ -36,6 +36,7 @@
           <textarea id="forum-body" name="body" rows="10" minlength="2" maxlength="{{ limits[1] }}" required>{{ body }}</textarea>
           <p class="form-hint">Reiner Text – Absätze mit Leerzeile, Links werden automatisch erkannt.</p>
         </div>
+        {% with attachments = attachments if mode == "edit" else none %}{% include "_forum_attach_field.html" %}{% endwith %}
         <button type="submit" class="btn btn-primary">
           {% if mode == "thread" %}Thema eröffnen{% elif mode == "reply" %}Antwort senden{% else %}Änderungen speichern{% endif %}
         </button>

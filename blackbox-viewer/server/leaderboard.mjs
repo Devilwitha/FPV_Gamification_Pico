@@ -137,6 +137,12 @@ export function leaderboardMiddleware() {
         if (!auth.loggedIn) {
           return send(res, 401, { error: 'Zum Einreichen bitte einloggen.', loginUrl: auth.loginUrl });
         }
+        // Submissions with the recorded video (multipart) are handled by the webshop on bollisoft.ch
+        // (webshop/leaderboard.py); this small local server only keeps plain JSON scores.
+        if ((req.headers['content-type'] ?? '').includes('multipart/form-data')) {
+          req.resume();
+          return send(res, 501, { error: 'Einreichen mit Video gibt es nur auf bollisoft.ch – lokal werden keine Videos gespeichert.' });
+        }
         const entry = sanitize(JSON.parse(await readBody(req)));
         entries.push(entry);
         entries.sort((a, b) => b.score - a.score);

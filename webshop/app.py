@@ -20,9 +20,13 @@ from flask import Flask, Response, flash, jsonify, redirect, render_template, re
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import community
+import countries
 import db
 import forum
 import konto
+import leaderboard
+import pilot_license
 import orders_db
 import simulator_manager
 import tx15_backups
@@ -122,6 +126,32 @@ app.register_blueprint(tx15_firmware.bp)
 # und forum.py.
 app.register_blueprint(konto.bp)
 app.register_blueprint(forum.bp)
+# Leaderboard des Blackbox Viewers (Video, Meldungen, Admin) - siehe
+# leaderboard.py; uebernimmt einmalig die Eintraege des alten Node-Leaderboards.
+app.register_blueprint(leaderboard.bp)
+leaderboard.import_legacy_entries()
+# Oeffentliche Profile, Avatare, Forum-Anhaenge (community.py) und der
+# private Drohnen-Ausweis im Konto (pilot_license.py).
+app.register_blueprint(community.bp)
+app.register_blueprint(pilot_license.bp)
+community.register(app)
+# Land: Auswahlliste + Anzeige des Namens zum gespeicherten Code (countries.py)
+app.add_template_filter(countries.name, "country_name")
+app.add_template_global(countries.choices, "country_choices")
+# Leaderboard-Seite /leaderboard (Rangliste, Laender, Eintrag mit Video)
+app.register_blueprint(leaderboard.pages)
+
+
+def _normalize_account_countries():
+    """Frueher frei eingetippte Laender ('Schweiz', 'CH') auf Codes umstellen;
+    nicht zuordenbare Werte leeren - das Konto waehlt dann im Profil neu."""
+    for row in db.account_countries():
+        code = countries.normalize(row["country"]) or ""
+        if code != (row["country"] or ""):
+            db.set_account_country(row["id"], code)
+
+
+_normalize_account_countries()
 forum.setup(app)
 
 # Separate, eigenstaendige Datenbank ausschliesslich fuer Hardware-Bestellungen
@@ -343,9 +373,11 @@ def track_account_activity():
     if not email or request.endpoint == "static":
         return
     now = time.time()
-    if now - session.get("seen_at", 0) < SEEN_UPDATE_SECONDS:
+    # Bremse je Konto: meldet sich im selben Browser ein anderes Konto an, zaehlt es sofort.
+    if session.get("seen_for") == email and now - session.get("seen_at", 0) < SEEN_UPDATE_SECONDS:
         return
     session["seen_at"] = now
+    session["seen_for"] = email
     db.touch_account_seen(email)
 
 
@@ -1221,6 +1253,8 @@ def register():
             error = "Die Passwörter stimmen nicht überein. Bitte beide Felder gleich ausfüllen."
         elif any(not form_values[field] for field in REQUIRED_ACCOUNT_FIELDS):
             error = "Bitte Name und Land vollständig ausfüllen."
+        elif not countries.is_valid(form_values["country"]):
+            error = "Bitte ein Land aus der Liste wählen."
         elif db.get_account_by_email(email) is not None:
             error = "Für diese E-Mail-Adresse existiert bereits ein Konto."
         elif (username_error := konto.validate_username(form_values["username"])) is not None:
@@ -1421,6 +1455,8 @@ def admin_dashboard():
     return render_template(
         "admin_dashboard.html",
         registered_count=db.count_accounts(),
+        leaderboard=leaderboard.admin_overview(),
+        ausweise=pilot_license.admin_overview(),
         online_accounts=db.list_online_accounts(online_since),
         online_minutes=int(ONLINE_WINDOW.total_seconds() // 60),
         products=PRODUCTS,

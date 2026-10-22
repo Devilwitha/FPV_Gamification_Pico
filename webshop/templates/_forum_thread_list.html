@@ -10,7 +10,7 @@
           {{ t.title }}
         </a>
         <span class="form-hint">
-          von {{ t.author_name or "Mitglied" }} · {{ t.created_at|forum_time }}
+          von {% if t.author_name and t.author_email != "__admin__" %}<a href="{{ url_for('community.profile', username=t.author_name) }}">{{ t.author_name }}</a>{% else %}{{ t.author_name or "Mitglied" }}{% endif %} · {{ t.created_at|forum_time }}
           {% if show_category %} · {{ categories[t.category][0] if t.category in categories else t.category }}{% endif %}
         </span>
       </div>

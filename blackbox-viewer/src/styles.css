@@ -296,3 +296,36 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
   .score-total { font-size: 40px; }
 }
 .offscreen-video { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
+
+/* ---------- leaderboard: submit + entry dialogs ---------- */
+.board tr.clickable { cursor: pointer; }
+.board tr.clickable:hover td, .board tr.clickable:focus-visible td { background: var(--accent-soft); }
+.board tr.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.badge.report { background: rgba(248, 113, 113, 0.16); color: var(--accent-2); }
+
+.submit-dialog { margin: auto auto 32px; }
+.submit-dialog::backdrop { background: rgba(0, 0, 0, 0.25); }
+.submit-dialog .bar { height: 6px; }
+
+.entry-dialog { width: min(1040px, 94vw); max-height: 92vh; }
+.entry-dialog .dialog-body { gap: 14px; }
+.entry-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.entry-head h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+#entryVideo { width: 100%; max-height: 56vh; background: #000; border-radius: var(--radius-s); }
+.entry-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 760px) { .entry-grid { grid-template-columns: minmax(0, 1fr); } }
+.entry-grid h3 { font: 400 18px var(--f-serif); margin: 0 0 4px; }
+.entry-tricks { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow-y: auto; }
+.entry-trick { width: 100%; display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left;
+  padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer; }
+.entry-trick:hover:not(:disabled) { border-color: var(--accent); }
+.entry-trick:disabled { cursor: default; }
+.entry-trick .time { font-family: var(--f-mono); color: var(--accent); font-size: 12px; }
+.entry-trick .pts { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.entry-report-form { display: grid; gap: 8px; margin-top: 8px; }
+.entry-report-form textarea { width: 100%; font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 8px; resize: vertical; }
+.entry-admin { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; }
+.entry-admin h3 { font: 13px var(--f-mono); color: var(--accent-2); letter-spacing: 0.06em; margin: 0; }
+.entry-admin p { margin: 0; }
+.entry-reports { margin: 0; padding-left: 20px; font-size: 12px; display: grid; gap: 4px; max-height: 180px; overflow-y: auto; }
+.entry-head a.btn, .entry-head a.btn:hover { text-decoration: none; }

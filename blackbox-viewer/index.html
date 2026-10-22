@@ -83,6 +83,7 @@
             <div id="hudToggles"></div>
           </details>
           <button class="btn rec" id="btnRec" title="Video inkl. HUD als WebM aufnehmen" disabled>● Aufnehmen</button>
+          <button class="btn" id="btnExportVideo" title="Flug in Originalauflösung mit Overlay als MP4 speichern" disabled>⬇ Video mit Overlay</button>
         </div>
       </section>
 
@@ -207,6 +208,7 @@
           <div class="row">
             <span class="small" id="boardMode"></span>
             <span class="spacer"></span>
+            <a class="btn tiny" id="boardFull" href="../leaderboard" target="_blank" rel="noopener" hidden>Ganze Rangliste &amp; Länder</a>
             <button class="btn tiny" id="btnBoardRefresh">Aktualisieren</button>
           </div>
           <table class="board">
@@ -249,6 +251,46 @@
           <button type="button" class="btn" id="usbClose">Schließen</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="submitDialog" class="submit-dialog">
+      <div class="dialog-body">
+        <h2 id="submitTitle">Score einreichen</h2>
+        <p class="muted small" id="submitText"></p>
+        <div class="bar"><div id="submitBar"></div></div>
+        <p class="small" id="submitPhase"></p>
+        <div class="row wrap">
+          <span class="spacer"></span>
+          <button type="button" class="btn" id="submitCancel">Abbrechen</button>
+          <button type="button" class="btn primary" id="submitView" hidden>Eintrag ansehen</button>
+          <button type="button" class="btn" id="submitClose" hidden>Schließen</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="entryDialog" class="entry-dialog">
+      <div class="dialog-body">
+        <div class="entry-head">
+          <h2 id="entryTitle"></h2>
+          <span class="spacer"></span>
+          <a class="btn" id="entryDownload" hidden>⬇ Video herunterladen</a>
+          <button type="button" class="btn" id="entryClose">Schließen</button>
+        </div>
+        <video id="entryVideo" controls playsinline preload="metadata"></video>
+        <p class="muted small" id="entryNoVideo" hidden>Zu diesem Eintrag gibt es kein Video – er wurde vor der Video-Pflicht eingereicht.</p>
+        <div class="entry-grid">
+          <div>
+            <h3>Erkannte Tricks</h3>
+            <p class="muted small">Klick auf einen Trick springt im Video an die Stelle.</p>
+            <ol class="entry-tricks" id="entryTricks"></ol>
+          </div>
+          <div>
+            <dl class="info" id="entryStats"></dl>
+            <div id="entryReport"></div>
+          </div>
+        </div>
+        <div class="entry-admin" id="entryAdmin" hidden></div>
+      </div>
     </dialog>
 
     <script type="module" src="/src/main.ts"></script>

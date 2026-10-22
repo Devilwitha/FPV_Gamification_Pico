@@ -1,0 +1,148 @@
+{#- Anhaenge fuer Forenbeitraege: mehrere Bilder/Videos nacheinander sammeln (auswaehlen,
+    ziehen, Strg+V), mit Vorschau und Entfernen. Die Grenzen prueft verbindlich community.py.
+    Optional "attachments": vorhandene Anhaenge beim Bearbeiten. -#}
+{% if attachments %}
+  <div class="form-field">
+    <span class="form-label">Vorhandene Anhänge</span>
+    <div class="forum-attachment-edit">
+      {% for file in attachments %}
+        <label class="forum-attachment-chip">
+          {% if file.kind == "image" %}<img src="{{ url_for('community.attachment', filename=file.filename) }}" alt="" />{% else %}<span class="forum-attachment-kind">Video</span>{% endif %}
+          <span>{{ file.original_name }}</span>
+          <span class="checkbox-label"><input type="checkbox" name="remove_attachment" value="{{ file.id }}" data-attach-remove /> entfernen</span>
+        </label>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+<div class="form-field attach-field" data-attach
+     data-max="{{ attach_limits.count }}" data-max-image="{{ attach_limits.image_mb }}"
+     data-max-video="{{ attach_limits.video_mb }}" data-max-total="{{ attach_limits.total_mb }}"
+     data-existing="{{ attachments|length if attachments else 0 }}">
+  <span class="form-label">Bilder und Videos (optional)</span>
+  <div class="attach-drop" tabindex="0" role="button" aria-label="Bilder oder Videos hinzufügen">
+    <strong>+ Dateien hinzufügen</strong>
+    <span>auswählen, hierher ziehen oder mit Strg+V einfügen – auch mehrere nacheinander</span>
+  </div>
+  <input type="file" name="attachments" multiple hidden
+         accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" />
+  <ul class="attach-list"></ul>
+  <p class="attach-error" role="alert"></p>
+  <p class="form-hint">
+    Bis zu {{ attach_limits.count }} Dateien: Bilder (JPG, PNG, WebP, GIF, je bis {{ attach_limits.image_mb }} MB)
+    und Videos (MP4/WebM, je bis {{ attach_limits.video_mb }} MB), zusammen höchstens {{ attach_limits.total_mb }} MB.
+    Standortdaten aus Fotos werden entfernt.
+  </p>
+</div>
+<script>
+  // Sammelt Dateien ueber mehrere Auswahlen hinweg im (versteckten) Datei-Feld.
+  (() => {
+    document.querySelectorAll("[data-attach]:not([data-ready])").forEach((box) => {
+      box.dataset.ready = "1";
+      const MB = 1024 * 1024;
+      const input = box.querySelector('input[type="file"]');
+      const list = box.querySelector(".attach-list");
+      const error = box.querySelector(".attach-error");
+      const drop = box.querySelector(".attach-drop");
+      const form = box.closest("form");
+      const max = Number(box.dataset.max);
+      const maxImage = Number(box.dataset.maxImage) * MB;
+      const maxVideo = Number(box.dataset.maxVideo) * MB;
+      const maxTotal = Number(box.dataset.maxTotal) * MB;
+      let files = [];
+      const isVideo = (f) => /^video\/(mp4|webm)$/.test(f.type) || /\.(mp4|webm)$/i.test(f.name);
+      const isImage = (f) => /^image\/(jpeg|png|webp|gif)$/.test(f.type) || /\.(jpe?g|png|webp|gif)$/i.test(f.name);
+      const size = (n) => (n < MB ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / MB).toFixed(1)} MB`);
+      const existing = () => Number(box.dataset.existing) - (form ? form.querySelectorAll("[data-attach-remove]:checked").length : 0);
+
+      const sync = () => {
+        const dt = new DataTransfer();
+        files.forEach((f) => dt.items.add(f));
+        input.files = dt.files;
+        render();
+      };
+
+      const render = () => {
+        list.querySelectorAll("[data-url]").forEach((el) => URL.revokeObjectURL(el.dataset.url));
+        list.replaceChildren(
+          ...files.map((f, i) => {
+            const li = document.createElement("li");
+            const url = URL.createObjectURL(f);
+            const preview = document.createElement(isVideo(f) ? "video" : "img");
+            preview.src = url;
+            preview.dataset.url = url;
+            if (isVideo(f)) preview.muted = true;
+            const name = document.createElement("span");
+            name.className = "attach-name";
+            name.textContent = `${f.name} · ${size(f.size)}`;
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "attach-remove";
+            remove.textContent = "✕";
+            remove.title = "Entfernen";
+            remove.setAttribute("aria-label", `${f.name} entfernen`);
+            remove.addEventListener("click", () => {
+              files.splice(i, 1);
+              error.textContent = "";
+              sync();
+            });
+            li.append(preview, name, remove);
+            return li;
+          }),
+        );
+      };
+
+      const add = (incoming) => {
+        error.textContent = "";
+        const problems = [];
+        for (const f of incoming) {
+          const total = files.reduce((sum, x) => sum + x.size, 0);
+          if (!isImage(f) && !isVideo(f)) problems.push(`„${f.name}“: nur Bilder (JPG, PNG, WebP, GIF) und Videos (MP4, WebM).`);
+          else if (files.length + existing() >= max) { problems.push(`Höchstens ${max} Dateien pro Beitrag.`); break; }
+          else if (f.size > (isVideo(f) ? maxVideo : maxImage)) problems.push(`„${f.name}“ ist zu groß (${isVideo(f) ? "Videos" : "Bilder"} bis ${(isVideo(f) ? maxVideo : maxImage) / MB} MB).`);
+          else if (total + f.size > maxTotal) problems.push(`„${f.name}“ passt nicht mehr dazu – zusammen höchstens ${maxTotal / MB} MB.`);
+          else if (!files.some((x) => x.name === f.name && x.size === f.size)) files.push(f);
+        }
+        error.textContent = problems.join(" ");
+        sync();
+      };
+
+      drop.addEventListener("click", () => input.click());
+      drop.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          input.click();
+        }
+      });
+      // input.files enthaelt nur die neue Auswahl - sammeln, dann alles zurueckschreiben.
+      input.addEventListener("change", () => add([...input.files]));
+      ["dragenter", "dragover"].forEach((type) =>
+        drop.addEventListener(type, (e) => {
+          e.preventDefault();
+          drop.classList.add("is-over");
+        }),
+      );
+      ["dragleave", "drop"].forEach((type) => drop.addEventListener(type, () => drop.classList.remove("is-over")));
+      drop.addEventListener("drop", (e) => {
+        e.preventDefault();
+        add([...e.dataTransfer.files]);
+      });
+      if (form) {
+        form.addEventListener("paste", (e) => {
+          const pasted = [...(e.clipboardData ? e.clipboardData.files : [])];
+          if (pasted.length) {
+            e.preventDefault();
+            add(pasted);
+          }
+        });
+        form.addEventListener("submit", () => {
+          const button = form.querySelector('button[type="submit"]');
+          if (button && files.length) {
+            button.disabled = true;
+            button.textContent = "Wird hochgeladen …";
+          }
+        });
+      }
+    });
+  })();
+</script>

@@ -48,13 +48,49 @@
 
     <ol class="forum-posts">
       {% for post in posts %}
+        {% set card = cards.get(post.author_email|lower) %}
         <li class="forum-post" id="beitrag-{{ post.id }}">
           <aside class="forum-post-author">
-            <strong>{{ post.author_name or "Mitglied" }}</strong>
-            {% if post.author_is_team %}<span class="forum-badge">Team</span>{% endif %}
-            <span class="form-hint">{{ post.author_posts }} {{ "Beitrag" if post.author_posts == 1 else "Beiträge" }}</span>
-            {% if post.author_copters %}
-              <span class="form-hint">{{ post.author_copters }} Copter</span>
+            {% if post.author_is_team %}
+              <div class="avatar avatar-md avatar-team"><span>B</span></div>
+              <strong>{{ post.author_name }}</strong>
+              <span class="forum-badge">Team</span>
+            {% elif card %}
+              <a class="avatar avatar-md{% if card.online %} is-online{% endif %}" href="{{ card.profile_url }}" aria-label="Profil von {{ card.username }}">
+                {% if card.avatar %}<img src="{{ card.avatar }}" alt="" width="64" height="64" loading="lazy" />{% else %}<span>{{ card.initials }}</span>{% endif %}
+              </a>
+              <a class="forum-author-name" href="{{ card.profile_url }}">{{ card.username }}</a>
+              <span class="forum-author-title{% if card.is_admin %} is-admin{% endif %}">{{ card.title }}</span>
+              {% if card.is_admin %}<span class="forum-badge forum-badge-admin">Admin</span>{% endif %}
+              {% if card.status_text %}<span class="forum-author-status">„{{ card.status_text }}“</span>{% endif %}
+              {% if card.license_verified %}<span class="forum-badge" title="Drohnen-Ausweis vom Admin geprüft">✓ Ausweis geprüft</span>{% endif %}
+              <dl class="forum-author-facts">
+                <div><dt>Beiträge</dt><dd>{{ card.posts }}</dd></div>
+                <div><dt>Dabei seit</dt><dd>{{ (card.joined|forum_time)[3:10] }}</dd></div>
+                {% if card.best_rank %}<div><dt>Leaderboard</dt><dd>#{{ card.best_rank }}</dd></div>{% endif %}
+                {% if card.country %}<div><dt>Land</dt><dd>{{ card.country|country_name }}</dd></div>{% endif %}
+              </dl>
+              {% if card.radio %}
+                <p class="forum-author-radio" title="Fernbedienung"><span aria-hidden="true">🎮</span> {{ card.radio }}</p>
+              {% endif %}
+              {% if card.copters %}
+                <details class="forum-author-copters">
+                  <summary>{{ card.copters|length }} Copter</summary>
+                  <ul>
+                    {% for copter in card.copters %}
+                      <li>
+                        <a href="{{ url_for('community.copter', copter_id=copter.id) }}">
+                          {% if copter.image_filename %}<img src="{{ copter_image_url(copter.image_filename) }}" alt="" width="40" height="40" loading="lazy" />{% else %}<span class="forum-copter-icon" aria-hidden="true">✈</span>{% endif %}
+                          <span class="forum-copter-text">{{ copter.name }}<span>{{ copter.category }}</span></span>
+                        </a>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </details>
+              {% endif %}
+            {% else %}
+              <div class="avatar avatar-md"><span>?</span></div>
+              <strong>{{ post.author_name or "Mitglied" }}</strong>
             {% endif %}
           </aside>
           <div class="forum-post-body">
@@ -63,6 +99,24 @@
               {% if post.edited_at %} · bearbeitet {{ post.edited_at|forum_time }}{% endif %}
             </div>
             <div class="forum-post-text">{{ post.body|forum_text }}</div>
+            {% set files = attachments.get(post.id, []) %}
+            {% if files %}
+              <div class="forum-attachments">
+                {% for file in files %}
+                  {% set src = url_for('community.attachment', filename=file.filename) %}
+                  {% if file.kind == "video" %}
+                    <video class="forum-attachment-video" src="{{ src }}" controls preload="metadata" playsinline></video>
+                  {% else %}
+                    <a class="forum-attachment-image" href="{{ src }}" target="_blank" rel="noopener" title="{{ file.original_name }}">
+                      <img src="{{ src }}" alt="{{ file.original_name }}" loading="lazy"{% if file.width %} width="{{ file.width }}" height="{{ file.height }}"{% endif %} />
+                    </a>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+            {% if card and card.signature %}
+              <div class="forum-signature">{{ card.signature|forum_text }}</div>
+            {% endif %}
             {% if can_edit(post) %}
               <div class="forum-post-actions">
                 <a href="{{ url_for('forum.edit_post', post_id=post.id) }}">Bearbeiten</a>
@@ -86,12 +140,13 @@
         <p>Dieses Thema ist gesperrt – Antworten sind nicht mehr möglich.</p>
       {% elif writer %}
         <h2>Antworten</h2>
-        <form method="post" action="{{ url_for('forum.reply', thread_id=topic.id) }}">
+        <form method="post" action="{{ url_for('forum.reply', thread_id=topic.id) }}" enctype="multipart/form-data">
           <div class="form-field">
             <label for="reply-body">Deine Antwort als {{ writer }}</label>
             <textarea id="reply-body" name="body" rows="6" minlength="2" maxlength="{{ body_max }}" required></textarea>
             <p class="form-hint">Reiner Text – Links werden automatisch erkannt.</p>
           </div>
+          {% with attachments = none %}{% include "_forum_attach_field.html" %}{% endwith %}
           <button type="submit" class="btn btn-primary">Antwort senden</button>
         </form>
       {% elif account %}

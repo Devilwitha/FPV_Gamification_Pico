@@ -24,7 +24,11 @@ param(
     [int]$CoverStorePort = 9090,
     [int]$BlackboxViewerPort = 8787,
     # Upload-Grenze (Bytes) fuer /api/tx15-backups, etwas ueber TX15_BACKUP_MAX_BYTES.
-    [long]$BackupUploadLimit = 300000000
+    [long]$BackupUploadLimit = 300000000,
+    # Upload-Grenze (Bytes) fuer Leaderboard-Einreichungen (Video + Log).
+    [long]$LeaderboardUploadLimit = 720000000,
+    # Upload-Grenze (Bytes) fuer Forenbeitraege mit Bildern/Videos (community.py: 100 MB).
+    [long]$ForumUploadLimit = 110000000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -122,6 +126,13 @@ $proxyRules = @(
         Target = "http://127.0.0.1:$WebshopPort/tx15-werkstatt{R:1}"
     },
     @{
+        # Leaderboard des Blackbox Viewers liegt im Webshop (leaderboard.py),
+        # muss deshalb vor der allgemeinen Blackbox-Viewer-Regel stehen.
+        Name = 'BlackboxLeaderboardApi'
+        Match = '^blackbox-viewer/api/leaderboard(.*)$'
+        Target = "http://127.0.0.1:$WebshopPort/api/leaderboard{R:1}"
+    },
+    @{
         # Der Node-Server erwartet das Praefix (BASE_PATH) und leitet
         # /blackbox-viewer selbst auf /blackbox-viewer/ um.
         Name = 'BlackboxViewerProxy'
@@ -166,6 +177,29 @@ if (-not $backupLocation) {
 $requestFiltering = Get-OrCreateChild (Get-OrCreateChild (Get-OrCreateChild $backupLocation 'system.webServer') 'security') 'requestFiltering'
 $requestLimits = Get-OrCreateChild $requestFiltering 'requestLimits'
 $requestLimits.SetAttribute('maxAllowedContentLength', [string]$BackupUploadLimit)
+
+# Leaderboard-Einreichungen enthalten das Video mit Overlay (siehe
+# LEADERBOARD_MAX_VIDEO_BYTES in leaderboard.py).
+$leaderboardLocation = $config.DocumentElement.SelectSingleNode("location[@path='blackbox-viewer/api/leaderboard']")
+if (-not $leaderboardLocation) {
+    $leaderboardLocation = $config.CreateElement('location')
+    $leaderboardLocation.SetAttribute('path', 'blackbox-viewer/api/leaderboard')
+    [void]$config.DocumentElement.AppendChild($leaderboardLocation)
+}
+$lbFiltering = Get-OrCreateChild (Get-OrCreateChild (Get-OrCreateChild $leaderboardLocation 'system.webServer') 'security') 'requestFiltering'
+$lbLimits = Get-OrCreateChild $lbFiltering 'requestLimits'
+$lbLimits.SetAttribute('maxAllowedContentLength', [string]$LeaderboardUploadLimit)
+
+# Forenbeitraege mit mehreren Bildern/Videos (siehe MAX_POST_UPLOAD_BYTES in community.py).
+$forumLocation = $config.DocumentElement.SelectSingleNode("location[@path='forum']")
+if (-not $forumLocation) {
+    $forumLocation = $config.CreateElement('location')
+    $forumLocation.SetAttribute('path', 'forum')
+    [void]$config.DocumentElement.AppendChild($forumLocation)
+}
+$forumFiltering = Get-OrCreateChild (Get-OrCreateChild (Get-OrCreateChild $forumLocation 'system.webServer') 'security') 'requestFiltering'
+$forumLimits = Get-OrCreateChild $forumFiltering 'requestLimits'
+$forumLimits.SetAttribute('maxAllowedContentLength', [string]$ForumUploadLimit)
 
 $config.Save($configPath)
 Write-Host "IIS-Site '$SiteName': Proxy-Regeln in $configPath aktualisiert (Sicherung: web.config.bak)."

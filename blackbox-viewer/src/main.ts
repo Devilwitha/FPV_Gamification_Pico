@@ -11,7 +11,10 @@ import { simulateFlight } from './demo/simulate.ts';
 import { audioEnvelope, correlate, logSignal, throttlePunches } from './sync/audio.ts';
 import type { FlightData, Trick, TrickType, WorkerRequest, WorkerResponse } from './types.ts';
 import { DEFAULT_HUD, Hud, type HudOptions } from './ui/hud.ts';
-import { SubmitRejectedError, fetchAuth, fetchLeaderboard, submitScore, type AuthState } from './ui/leaderboard.ts';
+import {
+  SubmitRejectedError, deleteEntry, fetchAuth, fetchEntry, fetchLeaderboard, reportEntry, submitScore, verifyEntry,
+  type AuthState, type EntryDetail, type SubmitMeta,
+} from './ui/leaderboard.ts';
 import { SimView, computeTrack, type Track } from './ui/simview.ts';
 import { Timeline } from './ui/timeline.ts';
 
@@ -76,7 +79,13 @@ const state = {
   markLog: null as number | null,
   activeTrickId: -1,
   showRejected: false,
+  /** original log file and the log inside it – uploaded with a leaderboard submission */
+  logFile: null as Blob | null,
+  logName: '',
+  logIndex: 0,
 };
+/** log index to open next (admin: re-open a submitted log exactly as submitted) */
+let pendingLogIndex: number | null = null;
 const ml = new TrickClassifier();
 const hud = new Hud();
 const sim = new SimView();
@@ -115,9 +124,12 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       $('logSelectRow').hidden = msg.logs.length < 2;
       // default: the largest log (usually the actual flight)
       const best = msg.logs.reduce((a, b) => (b.bytes > a.bytes ? b : a), msg.logs[0]);
-      sel.value = String(best.index);
-      if (msg.logs.length > 1) toast(`${msg.logs.length} Logs in der Datei gefunden – zeige Log ${best.index + 1}. Auswahl unter „Log-Info“.`);
-      send({ type: 'process', index: best.index });
+      const pick = pendingLogIndex !== null && msg.logs.some((l) => l.index === pendingLogIndex) ? pendingLogIndex : best.index;
+      if (msg.logs.length > 1 && pendingLogIndex === null) toast(`${msg.logs.length} Logs in der Datei gefunden – zeige Log ${best.index + 1}. Auswahl unter „Log-Info“.`);
+      pendingLogIndex = null;
+      sel.value = String(pick);
+      state.logIndex = pick;
+      send({ type: 'process', index: pick });
       break;
     }
     case 'flight':
@@ -145,6 +157,8 @@ function busy(label: string | null, value = 0) {
 
 async function loadLogFile(file: File | Blob, name: string) {
   busy('Lese Datei…', 0.02);
+  state.logFile = file;
+  state.logName = name;
   const buffer = await file.arrayBuffer();
   send({ type: 'load', name, buffer }, [buffer]);
 }
@@ -159,7 +173,7 @@ function setFlight(f: FlightData) {
   state.markLog = null;
   timeline.setMarker(null);
   $('emptyState').hidden = true;
-  for (const id of ['btnPlay', 'btnBack', 'btnFwd', 'btnRec', 'btnExport']) $<HTMLButtonElement>(id).disabled = false;
+  for (const id of ['btnPlay', 'btnBack', 'btnFwd', 'btnRec', 'btnExport', 'btnExportVideo']) $<HTMLButtonElement>(id).disabled = false;
   $('sourceChip').textContent = f.info.source === 'demo' ? 'Demo' : f.info.fileName;
   reanalyze(true);
   renderInfo();
@@ -287,6 +301,7 @@ function setPlaying(on: boolean) {
 video.addEventListener('ended', () => {
   setPlaying(false);
   if (recorder) stopRecording();
+  subRec?.finish();
 });
 video.addEventListener('pause', () => {
   if (state.playing && !video.ended) setPlaying(false);
@@ -314,6 +329,7 @@ function frame(now: number) {
     }
   }
   const t = logTime();
+  subRec?.tick(t);
   const i = indexAt(f.t, t);
   if (hasVideo() && video.videoWidth) {
     sctx.fillStyle = '#000';
@@ -421,6 +437,8 @@ const startDemo = () => {
   busy('Simuliere Demo-Flug…', 0.5);
   setTimeout(() => {
     try {
+      state.logFile = null;
+      state.logName = '';
       setFlight(simulateFlight());
       toast('Demo-Flug geladen – ▶ drücken oder Leertaste.');
     } finally {
@@ -432,7 +450,8 @@ $('btnDemo').addEventListener('click', startDemo);
 $('btnDemo2').addEventListener('click', startDemo);
 $<HTMLSelectElement>('logSelect').addEventListener('change', (e) => {
   busy('Dekodiere…', 0);
-  send({ type: 'process', index: Number((e.target as HTMLSelectElement).value) });
+  state.logIndex = Number((e.target as HTMLSelectElement).value);
+  send({ type: 'process', index: state.logIndex });
 });
 
 // ---------- video & sync ----------
@@ -800,7 +819,7 @@ $('btnRec').addEventListener('click', () => (recorder ? stopRecording() : startR
 const pilotInput = $<HTMLInputElement>('pilotName');
 pilotInput.value = localStorage.getItem('bba.pilot') ?? '';
 // Login requirement for submitting (set by the server, see server/leaderboard.mjs).
-let auth: AuthState = { required: false, loggedIn: true, loginUrl: '' };
+let auth: AuthState = { required: false, loggedIn: true, loginUrl: '', isAdmin: false, username: null };
 const loginBlocked = () => auth.required && !auth.loggedIn;
 function showAuth() {
   $('loginHint').hidden = !loginBlocked();
@@ -809,6 +828,7 @@ function showAuth() {
 }
 async function refreshAuth() {
   auth = await fetchAuth();
+  if (auth.username && !pilotInput.value.trim()) pilotInput.value = auth.username;
   showAuth();
 }
 // Demo flights are synthetic and must not end up in the leaderboard.
@@ -826,14 +846,180 @@ pilotInput.addEventListener('input', () => {
   }
   updateSubmit();
 });
+// ---------- submit: record the flight with overlay, then upload ----------
+// The leaderboard keeps a video of the flight with HUD overlay. It is recorded here by playing
+// the flight once in real time (MediaRecorder on the stage canvas), then uploaded with the log.
+interface SubRec { tick(t: number): void; finish(): void; cancel(): void }
+let subRec: SubRec | null = null;
+
+function waitSeeked(): Promise<void> {
+  if (!hasVideo() || !video.seeking) return Promise.resolve();
+  return new Promise((res) => video.addEventListener('seeked', () => res(), { once: true }));
+}
+
+interface RecordOptions {
+  /** null = original video resolution (export), otherwise cap the height (leaderboard: 720) */
+  maxHeight: number | null;
+  bitrate: number;
+  preferMp4: boolean;
+}
+const MP4_TYPES = ['video/mp4;codecs=avc1.640033,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4'];
+const WEBM_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+
+async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions): Promise<{ blob: Blob; videoStart: number }> {
+  if (typeof MediaRecorder === 'undefined' || !stage.captureStream) {
+    throw new Error('Dieser Browser kann kein Video aufnehmen. Bitte Chrome, Edge oder Firefox verwenden.');
+  }
+  if (recorder) stopRecording();
+  setPlaying(false);
+  const prevRate = state.rate;
+  state.rate = 1;
+  video.playbackRate = 1;
+  seek(0);
+  await waitSeeked();
+  const videoStart = Math.max(0, logTime());
+  // Recorded is always the stage (video + overlay), never the original file. Leaderboard: capped at
+  // 720p / 2.5 Mbit/s to save space; export: the original video resolution (up to 4K).
+  const prevSize = [stage.width, stage.height];
+  if (opts.maxHeight === null) {
+    const [w, h] = exportSize();
+    stage.width = w;
+    stage.height = h;
+  } else if (stage.height > opts.maxHeight) {
+    stage.width = Math.round((stage.width * opts.maxHeight) / stage.height / 2) * 2;
+    stage.height = opts.maxHeight;
+  }
+  const stream = stage.captureStream(30);
+  if (hasVideo()) {
+    const v = video as HTMLVideoElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream };
+    const vs = v.captureStream?.() ?? v.mozCaptureStream?.();
+    vs?.getAudioTracks().forEach((tr) => stream.addTrack(tr));
+  }
+  const mime = (opts.preferMp4 ? [...MP4_TYPES, ...WEBM_TYPES] : [...WEBM_TYPES, ...MP4_TYPES]).find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
+  const rec = new MediaRecorder(stream, { mimeType: mime || undefined, videoBitsPerSecond: opts.bitrate });
+  const chunks: Blob[] = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  return new Promise((resolve, reject) => {
+    let done = false;
+    // In a background tab the browser stops drawing – pause instead of recording a frozen frame.
+    const onVisibility = () => {
+      if (done) return;
+      if (document.hidden) {
+        setPlaying(false);
+        if (rec.state === 'recording') rec.pause();
+      } else if (rec.state === 'paused') {
+        rec.resume();
+        setPlaying(true);
+      }
+    };
+    const end = (err?: Error) => {
+      if (done) return;
+      done = true;
+      subRec = null;
+      document.removeEventListener('visibilitychange', onVisibility);
+      setPlaying(false);
+      state.rate = prevRate;
+      video.playbackRate = prevRate;
+      [stage.width, stage.height] = prevSize;
+      rec.onstop = () => {
+        stream.getTracks().forEach((tr) => tr.stop());
+        if (err) reject(err);
+        else resolve({ blob: new Blob(chunks, { type: (rec.mimeType || 'video/webm').split(';')[0] }), videoStart });
+      };
+      if (rec.state !== 'inactive') rec.stop();
+      else (rec.onstop as (ev: Event) => void).call(rec, new Event('stop'));
+    };
+    subRec = {
+      tick: (t) => {
+        onProgress(Math.min(1, Math.max(0, (t - videoStart) / Math.max(0.1, duration() - videoStart))));
+        if (t >= duration() - 0.02) end();
+      },
+      finish: () => end(),
+      cancel: () => end(new Error('Abgebrochen.')),
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    rec.start(1000);
+    setPlaying(true);
+  });
+}
+
+const submitDialog = $<HTMLDialogElement>('submitDialog');
+let submitting = false;
+submitDialog.addEventListener('cancel', (e) => submitting && e.preventDefault());
+$('submitClose').addEventListener('click', () => submitDialog.close());
+function submitPhase(text: string, v: number) {
+  $('submitPhase').textContent = text;
+  $('submitBar').style.width = `${Math.round(v * 100)}%`;
+}
+
+// Export: original video resolution (max. 4K) with overlay, as MP4 where the browser can record it.
+function exportSize(): [number, number] {
+  if (hasVideo() && video.videoWidth) {
+    const k = Math.min(1, 3840 / video.videoWidth, 2160 / video.videoHeight);
+    return [Math.round((video.videoWidth * k) / 2) * 2, Math.round((video.videoHeight * k) / 2) * 2];
+  }
+  return [1920, 1080];
+}
+$('btnExportVideo').addEventListener('click', async () => {
+  const f = state.flight;
+  if (!f || submitting) return;
+  const [w, h] = exportSize();
+  const mp4 = typeof MediaRecorder !== 'undefined' && MP4_TYPES.some((m) => MediaRecorder.isTypeSupported(m));
+  $('submitTitle').textContent = 'Video mit Overlay exportieren';
+  $('submitText').textContent =
+    `${hasVideo() ? `Dein Video wird in Originalauflösung (${w}×${h})` : `Die Sim-Ansicht wird in ${w}×${h}`} mit Overlay einmal abgespielt und ` +
+    `als ${mp4 ? 'MP4' : 'WebM (dieser Browser kann kein MP4 aufnehmen)'} aufgenommen – das dauert so lange wie der Flug (${fmtTime(duration())}). ` +
+    'Die Datei bleibt auf deinem PC, es wird nichts hochgeladen.';
+  $('submitCancel').hidden = false;
+  $('submitView').hidden = true;
+  $('submitClose').hidden = true;
+  submitPhase('Aufnahme startet …', 0);
+  submitDialog.showModal();
+  submitting = true;
+  $('submitCancel').onclick = () => subRec?.cancel();
+  try {
+    const bitrate = Math.round(Math.min(40e6, Math.max(6e6, w * h * 30 * 0.12)));
+    const { blob } = await recordFlight((v) => submitPhase(`Aufnahme läuft … ${Math.round(v * 100)} %`, v), { maxHeight: null, bitrate, preferMp4: true });
+    const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+    download(blob, `${f.info.fileName.replace(/\.[^.]+$/, '') || 'flug'}.overlay.${ext}`);
+    submitPhase(`Gespeichert: ${(blob.size / 1048576).toFixed(1)} MB als ${ext.toUpperCase()} in ${w}×${h}.`, 1);
+  } catch (err) {
+    submitPhase((err as Error).message || 'Aufnahme fehlgeschlagen.', 0);
+  } finally {
+    submitting = false;
+    $('submitCancel').hidden = true;
+    $('submitClose').hidden = false;
+  }
+});
+
 $('submitForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = state.flight;
-  if (!f || !state.analysis) return;
+  const analysis = state.analysis;
+  if (!f || !analysis || submitting) return;
   if (f.info.source === 'demo') return toast('Demo-Flüge können nicht eingereicht werden.', 'error');
-  const s = summarize(state.analysis.tricks);
+  const s = summarize(analysis.tricks);
+  $('submitText').textContent =
+    `Dein Flug (${fmtTime(duration())}) wird jetzt einmal mit Overlay abgespielt und als Video aufgenommen – ` +
+    'das dauert so lange wie der Flug. Lass diesen Tab geöffnet; im Hintergrund pausiert die Aufnahme.';
+  $('submitCancel').hidden = false;
+  $('submitView').hidden = true;
+  $('submitClose').hidden = true;
+  $('submitTitle').textContent = 'Score einreichen';
+  submitPhase('Aufnahme startet …', 0);
+  submitDialog.showModal();
+  submitting = true;
+  const ctl = new AbortController();
+  $('submitCancel').onclick = () => {
+    ctl.abort();
+    subRec?.cancel();
+  };
   try {
-    const res = await submitScore({
+    const { blob, videoStart } = await recordFlight((v) => submitPhase(`Aufnahme läuft … ${Math.round(v * 100)} %`, v * 0.7), {
+      maxHeight: 720, bitrate: 2_500_000, preferMp4: false,
+    });
+    if (ctl.signal.aborted) throw new Error('Abgebrochen.');
+    const meta: SubmitMeta = {
       source: f.info.source,
       pilot: pilotInput.value.trim(),
       score: s.total,
@@ -842,44 +1028,241 @@ $('submitForm').addEventListener('submit', async (e) => {
       maxCombo: s.maxCombo,
       craft: f.info.craft,
       duration: f.info.duration,
-    });
-    toast(`Eingereicht – Platz ${res.rank}${res.online ? '' : ' (lokal gespeichert, kein Server erreichbar)'}.`);
+      logName: state.logName || f.info.fileName,
+      logIndex: state.logIndex,
+      trickList: analysis.tricks.map((t) => ({
+        type: t.type, name: t.name, count: t.count, start: +t.start.toFixed(3), end: +t.end.toFixed(3),
+        points: t.points, comboMultiplier: t.comboMult, source: t.source,
+      })),
+      settings: { ...state.settings },
+      videoStart,
+    };
+    submitPhase(`Lade hoch (${(blob.size / 1048576).toFixed(1)} MB) …`, 0.7);
+    const res = await submitScore(meta, blob, state.logFile, (v) => submitPhase(`Lade hoch … ${Math.round(v * 100)} %`, 0.7 + v * 0.3), ctl.signal);
+    submitPhase(`Eingereicht – Platz ${res.rank}.`, 1);
+    $('submitView').hidden = false;
+    $('submitView').onclick = () => {
+      submitDialog.close();
+      void openEntry(res.id);
+    };
+    refreshBoard();
   } catch (err) {
-    if (!(err instanceof SubmitRejectedError)) throw err;
-    if (err.loginRequired) {
+    if (err instanceof SubmitRejectedError && err.loginRequired) {
       // Session expired or logged out in another tab.
-      auth = { required: true, loggedIn: false, loginUrl: err.loginUrl || auth.loginUrl };
+      auth = { ...auth, required: true, loggedIn: false, loginUrl: err.loginUrl || auth.loginUrl };
       showAuth();
     }
-    toast(err.message, 'error');
-    return;
+    submitPhase((err as Error).message || 'Einreichen fehlgeschlagen.', 0);
+  } finally {
+    submitting = false;
+    $('submitCancel').hidden = true;
+    $('submitClose').hidden = false;
   }
-  refreshBoard();
 });
 // Re-check after returning to the tab, e.g. after logging in in another tab.
 window.addEventListener('focus', () => void refreshAuth());
 void refreshAuth();
 async function refreshBoard() {
   const { entries, online } = await fetchLeaderboard();
-  $('boardMode').textContent = online ? 'Online-Leaderboard' : 'Lokales Leaderboard (Server nicht erreichbar)';
+  $('boardMode').textContent = online ? 'Online-Leaderboard – Eintrag anklicken für Video und Tricks' : 'Lokales Leaderboard (Server nicht erreichbar)';
+  $('boardFull').hidden = !online;
   const me = pilotInput.value.trim().toLowerCase();
   $('boardBody').replaceChildren(
     ...(entries.length
-      ? entries.map((e, k) =>
-          el(
+      ? entries.map((e, k) => {
+          const pilot = el('td', {}, e.pilot);
+          if (e.country) pilot.append(' ', el('span', { className: 'badge', title: 'Land', textContent: e.country }));
+          if (e.hasVideo) pilot.append(' ', el('span', { className: 'badge', title: 'Video mit Overlay', textContent: '▶' }));
+          if (e.verified) pilot.append(' ', el('span', { className: 'badge user', title: 'Vom Admin geprüft', textContent: '✓ geprüft' }));
+          if (e.reportCount) pilot.append(' ', el('span', { className: 'badge report', title: 'Meldungen (nur Admin)', textContent: `⚑ ${e.reportCount}` }));
+          const openable = online && typeof e.id === 'number';
+          const row = el(
             'tr',
-            { className: e.pilot.toLowerCase() === me ? 'me' : '' },
-            el('td', { textContent: String(k + 1) }),
-            el('td', { textContent: e.pilot }),
+            { className: `${e.mine || e.pilot.toLowerCase() === me ? 'me' : ''}${openable ? ' clickable' : ''}` },
+            el('td', { textContent: String(e.rank ?? k + 1) }),
+            pilot,
             el('td', { textContent: e.score.toLocaleString('de-DE') }),
             el('td', { textContent: String(e.tricks) }),
             el('td', { textContent: e.best || '–' }),
             el('td', { textContent: e.maxCombo ? `${e.maxCombo}×` : '–' }),
             el('td', { textContent: e.createdAt ? new Date(e.createdAt).toLocaleDateString('de-DE') : '' }),
-          ),
-        )
+          );
+          if (openable) {
+            row.tabIndex = 0;
+            row.title = 'Video und Tricks ansehen';
+            row.addEventListener('click', () => void openEntry(e.id as number));
+            row.addEventListener('keydown', (ev) => (ev.key === 'Enter' || ev.key === ' ') && (ev.preventDefault(), void openEntry(e.id as number)));
+          }
+          return row;
+        })
       : [el('tr', {}, el('td', { colSpan: 7, className: 'muted', textContent: 'Noch keine Einträge.' }))]),
   );
+}
+
+// ---------- leaderboard entry: video, tricks, report, admin ----------
+const entryDialog = $<HTMLDialogElement>('entryDialog');
+const entryVideo = $<HTMLVideoElement>('entryVideo');
+entryDialog.addEventListener('close', () => {
+  entryVideo.pause();
+  if (new URLSearchParams(location.search).has('eintrag')) history.replaceState(null, '', location.pathname);
+});
+$('entryClose').addEventListener('click', () => entryDialog.close());
+
+const fmtDate = (iso: string | undefined) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '–');
+
+async function openEntry(id: number | string) {
+  let e: EntryDetail;
+  try {
+    e = await fetchEntry(id);
+  } catch (err) {
+    toast((err as Error).message, 'error');
+    return;
+  }
+  $('entryTitle').replaceChildren(`Platz ${e.rank ?? '–'} · ${e.pilot}`, ...(e.verified ? [' ', el('span', { className: 'badge user', textContent: '✓ geprüft' })] : []));
+  entryVideo.hidden = !e.videoUrl;
+  $('entryNoVideo').hidden = !!e.videoUrl;
+  const dl = $<HTMLAnchorElement>('entryDownload');
+  dl.hidden = !e.videoUrl;
+  if (e.videoUrl) {
+    dl.href = e.videoUrl;
+    dl.download = `${e.pilot.replace(/[^\w.-]+/g, '_')}-${e.score}.webm`;
+  }
+  if (e.videoUrl) {
+    if (!entryVideo.src.endsWith(e.videoUrl)) entryVideo.src = e.videoUrl;
+  } else entryVideo.removeAttribute('src');
+
+  const profile = e.username ? el('a', { href: `/profil/${encodeURIComponent(e.username)}`, textContent: e.username }) : null;
+  const rows: [string, string | Node][] = [
+    ['Punkte', e.score.toLocaleString('de-DE')],
+    ['Tricks', `${e.tricks} (bester: ${e.best || '–'})`],
+    ['Max. Combo', e.maxCombo ? `${e.maxCombo}×` : '–'],
+    ['Copter', e.craft || '–'],
+    ['Flugdauer', fmtTime(e.duration)],
+    ['Eingereicht', fmtDate(e.createdAt)],
+  ];
+  if (profile) rows.splice(0, 0, ['Mitglied', profile]);
+  $('entryStats').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', { textContent: k }), el('dd', {}, v)]));
+
+  $('entryTricks').replaceChildren(
+    ...(e.trickList.length
+      ? e.trickList.map((t) => {
+          const at = Math.max(0, t.start - e.videoStart);
+          const btn = el('button', { type: 'button', className: 'entry-trick' },
+            el('span', { className: 'time', textContent: fmtTime(at) }),
+            el('span', { textContent: t.name }),
+            el('span', { className: 'pts', textContent: `${t.points.toLocaleString('de-DE')} P${t.comboMultiplier > 1 ? ` · ×${t.comboMultiplier}` : ''}` }),
+          );
+          btn.disabled = !e.videoUrl;
+          btn.title = e.videoUrl ? 'Im Video zu diesem Trick springen' : '';
+          btn.addEventListener('click', () => {
+            entryVideo.currentTime = at;
+            void entryVideo.play().catch(() => {});
+          });
+          return el('li', {}, btn);
+        })
+      : [el('li', { className: 'muted small', textContent: 'Keine Trickliste gespeichert.' })]),
+  );
+
+  renderEntryReport(e);
+  renderEntryAdmin(e);
+  if (!entryDialog.open) entryDialog.showModal();
+  history.replaceState(null, '', `${location.pathname}?eintrag=${e.id}`);
+}
+
+function renderEntryReport(e: EntryDetail) {
+  const host = $('entryReport');
+  if (e.mine) return host.replaceChildren(el('p', { className: 'muted small', textContent: 'Das ist dein Eintrag.' }));
+  if (!e.loggedIn) {
+    return host.replaceChildren(el('p', { className: 'muted small' }, 'Stimmt etwas nicht? ', el('a', { href: e.loginUrl, textContent: 'Einloggen' }), ' und das Video melden.'));
+  }
+  if (e.reported) return host.replaceChildren(el('p', { className: 'muted small', textContent: 'Du hast diesen Eintrag gemeldet – danke, der Admin schaut ihn sich an.' }));
+  const reason = el('textarea', { rows: 3, maxLength: 500, placeholder: 'Was stimmt nicht? z. B. „Tricks im Video passen nicht zur Liste“' });
+  const send = el('button', { type: 'button', className: 'btn danger', textContent: 'Meldung senden' });
+  const box = el('div', { className: 'entry-report-form', hidden: true }, reason, el('div', { className: 'row' }, send));
+  const open = el('button', { type: 'button', className: 'btn tiny danger', textContent: '⚑ Video melden' });
+  open.addEventListener('click', () => {
+    box.hidden = false;
+    open.hidden = true;
+    reason.focus();
+  });
+  send.addEventListener('click', async () => {
+    send.disabled = true;
+    try {
+      await reportEntry(e.id, reason.value.trim());
+      toast('Gemeldet – danke!');
+      await openEntry(e.id);
+    } catch (err) {
+      toast((err as Error).message, 'error');
+      send.disabled = false;
+    }
+  });
+  host.replaceChildren(open, box);
+}
+
+function renderEntryAdmin(e: EntryDetail) {
+  const host = $('entryAdmin');
+  host.hidden = !auth.isAdmin || !e.reports;
+  if (host.hidden) return host.replaceChildren();
+  const reports = e.reports ?? [];
+  const verify = el('button', { type: 'button', className: 'btn tiny', textContent: e.verified ? 'Prüfung zurücknehmen' : '✓ Als geprüft markieren' });
+  verify.addEventListener('click', async () => {
+    try {
+      await verifyEntry(e.id, !e.verified);
+      await openEntry(e.id);
+      refreshBoard();
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+  });
+  const openLog = el('button', { type: 'button', className: 'btn tiny', textContent: 'Log im Viewer prüfen' });
+  openLog.disabled = !e.logUrl;
+  openLog.title = e.logUrl ? 'Lädt das eingereichte Log mit den Erkennungs-Einstellungen des Einreichers' : 'Kein Log gespeichert';
+  openLog.addEventListener('click', async () => {
+    try {
+      const res = await fetch(e.logUrl!, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Log konnte nicht geladen werden.');
+      const blob = await res.blob();
+      entryDialog.close();
+      state.settings = { ...DEFAULT_SETTINGS, ...(e.settings as Partial<DetectSettings>) };
+      renderSettings();
+      pendingLogIndex = e.logIndex ?? null;
+      await loadLogFile(blob, e.logName || `eintrag-${e.id}.bbl`);
+      toast(`Log von ${e.pilot} geladen – mit dessen Erkennungs-Einstellungen. Eingereicht: ${e.score.toLocaleString('de-DE')} Punkte.`, 'info', 8000);
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+  });
+  const del = el('button', { type: 'button', className: 'btn tiny danger', textContent: 'Eintrag löschen' });
+  del.addEventListener('click', async () => {
+    if (!confirm(`Eintrag von „${e.pilot}“ (${e.score} Punkte) mit Video endgültig löschen?`)) return;
+    try {
+      await deleteEntry(e.id);
+      entryDialog.close();
+      toast('Eintrag gelöscht.');
+      refreshBoard();
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+  });
+  const account = e.account?.email ? `${e.account.username ?? '–'} <${e.account.email}>` : 'ohne Konto (alter Eintrag)';
+  host.replaceChildren(
+    el('h3', { textContent: 'Admin' }),
+    el('p', { className: 'small', textContent: `Konto: ${account} · Log: ${e.logName || '–'}${e.logIndex ? ` (Log ${e.logIndex + 1})` : ''}` }),
+    el('p', { className: 'small' }, el('b', { textContent: `${reports.length} Meldung${reports.length === 1 ? '' : 'en'}` }),
+      ` (E-Mail ab ${e.reportThreshold ?? 10}${e.alertSentAt ? `, gesendet ${fmtDate(e.alertSentAt)}` : ''})`),
+    ...(reports.length
+      ? [el('ol', { className: 'entry-reports' }, ...reports.map((r) => el('li', {},
+          el('b', { textContent: r.username ?? '–' }), ` <${r.email}> · ${fmtDate(r.createdAt)}`,
+          ...(r.reason ? [el('br'), el('span', { className: 'muted', textContent: r.reason })] : []))))]
+      : []),
+    el('div', { className: 'row wrap' }, verify, openLog, el('span', { className: 'spacer' }), del),
+  );
+}
+
+// Direct link from the admin e-mail / dashboard: ?eintrag=<id>
+{
+  const deep = new URLSearchParams(location.search).get('eintrag');
+  if (deep) void refreshAuth().then(() => openEntry(deep));
 }
 $('btnBoardRefresh').addEventListener('click', refreshBoard);
 

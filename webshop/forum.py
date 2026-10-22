@@ -8,7 +8,9 @@
   Beitraege, sperrt/heftet Themen an und kann selbst schreiben - ohne eigenes
   Konto erscheint er als "Bollisoft-Team" (db.FORUM_ADMIN_AUTHOR).
 - Beitraege sind reiner Text: HTML wird immer maskiert, nur Zeilenumbrueche
-  und Links werden umgewandelt (siehe format_post()).
+  und Links werden umgewandelt (siehe format_post()). Dazu bis zu 4 Bilder
+  oder kurze Videos je Beitrag (community.py); neben jedem Beitrag steht eine
+  Autoren-Karte mit Avatar, Titel, Status und Coptern.
 """
 
 import re
@@ -19,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, abort, redirect, render_template, request, session, url_for
 from markupsafe import Markup, escape
 
+import community
 import db
 
 # Erstausstattung der Kategorien (nur, solange die Tabelle leer ist).
@@ -31,8 +34,12 @@ DEFAULT_CATEGORIES = (
     ("offtopic", "Off-Topic", "Alles, was sonst nirgends passt."),
 )
 # Wuerden mit festen Unterseiten von /forum kollidieren.
-RESERVED_SLUGS = {"thema", "beitrag", "verwaltung", "neu"}
+RESERVED_SLUGS = {"thema", "beitrag", "verwaltung", "neu", "suche"}
 THREADS_PER_PAGE = 20
+SEARCH_PER_PAGE = 20
+SEARCH_LIMIT = 500
+SEARCH_TERM_MIN, SEARCH_TERMS_MAX, SEARCH_QUERY_MAX = 2, 8, 200
+SNIPPET_WIDTH = 220
 POSTS_PER_PAGE = 20
 TITLE_MIN, TITLE_MAX = 4, 120
 BODY_MIN, BODY_MAX = 2, 10000
@@ -62,6 +69,49 @@ def format_post(text):
         html = Markup("").join(parts).replace("\n", Markup("<br>"))
         paragraphs.append(Markup("<p>{}</p>").format(html))
     return Markup("\n").join(paragraphs)
+
+
+def search_terms(query):
+    """Suchbegriffe: Woerter oder "feste Wortfolgen", kleingeschrieben, ohne Dubletten."""
+    terms = []
+    for phrase, word in re.findall(r'"([^"]+)"|(\S+)', query or ""):
+        term = " ".join((phrase or word).split()).lower()
+        if len(term) >= SEARCH_TERM_MIN and term not in terms:
+            terms.append(term)
+    return terms[:SEARCH_TERMS_MAX]
+
+
+def _search_pattern(terms):
+    ordered = sorted(terms, key=len, reverse=True)
+    return re.compile("|".join(re.escape(term) for term in ordered), re.IGNORECASE)
+
+
+def highlight(text, pattern):
+    """Text maskieren und Suchtreffer mit <mark> hervorheben."""
+    parts, last = [], 0
+    for match in pattern.finditer(text or ""):
+        parts.append(escape(text[last:match.start()]))
+        parts.append(Markup("<mark>{}</mark>").format(match.group(0)))
+        last = match.end()
+    parts.append(escape((text or "")[last:]))
+    return Markup("").join(parts)
+
+
+def snippet(body, pattern):
+    """Ausschnitt rund um den ersten Treffer, Treffer hervorgehoben."""
+    text = " ".join((body or "").split())
+    match = pattern.search(text)
+    start = max(0, (match.start() if match else 0) - SNIPPET_WIDTH // 3)
+    if start:
+        space = text.find(" ", start)
+        start = space + 1 if 0 <= space < start + 20 else start
+    end = min(len(text), start + SNIPPET_WIDTH)
+    if end < len(text):
+        space = text.rfind(" ", start, end)
+        end = space if space > start + SNIPPET_WIDTH // 2 else end
+    prefix = "… " if start else ""
+    suffix = " …" if end < len(text) else ""
+    return Markup("{}{}{}").format(prefix, highlight(text[start:end], pattern), suffix)
 
 
 def format_time(value):
@@ -178,6 +228,56 @@ def index():
     )
 
 
+@bp.get("/suche")
+def search():
+    """Volltextsuche in Thementiteln und Beitraegen, optional je Ueberthema."""
+    categories = _categories()
+    query = " ".join((request.args.get("q") or "").split())[:SEARCH_QUERY_MAX]
+    selected = request.args.get("kategorie") or ""
+    if selected not in categories:
+        selected = ""
+    titles_only = request.args.get("nur") == "titel"
+    terms = search_terms(query)
+    results, total, page, pages = [], 0, 1, 1
+    if terms:
+        matches = db.forum_search_threads(terms, selected or None, titles_only, SEARCH_LIMIT)
+        total = len(matches)
+        pages = _page_count(total, SEARCH_PER_PAGE)
+        page = min(max(1, request.args.get("seite", 1, type=int)), pages)
+        chunk = matches[(page - 1) * SEARCH_PER_PAGE:page * SEARCH_PER_PAGE]
+        ids = [match["id"] for match in chunk]
+        threads = {row["id"]: row for row in db.forum_threads_by_ids(ids)}
+        hits = {} if titles_only else db.forum_search_hits(ids, terms)
+        pattern = _search_pattern(terms)
+        for match in chunk:
+            topic = threads.get(match["id"])
+            if topic is None or topic["category"] not in categories:
+                continue
+            hit = hits.get(topic["id"])
+            results.append({
+                "thread": topic,
+                "title": highlight(topic["title"], pattern),
+                "title_hit": bool(match["title_hit"]),
+                "hits": hit["hits"] if hit else 0,
+                "snippet": snippet(hit["body"], pattern) if hit else None,
+                "url": _post_url(topic["id"], hit["first_id"]) if hit else url_for("forum.thread", thread_id=topic["id"]),
+            })
+    return render_template(
+        "forum_search.html",
+        categories=categories,
+        query=query,
+        terms=terms,
+        selected=selected,
+        titles_only=titles_only,
+        results=results,
+        total=total,
+        limit_reached=total >= SEARCH_LIMIT,
+        page=page,
+        pages=pages,
+        too_short=bool(query) and not terms,
+    )
+
+
 @bp.get("/<category>")
 def category(category):
     categories = _categories()
@@ -216,8 +316,15 @@ def new_thread(category):
         error = _check_text(title, body, with_title=True)
         if error is None and _too_fast(author):
             error = "Bitte einen Moment warten, bevor du den nächsten Beitrag schreibst."
+        prepared = []
         if error is None:
-            thread_id, _post_id = db.forum_create_thread(category, title, author, body)
+            try:
+                prepared = community.prepare_attachments(request.files.getlist("attachments"))
+            except community.UploadError as exc:
+                error = str(exc)
+        if error is None:
+            thread_id, post_id = db.forum_create_thread(category, title, author, body)
+            community.store_attachments(post_id, prepared)
             return redirect(url_for("forum.thread", thread_id=thread_id))
     return render_template(
         "forum_form.html",
@@ -244,6 +351,9 @@ def thread(thread_id):
     posts = db.forum_list_posts(thread_id, POSTS_PER_PAGE, (page - 1) * POSTS_PER_PAGE)
     return render_template(
         "forum_thread.html",
+        attachments=db.forum_attachments_for(post["id"] for post in posts),
+        cards=community.member_cards(post["author_email"] for post in posts),
+        team_author=db.FORUM_ADMIN_AUTHOR,
         categories=categories,
         topic=topic,
         slug=topic["category"],
@@ -277,6 +387,12 @@ def reply(thread_id):
         error = _check_text("", body, with_title=False)
     if error is None and _too_fast(author):
         error = "Bitte einen Moment warten, bevor du den nächsten Beitrag schreibst."
+    prepared = []
+    if error is None:
+        try:
+            prepared = community.prepare_attachments(request.files.getlist("attachments"))
+        except community.UploadError as exc:
+            error = str(exc)
     if error is not None:
         return render_template(
             "forum_form.html",
@@ -290,6 +406,7 @@ def reply(thread_id):
             limits=(TITLE_MAX, BODY_MAX),
         )
     post_id = db.forum_add_post(thread_id, author, body)
+    community.store_attachments(post_id, prepared)
     return redirect(_post_url(thread_id, post_id))
 
 
@@ -304,13 +421,23 @@ def edit_post(post_id):
     title = post["title"]
     body = post["body"]
     error = None
+    existing = db.forum_attachments_for([post_id]).get(post_id, [])
     if request.method == "POST":
         body = (request.form.get("body") or "").strip()
         if post["is_first"]:
             title = (request.form.get("title") or "").strip()
         error = _check_text(title, body, with_title=bool(post["is_first"]))
+        remove = {a["id"] for a in existing if str(a["id"]) in request.form.getlist("remove_attachment")}
+        prepared = []
+        if error is None:
+            try:
+                prepared = community.prepare_attachments(request.files.getlist("attachments"), existing=len(existing) - len(remove))
+            except community.UploadError as exc:
+                error = str(exc)
         if error is None:
             db.forum_update_post(post_id, body, title if post["is_first"] else None)
+            community.remove_attachment_files(db.forum_delete_attachments(remove, post_id))
+            community.store_attachments(post_id, prepared)
             return redirect(_post_url(post["thread_id"], post_id))
     return render_template(
         "forum_form.html",
@@ -318,6 +445,7 @@ def edit_post(post_id):
         slug=post["category"],
         category=_categories().get(post["category"], ("Forum", "")),
         post=post,
+        attachments=existing,
         title=title,
         body=body,
         error=error,
@@ -336,6 +464,7 @@ def delete_post(post_id):
     # Loescht der Autor seinen Eroeffnungsbeitrag, verschwindet das ganze Thema
     # (die Rueckfrage im Browser nennt die Zahl der Beitraege).
     thread_id, thread_deleted = db.forum_delete_post(post_id)
+    community.cleanup_attachments()
     if thread_deleted:
         return redirect(url_for("forum.category", category=post["category"], geloescht=1))
     return redirect(url_for("forum.thread", thread_id=thread_id))
@@ -354,6 +483,7 @@ def delete_thread(thread_id):
     if not (_is_admin() or _owns_thread(topic, _current_account())):
         abort(403)
     category = db.forum_delete_thread(thread_id)
+    community.cleanup_attachments()
     return redirect(url_for("forum.category", category=category, geloescht=1))
 
 
@@ -377,6 +507,7 @@ def moderate(thread_id):
         db.forum_set_thread_flag(thread_id, "pinned", not topic["pinned"])
     elif action == "delete":
         category = db.forum_delete_thread(thread_id)
+        community.cleanup_attachments()
         return redirect(url_for("forum.category", category=category, geloescht=1))
     elif action == "move":
         target = request.form.get("category")
@@ -417,6 +548,7 @@ def manage():
         if action == "delete":
             if db.forum_get_category(slug) is not None:
                 db.forum_delete_category(slug)
+                community.cleanup_attachments()
                 return redirect(url_for("forum.manage", ok="geloescht"))
         else:
             fields, error = _category_fields(request.form)

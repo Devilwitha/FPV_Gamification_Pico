@@ -24,6 +24,8 @@
       </p>
     </div>
 
+    {% include "_forum_search.html" %}
+
     {% if request.args.get("verschoben") %}
       <div class="license-success">Thema verschoben.</div>
     {% endif %}

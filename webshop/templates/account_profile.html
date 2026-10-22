@@ -59,7 +59,7 @@
           </div>
           <div class="form-field">
             <label for="profile-country">Land</label>
-            <input type="text" id="profile-country" name="country" value="{{ values.get('country') or '' }}" autocomplete="country-name" maxlength="200" required />
+            {% with select_id = "profile-country", selected = values.get('country') or '' %}{% include "_country_select.html" %}{% endwith %}
           </div>
         </div>
         <div class="form-field">
@@ -71,6 +71,62 @@
           <input type="tel" id="profile-phone" name="phone" value="{{ values.get('phone') or '' }}" autocomplete="tel" maxlength="200" />
         </div>
         <button type="submit" class="btn btn-primary">Profil speichern</button>
+      </form>
+    </div>
+
+    <div class="login-card account-card" id="oeffentliches-profil">
+      <h2>Öffentliches Profil</h2>
+      {% if message == "oeffentlich" %}
+        <div class="license-success">Öffentliches Profil gespeichert.</div>
+      {% endif %}
+      {% if public_error %}
+        <div class="checkout-error">{{ public_error }}</div>
+      {% endif %}
+      <p class="form-hint">
+        So sehen dich andere im Forum und auf deiner Profilseite.
+        {% if account.username %}<a href="{{ url_for('community.profile', username=account.username) }}">Profil ansehen</a>{% endif %}
+      </p>
+      <form method="post" action="{{ url_for('konto.profile') }}" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="public" />
+        <div class="avatar-edit">
+          <div class="avatar avatar-lg">
+            {% if avatar %}<img src="{{ avatar }}" alt="" width="96" height="96" />{% else %}<span>{{ initials(account.username) }}</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="profile-avatar">Profilbild (JPG, PNG, WebP – wird quadratisch zugeschnitten)</label>
+            <input type="file" id="profile-avatar" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" />
+            {% if avatar %}
+              <label class="checkbox-label"><input type="checkbox" name="remove_avatar" value="1" /> Profilbild entfernen</label>
+            {% endif %}
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="profile-status">Status (kurz, z. B. „Freestyle seit 2019“)</label>
+          <input type="text" id="profile-status" name="status_text" maxlength="60" value="{{ public_values.get('status_text') or '' }}" />
+        </div>
+        <div class="form-field">
+          <label for="profile-bio">Über mich</label>
+          <textarea id="profile-bio" name="bio" rows="5" maxlength="2000">{{ public_values.get('bio') or '' }}</textarea>
+        </div>
+        <div class="form-field">
+          <label for="profile-signature">Signatur (unter deinen Forenbeiträgen)</label>
+          <input type="text" id="profile-signature" name="signature" maxlength="300" value="{{ public_values.get('signature') or '' }}" />
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="profile-website">Webseite (optional)</label>
+            <input type="text" id="profile-website" name="website" maxlength="200" placeholder="https://" value="{{ public_values.get('website') or '' }}" />
+          </div>
+          <div class="form-field">
+            <label for="profile-youtube">YouTube-Kanal (optional)</label>
+            <input type="text" id="profile-youtube" name="youtube" maxlength="200" placeholder="https://youtube.com/@…" value="{{ public_values.get('youtube') or '' }}" />
+          </div>
+        </div>
+        {% set show_country = public_values.get('show_country') if public_values else 1 %}
+        {% set show_copters = public_values.get('show_copters') if public_values else 1 %}
+        <label class="checkbox-label"><input type="checkbox" name="show_country" value="1"{% if show_country in (1, '1', None) %} checked{% endif %} /> Land im Profil und in der Länder-Rangliste des Leaderboards anzeigen</label>
+        <label class="checkbox-label"><input type="checkbox" name="show_copters" value="1"{% if show_copters in (1, '1', None) %} checked{% endif %} /> Meine Copter im Profil und im Forum anzeigen</label>
+        <button type="submit" class="btn btn-primary">Öffentliches Profil speichern</button>
       </form>
     </div>
 

@@ -19,13 +19,10 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file, session
 
 import db
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _env_int(name, default):
@@ -36,7 +33,7 @@ def _env_int(name, default):
         return default
 
 
-BACKUP_DIR = Path(os.environ.get("TX15_BACKUP_DIR", "").strip() or PROJECT_ROOT / "tx15_backups")
+BACKUP_DIR = db.media_dir("TX15_BACKUP_DIR", "tx15_backups")
 MAX_BACKUP_BYTES = _env_int("TX15_BACKUP_MAX_BYTES", 250 * 1024 * 1024)
 QUOTA_BYTES = _env_int("TX15_BACKUP_QUOTA_BYTES", 1024 * 1024 * 1024)
 MAX_COUNT = _env_int("TX15_BACKUP_MAX_COUNT", 50)

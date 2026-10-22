@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}{{ entry.pilot }} – {{ entry.score }} Punkte – Leaderboard{% endblock %}
+
+{% block content %}
+  <section class="lb-page">
+    <nav class="forum-breadcrumbs" aria-label="Pfad">
+      <a href="{{ url_for('leaderboard_pages.page') }}">Leaderboard</a>
+      {% if entry.country %}<span>›</span> <a href="{{ url_for('leaderboard_pages.page', land=entry.country) }}">{{ entry.country|country_name }}</a>{% endif %}
+    </nav>
+
+    <header class="lb-entry-head">
+      <span class="avatar avatar-lg">{% if avatar %}<img src="{{ avatar }}" alt="" width="96" height="96" />{% else %}<span>{{ initials(entry.account_username or entry.pilot) }}</span>{% endif %}</span>
+      <div>
+        <p class="profile-title">Platz {{ rank }} weltweit{% if country_rank %} · Platz {{ country_rank }} in {{ entry.country|country_name }}{% endif %}</p>
+        <h1>{{ entry.pilot }}{% if entry.verified_at %} <span class="profile-badge">✓ geprüft</span>{% endif %}</h1>
+        <p class="profile-meta">
+          {% if entry.account_username %}<a href="{{ url_for('community.profile', username=entry.account_username) }}">@{{ entry.account_username }}</a> · {% endif %}
+          eingereicht {{ entry.created_at|forum_time }}
+        </p>
+      </div>
+      <div class="lb-entry-score">{{ "{:,}".format(entry.score).replace(",", "'") }}<small>Punkte</small></div>
+    </header>
+
+    <div class="lb-entry-grid">
+      <div>
+        {% if video_url %}
+          <video id="entryVideo" class="lb-video" src="{{ video_url }}" controls playsinline preload="metadata"></video>
+          <p class="form-hint">
+            Aufnahme mit Overlay aus dem Blackbox Viewer.
+            <a href="{{ video_url }}" download="{{ entry.pilot }}-{{ entry.score }}.{{ 'mp4' if 'mp4' in entry.video_mime else 'webm' }}">Video herunterladen</a>
+          </p>
+        {% else %}
+          <p class="form-hint">Zu diesem Eintrag gibt es kein Video – er wurde vor der Video-Pflicht eingereicht.</p>
+        {% endif %}
+      </div>
+
+      <aside class="lb-side">
+        <section class="profile-card">
+          <h2>Erkannte Tricks</h2>
+          {% if tricks %}
+            <ol class="lb-tricks">
+              {% for t in tricks %}
+                {% set at = [0, t.start - entry.video_start]|max %}
+                <li>
+                  <button type="button" data-seek="{{ at }}"{% if not video_url %} disabled{% endif %}>
+                    <span class="lb-trick-time">{{ "%d:%05.2f"|format(at // 60, at % 60) }}</span>
+                    <span>{{ t.name }}</span>
+                    <span class="lb-trick-points">{{ t.points }} P{% if t.comboMultiplier > 1 %} · ×{{ t.comboMultiplier }}{% endif %}</span>
+                  </button>
+                </li>
+              {% endfor %}
+            </ol>
+            {% if video_url %}<p class="form-hint">Klick springt im Video an die Stelle.</p>{% endif %}
+          {% else %}
+            <p class="form-hint">Keine Trickliste gespeichert.</p>
+          {% endif %}
+        </section>
+
+        <section class="profile-card">
+          <h2>Flug</h2>
+          <dl class="lb-facts">
+            <div><dt>Tricks</dt><dd>{{ entry.tricks }}</dd></div>
+            <div><dt>Bester Trick</dt><dd>{{ entry.best or "–" }}</dd></div>
+            <div><dt>Max. Combo</dt><dd>{{ entry.max_combo }}×</dd></div>
+            <div><dt>Copter</dt><dd>{{ entry.craft or "–" }}</dd></div>
+            <div><dt>Flugdauer</dt><dd>{{ "%d:%02d"|format(entry.duration // 60, entry.duration % 60) }}</dd></div>
+          </dl>
+        </section>
+
+        <section class="profile-card" id="melden">
+          {% if mine %}
+            <p class="form-hint">Das ist dein Eintrag.</p>
+          {% elif not account %}
+            <p class="form-hint">Stimmt etwas nicht? <a href="{{ url_for('login', next=request.path) }}">Einloggen</a> und das Video melden.</p>
+          {% elif reported %}
+            <p class="form-hint">Du hast diesen Eintrag gemeldet – danke, der Admin schaut ihn sich an.</p>
+          {% else %}
+            <details class="lb-report">
+              <summary>⚑ Video melden</summary>
+              <textarea id="reportReason" rows="3" maxlength="500" placeholder="Was stimmt nicht? z. B. „Tricks im Video passen nicht zur Liste“"></textarea>
+              <button type="button" class="btn btn-secondary btn-small" id="reportSend">Meldung senden</button>
+              <p class="attach-error" id="reportError"></p>
+            </details>
+          {% endif %}
+          {% if is_admin %}
+            <p class="form-hint">Admin: {{ report_count }} Meldung{{ "" if report_count == 1 else "en" }} ·
+              <a href="{{ viewer_url }}">im Blackbox Viewer prüfen, Log laden oder löschen</a></p>
+          {% endif %}
+        </section>
+      </aside>
+    </div>
+  </section>
+  <script>
+    (() => {
+      const video = document.getElementById("entryVideo");
+      document.querySelectorAll("[data-seek]").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (!video) return;
+          video.currentTime = Number(button.dataset.seek);
+          video.play().catch(() => {});
+          video.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+      });
+      const send = document.getElementById("reportSend");
+      if (send) {
+        send.addEventListener("click", async () => {
+          send.disabled = true;
+          const response = await fetch("{{ url_for('leaderboard.report', entry_id=entry.id) }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Requested-With": "blackbox-viewer" },
+            body: JSON.stringify({ reason: document.getElementById("reportReason").value }),
+          }).catch(() => null);
+          if (response && response.ok) {
+            window.location.reload();
+            return;
+          }
+          const data = response ? await response.json().catch(() => ({})) : {};
+          document.getElementById("reportError").textContent = data.error || "Melden hat nicht geklappt.";
+          send.disabled = false;
+        });
+      }
+    })();
+  </script>
+{% endblock %}

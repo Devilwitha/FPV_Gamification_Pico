@@ -78,14 +78,8 @@
         </div>
         <div class="form-field">
           <label for="register-country">Land</label>
-          <input
-            type="text"
-            id="register-country"
-            name="country"
-            value="{{ values.get('country', '') }}"
-            autocomplete="country-name"
-            required
-          />
+          {% with select_id = "register-country", selected = values.get('country', '') %}{% include "_country_select.html" %}{% endwith %}
+          <p class="form-hint">Für die Länder-Rangliste im Leaderboard.</p>
         </div>
         <button type="submit" class="btn btn-primary btn-large">Konto erstellen</button>
       </form>

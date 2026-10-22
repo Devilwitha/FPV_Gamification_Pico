@@ -49,6 +49,7 @@
           </div>
         </details>
         <a class="nav-trigger nav-link" href="{{ url_for('forum.index') }}">Forum</a>
+        <a class="nav-trigger nav-link" href="{{ url_for('leaderboard_pages.page') }}">Leaderboard</a>
         <details class="nav-group">
           <summary class="nav-trigger">Shop {{ chevron }}</summary>
           <div class="nav-dropdown">
@@ -76,9 +77,17 @@
                 <span class="nav-item-title">Profil &amp; Passwort</span>
                 <span class="nav-item-text">Benutzername, Angaben, Passwort ändern</span>
               </a>
+              <a class="nav-item" href="{{ url_for('community.own_profile') }}">
+                <span class="nav-item-title">Mein öffentliches Profil</span>
+                <span class="nav-item-text">So sehen dich andere im Forum</span>
+              </a>
               <a class="nav-item" href="{{ url_for('konto.copters') }}">
                 <span class="nav-item-title">Meine Copter</span>
                 <span class="nav-item-text">Deine Copter mit Setup speichern</span>
+              </a>
+              <a class="nav-item" href="{{ url_for('ausweis.page') }}">
+                <span class="nav-item-title">Drohnen-Ausweis</span>
+                <span class="nav-item-text">Nachweis hochladen und prüfen lassen</span>
               </a>
               <a class="nav-item" href="{{ url_for('logout') }}" data-nav-ignore>
                 <span class="nav-item-title">Logout</span>

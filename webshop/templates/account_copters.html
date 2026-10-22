@@ -21,12 +21,45 @@
       <div class="license-success">Änderungen gespeichert.</div>
     {% elif message == "geloescht" %}
       <div class="license-success">Copter gelöscht.</div>
+    {% elif message == "fernbedienung" %}
+      <div class="license-success">Fernbedienung gespeichert.</div>
     {% endif %}
+
+    <div class="login-card account-card radio-card" id="fernbedienung">
+      <h2>Meine Fernbedienung</h2>
+      <p class="form-hint">Steht in deinem Profil und im Forum über deinen Coptern.</p>
+      <form method="post" action="{{ url_for('konto.copters') }}">
+        <input type="hidden" name="action" value="radio" />
+        <div class="form-row">
+          <div class="form-field">
+            <label for="radio-model">Modell</label>
+            <input type="text" id="radio-model" name="radio" value="{{ radio }}" list="radio-models" maxlength="80" placeholder="z. B. Radiomaster TX15" />
+            <datalist id="radio-models">
+              {% for name in radio_suggestions %}<option value="{{ name }}"></option>{% endfor %}
+            </datalist>
+          </div>
+          <div class="form-field">
+            <label for="radio-firmware">Firmware (optional)</label>
+            <input type="text" id="radio-firmware" name="radio_firmware" value="{{ radio_firmware }}" list="radio-firmwares" maxlength="60" placeholder="z. B. EdgeTX 2.12" />
+            <datalist id="radio-firmwares">
+              {% for name in radio_firmware_suggestions %}<option value="{{ name }}"></option>{% endfor %}
+            </datalist>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Fernbedienung speichern</button>
+        <p class="form-hint">Feld leeren und speichern, um die Angabe zu entfernen.</p>
+      </form>
+    </div>
 
     {% if copters %}
       <ul class="copter-list">
         {% for copter in copters %}
           <li class="copter-card" id="copter-{{ copter.id }}">
+            {% if copter.image_filename %}
+              <a class="copter-photo" href="{{ url_for('community.copter', copter_id=copter.id) }}">
+                <img src="{{ copter_image_url(copter.image_filename) }}" alt="{{ copter.name }}" loading="lazy" />
+              </a>
+            {% endif %}
             <div class="copter-head">
               <h3>{{ copter.name }}</h3>
               <span class="copter-category">{{ copter.category }}</span>
@@ -48,6 +81,7 @@
             {% endif %}
             <div class="license-list-actions">
               <a class="btn btn-secondary" href="{{ url_for('konto.copters', bearbeiten=copter.id) }}#copter-formular">Bearbeiten</a>
+              <a class="btn btn-secondary" href="{{ url_for('community.copter', copter_id=copter.id) }}">Ansehen</a>
               <form method="post" action="{{ url_for('konto.copters') }}" data-confirm="„{{ copter.name }}“ wirklich löschen?">
                 <input type="hidden" name="action" value="delete" />
                 <input type="hidden" name="copter_id" value="{{ copter.id }}" />
@@ -57,7 +91,14 @@
           </li>
         {% endfor %}
       </ul>
-      <p class="form-hint">{{ copters|length }} von {{ max_copters }} Coptern</p>
+      <p class="form-hint">
+        {{ copters|length }} von {{ max_copters }} Coptern ·
+        {% if copters_public %}
+          Im Forum und in deinem Profil für alle sichtbar.
+        {% else %}
+          Öffentlich ausgeblendet – ändern unter <a href="{{ url_for('konto.profile') }}#oeffentliches-profil">Öffentliches Profil</a>.
+        {% endif %}
+      </p>
     {% else %}
       <p>Du hast noch keine Copter eingetragen. Leg unten deinen ersten an.</p>
     {% endif %}
@@ -67,7 +108,7 @@
       {% if error %}
         <div class="checkout-error">{{ error }}</div>
       {% endif %}
-      <form method="post" action="{{ url_for('konto.copters') }}">
+      <form method="post" action="{{ url_for('konto.copters') }}" enctype="multipart/form-data">
         <input type="hidden" name="action" value="{{ 'update' if editing else 'create' }}" />
         {% if editing %}
           <input type="hidden" name="copter_id" value="{{ editing.id }}" />
@@ -109,6 +150,17 @@
           </div>
           <div class="form-field"></div>
         </div>
+        <div class="copter-photo-edit">
+          <img id="copter-image-preview" src="{{ copter_image_url(editing.image_filename) if editing and editing.image_filename else '' }}" alt=""{% if not (editing and editing.image_filename) %} hidden{% endif %} />
+          <div class="form-field">
+            <label for="copter-image">Foto (optional – JPG, PNG, WebP, höchstens {{ image_mb }} MB)</label>
+            <input type="file" id="copter-image" name="image" accept="image/jpeg,image/png,image/webp,image/gif" />
+            <p class="form-hint">Wird verkleinert; Standort- und Kameradaten aus dem Handy werden entfernt.{% if editing and editing.image_filename %} Ein neues Foto ersetzt das bisherige.{% endif %}</p>
+            {% if editing and editing.image_filename %}
+              <label class="checkbox-label"><input type="checkbox" name="remove_image" value="1" /> Foto entfernen</label>
+            {% endif %}
+          </div>
+        </div>
         <div class="form-field">
           <label for="copter-notes">Notizen (optional)</label>
           <textarea id="copter-notes" name="notes" rows="4" maxlength="1000">{{ values.get('notes') or '' }}</textarea>
@@ -121,6 +173,18 @@
     </div>
   </section>
   <script>
+    // Vorschau des gewaehlten Fotos; geprueft und verkleinert wird auf dem Server (community.py).
+    (() => {
+      const input = document.getElementById("copter-image");
+      const preview = document.getElementById("copter-image-preview");
+      input.addEventListener("change", () => {
+        const file = input.files[0];
+        if (file) {
+          preview.src = URL.createObjectURL(file);
+          preview.hidden = false;
+        }
+      });
+    })();
     document.querySelectorAll("form[data-confirm]").forEach((form) => {
       form.addEventListener("submit", (event) => {
         if (!window.confirm(form.dataset.confirm)) {

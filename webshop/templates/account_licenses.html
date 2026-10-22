@@ -24,7 +24,7 @@
         {% endif %}
         <p><strong>{{ account.full_name }}</strong></p>
         {% if account.country %}
-          <p>{{ account.country }}</p>
+          <p>{{ account.country|country_name }}</p>
         {% endif %}
         {% if account.address %}
           <p>{{ account.address }}</p>

@@ -1,0 +1,23 @@
+{#- Suchfeld fuers Forum - optional: search_category (vorgewaehlt), query, selected, titles_only -#}
+{% set chosen = selected if selected is defined else (search_category if search_category is defined else "") %}
+<form class="forum-search" method="get" action="{{ url_for('forum.search') }}" role="search">
+  <input
+    type="search"
+    name="q"
+    value="{{ query if query is defined else '' }}"
+    placeholder="Forum durchsuchen – z. B. Nazgul PID oder &quot;failsafe einstellen&quot;"
+    aria-label="Suchbegriffe"
+    maxlength="200"
+  />
+  <select name="kategorie" aria-label="Überthema">
+    <option value="">Alle Überthemen</option>
+    {% for cslug, (cname, _desc) in categories.items() %}
+      <option value="{{ cslug }}"{% if cslug == chosen %} selected{% endif %}>{{ cname }}</option>
+    {% endfor %}
+  </select>
+  <label class="checkbox-label">
+    <input type="checkbox" name="nur" value="titel"{% if titles_only is defined and titles_only %} checked{% endif %} />
+    nur Thementitel
+  </label>
+  <button class="btn btn-primary btn-small">Suchen</button>
+</form>

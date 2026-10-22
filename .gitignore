@@ -25,3 +25,10 @@ android_app/tempCodeRunnerFile.ps1
 # SD-Karten-Backups der Kunden aus dem TX15 Backup Studio (siehe
 # webshop/tx15_backups.py) - Kundendaten, nicht ins Repo.
 /tx15_backups
+# Videos und Logs der Leaderboard-Eintraege (siehe webshop/leaderboard.py) -
+# Nutzerdaten, nicht ins Repo.
+/leaderboard_media
+# Avatare und Forum-Anhaenge (community.py) sowie die privaten Drohnen-Ausweise
+# (pilot_license.py) - Nutzerdaten, nicht ins Repo.
+/community_media
+/private_media

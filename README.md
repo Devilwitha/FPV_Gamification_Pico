@@ -346,7 +346,7 @@ Danach im Browser `http://127.0.0.1:8080/` bzw. `/admin`. Eigener GUI-Launcher i
 * `tools/web_server.py` 🌐 – einfaches lokales Webserver-Mockup zum Testen am PC.
 
 ### Optional: Webshop (`webshop/`)
-Ein eigenständiges Flask-Verkaufsportal (Stripe & PayPal Checkout) für den Vertrieb von Lizenzen/Hardware – läuft **nicht** auf dem Pico und ist unabhängig von der Firmware. Eigene Konventionen/Regeln siehe [`webshop/CLAUDE.md`](webshop/CLAUDE.md).
+Die Webseite bollisoft.ch als Flask-App: Verkaufsportal (Stripe & PayPal Checkout) für Lizenzen/Hardware plus Konto, Forum, Leaderboard und Drohnen Tools – läuft **nicht** auf dem Pico und ist unabhängig von der Firmware (siehe [🌐 Webseite bollisoft.ch](#-webseite-bollisoftch-teil-dieses-repos)). Eigene Konventionen/Regeln siehe [`webshop/CLAUDE.md`](webshop/CLAUDE.md).
 
 ---
 
@@ -399,7 +399,9 @@ Im Root-Verzeichnis selbst liegen nur diese `README.md` sowie ein paar kleine PC
 | `template/` | 🧩 Vorlage (`plugin_template/`) + [`template/README.md`](template/README.md) zum Bauen eigener Plugins, siehe [🧩 Plugin-System](#-plugin-system-eigene-modsspielmodi-bauen). |
 | `pico_simulator/` | 🧪 CPython-Simulator der Firmware zum Testen am PC ohne Hardware (siehe [🖥️ Windows Installer & PC-Tools](#-windows-installer--pc-tools)). Klont `source` beim ersten Start schreibbar nach `data/`. |
 | `windows/` | 🖥️ Quellcode & Build-Skript des eigenständigen Windows-Installers ("Gamification Installer.exe"). |
-| `webshop/` | 🛒 Eigenständiger Flask-Webshop (Stripe/PayPal) zum Lizenzverkauf – unabhängig von der Firmware, eigene Regeln in `webshop/CLAUDE.md`. |
+| `webshop/` | 🛒 Webseite bollisoft.ch (Flask): Shop (Stripe/PayPal), Konto, Forum, Leaderboard, Admin – unabhängig von der Firmware, eigene Regeln in `webshop/CLAUDE.md`. |
+| `drohnen-tools/` | 📡 Drohnen Tools der Webseite (Theme/Lua/Backup Studio, Flasher, Configurator) – statische Seiten unter `/tx15-werkstatt/`. |
+| `blackbox-viewer/` | 📈 Blackbox Viewer mit Trick-Erkennung und Leaderboard, siehe [`blackbox-viewer/README.md`](blackbox-viewer/README.md). |
 | `requirements/` | 📋 `requirements.txt` + Installer-Skript für alle PC-seitigen Python-Abhängigkeiten der `tools/`-Skripte. |
 | `keys/` | 🔑 Lokales RSA-Schlüsselpaar für das Lizenzsystem (`private_key.pem` niemals einchecken/weitergeben!). Per `.gitignore` nicht im Repo. |
 | `lizenzen/` | 🗄️ Lokales Archiv aller von `tools/license_issuer.py` ausgestellten `.lic`/`.json`-Lizenzdatensätze. Per `.gitignore` nicht im Repo. |
@@ -500,8 +502,25 @@ Der Workflow `.github/workflows/build-and-release-firmware.yml` läuft bei jedem
 
 | Ordner | Inhalt | Adresse |
 | --- | --- | --- |
-| `webshop/` | Flask-Webshop mit Konto, Forum, Lizenzen und Server-Ablage der Drohnen Tools; `serve_production.py` startet alle Server zusammen | `/` |
+| `webshop/` | Flask-Webseite: Shop, Konto, Forum, öffentliche Profile, Leaderboard, Admin-Dashboard und Server-Ablage der Drohnen Tools; `serve_production.py` startet alle Server zusammen | `/` |
 | `drohnen-tools/` | Drohnen Tools: Theme Studio, Lua Studio, Backup Studio (Sender), ELRS Flasher, ESC/Betaflight Configurator (Drohne) – statische Seiten, früher Repo `txtheme-maker` | `/tx15-werkstatt/` |
-| `blackbox-viewer/` | Blackbox Viewer (Node.js/Vite) zur Auswertung nach dem Flug, früher Repo `BlackboxViewer` | `/blackbox-viewer/` |
+| `blackbox-viewer/` | Blackbox Viewer (TypeScript/Vite + Node) zur Auswertung nach dem Flug mit Trick-Erkennung, früher Repo `BlackboxViewer` – Details in [`blackbox-viewer/README.md`](blackbox-viewer/README.md) | `/blackbox-viewer/` |
 
-Betrieb und Einrichtung: siehe [`webshop/HTTPS_DEPLOYMENT.md`](webshop/HTTPS_DEPLOYMENT.md).
+### Was die Webseite kann
+
+* **Konto** (`/account`) – Registrierung mit Passwort-Bestätigung und Land aus einer Liste; Profil & Passwort ändern, Benutzername, „Meine Copter“ (mit Foto) und „Meine Fernbedienung“, Drohnen-Ausweis hochladen (vom Admin geprüft), gespeicherte Backups, Themes und Lua-Skripte.
+* **Öffentliches Profil** (`/profil/<name>`) – Avatar, Status, Über mich, Signatur, Links, Land, Fernbedienung, Copter (je mit eigener Seite `/copter/<id>`), Leaderboard-Plätze und Forenaktivität. Land und Copter lassen sich ausblenden.
+* **Forum** (`/forum`) – Lesen für alle, Schreiben mit Konto; mehrere Bilder/kurze Videos pro Beitrag (Bilder werden verkleinert, GPS-/Kameradaten entfernt), Autorenkarten mit Avatar, Rang, Fernbedienung und klickbaren Coptern; Suche in Titeln und Beiträgen, auch je Überthema (`/forum/suche`). Eigene Themen löschen; Admin verwaltet Überthemen, verschiebt, sperrt, heftet an und löscht.
+* **Leaderboard** (`/leaderboard`) – Rangliste aus dem Blackbox Viewer, „Beste pro Pilot“ oder „Alle Flüge“, weltweit oder je Land. Jeder Eintrag hat eine eigene Seite mit Video, Trickliste (Klick springt im Video), Platz weltweit und im Land und „Melden“.
+* **Drohnen Tools** (`/tx15-werkstatt/`) – Theme Studio und Lua Studio schreiben direkt auf die SD-Karte des Senders (Chrome/Edge); das Backup Studio sichert und stellt die Karte wieder her (Backups im Konto), installiert die EdgeTX-Firmware für die TX15 und listet installierte Tools/Widgets – doppelt installierte (z. B. ExpressLRS) lassen sich gezielt löschen, vorher wird automatisch gesichert.
+* **Blackbox Viewer** (`/blackbox-viewer/`) – Blackbox-Logs auswerten, Tricks erkennen und bepunkten, HUD-Overlay aufs Video, Video mit Overlay speichern, ins Leaderboard einreichen; Tab „Betaflight einrichten“ erklärt die Log-Einstellungen für lange Aufnahmen.
+* **Admin-Dashboard** (`/admin`) – Bestellungen, Verkäufe, Plugins, Drohnen-Ausweise, Leaderboard (gemeldete Einträge zuerst), Benutzer online und Tab **Benutzer**: alle Konten mit Benutzername, E-Mail, IP-Adressen, „registriert seit 2y 5m 22d“ und belegtem Speicher. Der Admin sperrt IP-Adressen für neue Registrierungen, sieht je Benutzer alle hochgeladenen Inhalte (Backups, Themes, Copter-Fotos, Anhänge, Beiträge, Videos, Ausweis), löscht sie einzeln oder das ganze Konto.
+
+### Betrieb
+
+* Server: Windows Server mit IIS als Reverse Proxy; die geplante Aufgabe **„Bollisoft Server“** startet `webshop/serve_production.py` (Waitress auf `127.0.0.1:5000`) samt Blackbox-Viewer- und Cover-Store-Server. Einrichten bzw. neu starten: `webshop/install_webshop_autostart.ps1` (setzt auch IIS-Regeln und Upload-Limits).
+* Einstellungen in `webshop/.env`, u. a. `ADMIN_USERNAME`/`ADMIN_PASSWORD` (Admin-Login), `TRUST_PROXY_COUNT=1` (echte Besucher-IP hinter IIS), `ADMIN_EMAIL` und `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` (E-Mail an den Admin bei gemeldeten Leaderboard-Videos), `LEADERBOARD_REPORT_THRESHOLD` (Standard 10).
+* Hochgeladene Dateien liegen außerhalb des Codes im Repo-Hauptordner und sind per `.gitignore` ausgeschlossen: `tx15_backups/` (Backups, Themes, Lua-Skripte), `community_media/` (Avatare, Forum-Anhänge, Copter-Fotos), `leaderboard_media/` (Videos, Logs), `private_media/` (Drohnen-Ausweise). Daten: `webshop/webshop.db` (SQLite).
+* Wer mit `WEBSHOP_DB_PATH` eine andere Datenbank nutzt (z. B. für Tests), bekommt die Upload-Ordner automatisch daneben – die Aufräum-Routinen können so nie echte Uploads löschen. Einzelne Ordner lassen sich mit `TX15_BACKUP_DIR`, `COMMUNITY_MEDIA_DIR`, `LEADERBOARD_MEDIA_DIR` und `PILOT_LICENSE_DIR` umlegen.
+
+Einrichtung von HTTPS: siehe [`webshop/HTTPS_DEPLOYMENT.md`](webshop/HTTPS_DEPLOYMENT.md).

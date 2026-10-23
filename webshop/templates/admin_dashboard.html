@@ -10,6 +10,10 @@
       · <a href="{{ url_for('forum.manage') }}">Forum verwalten</a>
     </p>
 
+    {% if message %}
+      <div class="license-success">{{ message }}</div>
+    {% endif %}
+
     <div class="admin-stats">
       <div class="admin-stat">
         <span class="admin-stat-value">{{ registered_count }}</span>
@@ -18,6 +22,14 @@
       <div class="admin-stat">
         <span class="admin-stat-value">{{ online_accounts|length }}</span>
         <span class="admin-stat-label">jetzt online (aktiv in den letzten {{ online_minutes }} Min.)</span>
+      </div>
+      <div class="admin-stat">
+        <span class="admin-stat-value">{{ users.total_bytes|filesizeformat }}</span>
+        <span class="admin-stat-label">von Benutzern belegt</span>
+      </div>
+      <div class="admin-stat">
+        <span class="admin-stat-value">{{ users.blocked|length }}</span>
+        <span class="admin-stat-label">gesperrte IP-Adressen</span>
       </div>
     </div>
 
@@ -54,6 +66,9 @@
     {% endif %}
 
     <div class="admin-tabs" role="tablist">
+      <button type="button" class="admin-tab-button" data-tab-target="benutzer">
+        Benutzer <span class="admin-tab-count">{{ users.users|length }}</span>
+      </button>
       <button type="button" class="admin-tab-button active" data-tab-target="unshipped">
         Offene Hardware-Bestellungen <span class="admin-tab-count">{{ unshipped_orders|length }}</span>
       </button>
@@ -74,6 +89,103 @@
       <button type="button" class="admin-tab-button" data-tab-target="leaderboard">
         Leaderboard <span class="admin-tab-count">{{ leaderboard.entries|length }}{% if reported %} · {{ reported|length }} gemeldet{% endif %}</span>
       </button>
+    </div>
+
+    <div id="tab-benutzer" class="admin-tab-panel">
+      <input
+        type="search"
+        class="admin-search"
+        data-search-for="table-benutzer"
+        placeholder="Suchen nach Benutzername, E-Mail, IP …"
+        aria-label="Benutzer durchsuchen"
+      />
+      <div class="admin-table-wrapper">
+        <table class="admin-table" id="table-benutzer">
+          <thead>
+            <tr>
+              <th>Benutzer</th>
+              <th>E-Mail</th>
+              <th>IP-Adresse</th>
+              <th>Registriert</th>
+              <th>Zuletzt aktiv</th>
+              <th>Speicher</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in users.users %}
+              <tr>
+                <td>
+                  {% if user.username %}<a href="{{ url_for('community.profile', username=user.username) }}">{{ user.username }}</a>{% else %}<span class="form-hint">ohne Benutzername</span>{% endif %}
+                  {% if user.role == "admin" %}<span class="forum-badge forum-badge-admin">Admin</span>{% endif %}
+                  <br /><small>{{ user.full_name }}{% if user.country %} · {{ user.country|country_name }}{% endif %}</small>
+                </td>
+                <td>{{ user.email }}</td>
+                <td class="admin-ip-cell">
+                  {% for label, ip, is_blocked in [("Registrierung", user.register_ip, user.register_blocked), ("zuletzt", user.last_ip, user.last_blocked)] %}
+                    {% if ip and (loop.first or ip != user.register_ip) %}
+                      <div class="admin-ip">
+                        <code>{{ ip }}</code> <small>{{ label }}</small>
+                        {% if is_blocked %}
+                          <span class="admin-blocked">gesperrt</span>
+                        {% else %}
+                          <form method="post" action="{{ url_for('admin_users.block') }}" class="admin-inline-form"
+                                data-confirm="{{ ip }} sperren? Von dort lassen sich danach keine Konten mehr erstellen.">
+                            <input type="hidden" name="ip" value="{{ ip }}" />
+                            <input type="hidden" name="reason" value="Konto {{ user.username or user.email }}" />
+                            <button class="forum-link-button">sperren</button>
+                          </form>
+                        {% endif %}
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                  {% if not user.register_ip and not user.last_ip %}<small class="form-hint">noch nicht erfasst</small>{% endif %}
+                </td>
+                <td>{{ (user.created_at|forum_time)[:10] }}<br /><small>seit {{ user.age }}</small></td>
+                <td>{% if user.last_seen_at %}{{ relative_time(user.last_seen_at) }}{% else %}–{% endif %}</td>
+                <td>{{ user.stored_bytes|filesizeformat }}{% if user.post_count %}<br /><small>{{ user.post_count }} Beiträge</small>{% endif %}</td>
+                <td class="admin-actions">
+                  <a class="btn btn-secondary btn-small" href="{{ url_for('admin_users.user', account_id=user.id) }}">Inhalte</a>
+                  {% if user.role != "admin" %}
+                    <a class="btn btn-secondary btn-small admin-danger" href="{{ url_for('admin_users.user', account_id=user.id) }}#konto-loeschen">Löschen</a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Gesperrte IP-Adressen</h2>
+      <p class="admin-empty-hint">Von diesen Adressen lassen sich keine Konten erstellen. Bestehende Konten bleiben nutzbar – zum Entfernen das Konto löschen.</p>
+      {% if users.blocked %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table">
+            <thead><tr><th>IP-Adresse</th><th>Grund</th><th>Gesperrt am</th><th>Konten mit dieser IP</th><th></th></tr></thead>
+            <tbody>
+              {% for row in users.blocked %}
+                <tr>
+                  <td><code>{{ row.ip }}</code></td>
+                  <td>{{ row.reason or "–" }}</td>
+                  <td>{{ row.created_at|forum_time }}</td>
+                  <td>{{ row.accounts }}</td>
+                  <td>
+                    <form method="post" action="{{ url_for('admin_users.unblock') }}">
+                      <input type="hidden" name="ip" value="{{ row.ip }}" />
+                      <button class="btn btn-secondary btn-small">Freigeben</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+      <form method="post" action="{{ url_for('admin_users.block') }}" class="admin-block-form">
+        <input type="text" name="ip" placeholder="IP-Adresse, z. B. 203.0.113.7" required aria-label="IP-Adresse" />
+        <input type="text" name="reason" placeholder="Grund (optional)" maxlength="200" aria-label="Grund" />
+        <button class="btn btn-secondary">IP sperren</button>
+      </form>
     </div>
 
     <div id="tab-unshipped" class="admin-tab-panel active">
@@ -387,6 +499,15 @@
           tabPanels.forEach(function (panel) {
             panel.classList.toggle("active", panel.id === targetId);
           });
+        });
+      });
+
+      // Sicherheitsabfrage (z. B. IP sperren)
+      document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+        form.addEventListener("submit", function (event) {
+          if (!window.confirm(form.dataset.confirm)) {
+            event.preventDefault();
+          }
         });
       });
 

@@ -1,7 +1,7 @@
 // Phase 4: HUD overlay – live score, trick pop-ups, combo meter, rotation gauge, sticks, attitude.
 import { indexAt } from '../analysis/filters.ts';
 import { rotationAt } from '../analysis/orientation.ts';
-import { TRICK_COLOR, type Analysis } from '../analysis/tricks.ts';
+import { HOLD_TRICKS, TRICK_COLOR, type Analysis } from '../analysis/tricks.ts';
 import type { FlightData, Trick } from '../types.ts';
 
 export interface HudOptions {
@@ -183,7 +183,12 @@ export class Hud {
     const i0 = Math.min(i, indexAt(f.t, tr.start));
     let angle: number;
     let goal: number;
-    if (tr.type === 'splits' || tr.type === 'immelmann') {
+    let label = '';
+    if (HOLD_TRICKS.includes(tr.type)) {
+      angle = Math.max(0, f.t[i] - tr.start);
+      goal = Math.max(0.1, tr.end - tr.start);
+      label = `${Math.min(angle, goal).toFixed(1)} s`;
+    } else if (tr.type === 'splits' || tr.type === 'immelmann') {
       angle = Math.abs(a.cum[0][i] - a.cum[0][i0]) + Math.abs(a.cum[1][i] - a.cum[1][i0]);
       goal = 360;
     } else {
@@ -208,7 +213,7 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
     ctx.font = `800 italic ${22 * s}px ${FONT}`;
-    ctx.fillText(`${Math.round(angle)}°`, cx, cy + 8 * s);
+    ctx.fillText(label || `${Math.round(angle)}°`, cx, cy + 8 * s);
     ctx.textAlign = 'left';
   }
 

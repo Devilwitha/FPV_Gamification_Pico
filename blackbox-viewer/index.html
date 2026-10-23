@@ -58,6 +58,7 @@
               <button class="btn primary" id="btnDemo2">Demo-Flug starten</button>
               <label class="btn">Log öffnen<input type="file" id="fileLog2" accept=".bbl,.bfl,.txt,.csv,.BBL,.BFL,.TXT,.CSV" hidden /></label>
             </div>
+            <p class="small"><a href="#betaflight" id="linkSetup">Betaflight richtig einstellen – damit das Log möglichst lange reicht</a></p>
           </div>
           <div class="busy" id="busy" hidden>
             <div class="spinner"></div>
@@ -138,6 +139,7 @@
           <button role="tab" data-tab="ml">ML-Training</button>
           <button role="tab" data-tab="board">Leaderboard</button>
           <button role="tab" data-tab="info">Log-Info</button>
+          <button role="tab" data-tab="setup" id="tabSetup">Betaflight einrichten</button>
         </div>
 
         <div class="tab" data-panel="sync">
@@ -215,6 +217,60 @@
             <thead><tr><th>#</th><th>Pilot</th><th>Punkte</th><th>Tricks</th><th>Bester Trick</th><th>Combo</th><th>Datum</th></tr></thead>
             <tbody id="boardBody"></tbody>
           </table>
+        </div>
+
+        <div class="tab" data-panel="setup" id="betaflight" hidden>
+          <p class="muted small">
+            Ein Onboard-Flash hat meist nur 8–16 MB. Mit den Standardwerten (hohe Rate, alle Felder) ist er nach wenigen Minuten voll.
+            Der Viewer braucht nur wenige Felder und höchstens 500 Hz – mit diesen Einstellungen reicht derselbe Speicher ein Vielfaches länger.
+          </p>
+          <div class="grid3">
+            <div class="group">
+              <h3>1 · Speicher &amp; Rate</h3>
+              <p class="small">Im Betaflight Configurator, Tab <b>Blackbox</b>:</p>
+              <ul class="setup-list">
+                <li><b>Logging-Gerät:</b> SD-Karte, wenn der FC einen Slot hat (reicht für Stunden) – sonst Onboard-Flash.</li>
+                <li><b>Logging-Rate: 500 Hz</b> – oder 250 Hz für noch längere Aufnahmen. Mehr nutzt der Viewer nicht (er rechnet auf 500 Hz herunter); 1–8 kHz kosten nur Speicher.</li>
+                <li><b>Debug-Modus: NONE</b> – Debug-Werte füllen den Speicher ohne Nutzen für die Trick-Erkennung.</li>
+              </ul>
+            </div>
+            <div class="group">
+              <h3>2 · Geloggte Felder</h3>
+              <p class="small">Ab Betaflight 4.3 im Blackbox-Tab einzeln wählbar:</p>
+              <ul class="setup-list">
+                <li><b>An lassen:</b> Gyro, Beschleunigungssensor (für Inverted Hang, Dive, Trippy Spin), RC-Befehle (Gas &amp; Sticks), Motoren (Gas-Anzeige und Audio-Sync).</li>
+                <li><b>Ausschalten:</b> PID, Setpoint, ungefiltertes Gyro, Debug, Motor-RPM, Akku, Höhe/Barometer, Magnetometer, GPS, RSSI.</li>
+              </ul>
+            </div>
+            <div class="group">
+              <h3>3 · Vor dem Flug</h3>
+              <ul class="setup-list">
+                <li><b>Flash löschen</b> („Erase Flash“ im Blackbox-Tab) – ein voller Speicher zeichnet nichts mehr auf.</li>
+                <li>Aufgezeichnet wird ab dem Scharfschalten. Für den Auto-Sync mit dem Video: Video vor dem Scharfschalten starten (Arm-Piepser).</li>
+                <li>Nach dem Flug: Log im Blackbox-Tab speichern, per USB („Flight Controller per USB“) oder von der SD-Karte hier öffnen.</li>
+              </ul>
+            </div>
+          </div>
+          <h3 class="setup-cli-title">Schneller per CLI (Betaflight 4.3 und neuer)</h3>
+          <p class="muted small">
+            Im Tab <b>CLI</b> einfügen und mit Enter bestätigen. Die Rate ist ein Teiler des PID-Loops:
+            4 kHz → <code>1/8</code> = 500 Hz, <code>1/16</code> = 250 Hz · 8 kHz → <code>1/16</code> = 500 Hz.
+            Unbekannte Befehle (ältere Version) meldet die CLI und überspringt sie.
+          </p>
+          <pre id="setupCli">set blackbox_sample_rate = 1/8
+set debug_mode = NONE
+set blackbox_disable_pids = ON
+set blackbox_disable_setpoint = ON
+set blackbox_disable_gyrounfilt = ON
+set blackbox_disable_debug = ON
+set blackbox_disable_rpm = ON
+set blackbox_disable_bat = ON
+set blackbox_disable_alt = ON
+set blackbox_disable_mag = ON
+set blackbox_disable_gps = ON
+set blackbox_disable_rssi = ON
+save</pre>
+          <button class="btn tiny" id="btnCopyCli">CLI-Befehle kopieren</button>
         </div>
 
         <div class="tab" data-panel="info" hidden>

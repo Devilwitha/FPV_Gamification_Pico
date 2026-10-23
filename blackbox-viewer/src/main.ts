@@ -609,11 +609,15 @@ const SETTING_DEFS: SettingDef[] = [
   { key: 'halfMin', label: 'Halbe Rotation min.', min: 90, max: 180, step: 5, fmt: (v) => `${v}°`, desc: 'Für Split-S / Immelmann' },
   { key: 'halfMax', label: 'Halbe Rotation max.', min: 180, max: 300, step: 5, fmt: (v) => `${v}°`, desc: 'Für Split-S / Immelmann' },
   { key: 'maxSpinTime', label: 'Max. Dauer pro 360°', min: 0.4, max: 3, step: 0.05, fmt: sec, desc: 'Langsamere Drehungen sind Carves, keine Tricks' },
-  { key: 'plMinDuration', label: 'Power Loop: min. Dauer', min: 0.4, max: 3, step: 0.05, fmt: sec, desc: 'Kürzere Pitch-Rotationen gelten als Flip' },
+  { key: 'plMinDuration', label: 'Power Loop: min. Dauer', min: 0.4, max: 3, step: 0.05, fmt: sec, desc: 'Kürzere Pitch-Rotationen gelten als Flip (gilt auch für den Matty Flip)' },
   { key: 'plMinThrottle', label: 'Power Loop: min. Gas', min: 0.1, max: 0.9, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%`, desc: 'Durchschnittsgas während des Loops' },
   { key: 'yawMinPeak', label: 'Yaw Spin: min. Rate', min: 200, max: 1500, step: 10, fmt: deg, desc: 'Trennt Spins von Orbits' },
   { key: 'seqGap', label: 'Split-S: max. Pause', min: 0.1, max: 1.5, step: 0.05, fmt: sec, desc: 'Zwischen halber Rolle und halbem Loop' },
   { key: 'comboWindow', label: 'Combo-Fenster', min: 0.3, max: 4, step: 0.1, fmt: sec, desc: 'Nächster Trick innerhalb → Combo-Multiplikator' },
+  { key: 'hangMinTime', label: 'Inverted Hang: min. Dauer', min: 0.3, max: 3, step: 0.05, fmt: sec, desc: 'So lange kopfüber (nur mit Beschleunigungssensor im Log)' },
+  { key: 'diveMinTime', label: 'Dive: min. Dauer', min: 0.3, max: 3, step: 0.05, fmt: sec, desc: 'So lange mit der Nase nach unten (nur mit Beschleunigungssensor)' },
+  { key: 'diveMaxThrottle', label: 'Dive: max. Gas', min: 0.05, max: 0.6, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%`, desc: 'Durchschnittsgas im Sturzflug' },
+  { key: 'orbitMinTime', label: 'Orbit: min. Dauer', min: 1, max: 8, step: 0.25, fmt: sec, desc: 'Langsame 360°-Drehung um ein Objekt' },
 ];
 let reanalyzeTimer = 0;
 function renderSettings() {
@@ -699,6 +703,24 @@ document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((btn) =>
     if (btn.dataset.tab === 'board') refreshBoard();
   }),
 );
+// Betaflight-Hinweis: vom Startbildschirm (und per #betaflight) direkt in den Tab springen
+function openSetup() {
+  $('tabSetup').click();
+  $('betaflight').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('linkSetup').addEventListener('click', (e) => {
+  e.preventDefault();
+  openSetup();
+});
+if (location.hash === '#betaflight') openSetup();
+$('btnCopyCli').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('setupCli').textContent ?? '');
+    toast('CLI-Befehle kopiert – im Betaflight Configurator im Tab „CLI“ einfügen.');
+  } catch {
+    toast('Kopieren nicht möglich – bitte den Text markieren und kopieren.', 'error');
+  }
+});
 
 // ---------- info ----------
 function renderInfo() {

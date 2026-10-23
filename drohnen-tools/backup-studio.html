@@ -134,6 +134,23 @@ input[type="file"] { display: none; }
 .dropzone small { color: var(--muted); font-size: 12px; }
 body.dragging .dropzone { border-color: var(--accent); background: var(--accent-soft); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Tools & Widgets auf der Karte (gezielt löschen, Doppelte finden) */
+.apps { display: grid; gap: 2px; max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px; }
+.apps h4 { margin: 8px 6px 2px; font: 600 11px var(--f-body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.app { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 4px; font-size: 13px; cursor: pointer; }
+.app:hover { background: var(--bg); }
+.app.dup { background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.app input { margin: 0; accent-color: var(--bad); }
+.app .t { min-width: 0; }
+.app .t b { font-weight: 600; overflow-wrap: anywhere; }
+.app .t small { display: block; font: 11px var(--f-mono); color: var(--muted); overflow-wrap: anywhere; }
+.app .t em { display: block; font-style: normal; font-size: 11px; color: var(--warn); }
+.app .sz { font: 11px var(--f-mono); color: var(--muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pill.dup { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.dups { border: 1px solid var(--warn); border-radius: 6px; padding: 8px 10px; font-size: 12px; margin: 0 0 10px; background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+.dups ul { margin: 4px 0 6px; padding-left: 18px; }
+.dups code { overflow-wrap: anywhere; }
 </style>
 
 <header class="top">
@@ -192,6 +209,20 @@ body.dragging .dropzone { border-color: var(--accent); background: var(--accent-
     <div class="panel">
       <h3 style="margin-top:0">Modelle auf der Karte</h3>
       <div class="models" id="cardModels"></div>
+    </div>
+    <div class="panel" id="appsPanel">
+      <h3 style="margin-top:0">Tools &amp; Widgets auf der Karte</h3>
+      <p class="hint">Installierte Tools, Widgets und Skripte. Doppelt installierte – z. B. ExpressLRS unter zwei Namen – werden markiert. Anhaken und gezielt von der Karte löschen; vorher sichert das Studio die betroffenen Dateien.</p>
+      <div id="dups"></div>
+      <div class="apps" id="apps"></div>
+      <div class="sum" id="appsSum"></div>
+      <div class="btn-row">
+        <button class="btn small" type="button" id="appsDupSel" hidden>Ältere Doppelte anhaken</button>
+        <button class="btn small" type="button" id="appsNone">Auswahl leeren</button>
+        <button class="btn danger" type="button" id="appsDelete" disabled>Auswahl löschen</button>
+      </div>
+      <progress id="appsProg" value="0" max="1" hidden></progress>
+      <div class="toast" id="appsToast" role="status"></div>
     </div>
   </section>
 
@@ -294,7 +325,7 @@ async function walk(dir, prefix, files) {
     const p = prefix + name;
     if (SKIP.test(p)) continue;
     if (h.kind === 'directory') await walk(h, p + '/', files);
-    else { const f = await h.getFile(); files.set(p, { size: f.size, get: () => h.getFile() }); }
+    else { const f = await h.getFile(); files.set(p, { size: f.size, mtime: f.lastModified, get: () => h.getFile() }); }
   }
 }
 $('pickCard').onclick = async () => {
@@ -319,40 +350,52 @@ $('dirInput').onchange = async e => {
   for (const f of list) {
     const p = f.webkitRelativePath.split('/').slice(1).join('/');
     if (!p || SKIP.test(p)) continue;
-    files.set(p, { size: f.size, get: async () => f });
+    files.set(p, { size: f.size, mtime: f.lastModified, get: async () => f });
   }
   e.target.value = '';
   await setCard({ name: root, files, dir: null, demo: false });
 };
 
+// Einlesen dauert (Modelle, Tools); wird inzwischen eine andere Karte gewählt, gewinnt die neueste.
+let cardGen = 0;
 async function setCard(c) {
-  card = c;
+  const gen = ++cardGen;
   const top = new Set([...c.files.keys()].map(p => p.split('/')[0].toUpperCase()));
-  card.looksEdgeTX = top.has('RADIO') || top.has('MODELS');
-  card.models = await modelsOf(c.files);
-  card.info = { semver: '', board: '' };
+  c.looksEdgeTX = top.has('RADIO') || top.has('MODELS');
+  c.models = await modelsOf(c.files);
+  c.info = { semver: '', board: '' };
   const r = c.files.get('RADIO/radio.yml');
-  if (r) try { card.info = radioInfo(await readText(r.get)); } catch (e) {}
-  if (!card.info.semver && card.models.length) try {
-    const m = c.files.get(card.models[0].file); card.info.semver = radioInfo(await readText(m.get)).semver;
+  if (r) try { c.info = radioInfo(await readText(r.get)); } catch (e) {}
+  if (!c.info.semver && c.models.length) try {
+    const m = c.files.get(c.models[0].file); c.info.semver = radioInfo(await readText(m.get)).semver;
   } catch (e) {}
+  c.apps = await inventory(c.files, c.models);
+  if (gen !== cardGen) return;
+  card = c;
+  appSel = new Set();
   renderAll();
-  if (!c.demo) toastMk(card.looksEdgeTX ? `${c.files.size} Dateien eingelesen.` : 'Hier fehlen die Ordner RADIO und MODELS. Wähle das Hauptverzeichnis der SD-Karte.', card.looksEdgeTX ? 'ok' : 'err');
+  if (!c.demo) toastMk(c.looksEdgeTX ? `${c.files.size} Dateien eingelesen.` : 'Hier fehlen die Ordner RADIO und MODELS. Wähle das Hauptverzeichnis der SD-Karte.', c.looksEdgeTX ? 'ok' : 'err');
   if (source) compareSource();
 }
 
 // ---------- Beispiel-Karte ----------
 function demoCard() {
   const files = new Map();
-  const add = (p, data) => { const b = new Blob([data]); files.set(p, { size: b.size, get: async () => b }); };
+  const add = (p, data, mtime) => { const b = new Blob([data]); files.set(p, { size: b.size, mtime: mtime || Date.parse('2026-10-01'), get: async () => b }); };
   add('RADIO/radio.yml', 'semver: 2.10.5\nboard: tx15\nmanuallyEdited: 0\ntimezone: 1\nbacklightMode: 3\ncalib:\n  Rud:\n    mid: 1024\n');
   const models = [['Quad 5" Freestyle', 'FPV'], ['Cinewhoop 3"', 'FPV'], ['Segler ASW 28', 'Segler'], ['Trainer Clik', 'Flug'], ['Heli Goblin 380', 'Heli'], ['Crawler TRX4', 'Auto']];
   models.forEach(([n, l], i) => add(`MODELS/model${String(i).padStart(2, '0')}.yml`, `semver: 2.10.5\nheader:\n  name: "${n}"\n  bitmap: ""\n  labels: "${l}"\ntimers:\n  0:\n    mode: ON\n`.padEnd(2400 + i * 300, ' ')));
   add('MODELS/labels.yml', 'labels:\n  FPV: { selected: false }\n  Segler: { selected: false }\n');
   add('THEMES/EdgeTX/theme.yml', '---\nsummary:\n  name: EdgeTX\n');
   add('THEMES/Nachtflug/theme.yml', '---\nsummary:\n  name: Nachtflug\n');
-  add('WIDGETS/FLUGDAT/main.lua', '-- Flugdaten\n'.padEnd(5200, ' '));
-  add('SCRIPTS/TOOLS/Flugbuch.lua', '-- Flugbuch\n'.padEnd(3100, ' '));
+  add('WIDGETS/FLUGDAT/main.lua', 'return { name = "Flugdaten" }\n'.padEnd(5200, ' '));
+  add('SCRIPTS/TOOLS/Flugbuch.lua', '-- TNS|Flugbuch|TNE\n'.padEnd(3100, ' '));
+  add('SCRIPTS/TOOLS/ExpressLRS.lua', '-- TNS|ExpressLRS|TNE\n-- ELRS Lua 1.x\n'.padEnd(21000, ' '), Date.parse('2025-03-02'));
+  add('SCRIPTS/TOOLS/ExpressLRS.luac', new Uint8Array(15800), Date.parse('2025-03-02'));
+  add('SCRIPTS/TOOLS/elrsV3.lua', '-- TNS|ExpressLRS|TNE\n-- ELRS Lua 3.5\n'.padEnd(24600, ' '), Date.parse('2026-09-18'));
+  add('WIDGETS/BattCheck/main.lua', 'local name = "BattCheck"\nreturn { name = "BattCheck" }\n'.padEnd(4300, ' '));
+  add('SCRIPTS/TELEMETRY/iNav.lua', '-- iNav\n'.padEnd(2600, ' '));
+  for (let i = 0; i < 4; i++) add(`SCRIPTS/TELEMETRY/iNav/pic${i}.png`, new Uint8Array(3000));
   add('SCRIPTS/FUNCTIONS/akku.lua', '-- akku\n'.padEnd(900, ' '));
   for (let i = 0; i < 24; i++) add(`SOUNDS/de/sys${i}.wav`, new Uint8Array(38000 + i * 1200));
   add('IMAGES/quad5.png', new Uint8Array(14800));
@@ -712,6 +755,174 @@ async function writeRestore(list) {
   busy = false; prog.hidden = true;
 }
 
+// ---------- Tools & Widgets: anzeigen, Doppelte finden, gezielt löschen ----------
+// Ein Eintrag fasst zusammen, was zusammengehört: WIDGETS/<Ordner>, SCRIPTS/TOOLS/<name>.lua + .luac
+// (+ gleichnamiger Ordner, z. B. TELEMETRY/iNav.lua + TELEMETRY/iNav/), sonstige SCRIPTS/<Ordner> als Skript-Daten.
+const APP_KINDS = [
+  ['tool', 'Tools', 'SYS → Tools'], ['widget', 'Widgets', 'Hauptansicht'], ['telem', 'Telemetrie-Skripte', 'Telemetrie-Seiten'],
+  ['func', 'Funktions-Skripte', 'Spezialfunktionen'], ['mix', 'Mischer-Skripte', 'Mischer'], ['data', 'Skript-Daten', 'gehören zu einem Skript'],
+];
+const SCRIPT_KIND = { TOOLS: 'tool', TELEMETRY: 'telem', FUNCTIONS: 'func', MIXES: 'mix' };
+const SCRIPT_KEEP = new Set(['WIZARD', 'RGBLED']);
+let appSel = new Set();
+
+const appNorm = s => String(s || '').toLowerCase().replace(/expresslrs/g, 'elrs').replace(/\.(luac?)$/, '').replace(/[^a-z0-9]/g, '').replace(/v?\d+$/, '');
+
+async function inventory(files, models) {
+  const items = new Map();
+  const item = (key, kind, name, root, isDir) => {
+    if (!items.has(key)) items.set(key, { key, kind, name, roots: new Map(), paths: [], size: 0, mtime: 0, label: name });
+    const it = items.get(key); it.roots.set(root, isDir); return it;
+  };
+  for (const [p, f] of files) {
+    const parts = p.split('/'), up = parts.map(s => s.toUpperCase());
+    let it = null;
+    if (up[0] === 'WIDGETS' && parts.length >= 3) it = item('W/' + up[1], 'widget', parts[1], parts.slice(0, 2).join('/'), true);
+    else if (up[0] === 'SCRIPTS' && parts.length >= 3 && SCRIPT_KIND[up[1]]) {
+      const kind = SCRIPT_KIND[up[1]];
+      if (parts.length === 3) {
+        const stem = parts[2].replace(/\.(luac?)$/i, '');
+        it = item(`S/${up[1]}/${stem.toUpperCase()}`, kind, stem, p, false);
+      } else it = item(`S/${up[1]}/${up[2]}`, kind, parts[2], parts.slice(0, 3).join('/'), true);
+    } else if (up[0] === 'SCRIPTS' && parts.length >= 3 && !SCRIPT_KEEP.has(up[1])) it = item('D/' + up[1], 'data', parts[1], parts.slice(0, 2).join('/'), true);
+    if (!it) continue;
+    it.paths.push(p); it.size += f.size; it.mtime = Math.max(it.mtime, f.mtime || 0);
+  }
+  // Anzeigename aus der Datei: Tools „-- TNS|Name|TNE“, Widgets „name = "…"“
+  const modelTexts = [];
+  for (const m of models || []) { const f = files.get(m.file); if (f) try { modelTexts.push([m.name, await readText(f.get, 65536)]); } catch (e) {} }
+  for (const it of items.values()) {
+    const main = it.paths.find(p => /\/main\.lua$/i.test(p) && p.split('/').length === (it.kind === 'widget' ? 3 : 4))
+      || it.paths.find(p => /\.lua$/i.test(p) && p.split('/').length === 3) || null;
+    it.main = main;
+    if (main) try {
+      const head = await readText(files.get(main).get, 8192);
+      const m = it.kind === 'tool' ? head.match(/TNS\|([^|\r\n]{1,40})\|TNE/) : it.kind === 'widget' ? head.match(/\bname\s*=\s*["']([^"'\r\n]{1,40})["']/) : null;
+      if (m) it.label = m[1].trim();
+    } catch (e) {}
+    it.compiled = it.paths.some(p => /\.luac$/i.test(p));
+    // Wird es (vermutlich) in einem Modell verwendet? Name in Anführungszeichen in der Modelldatei.
+    const needles = [...new Set([it.name, it.label])].filter(s => s && s.length >= 3).map(s => `"${s}"`);
+    it.usedBy = modelTexts.filter(([, t]) => needles.some(n => t.includes(n))).map(([n]) => n);
+  }
+  // Doppelte: gleiche Art und gleicher Name (Dateiname oder Anzeigename, ohne Version/Schreibweise)
+  const list = [...items.values()];
+  const groups = [];
+  for (const it of list) {
+    if (it.kind === 'data') continue;
+    const keys = new Set([appNorm(it.name), appNorm(it.label)].filter(Boolean));
+    const g = groups.find(x => x.kind === it.kind && [...keys].some(k => x.keys.has(k)));
+    if (g) { g.items.push(it); keys.forEach(k => g.keys.add(k)); } else groups.push({ kind: it.kind, keys, items: [it] });
+  }
+  for (const g of groups) if (g.items.length > 1) {
+    g.items.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+    g.items.forEach((it, i) => { it.dup = g.items; it.newest = i === 0; });
+  }
+  return list.sort((a, b) => a.label.localeCompare(b.label, 'de', { sensitivity: 'base' }));
+}
+
+function appToast(m, k) { const t = $('appsToast'); t.textContent = m; t.className = 'toast ' + (k || ''); }
+const appDate = t => t ? new Date(t).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+
+function renderApps() {
+  const host = $('apps'), dupHost = $('dups');
+  const apps = card && card.apps || [];
+  $('appsDupSel').hidden = true;
+  if (!card || !apps.length) {
+    host.innerHTML = `<div class="empty">${card ? 'Auf dieser Karte sind keine Tools, Widgets oder Skripte installiert.' : 'Verbinde eine SD-Karte, um installierte Tools und Widgets zu sehen.'}</div>`;
+    dupHost.innerHTML = ''; $('appsSum').innerHTML = ''; $('appsDelete').disabled = true; return;
+  }
+  const kindName = Object.fromEntries(APP_KINDS.map(([k, n]) => [k, n]));
+  const dupSets = [...new Set(apps.filter(a => a.dup).map(a => a.dup))];
+  dupHost.innerHTML = dupSets.length ? `<div class="dups"><b>${dupSets.length === 1 ? 'Doppelt installiert' : `${dupSets.length}× doppelt installiert`}</b><ul>${dupSets.map(set =>
+    `<li>${esc(set[0].label)} (${esc(kindName[set[0].kind])}): ${set.map(a => `<code>${esc(a.roots.keys().next().value)}</code>${a.newest ? ' – neueste' : ''}`).join(', ')}</li>`).join('')}</ul>
+    Meist reicht die neueste Version. Prüfe am Sender, welche du nutzt, bevor du die andere löschst.</div>` : '';
+  $('appsDupSel').hidden = !dupSets.length;
+  let h = '';
+  for (const [kind, name, where] of APP_KINDS) {
+    const rows = apps.filter(a => a.kind === kind);
+    if (!rows.length) continue;
+    h += `<h4>${name} <span style="font-weight:400;text-transform:none;letter-spacing:0">· ${where}</span></h4>`;
+    h += rows.map(a => {
+      const loc = [...a.roots.keys()].map(r => r + (a.roots.get(r) ? '/' : '')).join(' + ');
+      const extra = a.paths.length > 1 ? ` · ${a.paths.length} Dateien` : '';
+      return `<label class="app${a.dup ? ' dup' : ''}"><input type="checkbox" data-app="${esc(a.key)}"${appSel.has(a.key) ? ' checked' : ''}>
+        <span class="t"><b>${esc(a.label)}</b> ${a.dup ? `<span class="pill dup">${a.newest ? 'doppelt · neueste' : 'doppelt'}</span>` : ''}
+          <small>${esc(loc)}${extra}${a.mtime ? ' · ' + appDate(a.mtime) : ''}</small>
+          ${a.usedBy.length ? `<em>Evtl. verwendet in: ${esc(a.usedBy.slice(0, 4).join(', '))}${a.usedBy.length > 4 ? ' …' : ''}</em>` : ''}</span>
+        <span class="sz">${fmtBytes(a.size)}</span></label>`;
+    }).join('');
+  }
+  host.innerHTML = h;
+  host.querySelectorAll('[data-app]').forEach(c => c.onchange = () => { c.checked ? appSel.add(c.dataset.app) : appSel.delete(c.dataset.app); renderAppsSum(); });
+  renderAppsSum();
+}
+function selectedApps() { return card && card.apps ? card.apps.filter(a => appSel.has(a.key)) : []; }
+function renderAppsSum() {
+  const sel = selectedApps(), files = sel.reduce((n, a) => n + a.paths.length, 0), bytes = sel.reduce((n, a) => n + a.size, 0);
+  $('appsSum').innerHTML = `<span>Zum Löschen markiert</span><span><b>${sel.length}</b> ${sel.length === 1 ? 'Eintrag' : 'Einträge'} · <b>${files}</b> ${files === 1 ? 'Datei' : 'Dateien'} · <b>${fmtBytes(bytes)}</b></span>`;
+  const can = card && (card.dir || card.demo);
+  $('appsDelete').disabled = !sel.length || !can;
+  $('appsDelete').classList.remove('armed'); $('appsDelete').textContent = 'Auswahl löschen';
+  if (card && !can) appToast('Diese Karte ist nur zum Lesen geöffnet. Zum Löschen in Chrome oder Edge über „SD-Karte wählen“ verbinden.');
+}
+$('appsNone').onclick = () => { appSel = new Set(); renderApps(); };
+$('appsDupSel').onclick = () => {
+  for (const a of card && card.apps || []) if (a.dup && !a.newest) appSel.add(a.key);
+  renderApps(); appToast('Die älteren Doppelten sind angehakt. Prüfe die Auswahl, bevor du löschst.');
+};
+
+async function removePath(dir, path) {
+  const parts = path.split('/'); let d = dir;
+  for (const seg of parts.slice(0, -1)) d = await d.getDirectoryHandle(seg);
+  await d.removeEntry(parts[parts.length - 1], { recursive: true });
+}
+let appsBusy = false;
+$('appsDelete').onclick = async () => {
+  const sel = selectedApps();
+  if (appsBusy || !sel.length || !card) return;
+  if (!armDelete($('appsDelete'), 'Auswahl löschen')) {
+    const used = sel.filter(a => a.usedBy.length);
+    appToast(used.length ? `Achtung: ${used.map(a => a.label).join(', ')} wird evtl. in Modellen verwendet. Zum Löschen nochmals klicken.` : `${sel.length === 1 ? `„${sel[0].label}“` : `${sel.length} Einträge`} löschen? Zum Bestätigen nochmals klicken.`, used.length ? 'err' : '');
+    return;
+  }
+  const names = sel.map(a => `„${a.label}“`).join(', ');
+  if (card.demo) {
+    for (const a of sel) for (const p of a.paths) card.files.delete(p);
+    await setCard(card);
+    return appToast(`Beispiel-Karte: ${names} entfernt. Auf einer echten Karte wird vorher automatisch gesichert.`, 'ok');
+  }
+  appsBusy = true; const prog = $('appsProg'); prog.hidden = false; prog.value = 0; $('appsDelete').disabled = true;
+  try {
+    if (card.dir.requestPermission && (await card.dir.requestPermission({ mode: 'readwrite' })) !== 'granted')
+      throw new Error('Ohne Schreibrecht kann nichts gelöscht werden. Erlaube den Zugriff auf die Karte.');
+    // 1. Sicherung der betroffenen Dateien – eingeloggt ins Konto, sonst als ZIP
+    appToast('Sichere die betroffenen Dateien …');
+    const list = sel.flatMap(a => a.paths.map(p => [p, card.files.get(p)])).filter(([, f]) => f);
+    const { blob, meta } = await buildBackup(list, `Vor dem Löschen: ${sel.map(a => a.label).join(', ')}`.slice(0, 60), [], card.info, null);
+    let safety = '', onServer = false;
+    if (acct.loggedIn) {
+      try { await storeOnServer(blob, { label: meta.label, meta, created: Date.now(), auto: true }); onServer = true; }
+      catch (e) { safety = ` (Server: ${e.message})`; }
+    }
+    if (onServer) safety = ' Die gelöschten Dateien liegen als automatisches Backup in deinem Konto.';
+    else { await saveFile(`TX15-Sicherung-geloescht_${stamp()}.zip`, blob, () => {}); safety = ` Die gelöschten Dateien wurden vorher als ZIP heruntergeladen${safety}.`; }
+    // 2. Löschen: Ordner ganz, einzelne Dateien (.lua + .luac) je Datei
+    const roots = sel.flatMap(a => [...a.roots.keys()]);
+    let n = 0;
+    for (const r of roots) {
+      appToast(`Lösche ${r} …`);
+      try { await removePath(card.dir, r); } catch (e) { if (e && e.name !== 'NotFoundError') throw e; }
+      n++; prog.value = n / roots.length;
+    }
+    // 3. Karte neu einlesen
+    const files = new Map(); await walk(card.dir, '', files);
+    await setCard({ name: card.name, files, dir: card.dir, demo: false });
+    appToast(`${names} von der Karte gelöscht. Sender vom USB trennen und neu starten.${safety}`, 'ok');
+  } catch (e) { appToast(e.message || 'Löschen fehlgeschlagen. Ist die Karte noch verbunden?', 'err'); }
+  appsBusy = false; prog.hidden = true; renderAppsSum();
+};
+
 // ---------- Backups auf dem Server (Bollisoft-Konto) ----------
 // Speichern, Auflisten und Wiederherstellen nur für eingeloggte Konten (Webshop-Login),
 // siehe webshop/tx15_backups.py. Lokal ohne Webshop gibt es nur den ZIP-Download.
@@ -1027,7 +1238,7 @@ $('fwInstall').onclick = async () => {
 };
 
 // ---------- Start ----------
-function renderAll() { renderBanner(); renderFacts(); renderCats(); renderCardModels(); renderRestore(); renderFwNotes(); }
+function renderAll() { renderBanner(); renderFacts(); renderCats(); renderCardModels(); renderApps(); renderRestore(); renderFwNotes(); }
 renderAll(); renderList(); renderLegacy();
 setCard(demoCard());
 loadAccount();

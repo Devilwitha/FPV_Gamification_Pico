@@ -345,7 +345,7 @@ def copter_image(filename):
     """Copter-Foto - nur, wenn der Besitzer seine Copter zeigt (oder selbst schaut)."""
     row = db.copter_by_image(filename)
     viewer = (session.get("account_email") or "").lower()
-    if row is None or (not row["show_copters"] and viewer != row["email"].lower()):
+    if row is None or (not row["show_copters"] and viewer != row["email"].lower() and not session.get("is_admin")):
         abort(404)
     response = send_from_directory(COPTER_DIR, filename, mimetype="image/webp", max_age=86400)
     response.headers["X-Content-Type-Options"] = "nosniff"

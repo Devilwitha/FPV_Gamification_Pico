@@ -20,6 +20,7 @@ from flask import Flask, Response, flash, jsonify, redirect, render_template, re
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import admin_users
 import community
 import countries
 import db
@@ -134,7 +135,9 @@ leaderboard.import_legacy_entries()
 # private Drohnen-Ausweis im Konto (pilot_license.py).
 app.register_blueprint(community.bp)
 app.register_blueprint(pilot_license.bp)
+app.register_blueprint(admin_users.bp)
 community.register(app)
+admin_users.register(app)
 # Land: Auswahlliste + Anzeige des Namens zum gespeicherten Code (countries.py)
 app.add_template_filter(countries.name, "country_name")
 app.add_template_global(countries.choices, "country_choices")
@@ -378,7 +381,7 @@ def track_account_activity():
         return
     session["seen_at"] = now
     session["seen_for"] = email
-    db.touch_account_seen(email)
+    db.touch_account_seen(email, admin_users.client_ip())
 
 
 @app.context_processor
@@ -1257,6 +1260,8 @@ def register():
             error = "Bitte ein Land aus der Liste wählen."
         elif db.get_account_by_email(email) is not None:
             error = "Für diese E-Mail-Adresse existiert bereits ein Konto."
+        elif db.is_ip_blocked(admin_users.client_ip()):
+            error = "Von deiner Internetverbindung aus können keine neuen Konten erstellt werden. Bitte wende dich an den Support."
         elif (username_error := konto.validate_username(form_values["username"])) is not None:
             error = username_error
         else:
@@ -1268,6 +1273,7 @@ def register():
                 phone="",
                 country=form_values["country"],
                 username=form_values["username"],
+                register_ip=admin_users.client_ip(),
             )
             session["account_email"] = email
             return redirect(next_url or url_for("account"))
@@ -1455,6 +1461,8 @@ def admin_dashboard():
     return render_template(
         "admin_dashboard.html",
         registered_count=db.count_accounts(),
+        users=admin_users.admin_overview(),
+        message=request.args.get("ok"),
         leaderboard=leaderboard.admin_overview(),
         ausweise=pilot_license.admin_overview(),
         online_accounts=db.list_online_accounts(online_since),

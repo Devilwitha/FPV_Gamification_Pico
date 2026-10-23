@@ -3296,3 +3296,191 @@ code {
 .radio-card {
   margin-bottom: 24px;
 }
+
+/* Benutzerverwaltung im Admin-Dashboard (admin_users.py) */
+.admin-ip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  white-space: nowrap;
+}
+
+.admin-ip + .admin-ip {
+  margin-top: 4px;
+}
+
+.admin-ip small {
+  color: var(--color-muted);
+}
+
+.admin-inline-form {
+  display: inline;
+}
+
+.admin-blocked {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-error);
+  background: var(--color-error-soft);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.admin-danger {
+  color: var(--color-error) !important;
+}
+
+.admin-danger-solid {
+  background: var(--color-error) !important;
+  border-color: var(--color-error) !important;
+  color: #fff !important;
+}
+
+.admin-block-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.admin-block-form input,
+.admin-confirm-field input {
+  padding: 8px 10px;
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-medium);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.admin-block-form input[name="ip"] {
+  min-width: 240px;
+}
+
+.admin-user-head {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin: 10px 0 18px;
+}
+
+.admin-user-head h1 {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.admin-user-page h2 small {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  font-weight: normal;
+}
+
+.admin-user-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+}
+
+.admin-user-grid h3 {
+  margin: 0 0 10px;
+}
+
+.admin-thumb {
+  display: block;
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: var(--radius-medium);
+  border: 1px solid var(--color-line);
+}
+
+.admin-texts {
+  margin: 0 0 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-texts dt {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+.admin-texts dd {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.admin-gallery {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 14px;
+}
+
+.admin-gallery li {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-medium);
+  min-width: 0;
+}
+
+.admin-gallery img,
+.admin-gallery video,
+.admin-gallery .forum-copter-icon {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--color-surface-alt);
+}
+
+.admin-gallery strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-gallery small {
+  color: var(--color-muted);
+}
+
+.admin-post-text {
+  max-width: 420px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.admin-delete-box {
+  padding: 16px 18px;
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-medium);
+  background: var(--color-error-soft);
+}
+
+.admin-delete-box form {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.admin-confirm-field {
+  display: grid;
+  gap: 6px;
+}

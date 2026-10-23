@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block title %}Admin – {{ account.username or account.email }}{% endblock %}
+
+{% macro delete_button(kind, id, label, confirm) %}
+  <form method="post" action="{{ url_for('admin_users.delete_content', account_id=account.id) }}" class="admin-inline-form" data-confirm="{{ confirm }}">
+    <input type="hidden" name="kind" value="{{ kind }}" />
+    <input type="hidden" name="id" value="{{ id }}" />
+    <button class="btn btn-secondary btn-small admin-danger">{{ label }}</button>
+  </form>
+{% endmacro %}
+
+{% block content %}
+  <section class="admin-dashboard-page admin-user-page">
+    <nav class="forum-breadcrumbs" aria-label="Pfad">
+      <a href="{{ url_for('admin_dashboard') }}#benutzer">Admin · Benutzer</a> <span>›</span>
+      <span>{{ account.username or account.email }}</span>
+    </nav>
+
+    {% if message %}
+      <div class="license-success">{{ message }}</div>
+    {% endif %}
+
+    <header class="admin-user-head">
+      <span class="avatar avatar-lg">{% if content.avatar %}<img src="{{ content.avatar }}" alt="" width="96" height="96" />{% else %}<span>{{ initials(account.username or account.email) }}</span>{% endif %}</span>
+      <div>
+        <h1>{{ account.username or "ohne Benutzername" }}{% if account.role == "admin" %} <span class="forum-badge forum-badge-admin">Admin</span>{% endif %}</h1>
+        <p class="profile-meta">
+          {{ account.email }} · {{ account.full_name }}{% if account.country %} · {{ account.country|country_name }}{% endif %}
+          {% if account.username %} · <a href="{{ url_for('community.profile', username=account.username) }}">öffentliches Profil</a>{% endif %}
+        </p>
+      </div>
+    </header>
+
+    <div class="admin-stats">
+      <div class="admin-stat">
+        <span class="admin-stat-value">seit {{ age }}</span>
+        <span class="admin-stat-label">registriert am {{ account.created_at|forum_time }}</span>
+      </div>
+      <div class="admin-stat">
+        <span class="admin-stat-value">{{ content.total|filesizeformat }}</span>
+        <span class="admin-stat-label">belegter Speicher</span>
+      </div>
+      <div class="admin-stat">
+        <span class="admin-stat-value">{{ content.posts|length }}</span>
+        <span class="admin-stat-label">Forenbeiträge</span>
+      </div>
+      <div class="admin-stat">
+        <span class="admin-stat-value">{% if account.last_seen_at %}{{ relative_time(account.last_seen_at) }}{% else %}–{% endif %}</span>
+        <span class="admin-stat-label">zuletzt aktiv</span>
+      </div>
+    </div>
+
+    <h2>IP-Adressen</h2>
+    <div class="admin-table-wrapper">
+      <table class="admin-table">
+        <thead><tr><th></th><th>IP-Adresse</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for label, ip in [("Bei der Registrierung", account.register_ip), ("Zuletzt gesehen", account.last_ip)] %}
+            <tr>
+              <td>{{ label }}</td>
+              <td>{% if ip %}<code>{{ ip }}</code>{% else %}<span class="form-hint">nicht erfasst (Konto älter als die IP-Erfassung)</span>{% endif %}</td>
+              <td>{% if ip in blocked %}<span class="admin-blocked">gesperrt</span>{% elif ip %}frei{% endif %}</td>
+              <td>
+                {% if ip and ip in blocked %}
+                  <form method="post" action="{{ url_for('admin_users.unblock') }}">
+                    <input type="hidden" name="ip" value="{{ ip }}" />
+                    <input type="hidden" name="account_id" value="{{ account.id }}" />
+                    <button class="btn btn-secondary btn-small">Freigeben</button>
+                  </form>
+                {% elif ip %}
+                  <form method="post" action="{{ url_for('admin_users.block') }}" data-confirm="{{ ip }} sperren? Von dort lassen sich danach keine Konten mehr erstellen.">
+                    <input type="hidden" name="ip" value="{{ ip }}" />
+                    <input type="hidden" name="account_id" value="{{ account.id }}" />
+                    <input type="hidden" name="reason" value="Konto {{ account.username or account.email }}" />
+                    <button class="btn btn-secondary btn-small admin-danger">IP sperren</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Profil</h2>
+    <div class="admin-user-grid">
+      <div class="profile-card">
+        <h3>Profilbild</h3>
+        {% if content.avatar %}
+          <img class="admin-thumb" src="{{ content.avatar }}" alt="Profilbild" />
+          <p class="form-hint">{{ content.avatar_size|filesizeformat }}</p>
+          {{ delete_button("avatar", 0, "Profilbild löschen", "Profilbild löschen?") }}
+        {% else %}
+          <p class="form-hint">Kein Profilbild.</p>
+        {% endif %}
+      </div>
+      <div class="profile-card">
+        <h3>Profiltexte</h3>
+        {% if content.profile_texts %}
+          <dl class="admin-texts">
+            {% for key, value in content.profile_texts.items() %}
+              <div><dt>{{ {"status_text": "Status", "bio": "Über mich", "signature": "Signatur", "website": "Webseite", "youtube": "YouTube"}[key] }}</dt><dd>{{ value }}</dd></div>
+            {% endfor %}
+          </dl>
+          {{ delete_button("profiltexte", 0, "Texte leeren", "Status, Über mich, Signatur und Links leeren?") }}
+        {% else %}
+          <p class="form-hint">Keine Profiltexte.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <h2>SD-Karten-Backups <small>{{ content.sizes.backups|filesizeformat }}</small></h2>
+    {% if content.backups %}
+      <div class="admin-table-wrapper">
+        <table class="admin-table">
+          <thead><tr><th>Bezeichnung</th><th>Erstellt</th><th>Dateien</th><th>Größe</th><th></th></tr></thead>
+          <tbody>
+            {% for b in content.backups %}
+              <tr>
+                <td>{{ b.label }}{% if b.auto %} <small>(automatisch)</small>{% endif %}</td>
+                <td>{{ b.created }}</td>
+                <td>{{ b.files }}</td>
+                <td>{{ b.size|filesizeformat }}</td>
+                <td class="admin-actions">
+                  <a class="btn btn-secondary btn-small" href="{{ url_for('admin_users.download', account_id=account.id, kind='backup', item_id=b.id) }}">ZIP</a>
+                  {{ delete_button("backup", b.id, "Löschen", "Backup „" ~ b.label ~ "“ löschen?") }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="admin-empty-hint">Keine Backups.</p>
+    {% endif %}
+
+    <h2>Themes &amp; Lua-Skripte <small>{{ content.sizes.projects|filesizeformat }}</small></h2>
+    {% if content.projects %}
+      <div class="admin-table-wrapper">
+        <table class="admin-table">
+          <thead><tr><th>Name</th><th>Art</th><th>Gespeichert</th><th>Größe</th><th></th></tr></thead>
+          <tbody>
+            {% for p in content.projects %}
+              <tr>
+                <td>{{ p.name }}</td>
+                <td>{{ "Theme" if p.kind == "theme" else "Lua-Skript" if p.kind == "lua" else p.kind }}</td>
+                <td>{{ p.updated|forum_time }}</td>
+                <td>{{ p.size|filesizeformat }}</td>
+                <td class="admin-actions">
+                  <a class="btn btn-secondary btn-small" href="{{ url_for('admin_users.download', account_id=account.id, kind='projekt', item_id=p.id) }}">ZIP</a>
+                  {{ delete_button("projekt", p.id, "Löschen", "„" ~ p.name ~ "“ löschen?") }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="admin-empty-hint">Keine Themes oder Lua-Skripte.</p>
+    {% endif %}
+
+    <h2>Copter <small>{{ content.sizes.copters|filesizeformat }}</small></h2>
+    {% if content.copters %}
+      <ul class="admin-gallery">
+        {% for c in content.copters %}
+          <li>
+            {% if c.image %}<a href="{{ copter_image_url(c.image) }}" target="_blank" rel="noopener"><img src="{{ copter_image_url(c.image) }}" alt="{{ c.name }}" loading="lazy" /></a>{% else %}<span class="forum-copter-icon" aria-hidden="true">✈</span>{% endif %}
+            <strong><a href="{{ url_for('community.copter', copter_id=c.id) }}">{{ c.name }}</a></strong>
+            <small>{{ c.category }}{% if c.image %} · Foto {{ c.image_size|filesizeformat }}{% endif %}</small>
+            <div class="admin-actions">
+              {% if c.image %}{{ delete_button("copterbild", c.id, "Foto löschen", "Foto von „" ~ c.name ~ "“ löschen?") }}{% endif %}
+              {{ delete_button("copter", c.id, "Copter löschen", "Copter „" ~ c.name ~ "“ löschen?") }}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="admin-empty-hint">Keine Copter.</p>
+    {% endif %}
+
+    <h2>Forum-Anhänge <small>{{ content.sizes.attachments|filesizeformat }}</small></h2>
+    {% if content.attachments %}
+      <ul class="admin-gallery">
+        {% for a in content.attachments %}
+          <li>
+            {% set src = url_for('community.attachment', filename=a.filename) %}
+            {% if a.kind == "image" %}
+              <a href="{{ src }}" target="_blank" rel="noopener"><img src="{{ src }}" alt="{{ a.original_name }}" loading="lazy" /></a>
+            {% else %}
+              <video src="{{ src }}" controls preload="metadata" playsinline></video>
+            {% endif %}
+            <strong title="{{ a.original_name }}">{{ a.original_name }}</strong>
+            <small>{{ a.size|filesizeformat }} · <a href="{{ url_for('forum.thread', thread_id=a.thread_id) }}#beitrag-{{ a.post_id }}">im Beitrag</a></small>
+            <div class="admin-actions">{{ delete_button("anhang", a.id, "Löschen", "Anhang „" ~ a.original_name ~ "“ löschen?") }}</div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="admin-empty-hint">Keine Anhänge.</p>
+    {% endif %}
+
+    <h2>Forenbeiträge</h2>
+    {% if content.posts %}
+      <div class="admin-table-wrapper">
+        <table class="admin-table">
+          <thead><tr><th>Thema</th><th>Text</th><th>Datum</th><th></th></tr></thead>
+          <tbody>
+            {% for p in content.posts %}
+              <tr>
+                <td><a href="{{ url_for('forum.thread', thread_id=p.thread_id) }}#beitrag-{{ p.id }}">{{ p.title }}</a>{% if p.is_first %}<br /><small>eröffnet das Thema ({{ p.thread_posts }} Beiträge)</small>{% endif %}</td>
+                <td class="admin-post-text">{{ p.body[:240] }}{% if p.body|length > 240 %} …{% endif %}</td>
+                <td>{{ p.created_at|forum_time }}</td>
+                <td>
+                  {% if p.is_first %}
+                    {{ delete_button("beitrag", p.id, "Thema löschen", "Thema „" ~ p.title ~ "“ mit allen " ~ p.thread_posts ~ " Beiträgen löschen?") }}
+                  {% else %}
+                    {{ delete_button("beitrag", p.id, "Löschen", "Diesen Beitrag löschen?") }}
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="admin-empty-hint">Keine Forenbeiträge.</p>
+    {% endif %}
+
+    <h2>Leaderboard <small>{{ content.sizes.leaderboard|filesizeformat }}</small></h2>
+    {% if content.entries %}
+      <div class="admin-table-wrapper">
+        <table class="admin-table">
+          <thead><tr><th>Pilot</th><th>Punkte</th><th>Eingereicht</th><th>Video + Log</th><th></th></tr></thead>
+          <tbody>
+            {% for e in content.entries %}
+              <tr>
+                <td><a href="{{ url_for('leaderboard_pages.entry', entry_id=e.id) }}">{{ e.pilot }}</a></td>
+                <td>{{ e.score }}</td>
+                <td>{{ e.created_at|forum_time }}</td>
+                <td>{{ e.size|filesizeformat if e.size else "–" }}</td>
+                <td>{{ delete_button("leaderboard", e.id, "Löschen", "Leaderboard-Eintrag mit " ~ e.score ~ " Punkten samt Video löschen?") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="admin-empty-hint">Keine Leaderboard-Einträge.</p>
+    {% endif %}
+
+    <h2>Drohnen-Ausweis <small>{{ content.sizes.licence|filesizeformat }}</small></h2>
+    {% if content.licence %}
+      <p>
+        {{ content.licence.original_name or "Datei" }} · {{ content.licence.size|filesizeformat }} · Status: {{ content.licence.status }}
+        · <a href="{{ url_for('ausweis.admin_file', license_id=content.licence.id) }}" target="_blank" rel="noopener">ansehen</a>
+      </p>
+      {{ delete_button("ausweis", 0, "Ausweis löschen", "Drohnen-Ausweis löschen?") }}
+    {% else %}
+      <p class="admin-empty-hint">Kein Ausweis hochgeladen.</p>
+    {% endif %}
+
+    <h2 id="konto-loeschen">Konto löschen</h2>
+    {% if account.role == "admin" %}
+      <p class="admin-empty-hint">Ein Administrator-Konto lässt sich hier nicht löschen.</p>
+    {% else %}
+      <div class="admin-delete-box">
+        <p>
+          Löscht das Konto <strong>{{ account.username or account.email }}</strong> mit allen Inhalten:
+          Backups, Themes/Lua-Skripte, Copter und Fotos, Profil und Profilbild, Leaderboard-Einträge mit Videos
+          und den Drohnen-Ausweis. Bestellungen und Lizenzen bleiben als Geschäftsunterlagen erhalten.
+          Das lässt sich nicht rückgängig machen.
+        </p>
+        <form method="post" action="{{ url_for('admin_users.delete_user', account_id=account.id) }}">
+          <label class="checkbox-label"><input type="checkbox" name="posts" value="1" checked /> Forenbeiträge mitlöschen (eigene Themen samt Antworten anderer)</label>
+          <label class="admin-confirm-field">
+            Zur Bestätigung <code>{{ account.username or account.email }}</code> eintippen:
+            <input type="text" name="confirm" required autocomplete="off" />
+          </label>
+          <button class="btn btn-primary admin-danger-solid">Konto endgültig löschen</button>
+        </form>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+      form.addEventListener("submit", function (event) {
+        if (!window.confirm(form.dataset.confirm)) {
+          event.preventDefault();
+        }
+      });
+    });
+  </script>
+{% endblock %}

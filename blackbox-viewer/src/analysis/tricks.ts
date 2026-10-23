@@ -3,11 +3,15 @@
 // 1. Low-pass the gyro (zero phase) and integrate raw rates to cumulative body angles.
 // 2. Per axis, find "rotation runs": intervals where the rate keeps one sign above `endRate`
 //    and peaks above `startRate`. The integrated angle of a run says how far the quad rotated.
-// 3. Full rotations (≥ 360° minus tolerance) → Roll / Flip / Power Loop / Yaw Spin,
+// 3. Full rotations (≥ 360° minus tolerance) → Roll / Flip / Power Loop / Matty Flip / Yaw Spin,
 //    half rotations (~180°) are paired in time → Split-S (roll then pitch) or Immelmann (pitch then roll).
-//    Simultaneous roll + flip → Corkscrew.
-// 4. Every candidate gets a feature vector (used by the optional kNN classifier) and points.
+//    Simultaneous roll + flip → Corkscrew, simultaneous roll + yaw → Helix.
+//    Slow loop with throttle: pulled back → Power Loop, pushed forward → Matty Flip.
+// 4. With a trustworthy attitude (accelerometer logged): Yaw Spin while inverted → Trippy Spin,
+//    holding inverted → Inverted Hang, nose down with low throttle → Dive. A slow 360° yaw → Orbit.
+// 5. Every candidate gets a feature vector (used by the optional kNN classifier) and points.
 import { cumulative, pt1ZeroPhase } from './filters.ts';
+import { rotationAt } from './orientation.ts';
 import type { FlightData, Trick, TrickType, Vec3Arr } from '../types.ts';
 
 export interface DetectSettings {
@@ -23,6 +27,10 @@ export interface DetectSettings {
   yawMinPeak: number;
   seqGap: number;
   comboWindow: number;
+  hangMinTime: number;
+  diveMinTime: number;
+  diveMaxThrottle: number;
+  orbitMinTime: number;
 }
 
 export const DEFAULT_SETTINGS: DetectSettings = {
@@ -38,9 +46,16 @@ export const DEFAULT_SETTINGS: DetectSettings = {
   yawMinPeak: 450,
   seqGap: 0.6,
   comboWindow: 1.5,
+  hangMinTime: 0.8,
+  diveMinTime: 0.7,
+  diveMaxThrottle: 0.3,
+  orbitMinTime: 2,
 };
 
-export const TRICK_TYPES: TrickType[] = ['roll', 'flip', 'powerloop', 'splits', 'immelmann', 'yawspin', 'corkscrew', 'none'];
+export const TRICK_TYPES: TrickType[] = [
+  'roll', 'flip', 'powerloop', 'mattyflip', 'splits', 'immelmann', 'yawspin', 'trippyspin',
+  'corkscrew', 'helix', 'orbit', 'invertedhang', 'dive', 'none',
+];
 
 export const TRICK_LABEL: Record<TrickType, string> = {
   roll: 'Roll',
@@ -50,6 +65,12 @@ export const TRICK_LABEL: Record<TrickType, string> = {
   immelmann: 'Immelmann',
   yawspin: 'Yaw Spin',
   corkscrew: 'Corkscrew',
+  mattyflip: 'Matty Flip',
+  helix: 'Helix',
+  trippyspin: 'Trippy Spin',
+  orbit: 'Orbit',
+  invertedhang: 'Inverted Hang',
+  dive: 'Dive',
   none: 'Kein Trick',
 };
 
@@ -61,6 +82,12 @@ export const TRICK_COLOR: Record<TrickType, string> = {
   immelmann: '#9b5de5',
   yawspin: '#f15bb5',
   corkscrew: '#fee440',
+  mattyflip: '#fb8500',
+  helix: '#80ffdb',
+  trippyspin: '#c77dff',
+  orbit: '#90be6d',
+  invertedhang: '#4361ee',
+  dive: '#e63946',
   none: '#6b7280',
 };
 
@@ -72,8 +99,17 @@ const BASE_POINTS: Record<TrickType, number> = {
   immelmann: 200,
   yawspin: 80,
   corkscrew: 320,
+  mattyflip: 260,
+  helix: 300,
+  trippyspin: 220,
+  orbit: 60,
+  invertedhang: 140,
+  dive: 160,
   none: 0,
 };
+
+/** Tricks without a rotation goal – the HUD shows elapsed time instead of degrees. */
+export const HOLD_TRICKS: TrickType[] = ['invertedhang', 'dive'];
 
 interface Run {
   axis: 0 | 1 | 2;
@@ -161,17 +197,54 @@ export function spanFeatures(f: FlightData, a: Pick<Analysis, 'cum' | 'smooth'>,
   return { angles, duration, meanThrottle, peak, features };
 }
 
+const COUNTED: TrickType[] = ['roll', 'flip', 'yawspin', 'trippyspin', 'corkscrew', 'helix', 'orbit'];
+
 function countFor(type: TrickType, angles: number[]): number {
-  const axis = type === 'yawspin' ? 2 : type === 'flip' || type === 'powerloop' ? 1 : 0;
-  if (type === 'roll' || type === 'flip' || type === 'yawspin' || type === 'corkscrew') return Math.max(1, Math.round(Math.abs(angles[axis]) / 360));
+  const axis = axisFor(type, 0);
+  if (COUNTED.includes(type)) return Math.max(1, Math.round(Math.abs(angles[axis]) / 360));
   return 1;
 }
 
 function axisFor(type: TrickType, fallback: 0 | 1 | 2): 0 | 1 | 2 {
-  if (type === 'roll' || type === 'corkscrew') return 0;
-  if (type === 'flip' || type === 'powerloop') return 1;
-  if (type === 'yawspin') return 2;
+  if (type === 'roll' || type === 'corkscrew' || type === 'helix' || type === 'invertedhang') return 0;
+  if (type === 'flip' || type === 'powerloop' || type === 'mattyflip' || type === 'dive') return 1;
+  if (type === 'yawspin' || type === 'trippyspin' || type === 'orbit') return 2;
   return fallback;
+}
+
+/** World-up expressed in the body z axis: 1 = level, -1 = upside down. */
+function upZ(quat: Float32Array, i: number): number {
+  const w = quat[i * 4], x = quat[i * 4 + 1], y = quat[i * 4 + 2], z = quat[i * 4 + 3];
+  return w * w - x * x - y * y + z * z;
+}
+
+/** Spans (i0, i1) where `test(i)` holds continuously for at least `minTime` seconds. */
+function holdSpans(f: FlightData, minTime: number, test: (i: number) => boolean): [number, number][] {
+  const spans: [number, number][] = [];
+  const n = f.t.length;
+  let i = 0;
+  while (i < n) {
+    if (!test(i)) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < n && test(j + 1)) j++;
+    if (f.t[j] - f.t[i] >= minTime) spans.push([i, j]);
+    i = j + 1;
+  }
+  return spans;
+}
+
+/** Share of [i0, i1] covered by any of the given candidates (0..1). */
+function coveredBy(f: FlightData, i0: number, i1: number, cands: Candidate[]): number {
+  const len = f.t[i1] - f.t[i0] || 1e-6;
+  let covered = 0;
+  for (const c of cands) {
+    if (c.type === 'none') continue;
+    covered += Math.max(0, Math.min(f.t[i1], f.t[c.i1]) - Math.max(f.t[i0], f.t[c.i0]));
+  }
+  return Math.min(1, covered / len);
 }
 
 export function detectTricks(
@@ -194,7 +267,8 @@ export function detectTricks(
       if (run.axis === 0 && dur <= s.maxSpinTime * count) type = 'roll';
       if (run.axis === 1) {
         const thr = meanOver(f.throttle, run.i0, run.i1);
-        if (count === 1 && dur >= s.plMinDuration && thr >= s.plMinThrottle && dur <= 4) type = 'powerloop';
+        // slow loop with throttle: pulled back (nose up) = Power Loop, pushed forward = Matty Flip
+        if (count === 1 && dur >= s.plMinDuration && thr >= s.plMinThrottle && dur <= 4) type = run.sign > 0 ? 'mattyflip' : 'powerloop';
         else if (dur <= s.maxSpinTime * count) type = 'flip';
       }
       if (run.axis === 2 && run.peak >= s.yawMinPeak && dur <= s.maxSpinTime * count * 1.5) type = 'yawspin';
@@ -255,6 +329,83 @@ export function detectTricks(
     }
   }
 
+  // Simultaneous roll + yaw (both ≥ one turn) → helix
+  for (const a of cands) {
+    if (a.type !== 'roll') continue;
+    for (const yaw of runs) {
+      if (yaw.axis !== 2 || Math.abs(yaw.angle) < 360 * (1 - s.fullTol)) continue;
+      const overlap = Math.min(f.t[a.i1], f.t[yaw.i1]) - Math.max(f.t[a.i0], f.t[yaw.i0]);
+      const shorter = Math.min(f.t[a.i1] - f.t[a.i0], f.t[yaw.i1] - f.t[yaw.i0]);
+      if (overlap <= 0.5 * shorter) continue;
+      for (const b of cands) if (b.type === 'yawspin' && b.i0 === yaw.i0) b.type = 'none';
+      yaw.used = true;
+      a.i0 = Math.min(a.i0, yaw.i0);
+      a.i1 = Math.max(a.i1, yaw.i1);
+      a.type = 'helix';
+      a.count = Math.min(a.count, Math.max(1, Math.floor(Math.abs(yaw.angle) / 360 + s.fullTol)));
+      break;
+    }
+  }
+
+  // Attitude-based tricks need a trustworthy attitude: only with a logged accelerometer.
+  const attitude = f.acc !== null;
+  if (attitude) {
+    // Yaw Spin while upside down → Trippy Spin
+    for (const c of cands) {
+      if (c.type !== 'yawspin') continue;
+      let inverted = 0;
+      for (let i = c.i0; i <= c.i1; i++) if (upZ(f.quat, i) < -0.3) inverted++;
+      if (inverted >= 0.6 * (c.i1 - c.i0 + 1)) c.type = 'trippyspin';
+    }
+    // Nose pointing down (world z of the body x axis) – takes precedence over "inverted"
+    const m = new Float64Array(9);
+    const noseDown = (i: number) => rotationAt(f.quat, i, m)[6] < -0.75;
+    // Holding inverted (not part of a flip/roll, nose not pointing down) → Inverted Hang
+    for (const [i0, i1] of holdSpans(f, s.hangMinTime, (i) => upZ(f.quat, i) < -0.7 && !noseDown(i))) {
+      if (coveredBy(f, i0, i1, cands) < 0.3) cands.push({ i0, i1, type: 'invertedhang', count: 1, axis: 0, sign: 1 });
+    }
+    // Nose pointing down with low throttle → Dive
+    for (const [i0, i1] of holdSpans(f, s.diveMinTime, noseDown)) {
+      if (meanOver(f.throttle, i0, i1) <= s.diveMaxThrottle && coveredBy(f, i0, i1, cands) < 0.3) {
+        cands.push({ i0, i1, type: 'dive', count: 1, axis: 1, sign: 1 });
+      }
+    }
+  }
+
+  // Slow full yaw turn (below spin rate) → Orbit; banked if the attitude is known
+  {
+    const yaw = pt1ZeroPhase(f.gyro[2], f.rate, 1.5);
+    const n = yaw.length;
+    let i = 0;
+    while (i < n) {
+      if (Math.abs(yaw[i]) <= 35) {
+        i++;
+        continue;
+      }
+      const sign = Math.sign(yaw[i]);
+      let j = i;
+      let peak = 0;
+      while (j < n && yaw[j] * sign > 35) {
+        peak = Math.max(peak, Math.abs(yaw[j]));
+        j++;
+      }
+      const i1 = j - 1;
+      const angle = Math.abs(cum[2][i1] - cum[2][i]);
+      const dur = f.t[i1] - f.t[i];
+      const turns = Math.floor(angle / 360 + s.fullTol);
+      let banked = true;
+      if (attitude) {
+        let bank = 0;
+        for (let k = i; k <= i1; k++) bank += Math.abs(upZ(f.quat, k)) < 0.985 ? 1 : 0;
+        banked = bank >= 0.5 * (i1 - i + 1);
+      }
+      if (turns >= 1 && dur >= s.orbitMinTime && dur <= 20 * turns && peak < s.yawMinPeak && banked && coveredBy(f, i, i1, cands) < 0.3) {
+        cands.push({ i0: i, i1, type: 'orbit', count: turns, axis: 2, sign });
+      }
+      i = j;
+    }
+  }
+
   const final = cands.filter((c) => c.type !== 'none');
   // Leftover sizeable rotations become "none" candidates so the user/ML can label them
   for (const run of runs) {
@@ -289,7 +440,11 @@ export function detectTricks(
     const purity =
       type === 'splits' || type === 'immelmann' || type === 'corkscrew'
         ? Math.max(0, 1 - Math.abs(angles[2]) / (Math.abs(angles[0]) + Math.abs(angles[1]) || 1))
-        : Math.max(0, Math.min(1, 1 - (Math.abs(angles[0]) + Math.abs(angles[1]) + Math.abs(angles[2]) - dominant) / dominant));
+        : type === 'helix'
+          ? Math.max(0, 1 - Math.abs(angles[1]) / (Math.abs(angles[0]) + Math.abs(angles[2]) || 1))
+          : type === 'orbit' || HOLD_TRICKS.includes(type)
+            ? 1
+            : Math.max(0, Math.min(1, 1 - (Math.abs(angles[0]) + Math.abs(angles[1]) + Math.abs(angles[2]) - dominant) / dominant));
     const dirSign = Math.sign(angles[axis]);
     const dir =
       type === 'roll' ? (dirSign > 0 ? 'rechts' : 'links')
@@ -329,10 +484,13 @@ export function scoreTricks(tricks: Trick[], s: DetectSettings) {
   for (const t of tricks) {
     const countMult = 1 + 0.8 * (t.count - 1);
     let style = 1;
-    if (t.type === 'roll' || t.type === 'flip' || t.type === 'yawspin' || t.type === 'corkscrew') {
+    if (t.type === 'roll' || t.type === 'flip' || t.type === 'yawspin' || t.type === 'trippyspin' || t.type === 'corkscrew' || t.type === 'helix') {
       style = Math.min(1.5, Math.max(0.7, t.peakRate / 800));
-    } else if (t.type === 'powerloop') {
+    } else if (t.type === 'powerloop' || t.type === 'mattyflip') {
       style = 1 + 0.5 * t.meanThrottle;
+    } else if (HOLD_TRICKS.includes(t.type)) {
+      // longer hang / dive = more points (up to 1.5×)
+      style = Math.min(1.5, Math.max(1, t.duration / 1.2));
     }
     const clean = 0.6 + 0.4 * t.purity;
     t.basePoints = Math.round((BASE_POINTS[t.type] * countMult * style * clean) / 5) * 5;

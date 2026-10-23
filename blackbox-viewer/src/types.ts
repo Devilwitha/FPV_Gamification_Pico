@@ -64,6 +64,12 @@ export type TrickType =
   | 'immelmann'
   | 'yawspin'
   | 'corkscrew'
+  | 'mattyflip'
+  | 'helix'
+  | 'trippyspin'
+  | 'orbit'
+  | 'invertedhang'
+  | 'dive'
   | 'none';
 
 export interface Trick {

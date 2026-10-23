@@ -165,6 +165,21 @@ def init_db():
         # Rolle fuer die Anzeige im Forum/Profil ('admin' = "Administrator"), sonst NULL.
         if "role" not in account_columns:
             connection.execute("ALTER TABLE accounts ADD COLUMN role TEXT")
+        # IP-Adressen fuer die Benutzerverwaltung im Admin-Dashboard (admin_users.py):
+        # bei der Registrierung und zuletzt gesehen.
+        for column in ("register_ip", "last_ip"):
+            if column not in account_columns:
+                connection.execute(f"ALTER TABLE accounts ADD COLUMN {column} TEXT")
+        # Gesperrte IP-Adressen: von dort koennen keine Konten erstellt werden.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS blocked_ips (
+                ip TEXT PRIMARY KEY,
+                reason TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
         connection.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_username "
             "ON accounts (username COLLATE NOCASE) WHERE username IS NOT NULL"
@@ -465,7 +480,7 @@ def move_pending_to_customer(pending_id, hardware_id, license_filename):
         return cursor.lastrowid
 
 
-def create_account(email, password_hash, full_name, address, phone, country, username=None):
+def create_account(email, password_hash, full_name, address, phone, country, username=None, register_ip=None):
     """Legt ein neues Login-Konto an. Wirft sqlite3.IntegrityError, falls die
     E-Mail-Adresse (case-insensitiv, siehe UNIQUE COLLATE NOCASE) oder der
     Benutzername bereits registriert ist - der Aufrufer (app.py's register())
@@ -473,10 +488,11 @@ def create_account(email, password_hash, full_name, address, phone, country, use
     with _get_connection() as connection:
         cursor = connection.execute(
             """
-            INSERT INTO accounts (email, password_hash, full_name, address, phone, country, created_at, username)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO accounts (email, password_hash, full_name, address, phone, country, created_at, username,
+                                  register_ip, last_ip)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (email, password_hash, full_name, address, phone, country, _now_iso(), username),
+            (email, password_hash, full_name, address, phone, country, _now_iso(), username, register_ip, register_ip),
         )
         return cursor.lastrowid
 
@@ -1093,11 +1109,121 @@ def forum_move_thread(thread_id, category):
 # --- Admin-Dashboard: Benutzer ---------------------------------------------
 
 
-def touch_account_seen(email):
+def touch_account_seen(email, ip=None):
     with _get_connection() as connection:
         connection.execute(
-            "UPDATE accounts SET last_seen_at = ? WHERE email = ? COLLATE NOCASE", (_now_iso(), email)
+            "UPDATE accounts SET last_seen_at = ?, last_ip = COALESCE(?, last_ip) WHERE email = ? COLLATE NOCASE",
+            (_now_iso(), ip, email),
         )
+
+
+def get_account_by_id(account_id):
+    with _get_connection() as connection:
+        return connection.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+
+
+def list_accounts_admin():
+    """Alle Konten fuer die Benutzerverwaltung, mit belegtem Speicher (Bytes laut Datenbank)
+    und Anzahl Forenbeitraege. Avatare/Copter-Fotos rechnet admin_users.py dazu."""
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT a.id, a.email, a.username, a.full_name, a.country, a.role, a.created_at, a.last_seen_at,
+                   a.register_ip, a.last_ip,
+                   p.avatar_filename,
+                   (SELECT COALESCE(SUM(size), 0) FROM tx15_backups b WHERE b.email = a.email COLLATE NOCASE)
+                 + (SELECT COALESCE(SUM(zip_size), 0) FROM tx15_projects t WHERE t.email = a.email COLLATE NOCASE)
+                 + (SELECT COALESCE(SUM(video_size + log_size), 0) FROM leaderboard_entries e WHERE e.email = a.email COLLATE NOCASE)
+                 + (SELECT COALESCE(SUM(f.size), 0) FROM forum_attachments f JOIN forum_posts fp ON fp.id = f.post_id
+                     WHERE fp.author_email = a.email COLLATE NOCASE)
+                 + (SELECT COALESCE(SUM(size), 0) FROM pilot_licenses l WHERE l.email = a.email COLLATE NOCASE) AS stored_bytes,
+                   (SELECT COUNT(*) FROM forum_posts fp WHERE fp.author_email = a.email COLLATE NOCASE) AS post_count
+            FROM accounts a
+            LEFT JOIN account_profiles p ON p.email = a.email COLLATE NOCASE
+            ORDER BY a.created_at DESC, a.id DESC
+            """
+        ).fetchall()
+
+
+def list_copter_images(email):
+    with _get_connection() as connection:
+        return [row[0] for row in connection.execute(
+            "SELECT image_filename FROM copters WHERE email = ? COLLATE NOCASE AND image_filename IS NOT NULL", (email,)
+        )]
+
+
+def forum_posts_by(email):
+    """Alle Beitraege eines Kontos (neueste zuerst) mit Thema und Anhangzahl."""
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT p.id, p.thread_id, p.body, p.created_at, t.title,
+                   p.id = (SELECT MIN(id) FROM forum_posts WHERE thread_id = p.thread_id) AS is_first,
+                   (SELECT COUNT(*) FROM forum_posts o WHERE o.thread_id = p.thread_id) AS thread_posts
+            FROM forum_posts p JOIN forum_threads t ON t.id = p.thread_id
+            WHERE p.author_email = ? COLLATE NOCASE ORDER BY p.id DESC
+            """,
+            (email,),
+        ).fetchall()
+
+
+def forum_attachments_by(email):
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT f.*, p.thread_id FROM forum_attachments f JOIN forum_posts p ON p.id = f.post_id
+            WHERE p.author_email = ? COLLATE NOCASE ORDER BY f.id DESC
+            """,
+            (email,),
+        ).fetchall()
+
+
+def leaderboard_rows_for(email):
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT * FROM leaderboard_entries WHERE email = ? COLLATE NOCASE ORDER BY score DESC, id", (email,)
+        ).fetchall()
+
+
+def delete_account_rows(email):
+    """Entfernt Konto, Profil, Copter und abgegebene Meldungen. Dateien und uebrige
+    Inhalte (Backups, Projekte, Beitraege, Leaderboard, Ausweis) raeumt admin_users.py vorher ab."""
+    with _get_connection() as connection:
+        connection.execute("DELETE FROM leaderboard_reports WHERE email = ? COLLATE NOCASE", (email,))
+        connection.execute("DELETE FROM copters WHERE email = ? COLLATE NOCASE", (email,))
+        connection.execute("DELETE FROM account_profiles WHERE email = ? COLLATE NOCASE", (email,))
+        connection.execute("DELETE FROM accounts WHERE email = ? COLLATE NOCASE", (email,))
+
+
+def block_ip(ip, reason):
+    with _get_connection() as connection:
+        connection.execute(
+            "INSERT INTO blocked_ips (ip, reason, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (ip) DO UPDATE SET reason = excluded.reason",
+            (ip, reason, _now_iso()),
+        )
+
+
+def unblock_ip(ip):
+    with _get_connection() as connection:
+        connection.execute("DELETE FROM blocked_ips WHERE ip = ?", (ip,))
+
+
+def is_ip_blocked(ip):
+    if not ip:
+        return False
+    with _get_connection() as connection:
+        return connection.execute("SELECT 1 FROM blocked_ips WHERE ip = ?", (ip,)).fetchone() is not None
+
+
+def list_blocked_ips():
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT b.*, (SELECT COUNT(*) FROM accounts a WHERE a.register_ip = b.ip OR a.last_ip = b.ip) AS accounts
+            FROM blocked_ips b ORDER BY b.created_at DESC
+            """
+        ).fetchall()
 
 
 def count_accounts():

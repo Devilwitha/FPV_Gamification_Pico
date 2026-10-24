@@ -3,13 +3,13 @@
     Optional "attachments": vorhandene Anhaenge beim Bearbeiten. -#}
 {% if attachments %}
   <div class="form-field">
-    <span class="form-label">Vorhandene Anhänge</span>
+    <span class="form-label">{{ _("Vorhandene Anhänge") }}</span>
     <div class="forum-attachment-edit">
       {% for file in attachments %}
         <label class="forum-attachment-chip">
-          {% if file.kind == "image" %}<img src="{{ url_for('community.attachment', filename=file.filename) }}" alt="" />{% else %}<span class="forum-attachment-kind">Video</span>{% endif %}
+          {% if file.kind == "image" %}<img src="{{ url_for('community.attachment', filename=file.filename) }}" alt="" />{% else %}<span class="forum-attachment-kind">{{ _("Video") }}</span>{% endif %}
           <span>{{ file.original_name }}</span>
-          <span class="checkbox-label"><input type="checkbox" name="remove_attachment" value="{{ file.id }}" data-attach-remove /> entfernen</span>
+          <span class="checkbox-label"><input type="checkbox" name="remove_attachment" value="{{ file.id }}" data-attach-remove /> {{ _("entfernen") }}</span>
         </label>
       {% endfor %}
     </div>
@@ -19,19 +19,17 @@
      data-max="{{ attach_limits.count }}" data-max-image="{{ attach_limits.image_mb }}"
      data-max-video="{{ attach_limits.video_mb }}" data-max-total="{{ attach_limits.total_mb }}"
      data-existing="{{ attachments|length if attachments else 0 }}">
-  <span class="form-label">Bilder und Videos (optional)</span>
-  <div class="attach-drop" tabindex="0" role="button" aria-label="Bilder oder Videos hinzufügen">
-    <strong>+ Dateien hinzufügen</strong>
-    <span>auswählen, hierher ziehen oder mit Strg+V einfügen – auch mehrere nacheinander</span>
+  <span class="form-label">{{ _("Bilder und Videos (optional)") }}</span>
+  <div class="attach-drop" tabindex="0" role="button" aria-label="{{ _("Bilder oder Videos hinzufügen") }}">
+    <strong>{{ _("+ Dateien hinzufügen") }}</strong>
+    <span>{{ _("auswählen, hierher ziehen oder mit Strg+V einfügen – auch mehrere nacheinander") }}</span>
   </div>
   <input type="file" name="attachments" multiple hidden
          accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" />
   <ul class="attach-list"></ul>
   <p class="attach-error" role="alert"></p>
   <p class="form-hint">
-    Bis zu {{ attach_limits.count }} Dateien: Bilder (JPG, PNG, WebP, GIF, je bis {{ attach_limits.image_mb }} MB)
-    und Videos (MP4/WebM, je bis {{ attach_limits.video_mb }} MB), zusammen höchstens {{ attach_limits.total_mb }} MB.
-    Standortdaten aus Fotos werden entfernt.
+    {{ _("Bis zu") }} {{ attach_limits.count }} {{ _("Dateien: Bilder (JPG, PNG, WebP, GIF, je bis") }} {{ attach_limits.image_mb }} {{ _("MB) und Videos (MP4/WebM, je bis") }} {{ attach_limits.video_mb }} {{ _("MB), zusammen höchstens") }} {{ attach_limits.total_mb }} {{ _("MB. Standortdaten aus Fotos werden entfernt.") }}
   </p>
 </div>
 <script>
@@ -97,10 +95,10 @@
         const problems = [];
         for (const f of incoming) {
           const total = files.reduce((sum, x) => sum + x.size, 0);
-          if (!isImage(f) && !isVideo(f)) problems.push(`„${f.name}“: nur Bilder (JPG, PNG, WebP, GIF) und Videos (MP4, WebM).`);
-          else if (files.length + existing() >= max) { problems.push(`Höchstens ${max} Dateien pro Beitrag.`); break; }
-          else if (f.size > (isVideo(f) ? maxVideo : maxImage)) problems.push(`„${f.name}“ ist zu groß (${isVideo(f) ? "Videos" : "Bilder"} bis ${(isVideo(f) ? maxVideo : maxImage) / MB} MB).`);
-          else if (total + f.size > maxTotal) problems.push(`„${f.name}“ passt nicht mehr dazu – zusammen höchstens ${maxTotal / MB} MB.`);
+          if (!isImage(f) && !isVideo(f)) problems.push({{ _("„{name}“: nur Bilder (JPG, PNG, WebP, GIF) und Videos (MP4, WebM).")|tojson }}.replace("{name}", f.name));
+          else if (files.length + existing() >= max) { problems.push({{ _("Höchstens {n} Dateien pro Beitrag.")|tojson }}.replace("{n}", max)); break; }
+          else if (f.size > (isVideo(f) ? maxVideo : maxImage)) problems.push((isVideo(f) ? {{ _("„{name}“ ist zu groß (Videos bis {mb} MB).")|tojson }} : {{ _("„{name}“ ist zu groß (Bilder bis {mb} MB).")|tojson }}).replace("{name}", f.name).replace("{mb}", (isVideo(f) ? maxVideo : maxImage) / MB));
+          else if (total + f.size > maxTotal) problems.push({{ _("„{name}“ passt nicht mehr dazu – zusammen höchstens {mb} MB.")|tojson }}.replace("{name}", f.name).replace("{mb}", maxTotal / MB));
           else if (!files.some((x) => x.name === f.name && x.size === f.size)) files.push(f);
         }
         error.textContent = problems.join(" ");
@@ -139,7 +137,7 @@
           const button = form.querySelector('button[type="submit"]');
           if (button && files.length) {
             button.disabled = true;
-            button.textContent = "Wird hochgeladen …";
+            button.textContent = {{ _("Wird hochgeladen …")|tojson }};
           }
         });
       }

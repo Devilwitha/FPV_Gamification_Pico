@@ -17,9 +17,10 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import community
 import countries
 import db
+from i18n import gettext as _
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9ÄÖÜäöüß][A-Za-z0-9ÄÖÜäöüß_.-]{2,23}$")
-RESERVED_USERNAMES = {"admin", "administrator", "bollisoft", "moderator", "support", "system"}
+RESERVED_USERNAMES = {"admin", "administrator", "bollisoft", "moderator", "support", "system", "team", "mod"}
 MAX_COPTERS = 50
 COPTER_CATEGORIES = (
     "5\" Freestyle",
@@ -63,15 +64,15 @@ bp = Blueprint("konto", __name__, url_prefix="/account")
 def validate_username(username, own_email=None):
     """Fehlermeldung oder None. own_email: eigenes Konto (darf den Namen behalten)."""
     if not username:
-        return "Bitte einen Benutzernamen angeben."
+        return _("Bitte einen Benutzernamen angeben.")
     if not USERNAME_RE.match(username):
-        return ("Der Benutzername muss 3 bis 24 Zeichen lang sein und darf nur Buchstaben, "
-                "Ziffern sowie _ . - enthalten (am Anfang ein Buchstabe oder eine Ziffer).")
+        return (_("Der Benutzername muss 3 bis 24 Zeichen lang sein und darf nur Buchstaben, "
+                "Ziffern sowie _ . - enthalten (am Anfang ein Buchstabe oder eine Ziffer)."))
     if username.lower() in RESERVED_USERNAMES:
-        return "Dieser Benutzername ist reserviert."
+        return _("Dieser Benutzername ist reserviert.")
     existing = db.get_account_by_username(username)
     if existing is not None and (own_email is None or existing["email"].lower() != own_email.lower()):
-        return "Dieser Benutzername ist bereits vergeben."
+        return _("Dieser Benutzername ist bereits vergeben.")
     return None
 
 
@@ -103,11 +104,11 @@ def profile(account):
         values = {key: (request.form.get(key) or "").strip() for key in ("username", "full_name", "country", "address", "phone")}
         profile_error = validate_username(values["username"], own_email=account["email"])
         if profile_error is None and (not values["full_name"] or not values["country"]):
-            profile_error = "Bitte Name und Land ausfüllen."
+            profile_error = _("Bitte Name und Land ausfüllen.")
         if profile_error is None and not countries.is_valid(values["country"]):
-            profile_error = "Bitte ein Land aus der Liste wählen."
+            profile_error = _("Bitte ein Land aus der Liste wählen.")
         if profile_error is None and any(len(values[key]) > 200 for key in values):
-            profile_error = "Eine Angabe ist zu lang (höchstens 200 Zeichen)."
+            profile_error = _("Eine Angabe ist zu lang (höchstens 200 Zeichen).")
         if profile_error is None:
             db.update_account_profile(
                 account["email"], values["username"], values["full_name"],
@@ -119,11 +120,11 @@ def profile(account):
         new = request.form.get("new_password") or ""
         repeat = request.form.get("new_password_confirm") or ""
         if not check_password_hash(account["password_hash"], current):
-            password_error = "Das aktuelle Passwort ist falsch."
+            password_error = _("Das aktuelle Passwort ist falsch.")
         elif len(new) < 8:
             password_error = "Das neue Passwort muss mindestens 8 Zeichen lang sein."
         elif new != repeat:
-            password_error = "Die neuen Passwörter stimmen nicht überein."
+            password_error = _("Die neuen Passwörter stimmen nicht überein.")
         elif new == current:
             password_error = "Das neue Passwort muss sich vom aktuellen unterscheiden."
         else:
@@ -158,10 +159,10 @@ def _save_public_profile(email, req):
     fields = {key: (form.get(key) or "").strip() for key in PUBLIC_TEXT_LIMITS}
     for key, limit in PUBLIC_TEXT_LIMITS.items():
         if len(fields[key]) > limit:
-            return f"Ein Feld ist zu lang (höchstens {limit} Zeichen)."
+            return _("Ein Feld ist zu lang (höchstens {limit} Zeichen).", limit=limit)
     for key in ("website", "youtube"):
         if fields[key] and not fields[key].lower().startswith(("https://", "http://")):
-            return "Links bitte mit https:// angeben."
+            return _("Links bitte mit https:// angeben.")
     fields["show_country"] = 1 if form.get("show_country") else 0
     fields["show_copters"] = 1 if form.get("show_copters") else 0
     try:
@@ -183,10 +184,10 @@ def _copter_fields(form):
     weight = (form.get("weight_g") or "").strip()
     fields["weight_g"] = None
     if not fields["name"]:
-        return fields, "Bitte einen Namen für den Copter angeben."
+        return fields, _("Bitte einen Namen für den Copter angeben.")
     if weight:
         if not weight.isdigit() or not 1 <= int(weight) <= 50000:
-            return fields, "Das Gewicht bitte als ganze Zahl in Gramm angeben (1 bis 50000)."
+            return fields, _("Das Gewicht bitte als ganze Zahl in Gramm angeben (1 bis 50000).")
         fields["weight_g"] = int(weight)
     return fields, None
 
@@ -222,7 +223,7 @@ def copters(account):
                 error = str(exc)
         if error is None and action == "update" and copter_id:
             if not db.update_copter(copter_id, email, fields):
-                error = "Dieser Copter wurde nicht gefunden."
+                error = _("Dieser Copter wurde nicht gefunden.")
             else:
                 if image is not None:
                     community.save_copter_image(copter_id, email, image)
@@ -231,7 +232,7 @@ def copters(account):
                 return redirect(url_for("konto.copters", gespeichert="aktualisiert") + f"#copter-{copter_id}")
         elif error is None and action == "create":
             if db.count_copters(email) >= MAX_COPTERS:
-                error = f"Du kannst höchstens {MAX_COPTERS} Copter speichern."
+                error = _("Du kannst höchstens {max_copters} Copter speichern.", max_copters=MAX_COPTERS)
             else:
                 new_id = db.add_copter(email, fields)
                 if image is not None:

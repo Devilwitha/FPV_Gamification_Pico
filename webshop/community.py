@@ -18,6 +18,8 @@ from flask import Blueprint, abort, redirect, render_template, send_from_directo
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 import db
+import roles
+from i18n import gettext as _
 
 MEDIA_DIR = db.media_dir("COMMUNITY_MEDIA_DIR", "community_media")
 AVATAR_DIR = MEDIA_DIR / "avatars"
@@ -70,9 +72,9 @@ def _encode_image(data, max_side, square=None):
         image = Image.open(io.BytesIO(data))
         image.load()
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
-        raise UploadError("ist kein lesbares Bild.") from exc
+        raise UploadError(_("ist kein lesbares Bild.")) from exc
     if image.format not in IMAGE_TYPES:
-        raise UploadError("hat ein nicht unterstuetztes Bildformat (erlaubt: JPG, PNG, WebP, GIF).")
+        raise UploadError(_("hat ein nicht unterstuetztes Bildformat (erlaubt: JPG, PNG, WebP, GIF)."))
     # Animierte GIFs bleiben unveraendert (GIF traegt keine Kamera-/GPS-Daten).
     if image.format == "GIF" and getattr(image, "is_animated", False) and square is None:
         return data, "image/gif", ".gif", image.width, image.height
@@ -93,22 +95,22 @@ def prepare_attachments(files, existing=0):
     Liefert eine Liste vorbereiteter Anhaenge oder wirft UploadError."""
     files = [f for f in files if f and f.filename]
     if existing + len(files) > MAX_ATTACHMENTS:
-        raise UploadError(f"Höchstens {MAX_ATTACHMENTS} Bilder/Videos pro Beitrag.")
+        raise UploadError(_("Höchstens {max_attachments} Bilder/Videos pro Beitrag.", max_attachments=MAX_ATTACHMENTS))
     prepared, total = [], 0
     for upload in files:
         name = os.path.basename(upload.filename)[:120]
         data = upload.read(MAX_VIDEO_BYTES + 1)
         total += len(data)
         if total > MAX_POST_UPLOAD_BYTES:
-            raise UploadError(f"Alle Anhänge zusammen dürfen höchstens {MAX_POST_UPLOAD_BYTES // (1024 * 1024)} MB groß sein.")
+            raise UploadError(_("Alle Anhänge zusammen dürfen höchstens {v1} MB groß sein.", v1=MAX_POST_UPLOAD_BYTES // (1024 * 1024)))
         mime, ext = _video_mime(data[:16])
         if mime:
             if len(data) > MAX_VIDEO_BYTES:
-                raise UploadError(f"„{name}“ ist zu groß – Videos höchstens {MAX_VIDEO_BYTES // (1024 * 1024)} MB.")
+                raise UploadError(_("„{name}“ ist zu groß – Videos höchstens {v3} MB.", name=name, v3=MAX_VIDEO_BYTES // (1024 * 1024)))
             prepared.append({"data": data, "kind": "video", "mime": mime, "ext": ext, "name": name, "w": 0, "h": 0})
             continue
         if len(data) > MAX_IMAGE_BYTES:
-            raise UploadError(f"„{name}“ ist zu groß – Bilder höchstens {MAX_IMAGE_BYTES // (1024 * 1024)} MB.")
+            raise UploadError(_("„{name}“ ist zu groß – Bilder höchstens {v3} MB.", name=name, v3=MAX_IMAGE_BYTES // (1024 * 1024)))
         try:
             encoded, mime, ext, width, height = _encode_image(data, IMAGE_MAX_SIDE)
         except UploadError as exc:
@@ -155,11 +157,11 @@ def cleanup_attachments():
 def save_avatar(email, upload):
     data = upload.read(MAX_AVATAR_BYTES + 1)
     if len(data) > MAX_AVATAR_BYTES:
-        raise UploadError(f"Das Profilbild darf höchstens {MAX_AVATAR_BYTES // (1024 * 1024)} MB groß sein.")
+        raise UploadError(_("Das Profilbild darf höchstens {v1} MB groß sein.", v1=MAX_AVATAR_BYTES // (1024 * 1024)))
     try:
         encoded, _mime, ext, _w, _h = _encode_image(data, AVATAR_SIZE, square=AVATAR_SIZE)
     except UploadError as exc:
-        raise UploadError(f"Das Profilbild {exc}") from exc
+        raise UploadError(_("Das Profilbild {error}", error=exc)) from exc
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)
     filename = uuid.uuid4().hex + ext
     (AVATAR_DIR / filename).write_bytes(encoded)
@@ -183,11 +185,11 @@ def prepare_copter_image(upload):
         return None
     data = upload.read(MAX_IMAGE_BYTES + 1)
     if len(data) > MAX_IMAGE_BYTES:
-        raise UploadError(f"Das Copter-Foto darf höchstens {MAX_IMAGE_BYTES // (1024 * 1024)} MB groß sein.")
+        raise UploadError(_("Das Copter-Foto darf höchstens {v1} MB groß sein.", v1=MAX_IMAGE_BYTES // (1024 * 1024)))
     try:
         encoded, _mime, ext, _w, _h = _encode_image(data, COPTER_IMAGE_SIDE)
     except UploadError as exc:
-        raise UploadError(f"Das Copter-Foto {exc}") from exc
+        raise UploadError(_("Das Copter-Foto {error}", error=exc)) from exc
     return encoded, ext
 
 
@@ -232,27 +234,28 @@ def _parse(value):
 def relative_time(value):
     moment = _parse(value)
     if moment is None:
-        return "nie"
+        return _("nie")
     seconds = (datetime.now(timezone.utc) - moment).total_seconds()
     if seconds < 90:
-        return "gerade eben"
-    for limit, unit, singular, plural in ((3600, 60, "einer Minute", "Minuten"), (86400, 3600, "einer Stunde", "Stunden"),
-                                          (86400 * 30, 86400, "einem Tag", "Tagen"), (86400 * 365, 86400 * 30, "einem Monat", "Monaten")):
+        return _("gerade eben")
+    for limit, unit, singular, plural in (
+        (3600, 60, "vor einer Minute", "vor {n} Minuten"),
+        (86400, 3600, "vor einer Stunde", "vor {n} Stunden"),
+        (86400 * 30, 86400, "vor einem Tag", "vor {n} Tagen"),
+        (86400 * 365, 86400 * 30, "vor einem Monat", "vor {n} Monaten"),
+    ):
         if seconds < limit:
             count = int(seconds // unit)
-            return f"vor {singular}" if count <= 1 else f"vor {count} {plural}"
+            return _(singular) if count <= 1 else _(plural, n=count)
     years = int(seconds // (86400 * 365))
-    return "vor einem Jahr" if years <= 1 else f"vor {years} Jahren"
-
-
-ROLE_TITLES = {"admin": "Administrator"}
+    return _("vor einem Jahr") if years <= 1 else _("vor {n} Jahren", n=years)
 
 
 def member_title(post_count, role=None):
-    """Rollen-Titel (z. B. Administrator) vor dem Titel nach Beitragszahl."""
-    if role in ROLE_TITLES:
-        return ROLE_TITLES[role]
-    return next(title for minimum, title in TITLES if post_count >= minimum)
+    """Rollen-Titel (z. B. Administrator, Moderator) vor dem Titel nach Beitragszahl."""
+    if roles.valid(role):
+        return _(roles.ROLES[role]["title"])
+    return _(next(title for minimum, title in TITLES if post_count >= minimum))
 
 
 def avatar_url(filename):
@@ -293,6 +296,7 @@ def member_cards(emails):
             "initials": initials(row["username"]),
             "title": member_title(row["post_count"], row["role"]),
             "is_admin": row["role"] == "admin",
+            "role": row["role"] if roles.valid(row["role"]) else None,
             "status_text": row["status_text"] or "",
             "online": is_online(row["last_seen_at"]),
             "joined": row["created_at"],
@@ -371,7 +375,7 @@ def copter(copter_id):
     return render_template(
         "copter.html",
         copter=row,
-        specs=[(label, row[key]) for key, label in COPTER_SPECS if row[key]],
+        specs=[(_(label), row[key]) for key, label in COPTER_SPECS if row[key]],
         image=copter_image_url(row["image_filename"]),
         avatar=avatar_url(row["avatar_filename"]),
         others=others,
@@ -390,6 +394,35 @@ def own_profile():
     if not account["username"]:
         return redirect(url_for("konto.profile", benutzername="fehlt"))
     return redirect(url_for("community.profile", username=account["username"]))
+
+
+TEAM_EMAIL = db.FORUM_ADMIN_AUTHOR
+
+
+def team_card():
+    """Profil des Bollisoft-Teams (Beitraege des Admins ohne eigenes Konto)."""
+    prof = db.get_profile(TEAM_EMAIL)
+    return {
+        "name": db.FORUM_TEAM_NAME,
+        "avatar": avatar_url(prof["avatar_filename"]) if prof else None,
+        "status_text": prof["status_text"] if prof else "",
+        "bio": prof["bio"] if prof else "",
+        "signature": prof["signature"] if prof else "",
+        "website": prof["website"] if prof else "",
+        "youtube": prof["youtube"] if prof else "",
+    }
+
+
+@bp.get("/profil/team")
+def team_profile():
+    posts, threads = db.forum_member_stats(TEAM_EMAIL)
+    return render_template(
+        "team_profile.html",
+        team=team_card(),
+        posts=posts,
+        threads=threads,
+        recent_posts=db.forum_recent_posts(TEAM_EMAIL, 10),
+    )
 
 
 @bp.get("/profil/<username>")
@@ -412,6 +445,7 @@ def profile(username):
         avatar=avatar_url(prof["avatar_filename"]) if prof else None,
         title=member_title(posts, account["role"]),
         is_admin_member=account["role"] == "admin",
+        member_role=account["role"] if roles.valid(account["role"]) else None,
         online=is_online(account["last_seen_at"]),
         country=account["country"] if show_country else "",
         copters=db.list_copters(email) if show_copters else [],
@@ -422,6 +456,6 @@ def profile(username):
         entries=entries,
         recent_posts=db.forum_recent_posts(email, 8),
         recent_threads=db.forum_recent_threads(email, 8),
-        license_kind=LICENSE_KINDS.get(licence["kind"], "Drohnen-Ausweis") if licence and licence["status"] == "verified" else None,
+        license_kind=_(LICENSE_KINDS.get(licence["kind"], "Drohnen-Ausweis")) if licence and licence["status"] == "verified" else None,
         is_own=bool(viewer and viewer.lower() == email.lower()),
     )

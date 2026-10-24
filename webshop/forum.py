@@ -23,6 +23,8 @@ from markupsafe import Markup, escape
 
 import community
 import db
+import roles
+from i18n import gettext as _
 
 # Erstausstattung der Kategorien (nur, solange die Tabelle leer ist).
 DEFAULT_CATEGORIES = (
@@ -134,8 +136,8 @@ def setup(app):
 
 
 def _categories():
-    """{slug: (Name, Beschreibung)} in Anzeigereihenfolge."""
-    return {row["slug"]: (row["name"], row["description"]) for row in db.forum_list_categories()}
+    """{slug: (Name, Beschreibung)} in Anzeigereihenfolge - die Standard-Kategorien uebersetzt."""
+    return {row["slug"]: (_(row["name"]), _(row["description"])) for row in db.forum_list_categories()}
 
 
 def _slugify(name):
@@ -152,11 +154,16 @@ def _current_account():
 
 
 def _is_admin():
-    return bool(session.get("is_admin"))
+    return roles.is_admin()
+
+
+def _is_mod():
+    """Admin oder Moderator: darf Beitraege und Themen moderieren."""
+    return roles.is_moderator()
 
 
 def _can_edit(post, account):
-    if _is_admin():
+    if _is_mod():
         return True
     return account is not None and post["author_email"].lower() == account["email"].lower()
 
@@ -198,9 +205,9 @@ def _too_fast(email):
 
 def _check_text(title, body, with_title):
     if with_title and not TITLE_MIN <= len(title) <= TITLE_MAX:
-        return f"Der Titel muss {TITLE_MIN} bis {TITLE_MAX} Zeichen lang sein."
+        return _("Der Titel muss {min} bis {max} Zeichen lang sein.", min=TITLE_MIN, max=TITLE_MAX)
     if not BODY_MIN <= len(body) <= BODY_MAX:
-        return f"Der Beitrag muss {BODY_MIN} bis {BODY_MAX} Zeichen lang sein."
+        return _("Der Beitrag muss {min} bis {max} Zeichen lang sein.", min=BODY_MIN, max=BODY_MAX)
     return None
 
 
@@ -224,7 +231,8 @@ def index():
         latest=db.forum_latest_threads(8),
         account=_current_account(),
         writer=_writer_name(),
-        is_admin=_is_admin(),
+        is_admin=_is_mod(),
+        can_manage=_is_admin(),
     )
 
 
@@ -296,7 +304,7 @@ def category(category):
         pages=pages,
         account=_current_account(),
         writer=_writer_name(),
-        is_admin=_is_admin(),
+        is_admin=_is_mod(),
     )
 
 
@@ -315,7 +323,7 @@ def new_thread(category):
         body = (request.form.get("body") or "").strip()
         error = _check_text(title, body, with_title=True)
         if error is None and _too_fast(author):
-            error = "Bitte einen Moment warten, bevor du den nächsten Beitrag schreibst."
+            error = _("Bitte einen Moment warten, bevor du den nächsten Beitrag schreibst.")
         prepared = []
         if error is None:
             try:
@@ -354,6 +362,7 @@ def thread(thread_id):
         attachments=db.forum_attachments_for(post["id"] for post in posts),
         cards=community.member_cards(post["author_email"] for post in posts),
         team_author=db.FORUM_ADMIN_AUTHOR,
+        team=community.team_card() if any(post["author_is_team"] for post in posts) else None,
         categories=categories,
         topic=topic,
         slug=topic["category"],
@@ -364,7 +373,7 @@ def thread(thread_id):
         pages=pages,
         account=account,
         writer=_writer_name(),
-        is_admin=_is_admin(),
+        is_admin=_is_mod(),
         can_edit=lambda post: _can_edit(post, account),
         owns_thread=_owns_thread(topic, account),
         body_max=BODY_MAX,
@@ -381,12 +390,12 @@ def reply(thread_id):
     if gate:
         return gate
     body = (request.form.get("body") or "").strip()
-    if topic["locked"] and not _is_admin():
-        error = "Dieses Thema ist gesperrt."
+    if topic["locked"] and not _is_mod():
+        error = _("Dieses Thema ist gesperrt.")
     else:
         error = _check_text("", body, with_title=False)
     if error is None and _too_fast(author):
-        error = "Bitte einen Moment warten, bevor du den nächsten Beitrag schreibst."
+        error = _("Bitte einen Moment warten, bevor du den nächsten Beitrag schreibst.")
     prepared = []
     if error is None:
         try:
@@ -480,7 +489,7 @@ def delete_thread(thread_id):
     topic = db.forum_get_thread(thread_id)
     if topic is None:
         abort(404)
-    if not (_is_admin() or _owns_thread(topic, _current_account())):
+    if not (_is_mod() or _owns_thread(topic, _current_account())):
         abort(403)
     category = db.forum_delete_thread(thread_id)
     community.cleanup_attachments()
@@ -489,14 +498,14 @@ def delete_thread(thread_id):
 
 # --- Admin ----------------------------------------------------------------
 
-def _admin_only():
-    if not _is_admin():
+def _mod_only():
+    if not _is_mod():
         abort(403)
 
 
 @bp.post("/thema/<int:thread_id>/moderation")
 def moderate(thread_id):
-    _admin_only()
+    _mod_only()
     topic = db.forum_get_thread(thread_id)
     if topic is None:
         abort(404)
@@ -529,9 +538,9 @@ def _category_fields(form):
     except ValueError:
         sort_order = 0
     if not 2 <= len(name) <= CATEGORY_NAME_MAX:
-        return None, f"Der Name muss 2 bis {CATEGORY_NAME_MAX} Zeichen lang sein."
+        return None, _("Der Name muss 2 bis {max} Zeichen lang sein.", max=CATEGORY_NAME_MAX)
     if len(description) > CATEGORY_DESCRIPTION_MAX:
-        return None, f"Die Beschreibung darf höchstens {CATEGORY_DESCRIPTION_MAX} Zeichen lang sein."
+        return None, _("Die Beschreibung darf höchstens {category_description_max} Zeichen lang sein.", category_description_max=CATEGORY_DESCRIPTION_MAX)
     return {"name": name, "description": description, "sort_order": sort_order}, None
 
 
@@ -566,7 +575,7 @@ def manage():
                 try:
                     db.forum_create_category(new_slug, fields["name"], fields["description"], fields["sort_order"])
                 except sqlite3.IntegrityError:
-                    error = "Diese Kategorie gibt es bereits."
+                    error = _("Diese Kategorie gibt es bereits.")
                 else:
                     return redirect(url_for("forum.manage", ok="angelegt"))
     stats = db.forum_category_stats()

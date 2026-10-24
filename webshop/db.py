@@ -1620,6 +1620,11 @@ def pilot_license_filenames():
         return {row[0] for row in connection.execute("SELECT filename FROM pilot_licenses")}
 
 
+def set_account_role_by_id(account_id, role):
+    with _get_connection() as connection:
+        connection.execute("UPDATE accounts SET role = ? WHERE id = ?", (role, account_id))
+
+
 def set_account_role(username, role):
     """Rolle eines Kontos setzen ('admin' oder None). Liefert True, wenn das Konto existiert."""
     with _get_connection() as connection:

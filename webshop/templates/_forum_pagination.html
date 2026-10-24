@@ -1,8 +1,8 @@
 {#- Seitenzahlen - erwartet page, pages, page_endpoint und page_args -#}
 {% if pages > 1 %}
-  <nav class="forum-pagination" aria-label="Seiten">
+  <nav class="forum-pagination" aria-label="{{ _("Seiten") }}">
     {% if page > 1 %}
-      <a href="{{ url_for(page_endpoint, seite=page - 1 if page > 2 else None, **page_args) }}">← Zurück</a>
+      <a href="{{ url_for(page_endpoint, seite=page - 1 if page > 2 else None, **page_args) }}">{{ _("← Zurück") }}</a>
     {% endif %}
     {% for number in range(1, pages + 1) %}
       {% if number == page %}
@@ -14,7 +14,7 @@
       {% endif %}
     {% endfor %}
     {% if page < pages %}
-      <a href="{{ url_for(page_endpoint, seite=page + 1, **page_args) }}">Weiter →</a>
+      <a href="{{ url_for(page_endpoint, seite=page + 1, **page_args) }}">{{ _("Weiter →") }}</a>
     {% endif %}
   </nav>
 {% endif %}

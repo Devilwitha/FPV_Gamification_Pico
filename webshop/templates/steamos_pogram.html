@@ -1,102 +1,87 @@
 {% extends "base.html" %}
 
-{% block title %}Steam Deck RFID Launcher – Automatischer Spielstart mit Pico W{% endblock %}
+{% block title %}{{ _("Steam Deck RFID Launcher – Automatischer Spielstart mit Pico W") }}{% endblock %}
 
 {% block content %}
   <section class="hero">
-    <h1>Steam Deck RFID Launcher</h1>
+    <h1>{{ _("Steam Deck RFID Launcher") }}</h1>
     <p class="hero-subtitle">
-      Der Steam Deck RFID Launcher verbindet einen Raspberry Pi Pico W mit
-      SteamOS, damit Spiele per RFID-Karte gestartet werden können - direkt
-      im Game Mode, ohne Desktop-Wechsel. Ein lokaler SteamOS-Dienst hält
-      die Zuordnung von Karten, Spielen, Farben und Sounds aktuell und
-      startet Titel automatisch beim Auflegen. Die LED-Ausgabe läuft
-      standardmäßig über Corsair-LEDs per USB; ein zusätzlicher LED-Pico ist
-      optional möglich.
+      {{ _("Der Steam Deck RFID Launcher verbindet einen Raspberry Pi Pico W mit SteamOS, damit Spiele per RFID-Karte gestartet werden können - direkt im Game Mode, ohne Desktop-Wechsel. Ein lokaler SteamOS-Dienst hält die Zuordnung von Karten, Spielen, Farben und Sounds aktuell und startet Titel automatisch beim Auflegen. Die LED-Ausgabe läuft standardmäßig über Corsair-LEDs per USB; ein zusätzlicher LED-Pico ist optional möglich.") }}
     </p>
-    <p class="form-hint">Stand: August 2026 - stabiler Betrieb mit RFID-Pico, Corsair-LED-Steuerung per USB, Web-UI und /control-Fernsteuerung; LED-Pico optional.</p>
+    <p class="form-hint">{{ _("Stand: August 2026 - stabiler Betrieb mit RFID-Pico, Corsair-LED-Steuerung per USB, Web-UI und /control-Fernsteuerung; LED-Pico optional.") }}</p>
     <a class="btn btn-primary btn-large" href="https://github.com/Devilwitha/SteamOs_Pogram" target="_blank" rel="noopener noreferrer">
-      Projekt auf GitHub ansehen
+      {{ _("Projekt auf GitHub ansehen") }}
     </a>
     <a class="btn btn-secondary btn-large" href="/coverstore-maker/" target="_blank" rel="noopener noreferrer">
-      CoverStore/Maker öffnen
+      {{ _("CoverStore/Maker öffnen") }}
     </a>
   </section>
 
   <section class="features">
-    <h2>Aktueller Funktionsumfang</h2>
+    <h2>{{ _("Aktueller Funktionsumfang") }}</h2>
     <div class="feature-grid">
       <article class="feature-card">
-        <h3>Spielstart per RFID im Game Mode</h3>
+        <h3>{{ _("Spielstart per RFID im Game Mode") }}</h3>
         <p>
-          Karte auf den RC522 legen - SteamOS erkennt die Zuordnung und
-          startet das passende Spiel sofort, auch während der Gaming-Oberfläche.
+          {{ _("Karte auf den RC522 legen - SteamOS erkennt die Zuordnung und startet das passende Spiel sofort, auch während der Gaming-Oberfläche.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Tag-Spiel-Zuordnung in beide Richtungen</h3>
+        <h3>{{ _("Tag-Spiel-Zuordnung in beide Richtungen") }}</h3>
         <p>
-          Entweder zuerst ein Spiel wählen und dann einen neuen Tag auflegen,
-          oder einen bestehenden Tag direkt aus der Liste einem Titel zuordnen.
+          {{ _("Entweder zuerst ein Spiel wählen und dann einen neuen Tag auflegen, oder einen bestehenden Tag direkt aus der Liste einem Titel zuordnen.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Dauerbetrieb mit SteamOS-Dienst</h3>
+        <h3>{{ _("Dauerbetrieb mit SteamOS-Dienst") }}</h3>
         <p>
-          Ein systemd-User-Service läuft kontinuierlich, überwacht den Pico,
-          synchronisiert die Spieleliste und bestätigt Starts ans Gerät zurück.
+          {{ _("Ein systemd-User-Service läuft kontinuierlich, überwacht den Pico, synchronisiert die Spieleliste und bestätigt Starts ans Gerät zurück.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Integrierte Weboberfläche auf dem Pico</h3>
+        <h3>{{ _("Integrierte Weboberfläche auf dem Pico") }}</h3>
         <p>
-          Der Pico hostet eine lokale Statusseite mit Gerätezustand,
-          Tag-Informationen und Live-Rückmeldungen unter <code>http://&lt;pico-ip&gt;/</code>.
+          {{ _("Der Pico hostet eine lokale Statusseite mit Gerätezustand, Tag-Informationen und Live-Rückmeldungen unter") }} <code>http://&lt;pico-ip&gt;/</code>.
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Fernsteuerung über <code>/control</code></h3>
+        <h3>{{ _("Fernsteuerung über") }} <code>/control</code></h3>
         <p>
-          Die komplette Steuerung (Spiele, Tags, Farben, Sounds) ist per
-          Token-geschützter /control-Seite verfügbar - ohne zusätzliche
-          öffentliche Ports.
+          {{ _("Die komplette Steuerung (Spiele, Tags, Farben, Sounds) ist per Token-geschützter /control-Seite verfügbar - ohne zusätzliche öffentliche Ports.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Corsair-LEDs per USB angesteuert</h3>
+        <h3>{{ _("Corsair-LEDs per USB angesteuert") }}</h3>
         <p>
-          Die Beleuchtung wird direkt über USB gesteuert (Corsair-Setup),
-          ohne dass dafür ein zweiter Pico erforderlich ist.
+          {{ _("Die Beleuchtung wird direkt über USB gesteuert (Corsair-Setup), ohne dass dafür ein zweiter Pico erforderlich ist.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Optionales LCD und Status-LEDs</h3>
+        <h3>{{ _("Optionales LCD und Status-LEDs") }}</h3>
         <p>
-          Ein 16x2-I2C-LCD zeigt Spielname und Status direkt am Gerät; zwei
-          LEDs (rot/grün) signalisieren den bestätigten Spielstart.
+          {{ _("Ein 16x2-I2C-LCD zeigt Spielname und Status direkt am Gerät; zwei LEDs (rot/grün) signalisieren den bestätigten Spielstart.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Hotspot-Fallback und Auto-Erkennung</h3>
+        <h3>{{ _("Hotspot-Fallback und Auto-Erkennung") }}</h3>
         <p>
-          Ohne gespeichertes WLAN startet der Pico automatisch einen
-          Setup-Hotspot; danach findet SteamOS die Geräte per UDP-Broadcast.
+          {{ _("Ohne gespeichertes WLAN startet der Pico automatisch einen Setup-Hotspot; danach findet SteamOS die Geräte per UDP-Broadcast.") }}
         </p>
       </article>
     </div>
   </section>
 
   <section class="wiring">
-    <h2>RFID-Leser (RC522) anschließen</h2>
+    <h2>{{ _("RFID-Leser (RC522) anschließen") }}</h2>
     <p class="wiring-intro">
-      Der RC522 hängt am Standard-SPI0 des Pico:
+      {{ _("Der RC522 hängt am Standard-SPI0 des Pico:") }}
     </p>
     <pre class="wiring-box">RC522                  Raspberry Pi Pico W
 --------------------------------------------------
@@ -108,50 +93,41 @@
   3.3V         ------------------->  3V3
   GND          ------------------->  GND</pre>
     <p class="wiring-note">
-      Optional zusätzlich möglich: ein 16x2-I2C-LCD (SDA an GP0, SCL an
-      GP1) sowie zwei einfache Status-LEDs (rot an GP7, grün an GP8) –
-      beides wird automatisch erkannt und übersprungen, falls nicht
-      angeschlossen.
+      {{ _("Optional zusätzlich möglich: ein 16x2-I2C-LCD (SDA an GP0, SCL an GP1) sowie zwei einfache Status-LEDs (rot an GP7, grün an GP8) – beides wird automatisch erkannt und übersprungen, falls nicht angeschlossen.") }}
     </p>
   </section>
 
   <section class="wiring">
-    <h2>Corsair-LEDs per USB verbinden</h2>
+    <h2>{{ _("Corsair-LEDs per USB verbinden") }}</h2>
     <p class="wiring-intro">
-      Die LED-Steuerung läuft direkt über USB vom Steam Deck/PC zum
-      Corsair-Gerät - ohne zusätzlichen LED-Pico.
+      {{ _("Die LED-Steuerung läuft direkt über USB vom Steam Deck/PC zum Corsair-Gerät - ohne zusätzlichen LED-Pico.") }}
     </p>
     <pre class="wiring-box">Steam Deck / PC      ------------------->  USB-C/USB-A  ------------------->  Corsair-LED-Gerät</pre>
     <p class="wiring-note">
-      Optional kannst du trotzdem einen separaten LED-Pico ergänzen, falls du
-      zusätzlich einen eigenen WS2812/NeoPixel-Streifen ansteuern willst.
+      {{ _("Optional kannst du trotzdem einen separaten LED-Pico ergänzen, falls du zusätzlich einen eigenen WS2812/NeoPixel-Streifen ansteuern willst.") }}
     </p>
   </section>
 
   <section class="wiring">
-    <h2>Mit dem Hotspot verbinden</h2>
+    <h2>{{ _("Mit dem Hotspot verbinden") }}</h2>
     <p class="wiring-intro">
-      Findet ein Pico kein konfiguriertes WLAN, spannt er automatisch einen
-      eigenen Einrichtungs-Hotspot auf (unter <code>http://192.168.4.1/</code>
-      erreichbar):
+      {{ _("Findet ein Pico kein konfiguriertes WLAN, spannt er automatisch einen eigenen Einrichtungs-Hotspot auf (unter") }} <code>http://192.168.4.1/</code>
+      {{ _("erreichbar):") }}
     </p>
     <pre class="wiring-box">RFID-Pico   SSID: Pico-Setup       Passwort: picosetup123
   LED-Pico (optional)  SSID: LedPico-Setup   Passwort: picosetup123</pre>
     <p class="wiring-note">
-      Darüber lässt sich das eigentliche Heim-WLAN hinterlegen – der Pico
-      startet danach automatisch neu und verbindet sich damit.
+      {{ _("Darüber lässt sich das eigentliche Heim-WLAN hinterlegen – der Pico startet danach automatisch neu und verbindet sich damit.") }}
     </p>
   </section>
 
   <section class="cta">
-    <h2>Selbst nachbauen?</h2>
+    <h2>{{ _("Selbst nachbauen?") }}</h2>
     <p>
-      Der komplette Quellcode (Pico-Firmware, SteamOS-Dienst samt GUI,
-      optionaler LED-Pico und Windows-Testumgebung) steht offen auf GitHub
-      zur Verfügung.
+      {{ _("Der komplette Quellcode (Pico-Firmware, SteamOS-Dienst samt GUI, optionaler LED-Pico und Windows-Testumgebung) steht offen auf GitHub zur Verfügung.") }}
     </p>
     <a class="btn btn-primary btn-large" href="https://github.com/Devilwitha/SteamOs_Pogram" target="_blank" rel="noopener noreferrer">
-      Zum GitHub-Repository
+      {{ _("Zum GitHub-Repository") }}
     </a>
   </section>
 {% endblock %}

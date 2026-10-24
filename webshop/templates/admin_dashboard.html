@@ -8,6 +8,7 @@
     <p class="license-intro">
       Eingeloggt im Admin-Bereich. <a href="{{ url_for('admin_logout') }}">Ausloggen</a>
       · <a href="{{ url_for('forum.manage') }}">Forum verwalten</a>
+      · <a href="{{ url_for('admin_users.team_profile_edit') }}">Team-Profil bearbeiten</a>
     </p>
 
     {% if message %}
@@ -117,7 +118,7 @@
               <tr>
                 <td>
                   {% if user.username %}<a href="{{ url_for('community.profile', username=user.username) }}">{{ user.username }}</a>{% else %}<span class="form-hint">ohne Benutzername</span>{% endif %}
-                  {% if user.role == "admin" %}<span class="forum-badge forum-badge-admin">Admin</span>{% endif %}
+                  {% if user.role in roles %}<span class="forum-badge forum-badge-role role-{{ user.role }}">{{ roles[user.role].badge }}</span>{% endif %}
                   <br /><small>{{ user.full_name }}{% if user.country %} · {{ user.country|country_name }}{% endif %}</small>
                 </td>
                 <td>{{ user.email }}</td>

@@ -1,44 +1,43 @@
 {% extends "base.html" %}
 
-{% block title %}Bollisoft – Profil & Passwort{% endblock %}
+{% block title %}{{ _("Bollisoft – Profil & Passwort") }}{% endblock %}
 
 {% block content %}
   <section class="account-page">
-    <h1>Profil &amp; Passwort</h1>
+    <h1>{{ _("Profil & Passwort") }}</h1>
     {% set active = "profile" %}
     {% include "_account_tabs.html" %}
 
     {% if message == "profil" %}
-      <div class="license-success">Profil gespeichert.</div>
+      <div class="license-success">{{ _("Profil gespeichert.") }}</div>
     {% elif message == "passwort" %}
-      <div class="license-success">Passwort geändert.</div>
+      <div class="license-success">{{ _("Passwort geändert.") }}</div>
     {% endif %}
     {% if request.args.get("benutzername") == "fehlt" %}
       <div class="license-warning">
-        Für das Forum brauchst du einen Benutzernamen. Lege ihn hier fest und speichere das Profil.
+        {{ _("Für das Forum brauchst du einen Benutzernamen. Lege ihn hier fest und speichere das Profil.") }}
       </div>
     {% endif %}
     {% if next_url and account.username %}
-      <p><a class="btn btn-secondary" href="{{ next_url }}">Zurück zum Forum</a></p>
+      <p><a class="btn btn-secondary" href="{{ next_url }}">{{ _("Zurück zum Forum") }}</a></p>
     {% endif %}
 
     <div class="login-card account-card">
-      <h2>Profil</h2>
+      <h2>{{ _("Profil") }}</h2>
       {% if profile_error %}
         <div class="checkout-error">{{ profile_error }}</div>
       {% endif %}
       <form method="post" action="{{ url_for('konto.profile', next=next_url) }}">
         <input type="hidden" name="action" value="profile" />
         <div class="form-field">
-          <label for="profile-email">E-Mail-Adresse</label>
+          <label for="profile-email">{{ _("E-Mail-Adresse") }}</label>
           <input type="email" id="profile-email" value="{{ account.email }}" readonly />
           <p class="form-hint">
-            An der E-Mail-Adresse hängen Bestellungen, Lizenzen und deine gespeicherten Drohnen-Tools-Daten.
-            Sie lässt sich deshalb hier nicht ändern.
+            {{ _("An der E-Mail-Adresse hängen Bestellungen, Lizenzen und deine gespeicherten Drohnen-Tools-Daten. Sie lässt sich deshalb hier nicht ändern.") }}
           </p>
         </div>
         <div class="form-field">
-          <label for="profile-username">Benutzername</label>
+          <label for="profile-username">{{ _("Benutzername") }}</label>
           <input
             type="text"
             id="profile-username"
@@ -50,41 +49,41 @@
             pattern="[A-Za-z0-9ÄÖÜäöüß][A-Za-z0-9ÄÖÜäöüß_.\-]{2,23}"
             required
           />
-          <p class="form-hint">Wird im Forum angezeigt. 3–24 Zeichen: Buchstaben, Ziffern, _ . -</p>
+          <p class="form-hint">{{ _("Wird im Forum angezeigt. 3–24 Zeichen: Buchstaben, Ziffern, _ . -") }}</p>
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label for="profile-full-name">Name</label>
+            <label for="profile-full-name">{{ _("Name") }}</label>
             <input type="text" id="profile-full-name" name="full_name" value="{{ values.get('full_name') or '' }}" autocomplete="name" maxlength="200" required />
           </div>
           <div class="form-field">
-            <label for="profile-country">Land</label>
+            <label for="profile-country">{{ _("Land") }}</label>
             {% with select_id = "profile-country", selected = values.get('country') or '' %}{% include "_country_select.html" %}{% endwith %}
           </div>
         </div>
         <div class="form-field">
-          <label for="profile-address">Adresse (optional)</label>
+          <label for="profile-address">{{ _("Adresse (optional)") }}</label>
           <input type="text" id="profile-address" name="address" value="{{ values.get('address') or '' }}" autocomplete="street-address" maxlength="200" />
         </div>
         <div class="form-field">
-          <label for="profile-phone">Telefon (optional)</label>
+          <label for="profile-phone">{{ _("Telefon (optional)") }}</label>
           <input type="tel" id="profile-phone" name="phone" value="{{ values.get('phone') or '' }}" autocomplete="tel" maxlength="200" />
         </div>
-        <button type="submit" class="btn btn-primary">Profil speichern</button>
+        <button type="submit" class="btn btn-primary">{{ _("Profil speichern") }}</button>
       </form>
     </div>
 
     <div class="login-card account-card" id="oeffentliches-profil">
-      <h2>Öffentliches Profil</h2>
+      <h2>{{ _("Öffentliches Profil") }}</h2>
       {% if message == "oeffentlich" %}
-        <div class="license-success">Öffentliches Profil gespeichert.</div>
+        <div class="license-success">{{ _("Öffentliches Profil gespeichert.") }}</div>
       {% endif %}
       {% if public_error %}
         <div class="checkout-error">{{ public_error }}</div>
       {% endif %}
       <p class="form-hint">
-        So sehen dich andere im Forum und auf deiner Profilseite.
-        {% if account.username %}<a href="{{ url_for('community.profile', username=account.username) }}">Profil ansehen</a>{% endif %}
+        {{ _("So sehen dich andere im Forum und auf deiner Profilseite.") }}
+        {% if account.username %}<a href="{{ url_for('community.profile', username=account.username) }}">{{ _("Profil ansehen") }}</a>{% endif %}
       </p>
       <form method="post" action="{{ url_for('konto.profile') }}" enctype="multipart/form-data">
         <input type="hidden" name="action" value="public" />
@@ -93,63 +92,63 @@
             {% if avatar %}<img src="{{ avatar }}" alt="" width="96" height="96" />{% else %}<span>{{ initials(account.username) }}</span>{% endif %}
           </div>
           <div class="form-field">
-            <label for="profile-avatar">Profilbild (JPG, PNG, WebP – wird quadratisch zugeschnitten)</label>
+            <label for="profile-avatar">{{ _("Profilbild (JPG, PNG, WebP – wird quadratisch zugeschnitten)") }}</label>
             <input type="file" id="profile-avatar" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" />
             {% if avatar %}
-              <label class="checkbox-label"><input type="checkbox" name="remove_avatar" value="1" /> Profilbild entfernen</label>
+              <label class="checkbox-label"><input type="checkbox" name="remove_avatar" value="1" /> {{ _("Profilbild entfernen") }}</label>
             {% endif %}
           </div>
         </div>
         <div class="form-field">
-          <label for="profile-status">Status (kurz, z. B. „Freestyle seit 2019“)</label>
+          <label for="profile-status">{{ _("Status (kurz, z. B. „Freestyle seit 2019“)") }}</label>
           <input type="text" id="profile-status" name="status_text" maxlength="60" value="{{ public_values.get('status_text') or '' }}" />
         </div>
         <div class="form-field">
-          <label for="profile-bio">Über mich</label>
+          <label for="profile-bio">{{ _("Über mich") }}</label>
           <textarea id="profile-bio" name="bio" rows="5" maxlength="2000">{{ public_values.get('bio') or '' }}</textarea>
         </div>
         <div class="form-field">
-          <label for="profile-signature">Signatur (unter deinen Forenbeiträgen)</label>
+          <label for="profile-signature">{{ _("Signatur (unter deinen Forenbeiträgen)") }}</label>
           <input type="text" id="profile-signature" name="signature" maxlength="300" value="{{ public_values.get('signature') or '' }}" />
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label for="profile-website">Webseite (optional)</label>
-            <input type="text" id="profile-website" name="website" maxlength="200" placeholder="https://" value="{{ public_values.get('website') or '' }}" />
+            <label for="profile-website">{{ _("Webseite (optional)") }}</label>
+            <input type="text" id="profile-website" name="website" maxlength="200" placeholder="{{ _("https://") }}" value="{{ public_values.get('website') or '' }}" />
           </div>
           <div class="form-field">
-            <label for="profile-youtube">YouTube-Kanal (optional)</label>
-            <input type="text" id="profile-youtube" name="youtube" maxlength="200" placeholder="https://youtube.com/@…" value="{{ public_values.get('youtube') or '' }}" />
+            <label for="profile-youtube">{{ _("YouTube-Kanal (optional)") }}</label>
+            <input type="text" id="profile-youtube" name="youtube" maxlength="200" placeholder="{{ _("https://youtube.com/@…") }}" value="{{ public_values.get('youtube') or '' }}" />
           </div>
         </div>
         {% set show_country = public_values.get('show_country') if public_values else 1 %}
         {% set show_copters = public_values.get('show_copters') if public_values else 1 %}
-        <label class="checkbox-label"><input type="checkbox" name="show_country" value="1"{% if show_country in (1, '1', None) %} checked{% endif %} /> Land im Profil und in der Länder-Rangliste des Leaderboards anzeigen</label>
-        <label class="checkbox-label"><input type="checkbox" name="show_copters" value="1"{% if show_copters in (1, '1', None) %} checked{% endif %} /> Meine Copter im Profil und im Forum anzeigen</label>
-        <button type="submit" class="btn btn-primary">Öffentliches Profil speichern</button>
+        <label class="checkbox-label"><input type="checkbox" name="show_country" value="1"{% if show_country in (1, '1', None) %} checked{% endif %} /> {{ _("Land im Profil und in der Länder-Rangliste des Leaderboards anzeigen") }}</label>
+        <label class="checkbox-label"><input type="checkbox" name="show_copters" value="1"{% if show_copters in (1, '1', None) %} checked{% endif %} /> {{ _("Meine Copter im Profil und im Forum anzeigen") }}</label>
+        <button type="submit" class="btn btn-primary">{{ _("Öffentliches Profil speichern") }}</button>
       </form>
     </div>
 
     <div class="login-card account-card">
-      <h2>Passwort ändern</h2>
+      <h2>{{ _("Passwort ändern") }}</h2>
       {% if password_error %}
         <div class="checkout-error">{{ password_error }}</div>
       {% endif %}
       <form method="post" action="{{ url_for('konto.profile') }}">
         <input type="hidden" name="action" value="password" />
         <div class="form-field">
-          <label for="current-password">Aktuelles Passwort</label>
+          <label for="current-password">{{ _("Aktuelles Passwort") }}</label>
           <input type="password" id="current-password" name="current_password" autocomplete="current-password" required />
         </div>
         <div class="form-field">
-          <label for="new-password">Neues Passwort (mind. 8 Zeichen)</label>
+          <label for="new-password">{{ _("Neues Passwort (mind. 8 Zeichen)") }}</label>
           <input type="password" id="new-password" name="new_password" autocomplete="new-password" minlength="8" required />
         </div>
         <div class="form-field">
-          <label for="new-password-confirm">Neues Passwort wiederholen</label>
+          <label for="new-password-confirm">{{ _("Neues Passwort wiederholen") }}</label>
           <input type="password" id="new-password-confirm" name="new_password_confirm" autocomplete="new-password" minlength="8" required />
         </div>
-        <button type="submit" class="btn btn-primary">Passwort ändern</button>
+        <button type="submit" class="btn btn-primary">{{ _("Passwort ändern") }}</button>
       </form>
     </div>
   </section>
@@ -160,7 +159,7 @@
       const confirm = document.getElementById("new-password-confirm");
       const check = () => {
         confirm.setCustomValidity(
-          confirm.value && confirm.value !== password.value ? "Die Passwörter stimmen nicht überein." : ""
+          confirm.value && confirm.value !== password.value ? {{ _("Die Passwörter stimmen nicht überein.")|tojson }} : ""
         );
       };
       password.addEventListener("input", check);

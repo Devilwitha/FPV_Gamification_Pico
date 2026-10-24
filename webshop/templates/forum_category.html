@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Bollisoft – Forum – {{ category[0] }}{% endblock %}
+{% block title %}{{ _("Bollisoft – Forum –") }} {{ category[0] }}{% endblock %}
 
 {% block content %}
   <section class="forum-page">
-    <nav class="forum-breadcrumbs" aria-label="Pfad">
-      <a href="{{ url_for('forum.index') }}">Forum</a> <span>›</span> <span>{{ category[0] }}</span>
+    <nav class="forum-breadcrumbs" aria-label="{{ _("Pfad") }}">
+      <a href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a> <span>›</span> <span>{{ category[0] }}</span>
     </nav>
     <div class="forum-heading">
       <div>
@@ -13,20 +13,20 @@
         <p class="form-hint">{{ category[1] }}</p>
       </div>
       {% if writer %}
-        <a class="btn btn-primary" href="{{ url_for('forum.new_thread', category=slug) }}">Neues Thema</a>
+        <a class="btn btn-primary" href="{{ url_for('forum.new_thread', category=slug) }}">{{ _("Neues Thema") }}</a>
       {% elif account %}
-        <a class="btn btn-secondary" href="{{ url_for('konto.profile', next=request.path, benutzername='fehlt') }}">Benutzername festlegen</a>
+        <a class="btn btn-secondary" href="{{ url_for('konto.profile', next=request.path, benutzername='fehlt') }}">{{ _("Benutzername festlegen") }}</a>
       {% else %}
-        <a class="btn btn-secondary" href="{{ url_for('login', next=request.path) }}">Zum Schreiben einloggen</a>
+        <a class="btn btn-secondary" href="{{ url_for('login', next=request.path) }}">{{ _("Zum Schreiben einloggen") }}</a>
       {% endif %}
     </div>
 
     {% with search_category = slug %}{% include "_forum_search.html" %}{% endwith %}
 
     {% if request.args.get("geloescht") %}
-      <div class="license-success">Thema gelöscht.</div>
+      <div class="license-success">{{ _("Thema gelöscht.") }}</div>
     {% elif request.args.get("verschoben") %}
-      <div class="license-success">Thema verschoben.</div>
+      <div class="license-success">{{ _("Thema verschoben.") }}</div>
     {% endif %}
     {% if threads %}
       {% set show_category = false %}
@@ -35,7 +35,7 @@
       {% set page_args = {"category": slug} %}
       {% include "_forum_pagination.html" %}
     {% else %}
-      <p class="form-hint">In dieser Kategorie gibt es noch keine Themen.</p>
+      <p class="form-hint">{{ _("In dieser Kategorie gibt es noch keine Themen.") }}</p>
     {% endif %}
   </section>
   {% include "_forum_confirm.html" %}

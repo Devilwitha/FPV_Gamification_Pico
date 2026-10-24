@@ -1,9 +1,9 @@
 {#- Unterseiten des Kontos - active: "overview" | "profile" | "copters" | "license" -#}
-<nav class="account-tabs" aria-label="Konto">
-  <a href="{{ url_for('account') }}"{% if active == "overview" %} aria-current="page"{% endif %}>Übersicht</a>
-  <a href="{{ url_for('konto.profile') }}"{% if active == "profile" %} aria-current="page"{% endif %}>Profil &amp; Passwort</a>
-  <a href="{{ url_for('konto.copters') }}"{% if active == "copters" %} aria-current="page"{% endif %}>Meine Copter</a>
-  <a href="{{ url_for('ausweis.page') }}"{% if active == "license" %} aria-current="page"{% endif %}>Drohnen-Ausweis</a>
-  <a href="{{ url_for('community.own_profile') }}">Öffentliches Profil</a>
-  <a href="{{ url_for('forum.index') }}">Forum</a>
+<nav class="account-tabs" aria-label="{{ _("Konto") }}">
+  <a href="{{ url_for('account') }}"{% if active == "overview" %} aria-current="page"{% endif %}>{{ _("Übersicht") }}</a>
+  <a href="{{ url_for('konto.profile') }}"{% if active == "profile" %} aria-current="page"{% endif %}>{{ _("Profil & Passwort") }}</a>
+  <a href="{{ url_for('konto.copters') }}"{% if active == "copters" %} aria-current="page"{% endif %}>{{ _("Meine Copter") }}</a>
+  <a href="{{ url_for('ausweis.page') }}"{% if active == "license" %} aria-current="page"{% endif %}>{{ _("Drohnen-Ausweis") }}</a>
+  <a href="{{ url_for('community.own_profile') }}">{{ _("Öffentliches Profil") }}</a>
+  <a href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a>
 </nav>

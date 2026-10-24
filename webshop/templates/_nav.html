@@ -6,12 +6,12 @@
 <svg class="nav-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
 {%- endset -%}
 <header class="site-header" data-site-nav>
-  <nav class="navbar" aria-label="Hauptnavigation">
+  <nav class="navbar" aria-label="{{ _("Hauptnavigation") }}">
     <a class="brand" href="{{ url_for('index') }}">
       <img class="brand-logo" src="{{ url_for('static', filename='bilder/branding/bollisoft-logo.png') }}" alt="Bollisoft Logo" width="38" height="44" />
       Bollisoft
     </a>
-    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Menü öffnen">
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="{{ _("Menü öffnen") }}" data-label-open="{{ _("Menü öffnen") }}" data-label-close="{{ _("Menü schließen") }}">
       <span class="nav-toggle-bar"></span>
       <span class="nav-toggle-bar"></span>
       <span class="nav-toggle-bar"></span>
@@ -19,83 +19,93 @@
     <div class="nav-panel" id="site-nav">
       <div class="nav-main">
         <details class="nav-group">
-          <summary class="nav-trigger">Produkte {{ chevron }}</summary>
+          <summary class="nav-trigger">{{ _("Produkte") }} {{ chevron }}</summary>
           <div class="nav-dropdown">
             <a class="nav-item" href="{{ url_for('webshop_home') }}">
               <span class="nav-item-title">FPV Gamification Pico</span>
-              <span class="nav-item-text">Score-Tracker und Mini-Games für FPV-Drohnen</span>
+              <span class="nav-item-text">{{ _("Score-Tracker und Mini-Games für FPV-Drohnen") }}</span>
             </a>
             <a class="nav-item" href="{{ url_for('picodesk_home') }}">
               <span class="nav-item-title">Picodesk</span>
-              <span class="nav-item-text">WLAN-Steuerung für den Sitz-/Steh-Tisch</span>
+              <span class="nav-item-text">{{ _("WLAN-Steuerung für den Sitz-/Steh-Tisch") }}</span>
             </a>
             <a class="nav-item" href="{{ url_for('steamdeck_rfid_launcher_home') }}">
-              <span class="nav-item-title">Steam Deck RFID Launcher</span>
-              <span class="nav-item-text">Automatischer Spielstart mit Pico W</span>
+              <span class="nav-item-title">{{ _("Steam Deck RFID Launcher") }}</span>
+              <span class="nav-item-text">{{ _("Automatischer Spielstart mit Pico W") }}</span>
             </a>
           </div>
         </details>
         <details class="nav-group">
-          <summary class="nav-trigger">Tools {{ chevron }}</summary>
+          <summary class="nav-trigger">{{ _("Tools") }} {{ chevron }}</summary>
           <div class="nav-dropdown">
             <a class="nav-item" href="/tx15-werkstatt/">
-              <span class="nav-item-title">Drohnen Tools</span>
-              <span class="nav-item-text">Themes, Lua-Skripte, Konfiguratoren und Blackbox-Auswertung</span>
+              <span class="nav-item-title">{{ _("Drohnen Tools") }}</span>
+              <span class="nav-item-text">{{ _("Themes, Lua-Skripte, Konfiguratoren und Blackbox-Auswertung") }}</span>
             </a>
             <a class="nav-item" href="/coverstore-maker/">
-              <span class="nav-item-title">CoverStore/Maker</span>
-              <span class="nav-item-text">Spiele-Cover gestalten, finden und teilen</span>
+              <span class="nav-item-title">{{ _("CoverStore/Maker") }}</span>
+              <span class="nav-item-text">{{ _("Spiele-Cover gestalten, finden und teilen") }}</span>
             </a>
           </div>
         </details>
-        <a class="nav-trigger nav-link" href="{{ url_for('forum.index') }}">Forum</a>
-        <a class="nav-trigger nav-link" href="{{ url_for('leaderboard_pages.page') }}">Leaderboard</a>
+        <a class="nav-trigger nav-link" href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a>
+        <a class="nav-trigger nav-link" href="{{ url_for('leaderboard_pages.page') }}">{{ _("Leaderboard") }}</a>
         <details class="nav-group">
-          <summary class="nav-trigger">Shop {{ chevron }}</summary>
+          <summary class="nav-trigger">{{ _("Shop") }} {{ chevron }}</summary>
           <div class="nav-dropdown">
             <a class="nav-item" href="{{ url_for('shop') }}">
-              <span class="nav-item-title">Artikel</span>
-              <span class="nav-item-text">FPV Gamification Pico und Zubehör kaufen</span>
+              <span class="nav-item-title">{{ _("Artikel") }}</span>
+              <span class="nav-item-text">{{ _("FPV Gamification Pico und Zubehör kaufen") }}</span>
             </a>
             <a class="nav-item" href="{{ url_for('plugins_store') }}">
-              <span class="nav-item-title">Plugin-Store</span>
-              <span class="nav-item-text">Zusätzliche Spielmodi für deinen Pico</span>
+              <span class="nav-item-title">{{ _("Plugin-Store") }}</span>
+              <span class="nav-item-text">{{ _("Zusätzliche Spielmodi für deinen Pico") }}</span>
             </a>
           </div>
         </details>
       </div>
       <div class="nav-account">
+        <details class="nav-group nav-group-end nav-lang">
+          <summary class="nav-trigger" aria-label="{{ _("Sprache wählen") }}"><span class="nav-lang-icon" aria-hidden="true">🌐</span> {{ current_lang()|upper }} {{ chevron }}</summary>
+          <div class="nav-dropdown">
+            {% for code, label in languages.items() %}
+              <a class="nav-item" href="/sprache/{{ code }}" data-lang="{{ code }}" data-nav-ignore lang="{{ code }}"{% if code == current_lang() %} aria-current="page"{% endif %}>
+                <span class="nav-item-title">{{ label }}</span>
+              </a>
+            {% endfor %}
+          </div>
+        </details>
         {% if session.get('account_email') %}
           <details class="nav-group nav-group-end">
-            <summary class="nav-trigger">Konto {{ chevron }}</summary>
+            <summary class="nav-trigger">{{ _("Konto") }} {{ chevron }}</summary>
             <div class="nav-dropdown">
               <a class="nav-item" href="{{ url_for('account') }}">
-                <span class="nav-item-title">Mein Konto</span>
+                <span class="nav-item-title">{{ _("Mein Konto") }}</span>
                 <span class="nav-item-text">{{ session.get('account_email') }}</span>
               </a>
               <a class="nav-item" href="{{ url_for('konto.profile') }}">
-                <span class="nav-item-title">Profil &amp; Passwort</span>
-                <span class="nav-item-text">Benutzername, Angaben, Passwort ändern</span>
+                <span class="nav-item-title">{{ _("Profil & Passwort") }}</span>
+                <span class="nav-item-text">{{ _("Benutzername, Angaben, Passwort ändern") }}</span>
               </a>
               <a class="nav-item" href="{{ url_for('community.own_profile') }}">
-                <span class="nav-item-title">Mein öffentliches Profil</span>
-                <span class="nav-item-text">So sehen dich andere im Forum</span>
+                <span class="nav-item-title">{{ _("Mein öffentliches Profil") }}</span>
+                <span class="nav-item-text">{{ _("So sehen dich andere im Forum") }}</span>
               </a>
               <a class="nav-item" href="{{ url_for('konto.copters') }}">
-                <span class="nav-item-title">Meine Copter</span>
-                <span class="nav-item-text">Deine Copter mit Setup speichern</span>
+                <span class="nav-item-title">{{ _("Meine Copter") }}</span>
+                <span class="nav-item-text">{{ _("Deine Copter mit Setup speichern") }}</span>
               </a>
               <a class="nav-item" href="{{ url_for('ausweis.page') }}">
-                <span class="nav-item-title">Drohnen-Ausweis</span>
-                <span class="nav-item-text">Nachweis hochladen und prüfen lassen</span>
+                <span class="nav-item-title">{{ _("Drohnen-Ausweis") }}</span>
+                <span class="nav-item-text">{{ _("Nachweis hochladen und prüfen lassen") }}</span>
               </a>
               <a class="nav-item" href="{{ url_for('logout') }}" data-nav-ignore>
-                <span class="nav-item-title">Logout</span>
+                <span class="nav-item-title">{{ _("Logout") }}</span>
               </a>
             </div>
           </details>
         {% else %}
-          <a class="nav-cta" href="{{ url_for('login') }}">Login</a>
+          <a class="nav-cta" href="{{ url_for('login') }}">{{ _("Login") }}</a>
         {% endif %}
       </div>
     </div>

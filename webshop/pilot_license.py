@@ -21,6 +21,7 @@ from PIL import Image, UnidentifiedImageError
 import db
 from community import LICENSE_KINDS
 from konto import account_required
+from i18n import gettext as _
 
 LICENSE_DIR = db.media_dir("PILOT_LICENSE_DIR", "private_media", "licenses")
 MAX_BYTES = 10 * 1024 * 1024
@@ -57,16 +58,16 @@ def page(account):
         valid_until = (request.form.get("valid_until") or "").strip()[:10]
         upload = request.files.get("file")
         if kind not in LICENSE_KINDS:
-            error = "Bitte die Art des Nachweises wählen."
+            error = _("Bitte die Art des Nachweises wählen.")
         elif upload is None or not upload.filename:
-            error = "Bitte eine Datei (PDF oder Foto) auswählen."
+            error = _("Bitte eine Datei (PDF oder Foto) auswählen.")
         else:
             data = upload.read(MAX_BYTES + 1)
             detected = _detect(data)
             if len(data) > MAX_BYTES:
-                error = f"Die Datei ist zu groß (höchstens {MAX_BYTES // (1024 * 1024)} MB)."
+                error = _("Die Datei ist zu groß (höchstens {v1} MB).", v1=MAX_BYTES // (1024 * 1024))
             elif detected is None:
-                error = "Bitte eine PDF-Datei oder ein Foto (JPG, PNG, WebP) hochladen."
+                error = _("Bitte eine PDF-Datei oder ein Foto (JPG, PNG, WebP) hochladen.")
             else:
                 LICENSE_DIR.mkdir(parents=True, exist_ok=True)
                 filename = uuid.uuid4().hex + detected[1]

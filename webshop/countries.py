@@ -1,4 +1,7 @@
-"""Laender fuer Konto, Profil und Leaderboard (ISO 3166-1 Alpha-2, deutsche Namen).
+"""Laender fuer Konto, Profil und Leaderboard (ISO 3166-1 Alpha-2).
+
+Deutsche Namen stehen hier; in den anderen Sprachen der Seite liefert Babel
+(CLDR) die Namen.
 
 Gespeichert wird im Konto nur der Code (z. B. "CH"); angezeigt der Name.
 normalize() ordnet frueher frei eingetippte Werte ("Schweiz", "germany",
@@ -6,6 +9,10 @@ normalize() ordnet frueher frei eingetippte Werte ("Schweiz", "germany",
 """
 
 import unicodedata
+
+from babel import Locale
+
+import i18n
 
 # Oben in der Auswahlliste
 PRIORITY = ("CH", "DE", "AT", "LI")
@@ -71,9 +78,23 @@ _BY_NAME.update({
 _BY_NAME.update(_ALIASES)
 
 
+def _localized(code):
+    """Name in der Sprache der Seite (i18n.current_lang); Deutsch aus COUNTRIES."""
+    lang = i18n.current_lang()
+    if lang != "de":
+        try:
+            names = Locale.parse(lang).territories
+        except (ValueError, TypeError):
+            names = {}
+        if code in names:
+            return names[code]
+    return COUNTRIES[code]
+
+
 def name(code):
     """Anzeigename zu einem Code; unbekannte Werte werden unveraendert angezeigt."""
-    return COUNTRIES.get((code or "").upper(), code or "")
+    code_upper = (code or "").upper()
+    return _localized(code_upper) if code_upper in COUNTRIES else code or ""
 
 
 def is_valid(code):
@@ -90,5 +111,5 @@ def normalize(value):
 
 def choices():
     """[(code, name)] fuer Auswahllisten: Prioritaet oben, danach alphabetisch."""
-    rest = sorted((c for c in COUNTRIES if c not in PRIORITY), key=lambda c: _fold(COUNTRIES[c]))
-    return [(c, COUNTRIES[c]) for c in PRIORITY], [(c, COUNTRIES[c]) for c in rest]
+    rest = sorted((c for c in COUNTRIES if c not in PRIORITY), key=lambda c: _fold(_localized(c)))
+    return [(c, _localized(c)) for c in PRIORITY], [(c, _localized(c)) for c in rest]

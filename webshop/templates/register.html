@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Webshop – Registrieren{% endblock %}
+{% block title %}{{ _("Webshop – Registrieren") }}{% endblock %}
 
 {% block content %}
   <section class="login-page">
-    <h1>Registrieren</h1>
+    <h1>{{ _("Registrieren") }}</h1>
     <p class="license-intro">
-      Erstelle ein Konto, um Bestellungen einzusehen und eigene Plugins im
-      <a href="{{ url_for('plugins_store') }}">Plugin-Store</a> hochzuladen.
+      {{ _("Erstelle ein Konto, um Bestellungen einzusehen und eigene Plugins im") }}
+      <a href="{{ url_for('plugins_store') }}">{{ _("Plugin-Store") }}</a> {{ _("hochzuladen.") }}
     </p>
 
     <div class="login-card">
@@ -17,19 +17,19 @@
 
       <form method="post" action="{{ url_for('register', next=next_url) }}">
         <div class="form-field">
-          <label for="register-email">E-Mail-Adresse</label>
+          <label for="register-email">{{ _("E-Mail-Adresse") }}</label>
           <input
             type="email"
             id="register-email"
             name="email"
             value="{{ values.get('email', '') }}"
-            placeholder="du@example.com"
+            placeholder="{{ _("du@example.com") }}"
             autocomplete="email"
             required
           />
         </div>
         <div class="form-field">
-          <label for="register-username">Benutzername</label>
+          <label for="register-username">{{ _("Benutzername") }}</label>
           <input
             type="text"
             id="register-username"
@@ -41,10 +41,10 @@
             pattern="[A-Za-z0-9ÄÖÜäöüß][A-Za-z0-9ÄÖÜäöüß_.\-]{2,23}"
             required
           />
-          <p class="form-hint">Wird im Forum angezeigt. 3–24 Zeichen: Buchstaben, Ziffern, _ . -</p>
+          <p class="form-hint">{{ _("Wird im Forum angezeigt. 3–24 Zeichen: Buchstaben, Ziffern, _ . -") }}</p>
         </div>
         <div class="form-field">
-          <label for="register-password">Passwort (mind. 8 Zeichen)</label>
+          <label for="register-password">{{ _("Passwort (mind. 8 Zeichen)") }}</label>
           <input
             type="password"
             id="register-password"
@@ -55,7 +55,7 @@
           />
         </div>
         <div class="form-field">
-          <label for="register-password-confirm">Passwort wiederholen</label>
+          <label for="register-password-confirm">{{ _("Passwort wiederholen") }}</label>
           <input
             type="password"
             id="register-password-confirm"
@@ -66,7 +66,7 @@
           />
         </div>
         <div class="form-field">
-          <label for="register-full-name">Name</label>
+          <label for="register-full-name">{{ _("Name") }}</label>
           <input
             type="text"
             id="register-full-name"
@@ -77,11 +77,11 @@
           />
         </div>
         <div class="form-field">
-          <label for="register-country">Land</label>
+          <label for="register-country">{{ _("Land") }}</label>
           {% with select_id = "register-country", selected = values.get('country', '') %}{% include "_country_select.html" %}{% endwith %}
-          <p class="form-hint">Für die Länder-Rangliste im Leaderboard.</p>
+          <p class="form-hint">{{ _("Für die Länder-Rangliste im Leaderboard.") }}</p>
         </div>
-        <button type="submit" class="btn btn-primary btn-large">Konto erstellen</button>
+        <button type="submit" class="btn btn-primary btn-large">{{ _("Konto erstellen") }}</button>
       </form>
     </div>
   </section>
@@ -92,7 +92,7 @@
       const confirm = document.getElementById("register-password-confirm");
       const check = () => {
         confirm.setCustomValidity(
-          confirm.value && confirm.value !== password.value ? "Die Passwörter stimmen nicht überein." : ""
+          confirm.value && confirm.value !== password.value ? {{ _("Die Passwörter stimmen nicht überein.")|tojson }} : ""
         );
       };
       password.addEventListener("input", check);

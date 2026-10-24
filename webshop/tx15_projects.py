@@ -32,6 +32,7 @@ from tx15_backups import (
     remove_file,
     sweep_directory,
 )
+from i18n import gettext as _
 
 
 def _env_int(name, default):
@@ -83,10 +84,10 @@ def _read_upload(name, limit):
     Liefert (bytes, None) oder (None, Fehlermeldung)."""
     upload = request.files.get(name)
     if upload is None:
-        return None, f"Teil „{name}“ fehlt."
+        return None, _("Teil „{name}“ fehlt.", name=name)
     data = upload.stream.read(limit + 1)
     if len(data) > limit:
-        return None, f"Zu groß (höchstens {limit // (1024 * 1024)} MB)."
+        return None, _("Zu groß (höchstens {v1} MB).", v1=limit // (1024 * 1024))
     return data, None
 
 
@@ -99,15 +100,15 @@ def _parse_payload():
     try:
         state = json.loads(state_bytes.decode("utf-8"))
     except (UnicodeDecodeError, ValueError):
-        return None, error_response("Der Studio-Stand ist kein gültiges JSON.", 400)
+        return None, error_response(_("Der Studio-Stand ist kein gültiges JSON."), 400)
     if not isinstance(state, dict):
-        return None, error_response("Der Studio-Stand ist kein gültiges JSON.", 400)
+        return None, error_response(_("Der Studio-Stand ist kein gültiges JSON."), 400)
 
     zip_bytes, problem = _read_upload("file", MAX_ZIP_BYTES)
     if problem:
         return None, error_response(f"ZIP: {problem}", 400 if "fehlt" in problem else 413)
     if zip_bytes[:4] not in ZIP_SIGNATURES:
-        return None, error_response("Die Datei ist keine ZIP-Datei.", 400)
+        return None, error_response(_("Die Datei ist keine ZIP-Datei."), 400)
 
     name = clean_text(request.form.get("name"), 60) or "Ohne Namen"
     detail = clean_text(request.form.get("detail"), 120)
@@ -158,10 +159,10 @@ def list_projects():
 def get_project(project_id):
     email = account_email()
     if email is None:
-        return error_response("Bitte einloggen.", 401)
+        return error_response(_("Bitte einloggen."), 401)
     row = db.get_tx15_project(project_id, email)
     if row is None:
-        return error_response("Nicht gefunden.", 404)
+        return error_response(_("Nicht gefunden."), 404)
     response = jsonify({"project": _serialize(row, with_state=True)})
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -171,15 +172,15 @@ def get_project(project_id):
 def create_project():
     email = account_email()
     if email is None:
-        return error_response("Zum Speichern auf dem Server bitte einloggen.", 401)
+        return error_response(_("Zum Speichern auf dem Server bitte einloggen."), 401)
     if not _require_ajax():
-        return error_response("Ungültige Anfrage.", 400)
+        return error_response(_("Ungültige Anfrage."), 400)
     kind = request.form.get("kind")
     if kind not in KINDS:
         return error_response("Unbekannte Art.", 400)
     if db.count_tx15_projects(email, kind) >= MAX_COUNT:
         return error_response(
-            f"Du hast bereits {MAX_COUNT} {KINDS[kind]['label']}s gespeichert. Lösche zuerst ältere.", 409
+            _("Du hast bereits {max_count} {label}s gespeichert. Lösche zuerst ältere.", max_count=MAX_COUNT, label=KINDS[kind]['label']), 409
         )
     fields, problem = _parse_payload()
     if problem:
@@ -206,11 +207,11 @@ def create_project():
 def update_project(project_id):
     email = account_email()
     if email is None:
-        return error_response("Zum Speichern auf dem Server bitte einloggen.", 401)
+        return error_response(_("Zum Speichern auf dem Server bitte einloggen."), 401)
     if not _require_ajax():
-        return error_response("Ungültige Anfrage.", 400)
+        return error_response(_("Ungültige Anfrage."), 400)
     if db.get_tx15_project(project_id, email) is None:
-        return error_response("Nicht gefunden.", 404)
+        return error_response(_("Nicht gefunden."), 404)
     fields, problem = _parse_payload()
     if problem:
         return problem
@@ -227,7 +228,7 @@ def update_project(project_id):
         )
         if old_filename is None:
             _discard_zip(filename)
-            return error_response("Nicht gefunden.", 404)
+            return error_response(_("Nicht gefunden."), 404)
         _commit_zip(filename)
     except Exception:
         _discard_zip(filename)
@@ -240,11 +241,11 @@ def update_project(project_id):
 def download_project(project_id):
     email = account_email()
     if email is None:
-        return error_response("Bitte einloggen.", 401)
+        return error_response(_("Bitte einloggen."), 401)
     row = db.get_tx15_project(project_id, email)
     path = PROJECT_DIR / row["zip_filename"] if row is not None else None
     if path is None or not path.is_file():
-        return error_response("Nicht gefunden.", 404)
+        return error_response(_("Nicht gefunden."), 404)
     safe_name = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in row["name"]).strip("_") or "projekt"
     response = send_file(
         path, mimetype="application/zip", as_attachment=True, download_name=f"{safe_name}.zip", max_age=0
@@ -257,12 +258,12 @@ def download_project(project_id):
 def delete_project(project_id):
     email = account_email()
     if email is None:
-        return error_response("Bitte einloggen.", 401)
+        return error_response(_("Bitte einloggen."), 401)
     if not _require_ajax():
-        return error_response("Ungültige Anfrage.", 400)
+        return error_response(_("Ungültige Anfrage."), 400)
     row = db.delete_tx15_project(project_id, email)
     if row is None:
-        return error_response("Nicht gefunden.", 404)
+        return error_response(_("Nicht gefunden."), 404)
     remove_file(PROJECT_DIR / row["zip_filename"])
     sweep_directory(PROJECT_DIR, db.tx15_project_filenames())
     return jsonify({"deleted": project_id})

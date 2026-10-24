@@ -21,6 +21,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import admin_users
+import i18n
+import roles
 import community
 import countries
 import db
@@ -33,6 +35,7 @@ import simulator_manager
 import tx15_backups
 import tx15_firmware
 import tx15_projects
+from i18n import gettext as _
 
 load_dotenv()
 
@@ -138,6 +141,8 @@ app.register_blueprint(pilot_license.bp)
 app.register_blueprint(admin_users.bp)
 community.register(app)
 admin_users.register(app)
+i18n.register(app)
+roles.register(app)
 # Land: Auswahlliste + Anzeige des Namens zum gespeicherten Code (countries.py)
 app.add_template_filter(countries.name, "country_name")
 app.add_template_global(countries.choices, "country_choices")
@@ -255,7 +260,7 @@ def _require_logged_in_account_json():
     passenden Fehler-Response, falls kein Login aktiv ist."""
     email = (session.get("account_email") or "").strip()
     if "@" not in email:
-        return None, (jsonify({"error": "Bitte zuerst einloggen."}), 401)
+        return None, (jsonify({"error": _("Bitte zuerst einloggen.")}), 401)
     return email, None
 
 
@@ -478,7 +483,7 @@ def jetzt_testen():
         instance = simulator_manager.get_or_create_instance(session.get("demo_token"))
     except simulator_manager.SimulatorBusyError:
         flash(
-            "Der Live-Test ist gerade stark ausgelastet - bitte in ein paar Minuten erneut versuchen.",
+            _("Der Live-Test ist gerade stark ausgelastet - bitte in ein paar Minuten erneut versuchen."),
             "error",
         )
         return redirect(url_for("webshop_home"))
@@ -652,7 +657,7 @@ def plugins_download(name):
     plugin_dir = os.path.join(PLUGINS_STORE_DIR, name)
     manifest_path = os.path.join(plugin_dir, "manifest.json")
     if not os.path.isfile(manifest_path):
-        return render_template("cancel.html", message="Dieses Plugin existiert nicht."), 404
+        return render_template("cancel.html", message=_("Dieses Plugin existiert nicht.")), 404
 
     files = sorted(
         filename
@@ -706,7 +711,7 @@ def checkout(product_id):
         return redirect(url_for("login"))
     product = PRODUCTS.get(product_id)
     if not _is_product_available(product):
-        return render_template("cancel.html", message="Dieses Produkt existiert nicht."), 404
+        return render_template("cancel.html", message=_("Dieses Produkt existiert nicht.")), 404
     return render_template(
         "checkout.html",
         product=product,
@@ -729,7 +734,7 @@ def stripe_create_checkout_session():
     if not _is_product_available(product):
         return jsonify({"error": "Unbekanntes Produkt."}), 404
     if product["price_cents"] <= 0:
-        return jsonify({"error": "Dieses Produkt ist kostenlos. Bitte den Gratis-Checkout verwenden."}), 400
+        return jsonify({"error": _("Dieses Produkt ist kostenlos. Bitte den Gratis-Checkout verwenden.")}), 400
     try:
         checkout_session = stripe.checkout.Session.create(
             mode="payment",
@@ -779,11 +784,11 @@ def paypal_create_order():
     if not _is_product_available(product):
         return jsonify({"error": "Unbekanntes Produkt."}), 404
     if product["price_cents"] <= 0:
-        return jsonify({"error": "Dieses Produkt ist kostenlos. Bitte den Gratis-Checkout verwenden."}), 400
+        return jsonify({"error": _("Dieses Produkt ist kostenlos. Bitte den Gratis-Checkout verwenden.")}), 400
     try:
         access_token = get_paypal_access_token()
     except requests.RequestException as fehler:
-        return jsonify({"error": f"PayPal-Authentifizierung fehlgeschlagen: {fehler}"}), 502
+        return jsonify({"error": _("PayPal-Authentifizierung fehlgeschlagen: {fehler}", fehler=fehler)}), 502
 
     # Siehe Kommentar im Stripe-Pendant oben: Produkt/E-Mail werden bereits vor
     # der Weiterleitung zu PayPal in der Flask-Session gemerkt.
@@ -823,7 +828,7 @@ def paypal_create_order():
     )
 
     if response.status_code not in (200, 201):
-        return jsonify({"error": "PayPal-Bestellung konnte nicht erstellt werden.", "details": response.text}), 502
+        return jsonify({"error": _("PayPal-Bestellung konnte nicht erstellt werden."), "details": response.text}), 502
 
     order = response.json()
     return jsonify({"id": order["id"]})
@@ -835,7 +840,7 @@ def paypal_capture_order(order_id):
     try:
         access_token = get_paypal_access_token()
     except requests.RequestException as fehler:
-        return jsonify({"error": f"PayPal-Authentifizierung fehlgeschlagen: {fehler}"}), 502
+        return jsonify({"error": _("PayPal-Authentifizierung fehlgeschlagen: {fehler}", fehler=fehler)}), 502
 
     response = requests.post(
         f"{PAYPAL_API_BASE_URL}/v2/checkout/orders/{order_id}/capture",
@@ -847,7 +852,7 @@ def paypal_capture_order(order_id):
     )
 
     if response.status_code not in (200, 201):
-        return jsonify({"error": "PayPal-Zahlung konnte nicht erfasst werden.", "details": response.text}), 502
+        return jsonify({"error": _("PayPal-Zahlung konnte nicht erfasst werden."), "details": response.text}), 502
 
     capture_data = response.json()
 
@@ -872,7 +877,7 @@ def dummy_create_purchase():
     Lizenz-Einrichtungs-Flow (/license-setup) lokal ohne echte Zahlungsdaten
     durchklicken zu können."""
     if not DUMMY_MODE:
-        return jsonify({"error": "Dummy-Modus ist nicht aktiv."}), 403
+        return jsonify({"error": _("Dummy-Modus ist nicht aktiv.")}), 403
 
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
@@ -905,7 +910,7 @@ def free_create_purchase():
     if not _is_product_available(product):
         return jsonify({"error": "Unbekanntes Produkt."}), 404
     if product["price_cents"] > 0:
-        return jsonify({"error": "Dieses Produkt ist nicht kostenlos."}), 400
+        return jsonify({"error": _("Dieses Produkt ist nicht kostenlos.")}), 400
 
     email, auth_error = _require_logged_in_account_json()
     if auth_error:
@@ -993,7 +998,7 @@ def success():
 @app.route("/cancel")
 def cancel():
     """Abbruchseite bei nicht abgeschlossener Zahlung."""
-    return render_template("cancel.html", message="Der Bezahlvorgang wurde abgebrochen.")
+    return render_template("cancel.html", message=_("Der Bezahlvorgang wurde abgebrochen."))
 
 
 def _current_account_email():
@@ -1052,7 +1057,7 @@ def license_setup():
     if pending is None or not _is_authorized_for_pending(pending):
         return render_template(
             "cancel.html",
-            message="Keine gültige Lizenz-Bestellung gefunden. Bitte zuerst im Shop kaufen.",
+            message=_("Keine gültige Lizenz-Bestellung gefunden. Bitte zuerst im Shop kaufen."),
         ), 403
     return _render_license_setup(pending)
 
@@ -1073,7 +1078,7 @@ def shipping_setup():
     if pending is None or not _is_authorized_for_pending_shipping(pending):
         return render_template(
             "cancel.html",
-            message="Keine gültige Hardware-Bestellung gefunden. Bitte zuerst im Shop kaufen.",
+            message=_("Keine gültige Hardware-Bestellung gefunden. Bitte zuerst im Shop kaufen."),
         ), 403
 
     product = PRODUCTS.get(pending["product_id"])
@@ -1086,7 +1091,7 @@ def shipping_setup():
 
         missing = [field for field in REQUIRED_SHIPPING_FIELDS if not address[field]]
         if missing:
-            error = "Bitte alle Pflichtfelder ausfüllen: Name, Straße, PLZ, Stadt und Land."
+            error = _("Bitte alle Pflichtfelder ausfüllen: Name, Straße, PLZ, Stadt und Land.")
         else:
             ist_direkt_flow = session.get("checkout_pending_shipping_id") == pending["id"]
             orders_db.move_pending_to_order(pending["id"], address)
@@ -1127,10 +1132,10 @@ def api_license_create():
     pending_id = data.get("pending_id")
     pending = db.get_pending_license(pending_id)
     if pending is None:
-        return jsonify({"error": "Keine gültige Lizenz-Bestellung gefunden. Bitte zuerst im Shop kaufen."}), 403
+        return jsonify({"error": _("Keine gültige Lizenz-Bestellung gefunden. Bitte zuerst im Shop kaufen.")}), 403
 
     if not _is_authorized_for_pending(pending):
-        return jsonify({"error": "Keine Berechtigung für diese Bestellung."}), 403
+        return jsonify({"error": _("Keine Berechtigung für diese Bestellung.")}), 403
 
     ist_direkt_flow = session.get("checkout_pending_id") == pending["id"]
 
@@ -1139,15 +1144,15 @@ def api_license_create():
         return jsonify({"error": "Unbekanntes Produkt."}), 404
 
     if license_generator is None:
-        return jsonify({"error": "Lizenzsystem serverseitig nicht verfügbar (Paket 'cryptography' fehlt)."}), 500
+        return jsonify({"error": _("Lizenzsystem serverseitig nicht verfügbar (Paket 'cryptography' fehlt).")}), 500
 
     if not (os.path.isfile(PRIVATE_KEY_PATH) and os.path.isfile(PUBLIC_KEY_PATH)):
-        return jsonify({"error": "RSA-Schlüsselpaar für das Lizenzsystem wurde serverseitig noch nicht erzeugt."}), 500
+        return jsonify({"error": _("RSA-Schlüsselpaar für das Lizenzsystem wurde serverseitig noch nicht erzeugt.")}), 500
 
     hardware_id = (data.get("hardware_id") or "").strip().lower()
     if not HARDWARE_ID_PATTERN.match(hardware_id):
         return jsonify(
-            {"error": "Ungültige Hardware-ID. Bitte die Ausgabe des Thonny-Skripts unverändert einfügen."}
+            {"error": _("Ungültige Hardware-ID. Bitte die Ausgabe des Thonny-Skripts unverändert einfügen.")}
         ), 400
 
     try:
@@ -1155,7 +1160,7 @@ def api_license_create():
             PRIVATE_KEY_PATH, hardware_id, pending["email"],
         )
     except Exception as fehler:
-        return jsonify({"error": f"Lizenz konnte nicht erzeugt werden: {fehler}"}), 500
+        return jsonify({"error": _("Lizenz konnte nicht erzeugt werden: {fehler}", fehler=fehler)}), 500
 
     lic_path, _json_path = _save_license_record(hardware_id, pending["email"], license_content)
     license_filename = os.path.splitext(os.path.basename(lic_path))[0]
@@ -1185,7 +1190,7 @@ def license_setup_public_key():
     """Liefert den öffentlichen Schlüssel zum Download - muss zusammen mit
     license.lic auf den Pico kopiert werden (siehe source/license_verifier.py)."""
     if not os.path.isfile(PUBLIC_KEY_PATH):
-        return jsonify({"error": "Public Key nicht gefunden."}), 404
+        return jsonify({"error": _("Public Key nicht gefunden.")}), 404
     return send_file(PUBLIC_KEY_PATH, mimetype="application/x-pem-file", as_attachment=True, download_name="public_key.pem")
 
 
@@ -1226,7 +1231,7 @@ def login():
         password = request.form.get("password") or ""
         account = db.get_account_by_email(email) if "@" in email else None
         if account is None or not check_password_hash(account["password_hash"], password):
-            error = "E-Mail-Adresse oder Passwort falsch."
+            error = _("E-Mail-Adresse oder Passwort falsch.")
         else:
             session["account_email"] = account["email"]
             return redirect(next_url or url_for("account"))
@@ -1249,19 +1254,19 @@ def register():
         password = request.form.get("password") or ""
 
         if "@" not in email:
-            error = "Bitte eine gültige E-Mail-Adresse eingeben."
+            error = _("Bitte eine gültige E-Mail-Adresse eingeben.")
         elif len(password) < 8:
             error = "Das Passwort muss mindestens 8 Zeichen lang sein."
         elif password != (request.form.get("password_confirm") or ""):
-            error = "Die Passwörter stimmen nicht überein. Bitte beide Felder gleich ausfüllen."
+            error = _("Die Passwörter stimmen nicht überein. Bitte beide Felder gleich ausfüllen.")
         elif any(not form_values[field] for field in REQUIRED_ACCOUNT_FIELDS):
-            error = "Bitte Name und Land vollständig ausfüllen."
+            error = _("Bitte Name und Land vollständig ausfüllen.")
         elif not countries.is_valid(form_values["country"]):
-            error = "Bitte ein Land aus der Liste wählen."
+            error = _("Bitte ein Land aus der Liste wählen.")
         elif db.get_account_by_email(email) is not None:
-            error = "Für diese E-Mail-Adresse existiert bereits ein Konto."
+            error = _("Für diese E-Mail-Adresse existiert bereits ein Konto.")
         elif db.is_ip_blocked(admin_users.client_ip()):
-            error = "Von deiner Internetverbindung aus können keine neuen Konten erstellt werden. Bitte wende dich an den Support."
+            error = _("Von deiner Internetverbindung aus können keine neuen Konten erstellt werden. Bitte wende dich an den Support.")
         elif (username_error := konto.validate_username(form_values["username"])) is not None:
             error = username_error
         else:
@@ -1341,11 +1346,11 @@ def account_download_license(license_id):
 
     record = db.get_customer_license(license_id)
     if record is None or record["email"].strip().lower() != email.strip().lower():
-        return jsonify({"error": "Lizenz nicht gefunden."}), 404
+        return jsonify({"error": _("Lizenz nicht gefunden.")}), 404
 
     lic_path = os.path.join(LICENSES_DIR, record["license_filename"] + ".lic")
     if not os.path.isfile(lic_path):
-        return jsonify({"error": "Lizenzdatei ist serverseitig nicht mehr vorhanden."}), 404
+        return jsonify({"error": _("Lizenzdatei ist serverseitig nicht mehr vorhanden.")}), 404
 
     return send_file(lic_path, mimetype="application/octet-stream", as_attachment=True, download_name="license.lic")
 
@@ -1418,7 +1423,7 @@ def admin_login():
     error = None
     if request.method == "POST":
         if not _admin_login_configured():
-            error = "Admin-Zugang ist serverseitig nicht konfiguriert (ADMIN_USERNAME/ADMIN_PASSWORD in .env setzen)."
+            error = _("Admin-Zugang ist serverseitig nicht konfiguriert (ADMIN_USERNAME/ADMIN_PASSWORD in .env setzen).")
         else:
             username = request.form.get("username") or ""
             password = request.form.get("password") or ""
@@ -1428,7 +1433,7 @@ def admin_login():
             if username_ok and password_ok:
                 session["is_admin"] = True
                 return redirect(url_for("admin_dashboard"))
-            error = "Benutzername oder Passwort falsch."
+            error = _("Benutzername oder Passwort falsch.")
     return render_template("admin_login.html", error=error)
 
 
@@ -1499,7 +1504,7 @@ def _build_all_sales_overview():
     for order_row in orders_db.get_all_orders():
         product = PRODUCTS.get(order_row["product_id"])
         versandstatus = (
-            f"verschickt am {order_row['shipped_at'][:10]}" if order_row["shipped_at"] else "noch nicht verschickt"
+            _("verschickt am {v1}", v1=order_row['shipped_at'][:10]) if order_row["shipped_at"] else _("noch nicht verschickt")
         )
         sales.append(
             {
@@ -1566,7 +1571,7 @@ def _process_plugin_zip_upload(uploaded_file, uploaded_by=None, allow_reserved_n
     (ok: bool, message: str) zurueck - ruft NIE redirect()/flash() selbst
     auf, das bleibt Sache der jeweiligen Route."""
     if uploaded_file is None or not uploaded_file.filename:
-        return False, "Keine ZIP-Datei ausgewählt."
+        return False, _("Keine ZIP-Datei ausgewählt.")
 
     if not uploaded_file.filename.lower().endswith(".zip"):
         return False, "Nur ZIP-Dateien werden akzeptiert."
@@ -1577,43 +1582,41 @@ def _process_plugin_zip_upload(uploaded_file, uploaded_by=None, allow_reserved_n
 
             for member in names:
                 if not _is_safe_plugin_zip_member(member):
-                    return False, f"Unsichere Datei in ZIP abgelehnt: {member}"
+                    return False, _("Unsichere Datei in ZIP abgelehnt: {member}", member=member)
 
             py_files = [os.path.basename(name) for name in names if name.lower().endswith(".py")]
             if py_files:
                 return False, (
-                    "ZIP enthält unkompilierte .py-Dateien ("
+                    _("ZIP enthält unkompilierte .py-Dateien (")
                     + ", ".join(sorted(set(py_files)))
-                    + "). Bitte zuerst mit mpy-cross zu .mpy kompilieren - manuell oder über "
-                    "windows/source2/plugin_packager.py."
+                    + _("). Bitte zuerst mit mpy-cross zu .mpy kompilieren - manuell oder über "
+                    "windows/source2/plugin_packager.py.")
                 )
 
             manifest_candidates = [name for name in names if os.path.basename(name) == "manifest.json"]
             mpy_members = [name for name in names if os.path.basename(name).endswith(".mpy")]
             has_main = any(os.path.basename(name) == "main.mpy" for name in names)
             if not manifest_candidates or not has_main:
-                return False, "ZIP muss manifest.json und main.mpy enthalten."
+                return False, _("ZIP muss manifest.json und main.mpy enthalten.")
 
             for mpy_member in mpy_members:
                 if not _is_valid_mpy_bytes(archive.read(mpy_member)):
                     return False, (
-                        f"'{os.path.basename(mpy_member)}' ist keine gültige .mpy-Datei "
-                        "(leer oder falsches Format) - bitte neu mit mpy-cross kompilieren."
+                        _("'{v1}' ist keine gültige .mpy-Datei (leer oder falsches Format) - bitte neu mit mpy-cross kompilieren.", v1=os.path.basename(mpy_member))
                     )
 
             try:
                 manifest_data = json.loads(archive.read(manifest_candidates[0]).decode("utf-8"))
             except Exception:
-                return False, "manifest.json konnte nicht gelesen werden (ungültiges JSON)."
+                return False, _("manifest.json konnte nicht gelesen werden (ungültiges JSON).")
 
             plugin_name = str(manifest_data.get("name") or "").strip()
             if not plugin_name or not PLUGIN_NAME_PATTERN.match(plugin_name):
-                return False, "manifest.json enthält keinen gültigen 'name' (nur Buchstaben/Zahlen/_/-)."
+                return False, _("manifest.json enthält keinen gültigen 'name' (nur Buchstaben/Zahlen/_/-).")
 
             if plugin_name in RESERVED_PLUGIN_NAMES and not allow_reserved_names:
                 return False, (
-                    f"'{plugin_name}' ist ein mitgeliefertes Standard-Plugin und kann nicht per "
-                    "Kunden-Upload überschrieben werden. Bitte einen anderen Namen wählen."
+                    _("'{plugin_name}' ist ein mitgeliefertes Standard-Plugin und kann nicht per Kunden-Upload überschrieben werden. Bitte einen anderen Namen wählen.", plugin_name=plugin_name)
                 )
 
             target_dir = os.path.join(PLUGINS_STORE_DIR, plugin_name)
@@ -1634,9 +1637,9 @@ def _process_plugin_zip_upload(uploaded_file, uploaded_by=None, allow_reserved_n
                 with open(os.path.join(target_dir, "manifest.json"), "w", encoding="utf-8") as manifest_file:
                     json.dump(manifest_data, manifest_file)
     except zipfile.BadZipFile:
-        return False, "Datei ist keine gültige ZIP-Datei."
+        return False, _("Datei ist keine gültige ZIP-Datei.")
 
-    return True, f"Plugin '{plugin_name}' erfolgreich hochgeladen."
+    return True, _("Plugin '{plugin_name}' erfolgreich hochgeladen.", plugin_name=plugin_name)
 
 
 @app.route("/admin/plugins/upload", methods=["POST"])
@@ -1662,7 +1665,7 @@ def plugins_upload():
     umgeleitet."""
     account_email = _current_account_email()
     if not account_email:
-        flash("Bitte zuerst einloggen, um ein Plugin hochzuladen.", "error")
+        flash(_("Bitte zuerst einloggen, um ein Plugin hochzuladen."), "error")
         return redirect(url_for("login"))
 
     ok, message = _process_plugin_zip_upload(request.files.get("plugin_zip"), uploaded_by=account_email)

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}{{ team.name }} {{ _("– Profil – Bollisoft") }}{% endblock %}
+
+{% block content %}
+  <section class="profile-page">
+    <header class="profile-head">
+      <div class="avatar avatar-xl avatar-team">
+        {% if team.avatar %}<img src="{{ team.avatar }}" alt="" width="128" height="128" />{% else %}<span>B</span>{% endif %}
+      </div>
+      <div class="profile-ident">
+        <p class="profile-title"><span class="forum-badge forum-badge-role role-team">{{ _("Team") }}</span> {{ _("Offizielles Konto von Bollisoft") }}</p>
+        <h1>{{ team.name }}</h1>
+        {% if team.status_text %}<p class="profile-status">„{{ team.status_text }}“</p>{% endif %}
+        {% if team.website or team.youtube %}
+          <p class="profile-links">
+            {% if team.website %}<a href="{{ team.website }}" rel="noopener" target="_blank">{{ _("Webseite") }}</a>{% endif %}
+            {% if team.youtube %}<a href="{{ team.youtube }}" rel="noopener" target="_blank">{{ _("YouTube") }}</a>{% endif %}
+          </p>
+        {% endif %}
+      </div>
+      {% if session.get("is_admin") %}
+        <a class="btn btn-secondary profile-edit" href="{{ url_for('admin_users.team_profile_edit') }}">{{ _("Profil bearbeiten") }}</a>
+      {% endif %}
+    </header>
+
+    <dl class="profile-stats">
+      <div><dt>{{ _("Beiträge") }}</dt><dd>{{ posts }}</dd></div>
+      <div><dt>{{ _("Themen") }}</dt><dd>{{ threads }}</dd></div>
+    </dl>
+
+    <div class="profile-grid">
+      <div class="profile-main">
+        {% if team.bio %}
+          <section class="profile-card">
+            <h2>{{ _("Über uns") }}</h2>
+            <div class="profile-bio">{{ team.bio|forum_text }}</div>
+          </section>
+        {% endif %}
+        <section class="profile-card">
+          <h2>{{ _("Letzte Beiträge") }}</h2>
+          {% if recent_posts %}
+            <ul class="profile-activity">
+              {% for post in recent_posts %}
+                <li>
+                  <a href="{{ url_for('forum.thread', thread_id=post.thread_id) }}#beitrag-{{ post.id }}">{{ post.title }}</a>
+                  <span class="form-hint">{{ post.created_at|forum_time }}</span>
+                  <p>{{ post.body[:180] }}{% if post.body|length > 180 %} …{% endif %}</p>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="form-hint">{{ _("Noch keine Beiträge im") }} <a href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a>.</p>
+          {% endif %}
+        </section>
+      </div>
+    </div>
+  </section>
+{% endblock %}

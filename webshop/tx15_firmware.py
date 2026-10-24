@@ -28,6 +28,7 @@ import requests
 from flask import Blueprint, jsonify, send_file
 
 from tx15_backups import BACKUP_DIR, error_response
+from i18n import gettext as _
 
 RELEASES_URL = "https://api.github.com/repos/EdgeTX/edgetx/releases?per_page=30"
 RELEASE_CACHE_SECONDS = 3600
@@ -117,17 +118,17 @@ def _extract_tx15(zip_path, target):
         if "fw.json" in names:
             targets = json.loads(archive.read("fw.json")).get("targets") or []
             if not any(isinstance(t, list) and len(t) >= 2 and t[1] == TARGET_PREFIX for t in targets):
-                raise LookupError("Dieses Release enthält keine Firmware für die TX15.")
+                raise LookupError(_("Dieses Release enthält keine Firmware für die TX15."))
         candidates = [n for n in names if n.startswith(TARGET_PREFIX) and n.endswith(".uf2") and "/" not in n]
         if len(candidates) != 1:
-            raise LookupError("Dieses Release enthält keine Firmware für die TX15.")
+            raise LookupError(_("Dieses Release enthält keine Firmware für die TX15."))
         temp = target.with_suffix(".part")
         with archive.open(candidates[0]) as source, temp.open("wb") as handle:
             while chunk := source.read(1024 * 1024):
                 handle.write(chunk)
     if not _is_uf2(temp):
         temp.unlink(missing_ok=True)
-        raise LookupError("Die TX15-Datei im Release ist keine gültige UF2-Firmware.")
+        raise LookupError(_("Die TX15-Datei im Release ist keine gültige UF2-Firmware."))
     os.replace(temp, target)
 
 
@@ -140,7 +141,7 @@ def _firmware_file(release):
         if target.is_file():
             return target
         if release["zip_size"] > MAX_ZIP_BYTES:
-            raise LookupError("Das Release-Archiv ist ungewöhnlich groß und wird nicht geladen.")
+            raise LookupError(_("Das Release-Archiv ist ungewöhnlich groß und wird nicht geladen."))
         FIRMWARE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         fd, temp_name = tempfile.mkstemp(suffix=".zip", dir=FIRMWARE_CACHE_DIR)
         os.close(fd)
@@ -154,7 +155,7 @@ def _firmware_file(release):
                     for chunk in response.iter_content(1024 * 1024):
                         written += len(chunk)
                         if written > MAX_ZIP_BYTES:
-                            raise LookupError("Das Release-Archiv ist ungewöhnlich groß und wird nicht geladen.")
+                            raise LookupError(_("Das Release-Archiv ist ungewöhnlich groß und wird nicht geladen."))
                         handle.write(chunk)
             _extract_tx15(zip_path, target)
         finally:
@@ -167,7 +168,7 @@ def list_firmware():
     try:
         releases = _releases()
     except (requests.RequestException, ValueError, KeyError):
-        return error_response("Die Firmware-Liste von EdgeTX ist gerade nicht erreichbar.", 502)
+        return error_response(_("Die Firmware-Liste von EdgeTX ist gerade nicht erreichbar."), 502)
     response = jsonify({
         "target": TARGET_NAME,
         "releases": [
@@ -183,15 +184,15 @@ def download_firmware(tag):
     try:
         release = next((r for r in _releases() if r["tag"] == tag), None)
     except (requests.RequestException, ValueError, KeyError):
-        return error_response("Die Firmware-Liste von EdgeTX ist gerade nicht erreichbar.", 502)
+        return error_response(_("Die Firmware-Liste von EdgeTX ist gerade nicht erreichbar."), 502)
     if release is None:
-        return error_response("Diese Version gibt es nicht (mehr) zur Auswahl.", 404)
+        return error_response(_("Diese Version gibt es nicht (mehr) zur Auswahl."), 404)
     try:
         path = _firmware_file(release)
     except LookupError as exc:
         return error_response(str(exc), 404)
     except (requests.RequestException, zipfile.BadZipFile, OSError, ValueError):
-        return error_response("Die Firmware konnte nicht von EdgeTX geladen werden.", 502)
+        return error_response(_("Die Firmware konnte nicht von EdgeTX geladen werden."), 502)
     response = send_file(
         path,
         mimetype="application/octet-stream",

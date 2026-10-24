@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, send_file, session
 
 import db
+from i18n import gettext as _
 
 
 def _env_int(name, default):
@@ -143,19 +144,19 @@ def list_backups():
 def create_backup():
     email = account_email()
     if email is None:
-        return error_response("Zum Speichern auf dem Server bitte einloggen.", 401)
+        return error_response(_("Zum Speichern auf dem Server bitte einloggen."), 401)
     if not _require_ajax():
-        return error_response("Ungültige Anfrage.", 400)
+        return error_response(_("Ungültige Anfrage."), 400)
     if request.content_length and request.content_length > MAX_BACKUP_BYTES + REQUEST_OVERHEAD_BYTES:
-        return error_response(f"Das Backup ist zu groß (höchstens {MAX_BACKUP_BYTES // (1024 * 1024)} MB).", 413)
+        return error_response(_("Das Backup ist zu groß (höchstens {v1} MB).", v1=MAX_BACKUP_BYTES // (1024 * 1024)), 413)
 
     limits = _limits(email)
     if limits["count"] >= MAX_COUNT:
-        return error_response(f"Du hast bereits {MAX_COUNT} Backups gespeichert. Lösche zuerst ältere.", 409)
+        return error_response(_("Du hast bereits {max_count} Backups gespeichert. Lösche zuerst ältere.", max_count=MAX_COUNT), 409)
 
     upload = request.files.get("file")
     if upload is None:
-        return error_response("Keine Backup-Datei erhalten.", 400)
+        return error_response(_("Keine Backup-Datei erhalten."), 400)
 
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid.uuid4().hex}.zip"
@@ -167,12 +168,12 @@ def create_backup():
         with temp.open("rb") as handle:
             signature = handle.read(4)
         if signature not in ZIP_SIGNATURES:
-            return error_response("Die Datei ist keine ZIP-Datei.", 400)
+            return error_response(_("Die Datei ist keine ZIP-Datei."), 400)
         if size > MAX_BACKUP_BYTES:
-            return error_response(f"Das Backup ist zu groß (höchstens {MAX_BACKUP_BYTES // (1024 * 1024)} MB).", 413)
+            return error_response(_("Das Backup ist zu groß (höchstens {v1} MB).", v1=MAX_BACKUP_BYTES // (1024 * 1024)), 413)
         if limits["used"] + size > QUOTA_BYTES:
             free_mb = max(0, QUOTA_BYTES - limits["used"]) / (1024 * 1024)
-            return error_response(f"Nicht genug Speicher im Konto (frei: {free_mb:.1f} MB). Lösche ältere Backups.", 413)
+            return error_response(_("Nicht genug Speicher im Konto (frei: {free_mb:.1f} MB). Lösche ältere Backups.", free_mb=free_mb), 413)
 
         meta = _clean_meta(request.form.get("meta"))
         label = clean_text(request.form.get("label"), 60) or meta["label"] or "Backup"
@@ -209,11 +210,11 @@ def create_backup():
 def download_backup(backup_id):
     email = account_email()
     if email is None:
-        return error_response("Bitte einloggen.", 401)
+        return error_response(_("Bitte einloggen."), 401)
     row = db.get_tx15_backup(backup_id, email)
     path = BACKUP_DIR / row["filename"] if row is not None else None
     if path is None or not path.is_file():
-        return error_response("Backup nicht gefunden.", 404)
+        return error_response(_("Backup nicht gefunden."), 404)
     response = send_file(
         path,
         mimetype="application/zip",
@@ -231,12 +232,12 @@ def download_backup(backup_id):
 def delete_backup(backup_id):
     email = account_email()
     if email is None:
-        return error_response("Bitte einloggen.", 401)
+        return error_response(_("Bitte einloggen."), 401)
     if not _require_ajax():
-        return error_response("Ungültige Anfrage.", 400)
+        return error_response(_("Ungültige Anfrage."), 400)
     row = db.delete_tx15_backup(backup_id, email)
     if row is None:
-        return error_response("Backup nicht gefunden.", 404)
+        return error_response(_("Backup nicht gefunden."), 404)
     remove_file(BACKUP_DIR / row["filename"])
     _sweep_orphans()
     return jsonify({"deleted": backup_id, "limits": _limits(email)})

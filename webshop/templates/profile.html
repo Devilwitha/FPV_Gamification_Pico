@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ member.username }} – Profil – Bollisoft{% endblock %}
+{% block title %}{{ member.username }} {{ _("– Profil – Bollisoft") }}{% endblock %}
 
 {% block content %}
   <section class="profile-page">
@@ -9,68 +9,68 @@
         {% if avatar %}<img src="{{ avatar }}" alt="" width="128" height="128" />{% else %}<span>{{ initials(member.username) }}</span>{% endif %}
       </div>
       <div class="profile-ident">
-        <p class="profile-title{% if is_admin_member %} is-admin{% endif %}">{% if is_admin_member %}<span class="forum-badge forum-badge-admin">Admin</span> {% endif %}{{ title }}{% if license_kind %} · <span class="profile-badge">✓ Drohnen-Ausweis geprüft</span>{% endif %}</p>
+        <p class="profile-title{% if is_admin_member %} is-admin{% endif %}">{% if member_role %}<span class="forum-badge forum-badge-role role-{{ member_role }}">{{ _(roles[member_role].badge) }}</span> {% endif %}{{ title }}{% if license_kind %} · <span class="profile-badge">{{ _("✓ Drohnen-Ausweis geprüft") }}</span>{% endif %}</p>
         <h1>{{ member.username }}</h1>
         {% if prof and prof.status_text %}<p class="profile-status">„{{ prof.status_text }}“</p>{% endif %}
         <p class="profile-meta">
-          {% if online %}<span class="online-dot"></span> online{% else %}zuletzt aktiv {{ relative_time(member.last_seen_at) }}{% endif %}
-          · Mitglied seit {{ (member.created_at|forum_time)[:10] }}
+          {% if online %}<span class="online-dot"></span> {{ _("online") }}{% else %}{{ _("zuletzt aktiv") }} {{ relative_time(member.last_seen_at) }}{% endif %}
+          {{ _("· Mitglied seit") }} {{ (member.created_at|forum_time)[:10] }}
           {% if country %} · {{ country|country_name }}{% endif %}
         </p>
         {% if prof and (prof.website or prof.youtube) %}
           <p class="profile-links">
-            {% if prof.website %}<a href="{{ prof.website }}" rel="nofollow ugc noopener" target="_blank">Webseite</a>{% endif %}
-            {% if prof.youtube %}<a href="{{ prof.youtube }}" rel="nofollow ugc noopener" target="_blank">YouTube</a>{% endif %}
+            {% if prof.website %}<a href="{{ prof.website }}" rel="nofollow ugc noopener" target="_blank">{{ _("Webseite") }}</a>{% endif %}
+            {% if prof.youtube %}<a href="{{ prof.youtube }}" rel="nofollow ugc noopener" target="_blank">{{ _("YouTube") }}</a>{% endif %}
           </p>
         {% endif %}
       </div>
       {% if is_own %}
-        <a class="btn btn-secondary profile-edit" href="{{ url_for('konto.profile') }}#oeffentliches-profil">Profil bearbeiten</a>
+        <a class="btn btn-secondary profile-edit" href="{{ url_for('konto.profile') }}#oeffentliches-profil">{{ _("Profil bearbeiten") }}</a>
       {% endif %}
     </header>
 
     <dl class="profile-stats">
-      <div><dt>Beiträge</dt><dd>{{ posts }}</dd></div>
-      <div><dt>Themen</dt><dd>{{ threads }}</dd></div>
-      <div><dt>Copter</dt><dd>{{ "–" if copters_hidden else copters|length }}</dd></div>
-      <div><dt>Bester Platz</dt><dd>{% if entries %}#{{ entries[0].rank }}{% else %}–{% endif %}</dd></div>
-      <div><dt>Bestwert</dt><dd>{% if entries %}{{ "{:,}".format(entries[0].score).replace(",", "'") }}{% else %}–{% endif %}</dd></div>
+      <div><dt>{{ _("Beiträge") }}</dt><dd>{{ posts }}</dd></div>
+      <div><dt>{{ _("Themen") }}</dt><dd>{{ threads }}</dd></div>
+      <div><dt>{{ _("Copter") }}</dt><dd>{{ "–" if copters_hidden else copters|length }}</dd></div>
+      <div><dt>{{ _("Bester Platz") }}</dt><dd>{% if entries %}#{{ entries[0].rank }}{% else %}–{% endif %}</dd></div>
+      <div><dt>{{ _("Bestwert") }}</dt><dd>{% if entries %}{{ "{:,}".format(entries[0].score).replace(",", "'") }}{% else %}–{% endif %}</dd></div>
     </dl>
 
     <div class="profile-grid">
       <div class="profile-main">
         {% if prof and prof.bio %}
           <section class="profile-card">
-            <h2>Über mich</h2>
+            <h2>{{ _("Über mich") }}</h2>
             <div class="forum-post-text">{{ prof.bio|forum_text }}</div>
           </section>
         {% endif %}
 
         <section class="profile-card">
-          <h2>Leaderboard-Flüge</h2>
+          <h2>{{ _("Leaderboard-Flüge") }}</h2>
           {% if entries %}
             <table class="profile-table">
-              <thead><tr><th>Platz</th><th>Punkte</th><th>Tricks</th><th>Bester Trick</th><th>Datum</th><th></th></tr></thead>
+              <thead><tr><th>{{ _("Platz") }}</th><th>{{ _("Punkte") }}</th><th>{{ _("Tricks") }}</th><th>{{ _("Bester Trick") }}</th><th>{{ _("Datum") }}</th><th></th></tr></thead>
               <tbody>
                 {% for entry in entries %}
                   <tr>
                     <td>#{{ entry.rank }}</td>
-                    <td>{{ entry.score }}{% if entry.verified_at %} <span class="profile-badge" title="Vom Admin geprüft">✓</span>{% endif %}</td>
+                    <td>{{ entry.score }}{% if entry.verified_at %} <span class="profile-badge" title="{{ _("Vom Admin geprüft") }}">✓</span>{% endif %}</td>
                     <td>{{ entry.tricks }}</td>
                     <td>{{ entry.best or "–" }}</td>
                     <td>{{ (entry.created_at|forum_time)[:10] }}</td>
-                    <td><a href="{{ url_for('leaderboard_pages.entry', entry_id=entry.id) }}">{{ "▶ Video" if entry.has_video else "Ansehen" }}</a></td>
+                    <td><a href="{{ url_for('leaderboard_pages.entry', entry_id=entry.id) }}">{{ _("▶ Video") if entry.has_video else _("Ansehen") }}</a></td>
                   </tr>
                 {% endfor %}
               </tbody>
             </table>
           {% else %}
-            <p class="form-hint">Noch keine Flüge im <a href="{{ url_for('leaderboard_pages.page') }}">Leaderboard</a>.</p>
+            <p class="form-hint">{{ _("Noch keine Flüge im") }} <a href="{{ url_for('leaderboard_pages.page') }}">{{ _("Leaderboard") }}</a>.</p>
           {% endif %}
         </section>
 
         <section class="profile-card">
-          <h2>Letzte Beiträge</h2>
+          <h2>{{ _("Letzte Beiträge") }}</h2>
           {% if recent_posts %}
             <ul class="profile-activity">
               {% for post in recent_posts %}
@@ -82,19 +82,19 @@
               {% endfor %}
             </ul>
           {% else %}
-            <p class="form-hint">Noch keine Beiträge im <a href="{{ url_for('forum.index') }}">Forum</a>.</p>
+            <p class="form-hint">{{ _("Noch keine Beiträge im") }} <a href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a>.</p>
           {% endif %}
         </section>
       </div>
 
       <aside class="profile-side">
         <section class="profile-card">
-          <h2>Copter</h2>
+          <h2>{{ _("Copter") }}</h2>
           {% if radio %}
-            <p class="profile-radio"><span class="profile-radio-label">Fernbedienung</span> <strong>{{ radio }}</strong></p>
+            <p class="profile-radio"><span class="profile-radio-label">{{ _("Fernbedienung") }}</span> <strong>{{ radio }}</strong></p>
           {% endif %}
           {% if copters_hidden %}
-            <p class="form-hint">{{ member.username }} zeigt die Copter nicht öffentlich.</p>
+            <p class="form-hint">{{ member.username }} {{ _("zeigt die Copter nicht öffentlich.") }}</p>
           {% elif copters %}
             <ul class="profile-copters">
               {% for copter in copters %}
@@ -102,9 +102,9 @@
                   <a class="profile-copter" href="{{ url_for('community.copter', copter_id=copter.id) }}">
                     {% if copter.image_filename %}<img src="{{ copter_image_url(copter.image_filename) }}" alt="" width="64" height="64" loading="lazy" />{% else %}<span class="forum-copter-icon" aria-hidden="true">✈</span>{% endif %}
                     <span>
-                      <strong>{{ copter.name }}</strong> <span class="copter-category">{{ copter.category }}</span>
+                      <strong>{{ copter.name }}</strong> <span class="copter-category">{{ _(copter.category) }}</span>
                       <span class="form-hint">
-                        {{ [copter.frame, copter.motors, copter.flight_controller, copter.video, copter.battery]|select|join(" · ") or "Keine Details angegeben" }}
+                        {{ [copter.frame, copter.motors, copter.flight_controller, copter.video, copter.battery]|select|join(" · ") or _("Keine Details angegeben") }}
                         {% if copter.weight_g %} · {{ copter.weight_g }} g{% endif %}
                       </span>
                     </span>
@@ -113,31 +113,31 @@
               {% endfor %}
             </ul>
           {% else %}
-            <p class="form-hint">Noch keine Copter eingetragen.</p>
+            <p class="form-hint">{{ _("Noch keine Copter eingetragen.") }}</p>
           {% endif %}
         </section>
 
         <section class="profile-card">
-          <h2>Eröffnete Themen</h2>
+          <h2>{{ _("Eröffnete Themen") }}</h2>
           {% if recent_threads %}
             <ul class="profile-threads">
               {% for t in recent_threads %}
                 <li>
                   <a href="{{ url_for('forum.thread', thread_id=t.id) }}">{{ t.title }}</a>
-                  <span class="form-hint">{{ t.post_count - 1 }} {{ "Antwort" if t.post_count == 2 else "Antworten" }} · {{ (t.created_at|forum_time)[:10] }}</span>
+                  <span class="form-hint">{{ t.post_count - 1 }} {{ _("Antwort") if t.post_count == 2 else _("Antworten") }} · {{ (t.created_at|forum_time)[:10] }}</span>
                 </li>
               {% endfor %}
             </ul>
           {% else %}
-            <p class="form-hint">Noch keine Themen.</p>
+            <p class="form-hint">{{ _("Noch keine Themen.") }}</p>
           {% endif %}
         </section>
 
         {% if license_kind %}
           <section class="profile-card">
-            <h2>Drohnen-Ausweis</h2>
-            <p><span class="profile-badge">✓ geprüft</span> {{ license_kind }}</p>
-            <p class="form-hint">Vom Bollisoft-Team geprüft. Das Dokument selbst ist nicht öffentlich.</p>
+            <h2>{{ _("Drohnen-Ausweis") }}</h2>
+            <p><span class="profile-badge">{{ _("✓ geprüft") }}</span> {{ license_kind }}</p>
+            <p class="form-hint">{{ _("Vom Bollisoft-Team geprüft. Das Dokument selbst ist nicht öffentlich.") }}</p>
           </section>
         {% endif %}
       </aside>

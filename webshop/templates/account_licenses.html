@@ -1,25 +1,25 @@
 {% extends "base.html" %}
 
-{% block title %}Webshop – Mein Konto{% endblock %}
+{% block title %}{{ _("Webshop – Mein Konto") }}{% endblock %}
 
 {% block content %}
   <section class="account-page">
-    <h1>Mein Konto</h1>
+    <h1>{{ _("Mein Konto") }}</h1>
     {% if account %}
       {% set active = "overview" %}
       {% include "_account_tabs.html" %}
     {% endif %}
-    <p class="license-intro">Eingeloggt als <strong>{{ email }}</strong>.</p>
+    <p class="license-intro">{{ _("Eingeloggt als") }} <strong>{{ email }}</strong>.</p>
 
     {% if account %}
       <div class="s">
-        <h2>Profil</h2>
+        <h2>{{ _("Profil") }}</h2>
         {% if account.username %}
-          <p>Benutzername: <strong>{{ account.username }}</strong></p>
+          <p>{{ _("Benutzername:") }} <strong>{{ account.username }}</strong></p>
         {% else %}
           <p class="license-warning">
-            Noch kein Benutzername – den brauchst du fürs Forum.
-            <a href="{{ url_for('konto.profile') }}">Jetzt festlegen</a>
+            {{ _("Noch kein Benutzername – den brauchst du fürs Forum.") }}
+            <a href="{{ url_for('konto.profile') }}">{{ _("Jetzt festlegen") }}</a>
           </p>
         {% endif %}
         <p><strong>{{ account.full_name }}</strong></p>
@@ -30,30 +30,29 @@
           <p>{{ account.address }}</p>
         {% endif %}
         {% if account.phone %}
-          <p>Tel: {{ account.phone }}</p>
+          <p>{{ _("Tel:") }} {{ account.phone }}</p>
         {% endif %}
         <p>
-          <a class="btn btn-secondary" href="{{ url_for('konto.profile') }}">Profil &amp; Passwort ändern</a>
-          <a class="btn btn-secondary" href="{{ url_for('konto.copters') }}">Meine Copter</a>
+          <a class="btn btn-secondary" href="{{ url_for('konto.profile') }}">{{ _("Profil & Passwort ändern") }}</a>
+          <a class="btn btn-secondary" href="{{ url_for('konto.copters') }}">{{ _("Meine Copter") }}</a>
         </p>
       </div>
     {% endif %}
 
     {% if shipping_saved %}
       <div class="license-success">
-        Versandadresse gespeichert - deine Bestellung ist abgeschlossen und wird demnächst
-        verschickt.
+        {{ _("Versandadresse gespeichert - deine Bestellung ist abgeschlossen und wird demnächst verschickt.") }}
       </div>
     {% endif %}
 
     {% if pending %}
       <div class="pending-license-banner">
         <p>
-          Offene Bestellung: <strong>{{ products.get(pending.product_id).name if products.get(pending.product_id) else pending.product_id }}</strong>
-          wartet noch auf die Lizenz-Einrichtung.
+          {{ _("Offene Bestellung:") }} <strong>{{ _(products.get(pending.product_id).name) if products.get(pending.product_id) else pending.product_id }}</strong>
+          {{ _("wartet noch auf die Lizenz-Einrichtung.") }}
         </p>
         <a class="btn btn-primary btn-large btn-pulse" href="{{ url_for('license_setup', pending_id=pending.id) }}"
-          >Jetzt Lizenz einrichten</a
+          >{{ _("Jetzt Lizenz einrichten") }}</a
         >
       </div>
     {% endif %}
@@ -61,29 +60,29 @@
     {% if pending_shipping %}
       <div class="pending-license-banner">
         <p>
-          Offene Bestellung: <strong>{{ products.get(pending_shipping.product_id).name if products.get(pending_shipping.product_id) else pending_shipping.product_id }}</strong>
-          wartet noch auf deine Versandadresse.
+          {{ _("Offene Bestellung:") }} <strong>{{ _(products.get(pending_shipping.product_id).name) if products.get(pending_shipping.product_id) else pending_shipping.product_id }}</strong>
+          {{ _("wartet noch auf deine Versandadresse.") }}
         </p>
         <a class="btn btn-primary btn-large btn-pulse" href="{{ url_for('shipping_setup', pending_id=pending_shipping.id) }}"
-          >Jetzt Versandadresse angeben</a
+          >{{ _("Jetzt Versandadresse angeben") }}</a
         >
       </div>
     {% endif %}
 
     {% if shipping_orders %}
-      <h2>Meine Hardware-Bestellungen</h2>
+      <h2>{{ _("Meine Hardware-Bestellungen") }}</h2>
       <ul class="license-list">
         {% for order in shipping_orders %}
           <li class="license-list-item">
             <div class="license-list-details">
-              <h3>{{ products.get(order.product_id).name if products.get(order.product_id) else order.product_id }}</h3>
+              <h3>{{ _(products.get(order.product_id).name) if products.get(order.product_id) else order.product_id }}</h3>
               <p>{{ order.full_name }}, {{ order.street_address }}, {{ order.postal_code }} {{ order.city }}, {{ order.country }}</p>
               <p class="form-hint">
-                Bestellt am {{ order.ordered_at[:10] }} -
+                {{ _("Bestellt am") }} {{ order.ordered_at[:10] }} -
                 {% if order.shipped_at %}
-                  verschickt am {{ order.shipped_at[:10] }}
+                  {{ _("verschickt am") }} {{ order.shipped_at[:10] }}
                 {% else %}
-                  noch nicht verschickt
+                  {{ _("noch nicht verschickt") }}
                 {% endif %}
               </p>
             </div>
@@ -92,38 +91,37 @@
       </ul>
     {% endif %}
 
-    <h2>Meine Lizenzen</h2>
+    <h2>{{ _("Meine Lizenzen") }}</h2>
     {% if licenses %}
       <ul class="license-list">
         {% for license in licenses %}
           <li class="license-list-item">
             <div class="license-list-details">
-              <h3>{{ products.get(license.product_id).name if products.get(license.product_id) else license.product_id }}</h3>
-              <p>Hardware-ID: <code>{{ license.hardware_id }}</code></p>
-              <p class="form-hint">Ausgestellt am {{ license.issued_at[:10] }}</p>
+              <h3>{{ _(products.get(license.product_id).name) if products.get(license.product_id) else license.product_id }}</h3>
+              <p>{{ _("Hardware-ID:") }} <code>{{ license.hardware_id }}</code></p>
+              <p class="form-hint">{{ _("Ausgestellt am") }} {{ license.issued_at[:10] }}</p>
             </div>
             <div class="license-list-actions">
               <a class="btn btn-secondary" href="{{ url_for('account_download_license', license_id=license.id) }}"
-                >license.lic herunterladen</a
+                >{{ _("license.lic herunterladen") }}</a
               >
-              <a class="btn btn-secondary" href="{{ url_for('license_setup_public_key') }}">public_key.pem</a>
+              <a class="btn btn-secondary" href="{{ url_for('license_setup_public_key') }}">{{ _("public_key.pem") }}</a>
             </div>
           </li>
         {% endfor %}
       </ul>
     {% else %}
-      <p>Für diese E-Mail-Adresse liegen noch keine ausgestellten Lizenzen vor.</p>
-      <a class="btn btn-primary" href="{{ url_for('shop') }}">Zum Shop</a>
+      <p>{{ _("Für diese E-Mail-Adresse liegen noch keine ausgestellten Lizenzen vor.") }}</p>
+      <a class="btn btn-primary" href="{{ url_for('shop') }}">{{ _("Zum Shop") }}</a>
     {% endif %}
 
     {% if werkstatt %}
-      <h2 id="werkstatt">Meine Drohnen Tools</h2>
+      <h2 id="werkstatt">{{ _("Meine Drohnen Tools") }}</h2>
       <p class="form-hint">
-        Was du in den <a href="/tx15-werkstatt/">Drohnen Tools</a> auf dem Server gespeichert hast.
-        Nur du siehst diese Einträge.
+        {{ _("Was du in den") }} <a href="/tx15-werkstatt/">{{ _("Drohnen Tools") }}</a> {{ _("auf dem Server gespeichert hast. Nur du siehst diese Einträge.") }}
       </p>
 
-      <h3>SD-Karten-Backups</h3>
+      <h3>{{ _("SD-Karten-Backups") }}</h3>
       {% if werkstatt.backups["items"] %}
         <ul class="license-list">
           {% for backup in werkstatt.backups["items"] %}
@@ -131,36 +129,36 @@
               <div class="license-list-details">
                 <h3>{{ backup.label }}</h3>
                 <p>
-                  {{ backup.files }} Dateien · {{ backup.models }} Modelle
-                  {%- if backup.edgetx %} · EdgeTX {{ backup.edgetx }}{% endif %}
-                  · ZIP {{ backup.size|filesizeformat }}
+                  {{ backup.files }} {{ _("Dateien ·") }} {{ backup.models }} {{ _("Modelle") }}
+                  {%- if backup.edgetx %} {{ _("· EdgeTX") }} {{ backup.edgetx }}{% endif %}
+                  {{ _("· ZIP") }} {{ backup.size|filesizeformat }}
                 </p>
                 <p class="form-hint">
-                  {% if backup.auto %}Automatisch vor einer Wiederherstellung · {% endif %}Erstellt am {{ backup.created }}
+                  {% if backup.auto %}{{ _("Automatisch vor einer Wiederherstellung ·") }} {% endif %}{{ _("Erstellt am") }} {{ backup.created }}
                 </p>
               </div>
               <div class="license-list-actions">
-                <a class="btn btn-primary" href="/tx15-werkstatt/backup-studio.html?backup={{ backup.id }}">Im Backup Studio öffnen</a>
-                <a class="btn btn-secondary" href="/api/tx15-backups/{{ backup.id }}/zip">ZIP herunterladen</a>
+                <a class="btn btn-primary" href="/tx15-werkstatt/backup-studio.html?backup={{ backup.id }}">{{ _("Im Backup Studio öffnen") }}</a>
+                <a class="btn btn-secondary" href="/api/tx15-backups/{{ backup.id }}/zip">{{ _("ZIP herunterladen") }}</a>
                 <button
                   class="btn btn-secondary"
                   type="button"
                   data-delete-url="/api/tx15-backups/{{ backup.id }}"
                   data-delete-header="tx15-backup-studio"
                   data-delete-name="{{ backup.label }}"
-                >Löschen</button>
+                >{{ _("Löschen") }}</button>
               </div>
             </li>
           {% endfor %}
         </ul>
         <p class="form-hint">
-          {{ werkstatt.backups["count"] }} von {{ werkstatt.backups["max_count"] }} Backups ·
-          {{ werkstatt.backups["used"]|filesizeformat }} von {{ werkstatt.backups["quota"]|filesizeformat }} belegt
+          {{ _("{n} von {max} Backups", n=werkstatt.backups["count"], max=werkstatt.backups["max_count"]) }} ·
+          {{ _("{used} von {quota} belegt", used=werkstatt.backups["used"]|filesizeformat, quota=werkstatt.backups["quota"]|filesizeformat) }}
         </p>
       {% else %}
         <p>
-          Noch keine Backups gespeichert. Im <a href="/tx15-werkstatt/backup-studio.html">Backup Studio</a>
-          sicherst du die SD-Karte deines Senders.
+          {{ _("Noch keine Backups gespeichert. Im") }} <a href="/tx15-werkstatt/backup-studio.html">{{ _("Backup Studio") }}</a>
+          {{ _("sicherst du die SD-Karte deines Senders.") }}
         </p>
       {% endif %}
 
@@ -176,24 +174,24 @@
                 <div class="license-list-details">
                   <h3>{{ project.name }}</h3>
                   {% if project.detail %}<p><code>{{ project.detail }}</code></p>{% endif %}
-                  <p class="form-hint">Zuletzt gespeichert am {{ project.updated }} · ZIP {{ project.size|filesizeformat }}</p>
+                  <p class="form-hint">{{ _("Zuletzt gespeichert am") }} {{ project.updated }} {{ _("· ZIP") }} {{ project.size|filesizeformat }}</p>
                 </div>
                 <div class="license-list-actions">
-                  <a class="btn btn-primary" href="{{ project.studio_url }}">Im {{ studio_name }} öffnen</a>
-                  <a class="btn btn-secondary" href="/api/tx15-projects/{{ project.id }}/zip">ZIP herunterladen</a>
+                  <a class="btn btn-primary" href="{{ project.studio_url }}">{{ _("Im") }} {{ studio_name }} {{ _("öffnen") }}</a>
+                  <a class="btn btn-secondary" href="/api/tx15-projects/{{ project.id }}/zip">{{ _("ZIP herunterladen") }}</a>
                   <button
                     class="btn btn-secondary"
                     type="button"
                     data-delete-url="/api/tx15-projects/{{ project.id }}"
                     data-delete-header="tx15-werkstatt"
                     data-delete-name="{{ project.name }}"
-                  >Löschen</button>
+                  >{{ _("Löschen") }}</button>
                 </div>
               </li>
             {% endfor %}
           </ul>
         {% else %}
-          <p>Noch nichts gespeichert. Im <a href="{{ studio }}">{{ studio_name }}</a> speicherst du mit „Auf dem Server speichern“.</p>
+          <p>{{ _("Noch nichts gespeichert. Im") }} <a href="{{ studio }}">{{ studio_name }}</a> {{ _("speicherst du mit „Auf dem Server speichern“.") }}</p>
         {% endif %}
       {% endfor %}
     {% endif %}
@@ -202,7 +200,7 @@
     // Loeschen von Backups/Themes/Lua-Skripten ueber die Server-Ablage (tx15_backups.py, tx15_projects.py).
     document.querySelectorAll("[data-delete-url]").forEach((button) => {
       button.addEventListener("click", async () => {
-        if (!window.confirm(`„${button.dataset.deleteName}“ wirklich löschen?`)) {
+        if (!window.confirm({{ _("„{name}“ wirklich löschen?")|tojson }}.replace("{name}", button.dataset.deleteName))) {
           return;
         }
         button.disabled = true;
@@ -218,7 +216,7 @@
           window.location.reload();
         } catch (error) {
           button.disabled = false;
-          window.alert("Löschen hat nicht geklappt. Bitte die Seite neu laden und erneut versuchen.");
+          window.alert({{ _("Löschen hat nicht geklappt. Bitte die Seite neu laden und erneut versuchen.")|tojson }});
         }
       });
     });

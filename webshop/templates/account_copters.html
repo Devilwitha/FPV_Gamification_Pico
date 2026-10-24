@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Bollisoft – Meine Copter{% endblock %}
+{% block title %}{{ _("Bollisoft – Meine Copter") }}{% endblock %}
 
 {% macro copter_input(name, label, placeholder="", maxlength=80) %}
   <div class="form-field">
@@ -11,43 +11,43 @@
 
 {% block content %}
   <section class="account-page account-page-wide">
-    <h1>Meine Copter</h1>
+    <h1>{{ _("Meine Copter") }}</h1>
     {% set active = "copters" %}
     {% include "_account_tabs.html" %}
 
     {% if message == "angelegt" %}
-      <div class="license-success">Copter gespeichert.</div>
+      <div class="license-success">{{ _("Copter gespeichert.") }}</div>
     {% elif message == "aktualisiert" %}
-      <div class="license-success">Änderungen gespeichert.</div>
+      <div class="license-success">{{ _("Änderungen gespeichert.") }}</div>
     {% elif message == "geloescht" %}
-      <div class="license-success">Copter gelöscht.</div>
+      <div class="license-success">{{ _("Copter gelöscht.") }}</div>
     {% elif message == "fernbedienung" %}
-      <div class="license-success">Fernbedienung gespeichert.</div>
+      <div class="license-success">{{ _("Fernbedienung gespeichert.") }}</div>
     {% endif %}
 
     <div class="login-card account-card radio-card" id="fernbedienung">
-      <h2>Meine Fernbedienung</h2>
-      <p class="form-hint">Steht in deinem Profil und im Forum über deinen Coptern.</p>
+      <h2>{{ _("Meine Fernbedienung") }}</h2>
+      <p class="form-hint">{{ _("Steht in deinem Profil und im Forum über deinen Coptern.") }}</p>
       <form method="post" action="{{ url_for('konto.copters') }}">
         <input type="hidden" name="action" value="radio" />
         <div class="form-row">
           <div class="form-field">
-            <label for="radio-model">Modell</label>
-            <input type="text" id="radio-model" name="radio" value="{{ radio }}" list="radio-models" maxlength="80" placeholder="z. B. Radiomaster TX15" />
+            <label for="radio-model">{{ _("Modell") }}</label>
+            <input type="text" id="radio-model" name="radio" value="{{ radio }}" list="radio-models" maxlength="80" placeholder="{{ _("z. B. Radiomaster TX15") }}" />
             <datalist id="radio-models">
               {% for name in radio_suggestions %}<option value="{{ name }}"></option>{% endfor %}
             </datalist>
           </div>
           <div class="form-field">
-            <label for="radio-firmware">Firmware (optional)</label>
-            <input type="text" id="radio-firmware" name="radio_firmware" value="{{ radio_firmware }}" list="radio-firmwares" maxlength="60" placeholder="z. B. EdgeTX 2.12" />
+            <label for="radio-firmware">{{ _("Firmware (optional)") }}</label>
+            <input type="text" id="radio-firmware" name="radio_firmware" value="{{ radio_firmware }}" list="radio-firmwares" maxlength="60" placeholder="{{ _("z. B. EdgeTX 2.12") }}" />
             <datalist id="radio-firmwares">
               {% for name in radio_firmware_suggestions %}<option value="{{ name }}"></option>{% endfor %}
             </datalist>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary">Fernbedienung speichern</button>
-        <p class="form-hint">Feld leeren und speichern, um die Angabe zu entfernen.</p>
+        <button type="submit" class="btn btn-primary">{{ _("Fernbedienung speichern") }}</button>
+        <p class="form-hint">{{ _("Feld leeren und speichern, um die Angabe zu entfernen.") }}</p>
       </form>
     </div>
 
@@ -62,49 +62,49 @@
             {% endif %}
             <div class="copter-head">
               <h3>{{ copter.name }}</h3>
-              <span class="copter-category">{{ copter.category }}</span>
+              <span class="copter-category">{{ _(copter.category) }}</span>
             </div>
             <dl class="copter-specs">
               {% for key, label in [
-                ("frame", "Rahmen"), ("motors", "Motoren"), ("flight_controller", "Flugcontroller"),
+                ("frame", _("Rahmen")), ("motors", _("Motoren")), ("flight_controller", _("Flugcontroller")),
                 ("esc", "ESC"), ("video", "Video / Kamera"), ("receiver", "Empfänger"),
                 ("battery", "Akku"), ("firmware", "Firmware"),
               ] if copter[key] %}
                 <div><dt>{{ label }}</dt><dd>{{ copter[key] }}</dd></div>
               {% endfor %}
               {% if copter.weight_g %}
-                <div><dt>Gewicht</dt><dd>{{ copter.weight_g }} g</dd></div>
+                <div><dt>{{ _("Gewicht") }}</dt><dd>{{ copter.weight_g }} g</dd></div>
               {% endif %}
             </dl>
             {% if copter.notes %}
               <p class="copter-notes">{{ copter.notes }}</p>
             {% endif %}
             <div class="license-list-actions">
-              <a class="btn btn-secondary" href="{{ url_for('konto.copters', bearbeiten=copter.id) }}#copter-formular">Bearbeiten</a>
-              <a class="btn btn-secondary" href="{{ url_for('community.copter', copter_id=copter.id) }}">Ansehen</a>
-              <form method="post" action="{{ url_for('konto.copters') }}" data-confirm="„{{ copter.name }}“ wirklich löschen?">
+              <a class="btn btn-secondary" href="{{ url_for('konto.copters', bearbeiten=copter.id) }}#copter-formular">{{ _("Bearbeiten") }}</a>
+              <a class="btn btn-secondary" href="{{ url_for('community.copter', copter_id=copter.id) }}">{{ _("Ansehen") }}</a>
+              <form method="post" action="{{ url_for('konto.copters') }}" data-confirm="{{ _("„{name}“ wirklich löschen?", name=copter.name) }}">
                 <input type="hidden" name="action" value="delete" />
                 <input type="hidden" name="copter_id" value="{{ copter.id }}" />
-                <button type="submit" class="btn btn-secondary">Löschen</button>
+                <button type="submit" class="btn btn-secondary">{{ _("Löschen") }}</button>
               </form>
             </div>
           </li>
         {% endfor %}
       </ul>
       <p class="form-hint">
-        {{ copters|length }} von {{ max_copters }} Coptern ·
+        {{ _("{n} von {max} Coptern", n=copters|length, max=max_copters) }} ·
         {% if copters_public %}
-          Im Forum und in deinem Profil für alle sichtbar.
+          {{ _("Im Forum und in deinem Profil für alle sichtbar.") }}
         {% else %}
-          Öffentlich ausgeblendet – ändern unter <a href="{{ url_for('konto.profile') }}#oeffentliches-profil">Öffentliches Profil</a>.
+          {{ _("Öffentlich ausgeblendet – ändern unter") }} <a href="{{ url_for('konto.profile') }}#oeffentliches-profil">{{ _("Öffentliches Profil") }}</a>.
         {% endif %}
       </p>
     {% else %}
-      <p>Du hast noch keine Copter eingetragen. Leg unten deinen ersten an.</p>
+      <p>{{ _("Du hast noch keine Copter eingetragen. Leg unten deinen ersten an.") }}</p>
     {% endif %}
 
     <div class="login-card account-card" id="copter-formular">
-      <h2>{% if editing %}„{{ editing.name }}“ bearbeiten{% else %}Copter hinzufügen{% endif %}</h2>
+      <h2>{% if editing %}„{{ editing.name }}{{ _("“ bearbeiten") }}{% else %}{{ _("Copter hinzufügen") }}{% endif %}</h2>
       {% if error %}
         <div class="checkout-error">{{ error }}</div>
       {% endif %}
@@ -115,37 +115,37 @@
         {% endif %}
         <div class="form-row">
           <div class="form-field">
-            <label for="copter-name">Name</label>
-            <input type="text" id="copter-name" name="name" value="{{ values.get('name') or '' }}" placeholder="z. B. Freestyle-Quad" maxlength="60" required />
+            <label for="copter-name">{{ _("Name") }}</label>
+            <input type="text" id="copter-name" name="name" value="{{ values.get('name') or '' }}" placeholder="{{ _("z. B. Freestyle-Quad") }}" maxlength="60" required />
           </div>
           <div class="form-field">
-            <label for="copter-category">Art</label>
+            <label for="copter-category">{{ _("Art") }}</label>
             <select id="copter-category" name="category">
               {% for category in categories %}
-                <option value="{{ category }}"{% if values.get('category') == category %} selected{% endif %}>{{ category }}</option>
+                <option value="{{ category }}"{% if values.get('category') == category %} selected{% endif %}>{{ _(category) }}</option>
               {% endfor %}
             </select>
           </div>
         </div>
         <div class="form-row">
-          {{ copter_input("frame", "Rahmen", "z. B. Source One V5 5\"") }}
-          {{ copter_input("motors", "Motoren", "z. B. 2306 1950KV") }}
+          {{ copter_input("frame", _("Rahmen"), _("z. B.") ~ " Source One V5 5\"") }}
+          {{ copter_input("motors", _("Motoren"), _("z. B.") ~ " 2306 1950KV") }}
         </div>
         <div class="form-row">
-          {{ copter_input("flight_controller", "Flugcontroller", "z. B. SpeedyBee F405 V4") }}
-          {{ copter_input("esc", "ESC", "z. B. 55A 4in1, Bluejay") }}
+          {{ copter_input("flight_controller", _("Flugcontroller"), _("z. B.") ~ " SpeedyBee F405 V4") }}
+          {{ copter_input("esc", "ESC", _("z. B.") ~ " 55A 4in1, Bluejay") }}
         </div>
         <div class="form-row">
-          {{ copter_input("video", "Video / Kamera", "z. B. DJI O3, Walksnail") }}
-          {{ copter_input("receiver", "Empfänger", "z. B. ELRS 2.4 GHz") }}
+          {{ copter_input("video", _("Video / Kamera"), _("z. B.") ~ " DJI O3, Walksnail") }}
+          {{ copter_input("receiver", _("Empfänger"), _("z. B.") ~ " ELRS 2.4 GHz") }}
         </div>
         <div class="form-row">
-          {{ copter_input("battery", "Akku", "z. B. 6S 1100 mAh") }}
-          {{ copter_input("firmware", "Firmware", "z. B. Betaflight 4.5", 60) }}
+          {{ copter_input("battery", _("Akku"), _("z. B.") ~ " 6S 1100 mAh") }}
+          {{ copter_input("firmware", "Firmware", _("z. B.") ~ " Betaflight 4.5", 60) }}
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label for="copter-weight">Gewicht in g (optional)</label>
+            <label for="copter-weight">{{ _("Gewicht in g (optional)") }}</label>
             <input type="number" id="copter-weight" name="weight_g" value="{{ values.get('weight_g') or '' }}" min="1" max="50000" step="1" />
           </div>
           <div class="form-field"></div>
@@ -153,21 +153,21 @@
         <div class="copter-photo-edit">
           <img id="copter-image-preview" src="{{ copter_image_url(editing.image_filename) if editing and editing.image_filename else '' }}" alt=""{% if not (editing and editing.image_filename) %} hidden{% endif %} />
           <div class="form-field">
-            <label for="copter-image">Foto (optional – JPG, PNG, WebP, höchstens {{ image_mb }} MB)</label>
+            <label for="copter-image">{{ _("Foto (optional – JPG, PNG, WebP, höchstens") }} {{ image_mb }} {{ _("MB)") }}</label>
             <input type="file" id="copter-image" name="image" accept="image/jpeg,image/png,image/webp,image/gif" />
-            <p class="form-hint">Wird verkleinert; Standort- und Kameradaten aus dem Handy werden entfernt.{% if editing and editing.image_filename %} Ein neues Foto ersetzt das bisherige.{% endif %}</p>
+            <p class="form-hint">{{ _("Wird verkleinert; Standort- und Kameradaten aus dem Handy werden entfernt.") }}{% if editing and editing.image_filename %} {{ _("Ein neues Foto ersetzt das bisherige.") }}{% endif %}</p>
             {% if editing and editing.image_filename %}
-              <label class="checkbox-label"><input type="checkbox" name="remove_image" value="1" /> Foto entfernen</label>
+              <label class="checkbox-label"><input type="checkbox" name="remove_image" value="1" /> {{ _("Foto entfernen") }}</label>
             {% endif %}
           </div>
         </div>
         <div class="form-field">
-          <label for="copter-notes">Notizen (optional)</label>
+          <label for="copter-notes">{{ _("Notizen (optional)") }}</label>
           <textarea id="copter-notes" name="notes" rows="4" maxlength="1000">{{ values.get('notes') or '' }}</textarea>
         </div>
-        <button type="submit" class="btn btn-primary">{{ 'Änderungen speichern' if editing else 'Copter speichern' }}</button>
+        <button type="submit" class="btn btn-primary">{{ _("Änderungen speichern") if editing else _("Copter speichern") }}</button>
         {% if editing %}
-          <a class="btn btn-secondary" href="{{ url_for('konto.copters') }}">Abbrechen</a>
+          <a class="btn btn-secondary" href="{{ url_for('konto.copters') }}">{{ _("Abbrechen") }}</a>
         {% endif %}
       </form>
     </div>

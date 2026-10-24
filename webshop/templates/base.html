@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="{{ current_lang() }}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -16,7 +16,7 @@
   <body class="{% block body_class %}{% endblock %}">
     {% if dummy_mode %}
       <div class="dummy-banner">
-        ⚠️ DUMMY-MODUS AKTIV – Käufe werden nur simuliert, es fließt kein echtes Geld.
+        {{ _("⚠️ DUMMY-MODUS AKTIV – Käufe werden nur simuliert, es fließt kein echtes Geld.") }}
       </div>
     {% endif %}
     {% include "_nav.html" %}
@@ -35,11 +35,11 @@
     </main>
 
     <footer class="site-footer">
-      <p>&copy; 2026 Bollisoft. Engineering Software with Precision.</p>
-      <p class="site-footer-links"><a href="{{ url_for('impressum') }}">Impressum</a></p>
+      <p>{{ _("© 2026 Bollisoft. Engineering Software with Precision.") }}</p>
+      <p class="site-footer-links"><a href="{{ url_for('impressum') }}">{{ _("Impressum") }}</a></p>
     </footer>
 
-    <a class="admin-corner-link" href="{{ url_for('admin_dashboard') }}" title="Admin" aria-label="Admin-Bereich">&#9881;</a>
+    <a class="admin-corner-link" href="{{ url_for('admin_dashboard') }}" title="Admin" aria-label="{{ _("Admin-Bereich") }}">&#9881;</a>
 
     {% block scripts %}{% endblock %}
   </body>

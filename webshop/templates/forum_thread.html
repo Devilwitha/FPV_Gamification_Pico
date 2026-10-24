@@ -1,49 +1,49 @@
 {% extends "base.html" %}
 
-{% block title %}Bollisoft – Forum – {{ topic.title }}{% endblock %}
+{% block title %}{{ _("Bollisoft – Forum –") }} {{ topic.title }}{% endblock %}
 
 {% block content %}
   <section class="forum-page">
-    <nav class="forum-breadcrumbs" aria-label="Pfad">
-      <a href="{{ url_for('forum.index') }}">Forum</a> <span>›</span>
+    <nav class="forum-breadcrumbs" aria-label="{{ _("Pfad") }}">
+      <a href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a> <span>›</span>
       <a href="{{ url_for('forum.category', category=slug) }}">{{ category[0] }}</a>
     </nav>
     <div class="forum-heading">
       <h1>
-        {% if topic.pinned %}<span class="forum-badge">Angeheftet</span>{% endif %}
-        {% if topic.locked %}<span class="forum-badge forum-badge-muted">Gesperrt</span>{% endif %}
+        {% if topic.pinned %}<span class="forum-badge">{{ _("Angeheftet") }}</span>{% endif %}
+        {% if topic.locked %}<span class="forum-badge forum-badge-muted">{{ _("Gesperrt") }}</span>{% endif %}
         {{ topic.title }}
       </h1>
       {% if is_admin %}
         <div class="forum-moderation">
           <form method="post" action="{{ url_for('forum.moderate', thread_id=topic.id) }}">
-            <button class="btn btn-secondary" name="action" value="pin">{{ "Lösen" if topic.pinned else "Anheften" }}</button>
-            <button class="btn btn-secondary" name="action" value="lock">{{ "Entsperren" if topic.locked else "Sperren" }}</button>
+            <button class="btn btn-secondary" name="action" value="pin">{{ _("Lösen") if topic.pinned else _("Anheften") }}</button>
+            <button class="btn btn-secondary" name="action" value="lock">{{ _("Entsperren") if topic.locked else _("Sperren") }}</button>
           </form>
           <form method="post" action="{{ url_for('forum.moderate', thread_id=topic.id) }}" class="forum-move">
             <input type="hidden" name="action" value="move" />
-            <select name="category" aria-label="Verschieben nach">
+            <select name="category" aria-label="{{ _("Verschieben nach") }}">
               {% for cslug, (cname, _desc) in categories.items() %}
                 <option value="{{ cslug }}"{% if cslug == slug %} selected{% endif %}>{{ cname }}</option>
               {% endfor %}
             </select>
-            <button class="btn btn-secondary">Verschieben</button>
+            <button class="btn btn-secondary">{{ _("Verschieben") }}</button>
           </form>
           <form method="post" action="{{ url_for('forum.delete_thread', thread_id=topic.id) }}"
-                data-confirm="Das ganze Thema mit allen {{ topic.post_count }} Beiträgen löschen?">
-            <button class="btn btn-secondary forum-danger">Thema löschen</button>
+                data-confirm="{{ _("Das ganze Thema mit allen {n} Beiträgen löschen?", n=topic.post_count) }}">
+            <button class="btn btn-secondary forum-danger">{{ _("Thema löschen") }}</button>
           </form>
         </div>
       {% elif owns_thread %}
         <form method="post" action="{{ url_for('forum.delete_thread', thread_id=topic.id) }}" class="forum-moderation"
-              data-confirm="Dein Thema mit {{ 'deinem Beitrag' if topic.post_count == 1 else 'allen ' ~ topic.post_count ~ ' Beiträgen (auch den Antworten anderer)' }} löschen?">
-          <button class="btn btn-secondary forum-danger">Thema löschen</button>
+              data-confirm="{{ _("Dein Thema mit deinem Beitrag löschen?") if topic.post_count == 1 else _("Dein Thema mit allen {n} Beiträgen (auch den Antworten anderer) löschen?", n=topic.post_count) }}">
+          <button class="btn btn-secondary forum-danger">{{ _("Thema löschen") }}</button>
         </form>
       {% endif %}
     </div>
 
     {% if request.args.get("verschoben") %}
-      <div class="license-success">Thema nach „{{ category[0] }}“ verschoben.</div>
+      <div class="license-success">{{ _("Thema nach „") }}{{ category[0] }}{{ _("“ verschoben.") }}</div>
     {% endif %}
 
     <ol class="forum-posts">
@@ -52,36 +52,37 @@
         <li class="forum-post" id="beitrag-{{ post.id }}">
           <aside class="forum-post-author">
             {% if post.author_is_team %}
-              <div class="avatar avatar-md avatar-team"><span>B</span></div>
-              <strong>{{ post.author_name }}</strong>
-              <span class="forum-badge">Team</span>
+              <a class="avatar avatar-md avatar-team" href="{{ url_for('community.team_profile') }}">{% if team and team.avatar %}<img src="{{ team.avatar }}" alt="" width="64" height="64" loading="lazy" />{% else %}<span>B</span>{% endif %}</a>
+              <a class="forum-author-name" href="{{ url_for('community.team_profile') }}">{{ post.author_name }}</a>
+              <span class="forum-badge forum-badge-role role-team">{{ _("Team") }}</span>
+              {% if team and team.status_text %}<span class="forum-author-status">„{{ team.status_text }}“</span>{% endif %}
             {% elif card %}
-              <a class="avatar avatar-md{% if card.online %} is-online{% endif %}" href="{{ card.profile_url }}" aria-label="Profil von {{ card.username }}">
+              <a class="avatar avatar-md{% if card.online %} is-online{% endif %}" href="{{ card.profile_url }}" aria-label="{{ _("Profil von {name}", name=card.username) }}">
                 {% if card.avatar %}<img src="{{ card.avatar }}" alt="" width="64" height="64" loading="lazy" />{% else %}<span>{{ card.initials }}</span>{% endif %}
               </a>
               <a class="forum-author-name" href="{{ card.profile_url }}">{{ card.username }}</a>
               <span class="forum-author-title{% if card.is_admin %} is-admin{% endif %}">{{ card.title }}</span>
-              {% if card.is_admin %}<span class="forum-badge forum-badge-admin">Admin</span>{% endif %}
+              {% if card.role %}<span class="forum-badge forum-badge-role role-{{ card.role }}">{{ _(roles[card.role].badge) }}</span>{% endif %}
               {% if card.status_text %}<span class="forum-author-status">„{{ card.status_text }}“</span>{% endif %}
-              {% if card.license_verified %}<span class="forum-badge" title="Drohnen-Ausweis vom Admin geprüft">✓ Ausweis geprüft</span>{% endif %}
+              {% if card.license_verified %}<span class="forum-badge" title="{{ _("Drohnen-Ausweis vom Admin geprüft") }}">{{ _("✓ Ausweis geprüft") }}</span>{% endif %}
               <dl class="forum-author-facts">
-                <div><dt>Beiträge</dt><dd>{{ card.posts }}</dd></div>
-                <div><dt>Dabei seit</dt><dd>{{ (card.joined|forum_time)[3:10] }}</dd></div>
-                {% if card.best_rank %}<div><dt>Leaderboard</dt><dd>#{{ card.best_rank }}</dd></div>{% endif %}
-                {% if card.country %}<div><dt>Land</dt><dd>{{ card.country|country_name }}</dd></div>{% endif %}
+                <div><dt>{{ _("Beiträge") }}</dt><dd>{{ card.posts }}</dd></div>
+                <div><dt>{{ _("Dabei seit") }}</dt><dd>{{ (card.joined|forum_time)[3:10] }}</dd></div>
+                {% if card.best_rank %}<div><dt>{{ _("Leaderboard") }}</dt><dd>#{{ card.best_rank }}</dd></div>{% endif %}
+                {% if card.country %}<div><dt>{{ _("Land") }}</dt><dd>{{ card.country|country_name }}</dd></div>{% endif %}
               </dl>
               {% if card.radio %}
-                <p class="forum-author-radio" title="Fernbedienung"><span aria-hidden="true">🎮</span> {{ card.radio }}</p>
+                <p class="forum-author-radio" title="{{ _("Fernbedienung") }}"><span aria-hidden="true">🎮</span> {{ card.radio }}</p>
               {% endif %}
               {% if card.copters %}
                 <details class="forum-author-copters">
-                  <summary>{{ card.copters|length }} Copter</summary>
+                  <summary>{{ card.copters|length }} {{ _("Copter") }}</summary>
                   <ul>
                     {% for copter in card.copters %}
                       <li>
                         <a href="{{ url_for('community.copter', copter_id=copter.id) }}">
                           {% if copter.image_filename %}<img src="{{ copter_image_url(copter.image_filename) }}" alt="" width="40" height="40" loading="lazy" />{% else %}<span class="forum-copter-icon" aria-hidden="true">✈</span>{% endif %}
-                          <span class="forum-copter-text">{{ copter.name }}<span>{{ copter.category }}</span></span>
+                          <span class="forum-copter-text">{{ copter.name }}<span>{{ _(copter.category) }}</span></span>
                         </a>
                       </li>
                     {% endfor %}
@@ -90,13 +91,13 @@
               {% endif %}
             {% else %}
               <div class="avatar avatar-md"><span>?</span></div>
-              <strong>{{ post.author_name or "Mitglied" }}</strong>
+              <strong>{{ post.author_name or _("Mitglied") }}</strong>
             {% endif %}
           </aside>
           <div class="forum-post-body">
             <div class="forum-post-meta form-hint">
               <a href="#beitrag-{{ post.id }}">{{ post.created_at|forum_time }}</a>
-              {% if post.edited_at %} · bearbeitet {{ post.edited_at|forum_time }}{% endif %}
+              {% if post.edited_at %} {{ _("· bearbeitet") }} {{ post.edited_at|forum_time }}{% endif %}
             </div>
             <div class="forum-post-text">{{ post.body|forum_text }}</div>
             {% set files = attachments.get(post.id, []) %}
@@ -114,15 +115,17 @@
                 {% endfor %}
               </div>
             {% endif %}
-            {% if card and card.signature %}
+            {% if post.author_is_team and team and team.signature %}
+              <div class="forum-signature">{{ team.signature|forum_text }}</div>
+            {% elif card and card.signature %}
               <div class="forum-signature">{{ card.signature|forum_text }}</div>
             {% endif %}
             {% if can_edit(post) %}
               <div class="forum-post-actions">
-                <a href="{{ url_for('forum.edit_post', post_id=post.id) }}">Bearbeiten</a>
+                <a href="{{ url_for('forum.edit_post', post_id=post.id) }}">{{ _("Bearbeiten") }}</a>
                 <form method="post" action="{{ url_for('forum.delete_post', post_id=post.id) }}"
-                      data-confirm="{{ 'Das ist der Eröffnungsbeitrag – das ganze Thema mit allen ' ~ topic.post_count ~ ' Beiträgen löschen?' if post.id == first_post_id else 'Diesen Beitrag löschen?' }}">
-                  <button type="submit" class="forum-link-button">{{ "Thema löschen" if post.id == first_post_id else "Löschen" }}</button>
+                      data-confirm="{{ _("Das ist der Eröffnungsbeitrag – das ganze Thema mit allen {n} Beiträgen löschen?", n=topic.post_count) if post.id == first_post_id else _("Diesen Beitrag löschen?") }}">
+                  <button type="submit" class="forum-link-button">{{ _("Thema löschen") if post.id == first_post_id else _("Löschen") }}</button>
                 </form>
               </div>
             {% endif %}
@@ -137,25 +140,25 @@
 
     <div class="login-card forum-reply" id="antworten">
       {% if topic.locked and not is_admin %}
-        <p>Dieses Thema ist gesperrt – Antworten sind nicht mehr möglich.</p>
+        <p>{{ _("Dieses Thema ist gesperrt – Antworten sind nicht mehr möglich.") }}</p>
       {% elif writer %}
-        <h2>Antworten</h2>
+        <h2>{{ _("Antworten") }}</h2>
         <form method="post" action="{{ url_for('forum.reply', thread_id=topic.id) }}" enctype="multipart/form-data">
           <div class="form-field">
-            <label for="reply-body">Deine Antwort als {{ writer }}</label>
+            <label for="reply-body">{{ _("Deine Antwort als") }} {{ writer }}</label>
             <textarea id="reply-body" name="body" rows="6" minlength="2" maxlength="{{ body_max }}" required></textarea>
-            <p class="form-hint">Reiner Text – Links werden automatisch erkannt.</p>
+            <p class="form-hint">{{ _("Reiner Text – Links werden automatisch erkannt.") }}</p>
           </div>
           {% with attachments = none %}{% include "_forum_attach_field.html" %}{% endwith %}
-          <button type="submit" class="btn btn-primary">Antwort senden</button>
+          <button type="submit" class="btn btn-primary">{{ _("Antwort senden") }}</button>
         </form>
       {% elif account %}
-        <p>Zum Antworten brauchst du einen Benutzernamen.
-          <a href="{{ url_for('konto.profile', next=request.path, benutzername='fehlt') }}">Jetzt festlegen</a></p>
+        <p>{{ _("Zum Antworten brauchst du einen Benutzernamen.") }}
+          <a href="{{ url_for('konto.profile', next=request.path, benutzername='fehlt') }}">{{ _("Jetzt festlegen") }}</a></p>
       {% else %}
-        <p>Zum Antworten bitte
-          <a href="{{ url_for('login', next=request.path) }}">einloggen</a> oder
-          <a href="{{ url_for('register', next=request.path) }}">ein Konto erstellen</a>.</p>
+        <p>{{ _("Zum Antworten bitte") }}
+          <a href="{{ url_for('login', next=request.path) }}">{{ _("einloggen") }}</a> {{ _("oder") }}
+          <a href="{{ url_for('register', next=request.path) }}">{{ _("ein Konto erstellen") }}</a>.</p>
       {% endif %}
     </div>
   </section>

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Webshop – Login{% endblock %}
+{% block title %}{{ _("Webshop – Login") }}{% endblock %}
 
 {% block content %}
   <section class="login-page">
-    <h1>Login</h1>
+    <h1>{{ _("Login") }}</h1>
     <p class="license-intro">
-      Melde dich mit E-Mail-Adresse und Passwort an. Noch kein Konto?
-      <a href="{{ url_for('register', next=next_url) }}">Jetzt registrieren</a>.
+      {{ _("Melde dich mit E-Mail-Adresse und Passwort an. Noch kein Konto?") }}
+      <a href="{{ url_for('register', next=next_url) }}">{{ _("Jetzt registrieren") }}</a>.
     </p>
 
     <div class="login-card">
@@ -17,18 +17,18 @@
 
       <form method="post" action="{{ url_for('login', next=next_url) }}">
         <div class="form-field">
-          <label for="login-email">E-Mail-Adresse</label>
+          <label for="login-email">{{ _("E-Mail-Adresse") }}</label>
           <input
             type="email"
             id="login-email"
             name="email"
-            placeholder="du@example.com"
+            placeholder="{{ _("du@example.com") }}"
             autocomplete="email"
             required
           />
         </div>
         <div class="form-field">
-          <label for="login-password">Passwort</label>
+          <label for="login-password">{{ _("Passwort") }}</label>
           <input
             type="password"
             id="login-password"
@@ -37,7 +37,7 @@
             required
           />
         </div>
-        <button type="submit" class="btn btn-primary btn-large">Einloggen</button>
+        <button type="submit" class="btn btn-primary btn-large">{{ _("Einloggen") }}</button>
       </form>
     </div>
   </section>

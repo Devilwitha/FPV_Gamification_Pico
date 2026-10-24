@@ -1,7 +1,7 @@
 {#- Land-Auswahl (countries.py). Erwartet: select_id, selected (Code). -#}
 {% set top, rest = country_choices() %}
 <select id="{{ select_id }}" name="country" autocomplete="country" required>
-  <option value=""{% if not selected %} selected{% endif %} disabled>Land wählen …</option>
+  <option value=""{% if not selected %} selected{% endif %} disabled>{{ _("Land wählen …") }}</option>
   {% for code, label in top %}
     <option value="{{ code }}"{% if selected == code %} selected{% endif %}>{{ label }}</option>
   {% endfor %}

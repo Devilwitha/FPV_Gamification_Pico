@@ -1,56 +1,53 @@
 {% extends "base.html" %}
 
-{% block title %}Bollisoft – Drohnen-Ausweis{% endblock %}
+{% block title %}{{ _("Bollisoft – Drohnen-Ausweis") }}{% endblock %}
 
 {% block content %}
   <section class="account-page">
-    <h1>Drohnen-Ausweis</h1>
+    <h1>{{ _("Drohnen-Ausweis") }}</h1>
     {% set active = "license" %}
     {% include "_account_tabs.html" %}
 
     {% if message == "hochgeladen" %}
-      <div class="license-success">Ausweis hochgeladen – wir prüfen ihn so bald wie möglich.</div>
+      <div class="license-success">{{ _("Ausweis hochgeladen – wir prüfen ihn so bald wie möglich.") }}</div>
     {% elif message == "geloescht" %}
-      <div class="license-success">Ausweis gelöscht.</div>
+      <div class="license-success">{{ _("Ausweis gelöscht.") }}</div>
     {% endif %}
 
     <p class="license-intro">
-      Lade deinen Drohnen-Nachweis hoch, z. B. den EU-Kompetenznachweis A1/A3 („kleiner
-      Drohnenführerschein“) oder deine Betreiber-Registrierung. Die Datei ist <strong>privat</strong>:
-      nur du und der Admin können sie öffnen. Nach der Prüfung erscheint in deinem öffentlichen Profil
-      und im Forum nur „Drohnen-Ausweis geprüft“ – ohne Dokument und ohne Nummer.
+      {{ _("Lade deinen Drohnen-Nachweis hoch, z. B. den EU-Kompetenznachweis A1/A3 („kleiner Drohnenführerschein“) oder deine Betreiber-Registrierung. Die Datei ist") }} <strong>{{ _("privat") }}</strong>{{ _(": nur du und der Admin können sie öffnen. Nach der Prüfung erscheint in deinem öffentlichen Profil und im Forum nur „Drohnen-Ausweis geprüft“ – ohne Dokument und ohne Nummer.") }}
     </p>
 
     {% if licence %}
       <div class="login-card account-card">
-        <h2>Dein Nachweis</h2>
+        <h2>{{ _("Dein Nachweis") }}</h2>
         <p>
-          <strong>{{ kinds.get(licence.kind, licence.kind) }}</strong>
-          · Status: <span class="license-status license-status-{{ licence.status }}">{{ status_labels.get(licence.status, licence.status) }}</span>
+          <strong>{{ _(kinds.get(licence.kind, licence.kind)) }}</strong>
+          {{ _("· Status:") }} <span class="license-status license-status-{{ licence.status }}">{{ _(status_labels.get(licence.status, licence.status)) }}</span>
         </p>
-        {% if licence.number %}<p>Nummer: <code>{{ licence.number }}</code></p>{% endif %}
-        {% if licence.valid_until %}<p>Gültig bis: {{ licence.valid_until }}</p>{% endif %}
-        {% if licence.review_note %}<p class="form-hint">Hinweis vom Admin: {{ licence.review_note }}</p>{% endif %}
-        <p class="form-hint">Hochgeladen am {{ licence.uploaded_at|forum_time }} · {{ licence.original_name }}</p>
+        {% if licence.number %}<p>{{ _("Nummer:") }} <code>{{ licence.number }}</code></p>{% endif %}
+        {% if licence.valid_until %}<p>{{ _("Gültig bis:") }} {{ licence.valid_until }}</p>{% endif %}
+        {% if licence.review_note %}<p class="form-hint">{{ _("Hinweis vom Admin:") }} {{ licence.review_note }}</p>{% endif %}
+        <p class="form-hint">{{ _("Hochgeladen am") }} {{ licence.uploaded_at|forum_time }} · {{ licence.original_name }}</p>
         <p>
-          <a class="btn btn-secondary" href="{{ url_for('ausweis.own_file') }}" target="_blank" rel="noopener">Datei ansehen</a>
+          <a class="btn btn-secondary" href="{{ url_for('ausweis.own_file') }}" target="_blank" rel="noopener">{{ _("Datei ansehen") }}</a>
         </p>
-        <form method="post" action="{{ url_for('ausweis.page') }}" data-confirm="Ausweis wirklich löschen?">
+        <form method="post" action="{{ url_for('ausweis.page') }}" data-confirm="{{ _("Ausweis wirklich löschen?") }}">
           <input type="hidden" name="action" value="delete" />
-          <button type="submit" class="btn btn-secondary">Ausweis löschen</button>
+          <button type="submit" class="btn btn-secondary">{{ _("Ausweis löschen") }}</button>
         </form>
       </div>
     {% endif %}
 
     <div class="login-card account-card">
-      <h2>{{ "Neuen Nachweis hochladen" if licence else "Nachweis hochladen" }}</h2>
-      {% if licence %}<p class="form-hint">Ein neuer Upload ersetzt den bisherigen und wird erneut geprüft.</p>{% endif %}
+      <h2>{{ _("Neuen Nachweis hochladen") if licence else _("Nachweis hochladen") }}</h2>
+      {% if licence %}<p class="form-hint">{{ _("Ein neuer Upload ersetzt den bisherigen und wird erneut geprüft.") }}</p>{% endif %}
       {% if error %}
         <div class="checkout-error">{{ error }}</div>
       {% endif %}
       <form method="post" action="{{ url_for('ausweis.page') }}" enctype="multipart/form-data">
         <div class="form-field">
-          <label for="license-kind">Art des Nachweises</label>
+          <label for="license-kind">{{ _("Art des Nachweises") }}</label>
           <select id="license-kind" name="kind" required>
             {% for key, label in kinds.items() %}
               <option value="{{ key }}"{% if licence and licence.kind == key %} selected{% endif %}>{{ label }}</option>
@@ -59,19 +56,19 @@
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label for="license-number">Nummer (optional)</label>
+            <label for="license-number">{{ _("Nummer (optional)") }}</label>
             <input type="text" id="license-number" name="number" maxlength="60" />
           </div>
           <div class="form-field">
-            <label for="license-valid">Gültig bis (optional)</label>
+            <label for="license-valid">{{ _("Gültig bis (optional)") }}</label>
             <input type="date" id="license-valid" name="valid_until" />
           </div>
         </div>
         <div class="form-field">
-          <label for="license-file">Datei (PDF oder Foto, höchstens {{ max_mb }} MB)</label>
+          <label for="license-file">{{ _("Datei (PDF oder Foto, höchstens") }} {{ max_mb }} {{ _("MB)") }}</label>
           <input type="file" id="license-file" name="file" accept="application/pdf,image/jpeg,image/png,image/webp" required />
         </div>
-        <button type="submit" class="btn btn-primary">Hochladen</button>
+        <button type="submit" class="btn btn-primary">{{ _("Hochladen") }}</button>
       </form>
     </div>
   </section>

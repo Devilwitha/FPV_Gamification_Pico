@@ -1,25 +1,25 @@
 {% extends "base.html" %}
 
-{% block title %}Bollisoft – Forum{% endblock %}
+{% block title %}{{ _("Bollisoft – Forum") }}{% endblock %}
 
 {% block head %}
-  <meta name="description" content="Das Bollisoft-Forum: FPV, Copter-Builds, EdgeTX, Betaflight und der FPV Gamification Pico." />
+  <meta name="description" content="{{ _("Das Bollisoft-Forum: FPV, Copter-Builds, EdgeTX, Betaflight und der FPV Gamification Pico.") }}" />
 {% endblock %}
 
 {% block content %}
   <section class="forum-page">
     <div class="forum-hero">
-      <p class="forum-kicker">Community</p>
-      <h1>Forum</h1>
+      <p class="forum-kicker">{{ _("Community") }}</p>
+      <h1>{{ _("Forum") }}</h1>
       <p class="license-intro">
-        Fragen, Builds und Tipps rund um FPV, Sender und unsere Werkzeuge. Lesen kann jeder –
+        {{ _("Fragen, Builds und Tipps rund um FPV, Sender und unsere Werkzeuge. Lesen kann jeder –") }}
         {% if writer %}
-          du schreibst als <strong>{{ writer }}</strong>.
+          {{ _("du schreibst als") }} <strong>{{ writer }}</strong>.
         {% elif account %}
-          zum Mitschreiben fehlt dir noch ein <a href="{{ url_for('konto.profile', next=url_for('forum.index'), benutzername='fehlt') }}">Benutzername</a>.
+          {{ _("zum Mitschreiben fehlt dir noch ein") }} <a href="{{ url_for('konto.profile', next=url_for('forum.index'), benutzername='fehlt') }}">{{ _("Benutzername") }}</a>.
         {% else %}
-          zum Mitschreiben <a href="{{ url_for('login', next=url_for('forum.index')) }}">einloggen</a>
-          oder <a href="{{ url_for('register', next=url_for('forum.index')) }}">Konto erstellen</a>.
+          {{ _("zum Mitschreiben") }} <a href="{{ url_for('login', next=url_for('forum.index')) }}">{{ _("einloggen") }}</a>
+          {{ _("oder") }} <a href="{{ url_for('register', next=url_for('forum.index')) }}">{{ _("Konto erstellen") }}</a>.
         {% endif %}
       </p>
     </div>
@@ -27,11 +27,11 @@
     {% include "_forum_search.html" %}
 
     {% if request.args.get("verschoben") %}
-      <div class="license-success">Thema verschoben.</div>
+      <div class="license-success">{{ _("Thema verschoben.") }}</div>
     {% endif %}
-    {% if is_admin %}
+    {% if can_manage %}
       <p class="forum-admin-bar">
-        Admin: <a class="btn btn-secondary" href="{{ url_for('forum.manage') }}">Überthemen verwalten</a>
+        {{ _("Admin:") }} <a class="btn btn-secondary" href="{{ url_for('forum.manage') }}">{{ _("Überthemen verwalten") }}</a>
       </p>
     {% endif %}
 
@@ -45,21 +45,21 @@
               <span>{{ description }}</span>
             </span>
             <span class="forum-category-stats">
-              <span><b>{{ stat[0] }}</b> Themen</span>
-              <span><b>{{ stat[1] }}</b> Beiträge</span>
-              {% if stat[2] %}<span class="form-hint">zuletzt {{ stat[2]|forum_time }}</span>{% endif %}
+              <span><b>{{ stat[0] }}</b> {{ _("Themen") }}</span>
+              <span><b>{{ stat[1] }}</b> {{ _("Beiträge") }}</span>
+              {% if stat[2] %}<span class="form-hint">{{ _("zuletzt") }} {{ stat[2]|forum_time }}</span>{% endif %}
             </span>
           </a>
         </li>
       {% endfor %}
     </ul>
 
-    <h2>Neueste Themen</h2>
+    <h2>{{ _("Neueste Themen") }}</h2>
     {% if latest %}
       {% set show_category = true %}
       {% include "_forum_thread_list.html" %}
     {% else %}
-      <p class="form-hint">Noch keine Themen – eröffne gerne das erste in einer der Kategorien oben.</p>
+      <p class="form-hint">{{ _("Noch keine Themen – eröffne gerne das erste in einer der Kategorien oben.") }}</p>
     {% endif %}
   </section>
   {% include "_forum_confirm.html" %}

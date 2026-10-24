@@ -1,19 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Webshop – Versandadresse{% endblock %}
+{% block title %}{{ _("Webshop – Versandadresse") }}{% endblock %}
 
 {% block content %}
   <section class="license-setup-page">
     <div class="status-icon">&#128230;</div>
-    <h1>Fast geschafft – wohin soll dein Paket?</h1>
+    <h1>{{ _("Fast geschafft – wohin soll dein Paket?") }}</h1>
     <p class="license-intro">
-      Deine <strong>{{ product.name }}</strong> wurde erfolgreich gekauft (Bestätigung an
-      <strong>{{ email }}</strong>). Damit wir sie verschicken können, brauchen wir noch
-      einmalig deine Versandadresse.
+      {{ _("Deine") }} <strong>{{ _(product.name) }}</strong> {{ _("wurde erfolgreich gekauft (Bestätigung an") }}
+      <strong>{{ email }}</strong>{{ _("). Damit wir sie verschicken können, brauchen wir noch einmalig deine Versandadresse.") }}
     </p>
 
     <div class="license-step">
-      <h2>Versandadresse</h2>
+      <h2>{{ _("Versandadresse") }}</h2>
 
       {% if error %}
         <div class="checkout-error">{{ error }}</div>
@@ -21,7 +20,7 @@
 
       <form method="post" action="{{ url_for('shipping_setup', pending_id=pending_id) }}">
         <div class="form-field">
-          <label for="full_name">Vollständiger Name</label>
+          <label for="full_name">{{ _("Vollständiger Name") }}</label>
           <input
             type="text"
             id="full_name"
@@ -33,7 +32,7 @@
         </div>
 
         <div class="form-field">
-          <label for="street_address">Straße und Hausnummer</label>
+          <label for="street_address">{{ _("Straße und Hausnummer") }}</label>
           <input
             type="text"
             id="street_address"
@@ -45,20 +44,20 @@
         </div>
 
         <div class="form-field">
-          <label for="address_line2">Adresszusatz (optional)</label>
+          <label for="address_line2">{{ _("Adresszusatz (optional)") }}</label>
           <input
             type="text"
             id="address_line2"
             name="address_line2"
             value="{{ form.get('address_line2', '') }}"
-            placeholder="z. B. c/o, Wohnung 4"
+            placeholder="{{ _("z. B. c/o, Wohnung 4") }}"
             autocomplete="address-line2"
           />
         </div>
 
         <div class="form-row">
           <div class="form-field">
-            <label for="postal_code">PLZ</label>
+            <label for="postal_code">{{ _("PLZ") }}</label>
             <input
               type="text"
               id="postal_code"
@@ -69,7 +68,7 @@
             />
           </div>
           <div class="form-field">
-            <label for="city">Stadt</label>
+            <label for="city">{{ _("Stadt") }}</label>
             <input
               type="text"
               id="city"
@@ -82,7 +81,7 @@
         </div>
 
         <div class="form-field">
-          <label for="country">Land</label>
+          <label for="country">{{ _("Land") }}</label>
           <input
             type="text"
             id="country"
@@ -94,7 +93,7 @@
         </div>
 
         <div class="form-field">
-          <label for="phone">Telefonnummer (optional, für den Versanddienstleister)</label>
+          <label for="phone">{{ _("Telefonnummer (optional, für den Versanddienstleister)") }}</label>
           <input
             type="tel"
             id="phone"
@@ -105,13 +104,13 @@
         </div>
 
         <button type="submit" class="btn btn-primary btn-large">
-          Adresse bestätigen &amp; Bestellung abschließen
+          {{ _("Adresse bestätigen & Bestellung abschließen") }}
         </button>
       </form>
 
       {% if logged_in %}
         <p class="form-hint">
-          <a href="{{ url_for('account') }}">Zurück zu meinem Konto</a>
+          <a href="{{ url_for('account') }}">{{ _("Zurück zu meinem Konto") }}</a>
         </p>
       {% endif %}
     </div>

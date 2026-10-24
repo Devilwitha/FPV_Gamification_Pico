@@ -5,19 +5,19 @@
     type="search"
     name="q"
     value="{{ query if query is defined else '' }}"
-    placeholder="Forum durchsuchen – z. B. Nazgul PID oder &quot;failsafe einstellen&quot;"
-    aria-label="Suchbegriffe"
+    placeholder="{{ _("Forum durchsuchen – z. B. Nazgul PID oder \"failsafe einstellen\"") }}"
+    aria-label="{{ _("Suchbegriffe") }}"
     maxlength="200"
   />
-  <select name="kategorie" aria-label="Überthema">
-    <option value="">Alle Überthemen</option>
+  <select name="kategorie" aria-label="{{ _("Überthema") }}">
+    <option value="">{{ _("Alle Überthemen") }}</option>
     {% for cslug, (cname, _desc) in categories.items() %}
       <option value="{{ cslug }}"{% if cslug == chosen %} selected{% endif %}>{{ cname }}</option>
     {% endfor %}
   </select>
   <label class="checkbox-label">
     <input type="checkbox" name="nur" value="titel"{% if titles_only is defined and titles_only %} checked{% endif %} />
-    nur Thementitel
+    {{ _("nur Thementitel") }}
   </label>
-  <button class="btn btn-primary btn-small">Suchen</button>
+  <button class="btn btn-primary btn-small">{{ _("Suchen") }}</button>
 </form>

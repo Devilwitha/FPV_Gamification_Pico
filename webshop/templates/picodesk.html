@@ -1,103 +1,83 @@
 {% extends "base.html" %}
 
-{% block title %}Picodesk – WLAN-Steuerung für den Sitz-/Steh-Tisch{% endblock %}
+{% block title %}{{ _("Picodesk – WLAN-Steuerung für den Sitz-/Steh-Tisch") }}{% endblock %}
 
 {% block content %}
   <section class="hero">
     <h1>Picodesk</h1>
     <p class="hero-subtitle">
-      Ein Raspberry Pi Pico W steuert deinen Sitz-/Steh-Tisch übers WLAN –
-      mit moderner Weboberfläche, automatischem Sitzen/Stehen-Wechsel,
-      Bewegungserkennung per Ultraschallsensor sowie passender Android- und
-      Windows-App. Inklusive WLAN-Ausfallsicherung: findet keine Verbindung
-      statt, öffnet der Pico automatisch einen eigenen Einrichtungs-Hotspot.
+      {{ _("Ein Raspberry Pi Pico W steuert deinen Sitz-/Steh-Tisch übers WLAN – mit moderner Weboberfläche, automatischem Sitzen/Stehen-Wechsel, Bewegungserkennung per Ultraschallsensor sowie passender Android- und Windows-App. Inklusive WLAN-Ausfallsicherung: findet keine Verbindung statt, öffnet der Pico automatisch einen eigenen Einrichtungs-Hotspot.") }}
     </p>
     <a class="btn btn-primary btn-large" href="https://github.com/Devilwitha/Pico" target="_blank" rel="noopener noreferrer">
-      Projekt auf GitHub ansehen
+      {{ _("Projekt auf GitHub ansehen") }}
     </a>
   </section>
 
   <section class="features">
-    <h2>Das steckt drin</h2>
+    <h2>{{ _("Das steckt drin") }}</h2>
     <div class="feature-grid">
       <article class="feature-card">
-        <h3>Vier Aktionen per Weboberfläche</h3>
+        <h3>{{ _("Vier Aktionen per Weboberfläche") }}</h3>
         <p>
-          Auf / Ab / Stehen / Sitzen steuern vier GPIO-Ausgänge (z. B. für
-          Relais oder eine Motorsteuerung) direkt aus dem Browser an.
+          {{ _("Auf / Ab / Stehen / Sitzen steuern vier GPIO-Ausgänge (z. B. für Relais oder eine Motorsteuerung) direkt aus dem Browser an.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Automatik-Modus</h3>
+        <h3>{{ _("Automatik-Modus") }}</h3>
         <p>
-          Zeitgesteuerter, automatischer Wechsel zwischen Sitzen und Stehen –
-          konfigurierbar direkt in der Weboberfläche.
+          {{ _("Zeitgesteuerter, automatischer Wechsel zwischen Sitzen und Stehen – konfigurierbar direkt in der Weboberfläche.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Bewegungserkennung</h3>
+        <h3>{{ _("Bewegungserkennung") }}</h3>
         <p>
-          Ein Grove Ultrasonic Ranger erkennt Positionswechsel automatisch
-          (ändert sich die gemessene Distanz um mehr als einen im Web
-          einstellbaren Schwellwert) und aktiviert darüber die Automatik.
+          {{ _("Ein Grove Ultrasonic Ranger erkennt Positionswechsel automatisch (ändert sich die gemessene Distanz um mehr als einen im Web einstellbaren Schwellwert) und aktiviert darüber die Automatik.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>WLAN-Ausfallsicherung</h3>
+        <h3>{{ _("WLAN-Ausfallsicherung") }}</h3>
         <p>
-          Schlägt die Verbindung zum konfigurierten WLAN fehl, öffnet der
-          Pico automatisch einen eigenen Hotspot mit Recovery-Seite für neue
-          Zugangsdaten – kein Neuflashen nötig.
+          {{ _("Schlägt die Verbindung zum konfigurierten WLAN fehl, öffnet der Pico automatisch einen eigenen Hotspot mit Recovery-Seite für neue Zugangsdaten – kein Neuflashen nötig.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Automatische Geräte-Erkennung</h3>
+        <h3>{{ _("Automatische Geräte-Erkennung") }}</h3>
         <p>
-          Der Pico antwortet auf UDP-Broadcast-Anfragen im lokalen Netz –
-          die Android-App findet ihn dadurch automatisch, egal ob im
-          Heim-WLAN oder im eigenen Recovery-Hotspot.
+          {{ _("Der Pico antwortet auf UDP-Broadcast-Anfragen im lokalen Netz – die Android-App findet ihn dadurch automatisch, egal ob im Heim-WLAN oder im eigenen Recovery-Hotspot.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Updates &amp; Dateiverwaltung im Browser</h3>
+        <h3>{{ _("Updates & Dateiverwaltung im Browser") }}</h3>
         <p>
-          Neue Dateien direkt im Browser hochladen (inkl. automatischer
-          Backup-Kopie und Syntax-Prüfung bei <code>.py</code>-Dateien) oder
-          über die Dateiverwaltung durchsuchen, bearbeiten und löschen –
-          ganz ohne Kabel.
+          {{ _("Neue Dateien direkt im Browser hochladen (inkl. automatischer Backup-Kopie und Syntax-Prüfung bei") }} <code>.py</code>{{ _("-Dateien) oder über die Dateiverwaltung durchsuchen, bearbeiten und löschen – ganz ohne Kabel.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Android-App</h3>
+        <h3>{{ _("Android-App") }}</h3>
         <p>
-          Native App (Python/Kivy), die die Weboberfläche nachbildet und den
-          Pico automatisch per Discovery findet.
+          {{ _("Native App (Python/Kivy), die die Weboberfläche nachbildet und den Pico automatisch per Discovery findet.") }}
         </p>
       </article>
 
       <article class="feature-card">
-        <h3>Windows-App</h3>
+        <h3>{{ _("Windows-App") }}</h3>
         <p>
-          Native App (C#/WPF) mit denselben Funktionen wie die
-          Weboberfläche – ebenfalls mit automatischer Geräte-Erkennung.
+          {{ _("Native App (C#/WPF) mit denselben Funktionen wie die Weboberfläche – ebenfalls mit automatischer Geräte-Erkennung.") }}
         </p>
       </article>
     </div>
   </section>
 
   <section class="wiring">
-    <h2>Bewegungserkennung anschließen</h2>
+    <h2>{{ _("Bewegungserkennung anschließen") }}</h2>
     <p class="wiring-intro">
-      Für die Bewegungserkennung wird ein Grove Ultrasonic Ranger benötigt,
-      der Rest (Relais/Motorsteuerung für Auf/Ab/Stehen/Sitzen) hängt von
-      deiner eigenen Tisch-Elektronik ab und lässt sich frei auf beliebige
-      GPIO-Pins legen.
+      {{ _("Für die Bewegungserkennung wird ein Grove Ultrasonic Ranger benötigt, der Rest (Relais/Motorsteuerung für Auf/Ab/Stehen/Sitzen) hängt von deiner eigenen Tisch-Elektronik ab und lässt sich frei auf beliebige GPIO-Pins legen.") }}
     </p>
     <pre class="wiring-box">Grove Ultrasonic Ranger      Raspberry Pi Pico W
 --------------------------------------------------
@@ -106,19 +86,14 @@
    Gelb    (SIG)  ------------------->  GPIO 15
    Weiss   (NC)   ------------------->  nicht anschließen</pre>
     <p class="wiring-note">
-      Wichtig: Die VCC-Leitung gehört an 3V3 OUT, nicht an 5V/VBUS – die
-      GPIOs des Pico W sind nicht 5V-tolerant.
+      {{ _("Wichtig: Die VCC-Leitung gehört an 3V3 OUT, nicht an 5V/VBUS – die GPIOs des Pico W sind nicht 5V-tolerant.") }}
     </p>
   </section>
 
   <section class="wiring">
-    <h2>Relais für Auf/Ab/Stehen/Sitzen anschließen</h2>
+    <h2>{{ _("Relais für Auf/Ab/Stehen/Sitzen anschließen") }}</h2>
     <p class="wiring-intro">
-      Ein handelsübliches 4-Kanal-Relaismodul reicht aus – die vier
-      Relais-Ausgänge werden dabei parallel zu den vorhandenen physischen
-      Tastern der Tisch-Steuerung angeschlossen (Relais überbrücken den
-      jeweiligen Taster elektrisch, statt ihn zu ersetzen). Die GPIO-Pins
-      sind in <code>main.py</code> frei wählbar, Standardbelegung:
+      {{ _("Ein handelsübliches 4-Kanal-Relaismodul reicht aus – die vier Relais-Ausgänge werden dabei parallel zu den vorhandenen physischen Tastern der Tisch-Steuerung angeschlossen (Relais überbrücken den jeweiligen Taster elektrisch, statt ihn zu ersetzen). Die GPIO-Pins sind in") }} <code>main.py</code> {{ _("frei wählbar, Standardbelegung:") }}
     </p>
     <pre class="wiring-box">4-Kanal-Relaismodul          Raspberry Pi Pico W
 --------------------------------------------------
@@ -132,35 +107,31 @@
 Relais-Ausgang (NO/COM) je Kanal parallel zum
 entsprechenden Taster der Tisch-Steuerung.</pre>
     <p class="wiring-note">
-      Je nach Relaismodul kann der Ausgang statt 5V eine eigene, potentialgetrennte
-      Versorgung benötigen – Datenblatt des jeweiligen Moduls beachten.
+      {{ _("Je nach Relaismodul kann der Ausgang statt 5V eine eigene, potentialgetrennte Versorgung benötigen – Datenblatt des jeweiligen Moduls beachten.") }}
     </p>
   </section>
 
   <section class="wiring">
-    <h2>Mit dem Hotspot verbinden</h2>
+    <h2>{{ _("Mit dem Hotspot verbinden") }}</h2>
     <p class="wiring-intro">
-      Findet der Pico kein konfiguriertes WLAN, spannt er automatisch einen
-      eigenen Einrichtungs-Hotspot auf:
+      {{ _("Findet der Pico kein konfiguriertes WLAN, spannt er automatisch einen eigenen Einrichtungs-Hotspot auf:") }}
     </p>
     <pre class="wiring-box">SSID:      PicoSteuerung-Setup
 Passwort:  picosetup123</pre>
     <p class="wiring-note">
-      Darüber lässt sich auf der Recovery-Seite das eigentliche Heim-WLAN
-      hinterlegen – SSID und Passwort des Hotspots selbst sind in
-      <code>main.py</code> über <code>AP_SSID</code>/<code>AP_PASSWORT</code>
-      änderbar (mind. 8 Zeichen).
+      {{ _("Darüber lässt sich auf der Recovery-Seite das eigentliche Heim-WLAN hinterlegen – SSID und Passwort des Hotspots selbst sind in") }}
+      <code>main.py</code> {{ _("über") }} <code>AP_SSID</code>/<code>AP_PASSWORT</code>
+      {{ _("änderbar (mind. 8 Zeichen).") }}
     </p>
   </section>
 
   <section class="cta">
-    <h2>Selbst nachbauen?</h2>
+    <h2>{{ _("Selbst nachbauen?") }}</h2>
     <p>
-      Der komplette Quellcode (Firmware, Weboberfläche, Android- und
-      Windows-App) steht offen auf GitHub zur Verfügung.
+      {{ _("Der komplette Quellcode (Firmware, Weboberfläche, Android- und Windows-App) steht offen auf GitHub zur Verfügung.") }}
     </p>
     <a class="btn btn-primary btn-large" href="https://github.com/Devilwitha/Pico" target="_blank" rel="noopener noreferrer">
-      Zum GitHub-Repository
+      {{ _("Zum GitHub-Repository") }}
     </a>
   </section>
 {% endblock %}

@@ -516,6 +516,14 @@ Der Workflow `.github/workflows/build-and-release-firmware.yml` läuft bei jedem
 * **Blackbox Viewer** (`/blackbox-viewer/`) – Blackbox-Logs auswerten, Tricks erkennen und bepunkten, HUD-Overlay aufs Video, Video mit Overlay speichern, ins Leaderboard einreichen; Tab „Betaflight einrichten“ erklärt die Log-Einstellungen für lange Aufnahmen.
 * **Admin-Dashboard** (`/admin`) – Bestellungen, Verkäufe, Plugins, Drohnen-Ausweise, Leaderboard (gemeldete Einträge zuerst), Benutzer online und Tab **Benutzer**: alle Konten mit Benutzername, E-Mail, IP-Adressen, „registriert seit 2y 5m 22d“ und belegtem Speicher. Der Admin sperrt IP-Adressen für neue Registrierungen, sieht je Benutzer alle hochgeladenen Inhalte (Backups, Themes, Copter-Fotos, Anhänge, Beiträge, Videos, Ausweis), löscht sie einzeln oder das ganze Konto.
 
+### Sprachen
+
+Die Webseite gibt es auf Deutsch, Englisch, Französisch, Italienisch und Spanisch (Sprachmenü 🌐 oben in der Navigation; Wahl per Cookie `lang`, sonst Browsersprache). Ausgenommen sind ELRS Flasher, ESC Configurator, Betaflight und der Admin-Bereich.
+
+* Flask-Seiten: Texte stehen auf Deutsch in `{{ _("…") }}` bzw. `_("…", name=wert)` (`webshop/i18n.py`), die Übersetzungen in `webshop/translations/site/<sprache>.json`.
+* Drohnen Tools und Blackbox Viewer: `webshop/static/js/i18n-dom.js` übersetzt die Seiten im Browser mit `webshop/translations/tools|viewer/<sprache>.json` (Platzhalter `{0}`, `{1}` …).
+* Neue oder geänderte deutsche Texte brauchen einen Eintrag in jeder Sprachdatei – fehlt einer, erscheint der deutsche Text.
+
 ### Betrieb
 
 * Server: Windows Server mit IIS als Reverse Proxy; die geplante Aufgabe **„Bollisoft Server“** startet `webshop/serve_production.py` (Waitress auf `127.0.0.1:5000`) samt Blackbox-Viewer- und Cover-Store-Server. Einrichten bzw. neu starten: `webshop/install_webshop_autostart.ps1` (setzt auch IIS-Regeln und Upload-Limits).

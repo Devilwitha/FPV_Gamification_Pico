@@ -24,7 +24,7 @@
     <header class="admin-user-head">
       <span class="avatar avatar-lg">{% if content.avatar %}<img src="{{ content.avatar }}" alt="" width="96" height="96" />{% else %}<span>{{ initials(account.username or account.email) }}</span>{% endif %}</span>
       <div>
-        <h1>{{ account.username or "ohne Benutzername" }}{% if account.role == "admin" %} <span class="forum-badge forum-badge-admin">Admin</span>{% endif %}</h1>
+        <h1>{{ account.username or "ohne Benutzername" }}{% if account.role in roles %} <span class="forum-badge forum-badge-role role-{{ account.role }}">{{ roles[account.role].badge }}</span>{% endif %}</h1>
         <p class="profile-meta">
           {{ account.email }} · {{ account.full_name }}{% if account.country %} · {{ account.country|country_name }}{% endif %}
           {% if account.username %} · <a href="{{ url_for('community.profile', username=account.username) }}">öffentliches Profil</a>{% endif %}
@@ -50,6 +50,22 @@
         <span class="admin-stat-label">zuletzt aktiv</span>
       </div>
     </div>
+
+    <h2>Rolle</h2>
+    <form method="post" action="{{ url_for('admin_users.set_role', account_id=account.id) }}" class="admin-role-form">
+      <select name="role" aria-label="Rolle">
+        <option value=""{% if account.role not in roles %} selected{% endif %}>Mitglied – keine besondere Rolle</option>
+        {% for key, label in role_labels.items() %}
+          <option value="{{ key }}"{% if account.role == key %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-secondary">Rolle speichern</button>
+    </form>
+    <p class="admin-empty-hint">
+      Administratoren haben alle Admin-Rechte, sobald sie mit ihrem Konto eingeloggt sind – inklusive Benutzer und Rollen.
+      Moderatoren dürfen im Forum Beiträge und Themen bearbeiten, verschieben, sperren und löschen und Leaderboard-Einträge prüfen.
+      Support, Tester und VIP erhalten nur Titel und Abzeichen.
+    </p>
 
     <h2>IP-Adressen</h2>
     <div class="admin-table-wrapper">

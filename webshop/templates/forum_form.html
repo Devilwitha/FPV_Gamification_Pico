@@ -1,20 +1,20 @@
 {% extends "base.html" %}
 
-{% block title %}Bollisoft – Forum{% endblock %}
+{% block title %}{{ _("Bollisoft – Forum") }}{% endblock %}
 
 {#- mode: "thread" (neues Thema), "reply" (Antwort mit Fehler), "edit" (Beitrag bearbeiten) -#}
 {% block content %}
   <section class="forum-page">
-    <nav class="forum-breadcrumbs" aria-label="Pfad">
-      <a href="{{ url_for('forum.index') }}">Forum</a> <span>›</span>
+    <nav class="forum-breadcrumbs" aria-label="{{ _("Pfad") }}">
+      <a href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a> <span>›</span>
       <a href="{{ url_for('forum.category', category=slug) }}">{{ category[0] }}</a>
       {% if mode == "reply" %}<span>›</span> <a href="{{ url_for('forum.thread', thread_id=topic.id) }}">{{ topic.title }}</a>{% endif %}
       {% if mode == "edit" %}<span>›</span> <a href="{{ url_for('forum.thread', thread_id=post.thread_id) }}">{{ post.title }}</a>{% endif %}
     </nav>
     <h1>
-      {% if mode == "thread" %}Neues Thema in „{{ category[0] }}“
-      {% elif mode == "reply" %}Antwort auf „{{ topic.title }}“
-      {% else %}Beitrag bearbeiten{% endif %}
+      {% if mode == "thread" %}{{ _("Neues Thema in „") }}{{ category[0] }}“
+      {% elif mode == "reply" %}{{ _("Antwort auf „") }}{{ topic.title }}“
+      {% else %}{{ _("Beitrag bearbeiten") }}{% endif %}
     </h1>
 
     <div class="login-card forum-reply">
@@ -22,23 +22,23 @@
         <div class="checkout-error">{{ error }}</div>
       {% endif %}
       {% if writer and mode != "edit" %}
-        <p class="form-hint">Du schreibst als <strong>{{ writer }}</strong>.</p>
+        <p class="form-hint">{{ _("Du schreibst als") }} <strong>{{ writer }}</strong>.</p>
       {% endif %}
       <form method="post" action="{% if mode == 'thread' %}{{ url_for('forum.new_thread', category=slug) }}{% elif mode == 'reply' %}{{ url_for('forum.reply', thread_id=topic.id) }}{% else %}{{ url_for('forum.edit_post', post_id=post.id) }}{% endif %}" enctype="multipart/form-data">
         {% if mode == "thread" or (mode == "edit" and post.is_first) %}
           <div class="form-field">
-            <label for="forum-title">Titel</label>
+            <label for="forum-title">{{ _("Titel") }}</label>
             <input type="text" id="forum-title" name="title" value="{{ title }}" minlength="4" maxlength="{{ limits[0] }}" required />
           </div>
         {% endif %}
         <div class="form-field">
-          <label for="forum-body">Text</label>
+          <label for="forum-body">{{ _("Text") }}</label>
           <textarea id="forum-body" name="body" rows="10" minlength="2" maxlength="{{ limits[1] }}" required>{{ body }}</textarea>
-          <p class="form-hint">Reiner Text – Absätze mit Leerzeile, Links werden automatisch erkannt.</p>
+          <p class="form-hint">{{ _("Reiner Text – Absätze mit Leerzeile, Links werden automatisch erkannt.") }}</p>
         </div>
         {% with attachments = attachments if mode == "edit" else none %}{% include "_forum_attach_field.html" %}{% endwith %}
         <button type="submit" class="btn btn-primary">
-          {% if mode == "thread" %}Thema eröffnen{% elif mode == "reply" %}Antwort senden{% else %}Änderungen speichern{% endif %}
+          {% if mode == "thread" %}{{ _("Thema eröffnen") }}{% elif mode == "reply" %}{{ _("Antwort senden") }}{% else %}{{ _("Änderungen speichern") }}{% endif %}
         </button>
       </form>
     </div>

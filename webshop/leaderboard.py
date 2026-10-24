@@ -28,7 +28,9 @@ import community
 import countries
 import db
 import mailer
+import roles
 from tx15_backups import clean_text, error_response, remove_file, sweep_directory
+from i18n import gettext as _
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -65,7 +67,8 @@ def _account():
 
 
 def _is_admin():
-    return bool(session.get("is_admin"))
+    """Admin oder Moderator: Meldungen sehen, Logs laden, pruefen, loeschen."""
+    return roles.is_moderator()
 
 
 def _require_ajax():
@@ -153,7 +156,7 @@ def _stage(upload, limit):
         head = handle.read(16)
     if size > limit:
         remove_file(temp)
-        return None, None, None, f"Datei zu groß (höchstens {limit // (1024 * 1024)} MB)."
+        return None, None, None, _("Datei zu groß (höchstens {v1} MB).", v1=limit // (1024 * 1024))
     return filename, size, head, None
 
 
@@ -220,7 +223,7 @@ def list_entries():
 def entry_detail(entry_id):
     row = db.leaderboard_get(entry_id)
     if row is None:
-        return error_response("Eintrag nicht gefunden.", 404)
+        return error_response(_("Eintrag nicht gefunden."), 404)
     account = _account()
     data = _public(row, rank=db.leaderboard_rank(entry_id), account=account)
     data.update({
@@ -265,7 +268,7 @@ def entry_video(entry_id):
 @bp.get("/<int:entry_id>/log")
 def entry_log(entry_id):
     if not _is_admin():
-        return error_response("Nur für den Admin.", 403)
+        return error_response(_("Nur für den Admin."), 403)
     row = db.leaderboard_get(entry_id)
     path = MEDIA_DIR / row["log_filename"] if row is not None and row["log_filename"] else None
     if path is None or not path.is_file():
@@ -282,31 +285,31 @@ def entry_log(entry_id):
 def submit():
     account = _account()
     if account is None:
-        return jsonify({"error": "Zum Einreichen bitte einloggen.", "loginUrl": LOGIN_URL}), 401
+        return jsonify({"error": _("Zum Einreichen bitte einloggen."), "loginUrl": LOGIN_URL}), 401
     if not _require_ajax():
-        return error_response("Ungültige Anfrage.", 400)
+        return error_response(_("Ungültige Anfrage."), 400)
     if request.content_length and request.content_length > MAX_VIDEO_BYTES + MAX_LOG_BYTES + 4 * 1024 * 1024:
-        return error_response("Die Einreichung ist zu groß.", 413)
+        return error_response(_("Die Einreichung ist zu groß."), 413)
     last = db.leaderboard_last_submission(account["email"])
     if last and datetime.now(timezone.utc) - datetime.fromisoformat(last) < SUBMIT_INTERVAL:
-        return error_response("Bitte eine Minute warten, bevor du den nächsten Flug einreichst.", 429)
+        return error_response(_("Bitte eine Minute warten, bevor du den nächsten Flug einreichst."), 429)
     try:
         meta = json.loads(request.form.get("meta") or "{}")
     except ValueError:
         meta = None
     if not isinstance(meta, dict):
-        return error_response("Ungültige Angaben.", 400)
+        return error_response(_("Ungültige Angaben."), 400)
     pilot = clean_text(meta.get("pilot"), 32)
     source = clean_text(meta.get("source"), 8)
     if not pilot:
         return error_response("Pilotname fehlt.", 400)
     if source == "demo":
-        return error_response("Demo-Flüge können nicht eingereicht werden.", 400)
+        return error_response(_("Demo-Flüge können nicht eingereicht werden."), 400)
     if source not in ("bbl", "csv"):
-        return error_response("Nur echte Blackbox-Logs (.bbl, .bfl, .csv) können eingereicht werden.", 400)
+        return error_response(_("Nur echte Blackbox-Logs (.bbl, .bfl, .csv) können eingereicht werden."), 400)
     video = request.files.get("video")
     if video is None:
-        return error_response("Das Video mit Overlay fehlt.", 400)
+        return error_response(_("Das Video mit Overlay fehlt."), 400)
 
     staged = []
     try:
@@ -316,7 +319,7 @@ def submit():
         staged.append(video_name)
         mime = _video_mime(head)
         if mime is None:
-            return error_response("Das Video ist kein WebM- oder MP4-Video.", 400)
+            return error_response(_("Das Video ist kein WebM- oder MP4-Video."), 400)
         log_name = log_size = None
         log = request.files.get("log")
         if log is not None:
@@ -407,14 +410,14 @@ def _send_report_alert(entry_id, subject, body):
 def report(entry_id):
     account = _account()
     if account is None:
-        return jsonify({"error": "Zum Melden bitte einloggen.", "loginUrl": f"/login?next={VIEWER_PATH}?eintrag={entry_id}"}), 401
+        return jsonify({"error": _("Zum Melden bitte einloggen."), "loginUrl": f"/login?next={VIEWER_PATH}?eintrag={entry_id}"}), 401
     if not _require_ajax():
-        return error_response("Ungültige Anfrage.", 400)
+        return error_response(_("Ungültige Anfrage."), 400)
     row = db.leaderboard_get(entry_id)
     if row is None:
-        return error_response("Eintrag nicht gefunden.", 404)
+        return error_response(_("Eintrag nicht gefunden."), 404)
     if row["email"] and row["email"].lower() == account["email"].lower():
-        return error_response("Den eigenen Eintrag kannst du nicht melden.", 403)
+        return error_response(_("Den eigenen Eintrag kannst du nicht melden."), 403)
     payload = request.get_json(silent=True) or {}
     reason = clean_text(payload.get("reason"), 500)
     if not db.leaderboard_add_report(entry_id, account["email"], reason):
@@ -431,11 +434,11 @@ def report(entry_id):
 @bp.post("/<int:entry_id>/verify")
 def verify(entry_id):
     if not _is_admin():
-        return error_response("Nur für den Admin.", 403)
+        return error_response(_("Nur für den Admin."), 403)
     if not _require_ajax():
-        return error_response("Ungültige Anfrage.", 400)
+        return error_response(_("Ungültige Anfrage."), 400)
     if db.leaderboard_get(entry_id) is None:
-        return error_response("Eintrag nicht gefunden.", 404)
+        return error_response(_("Eintrag nicht gefunden."), 404)
     payload = request.get_json(silent=True) or {}
     db.leaderboard_set_verified(entry_id, bool(payload.get("verified", True)))
     return jsonify({"verified": bool(payload.get("verified", True))})
@@ -444,12 +447,12 @@ def verify(entry_id):
 @bp.delete("/<int:entry_id>")
 def delete(entry_id):
     if not _is_admin():
-        return error_response("Nur für den Admin.", 403)
+        return error_response(_("Nur für den Admin."), 403)
     if not _require_ajax():
-        return error_response("Ungültige Anfrage.", 400)
+        return error_response(_("Ungültige Anfrage."), 400)
     row = db.leaderboard_delete(entry_id)
     if row is None:
-        return error_response("Eintrag nicht gefunden.", 404)
+        return error_response(_("Eintrag nicht gefunden."), 404)
     for name in (row["video_filename"], row["log_filename"]):
         if name:
             remove_file(MEDIA_DIR / name)

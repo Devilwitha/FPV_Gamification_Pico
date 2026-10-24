@@ -1,43 +1,43 @@
 {% extends "base.html" %}
 
-{% block title %}FPV Gamification Pico – Artikelübersicht{% endblock %}
+{% block title %}{{ _("FPV Gamification Pico – Artikelübersicht") }}{% endblock %}
 
 {% block content %}
   <section class="shop-header">
-    <h1>Unsere Artikel</h1>
-    <p>Wähle das passende Produkt und gehe direkt zum Checkout.</p>
+    <h1>{{ _("Unsere Artikel") }}</h1>
+    <p>{{ _("Wähle das passende Produkt und gehe direkt zum Checkout.") }}</p>
   </section>
 
   <section class="product-grid">
     {% for product in products %}
       <article class="product-card">
-        <img class="product-image" src="{{ url_for('static', filename=product.image) }}" alt="{{ product.name }}" />
+        <img class="product-image" src="{{ url_for('static', filename=product.image) }}" alt="{{ _(product.name) }}" />
         <div class="product-card-body">
-          <h2 class="product-name">{{ product.name }}</h2>
+          <h2 class="product-name">{{ _(product.name) }}</h2>
           <p class="product-type">
             {% if product.type == "digital" %}
-              Digitales Produkt
+              {{ _("Digitales Produkt") }}
             {% elif product.type == "physical" %}
-              Physisches Produkt
+              {{ _("Physisches Produkt") }}
             {% else %}
-              Kostenloser Download
+              {{ _("Kostenloser Download") }}
             {% endif %}
           </p>
-          <p class="product-description">{{ product.description }}</p>
+          <p class="product-description">{{ _(product.description) }}</p>
           <p class="product-price">
             {% if product.type == "free" %}
-              Kostenlos
+              {{ _("Kostenlos") }}
             {% else %}
               {{ product.price_cents | format_price }}
             {% endif %}
           </p>
           {% if product.type == "free" %}
             <a class="btn btn-primary" href="{{ url_for('gatehill_install') }}">
-              Kostenlos installieren
+              {{ _("Kostenlos installieren") }}
             </a>
           {% else %}
             <a class="btn btn-primary" href="{{ url_for('checkout', product_id=product.id) }}">
-              Jetzt kaufen
+              {{ _("Jetzt kaufen") }}
             </a>
           {% endif %}
         </div>

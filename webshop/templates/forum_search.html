@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Bollisoft – Forum – Suche{% if query %}: {{ query }}{% endif %}{% endblock %}
+{% block title %}{{ _("Bollisoft – Forum – Suche") }}{% if query %}: {{ query }}{% endif %}{% endblock %}
 
 {% block head %}
   <meta name="robots" content="noindex" />
@@ -8,31 +8,31 @@
 
 {% block content %}
   <section class="forum-page">
-    <nav class="forum-breadcrumbs" aria-label="Pfad">
-      <a href="{{ url_for('forum.index') }}">Forum</a> <span>›</span> <span>Suche</span>
+    <nav class="forum-breadcrumbs" aria-label="{{ _("Pfad") }}">
+      <a href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a> <span>›</span> <span>{{ _("Suche") }}</span>
     </nav>
-    <h1>Forum durchsuchen</h1>
+    <h1>{{ _("Forum durchsuchen") }}</h1>
 
     {% include "_forum_search.html" %}
 
     {% if too_short %}
-      <p class="form-hint">Bitte Suchbegriffe mit mindestens 2 Zeichen eingeben.</p>
+      <p class="form-hint">{{ _("Bitte Suchbegriffe mit mindestens 2 Zeichen eingeben.") }}</p>
     {% elif terms %}
       <p class="forum-search-summary">
         {% if total %}
-          <strong>{{ total }}{% if limit_reached %}+{% endif %}</strong> {{ "Thema" if total == 1 else "Themen" }}
+          <strong>{{ total }}{% if limit_reached %}+{% endif %}</strong> {{ _("Thema") if total == 1 else _("Themen") }}
         {% else %}
-          Keine Themen
+          {{ _("Keine Themen") }}
         {% endif %}
-        mit {% for term in terms %}„{{ term }}“{% if not loop.last %} und {% endif %}{% endfor %}
-        {%- if titles_only %} im Titel{% endif %}
-        {%- if selected %} in <a href="{{ url_for('forum.category', category=selected) }}">{{ categories[selected][0] }}</a>{% endif %}.
+        {{ _("mit") }} {% for term in terms %}„{{ term }}“{% if not loop.last %} {{ _("und") }} {% endif %}{% endfor %}
+        {%- if titles_only %} {{ _("im Titel") }}{% endif %}
+        {%- if selected %} · <a href="{{ url_for('forum.category', category=selected) }}">{{ categories[selected][0] }}</a>{% endif %}.
         {% if not total and (selected or titles_only) %}
-          <a href="{{ url_for('forum.search', q=query) }}">Im ganzen Forum suchen</a>
+          <a href="{{ url_for('forum.search', q=query) }}">{{ _("Im ganzen Forum suchen") }}</a>
         {% endif %}
       </p>
       {% if limit_reached %}
-        <p class="form-hint">Es werden nur die ersten {{ total }} Themen gezeigt – grenze die Suche mit weiteren Begriffen oder einem Überthema ein.</p>
+        <p class="form-hint">{{ _("Es werden nur die ersten") }} {{ total }} {{ _("Themen gezeigt – grenze die Suche mit weiteren Begriffen oder einem Überthema ein.") }}</p>
       {% endif %}
 
       {% if results %}
@@ -41,16 +41,16 @@
             {% set t = r.thread %}
             <li>
               <a class="forum-thread-title" href="{{ url_for('forum.thread', thread_id=t.id) }}">
-                {% if t.pinned %}<span class="forum-badge">Angeheftet</span>{% endif %}
-                {% if t.locked %}<span class="forum-badge forum-badge-muted">Gesperrt</span>{% endif %}
+                {% if t.pinned %}<span class="forum-badge">{{ _("Angeheftet") }}</span>{% endif %}
+                {% if t.locked %}<span class="forum-badge forum-badge-muted">{{ _("Gesperrt") }}</span>{% endif %}
                 {{ r.title }}
               </a>
               <p class="form-hint">
                 <a href="{{ url_for('forum.category', category=t.category) }}">{{ categories[t.category][0] }}</a>
-                · von {% if t.author_name and t.author_email != "__admin__" %}<a href="{{ url_for('community.profile', username=t.author_name) }}">{{ t.author_name }}</a>{% else %}{{ t.author_name or "Mitglied" }}{% endif %}
-                · {{ t.post_count }} {{ "Beitrag" if t.post_count == 1 else "Beiträge" }}
-                · zuletzt {{ t.last_post_at|forum_time }}
-                {% if r.hits %} · <strong>{{ r.hits }}</strong> Treffer im Text{% endif %}
+                {{ _("· von") }} {% if t.author_name and t.author_email != "__admin__" %}<a href="{{ url_for('community.profile', username=t.author_name) }}">{{ t.author_name }}</a>{% else %}{{ t.author_name or _("Mitglied") }}{% endif %}
+                · {{ t.post_count }} {{ _("Beitrag") if t.post_count == 1 else _("Beiträge") }}
+                {{ _("· zuletzt") }} {{ t.last_post_at|forum_time }}
+                {% if r.hits %} · <strong>{{ r.hits }}</strong> {{ _("Treffer im Text") }}{% endif %}
               </p>
               {% if r.snippet %}
                 <a class="forum-search-snippet" href="{{ r.url }}">{{ r.snippet }}</a>
@@ -64,8 +64,7 @@
       {% endif %}
     {% else %}
       <p class="form-hint">
-        Mehrere Wörter grenzen ein (alle müssen vorkommen), „Anführungszeichen“ suchen eine feste Wortfolge.
-        Gross-/Kleinschreibung spielt keine Rolle.
+        {{ _("Mehrere Wörter grenzen ein (alle müssen vorkommen), „Anführungszeichen“ suchen eine feste Wortfolge. Gross-/Kleinschreibung spielt keine Rolle.") }}
       </p>
     {% endif %}
   </section>

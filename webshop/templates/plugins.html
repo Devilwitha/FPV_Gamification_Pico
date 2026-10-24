@@ -1,77 +1,67 @@
 {% extends "base.html" %}
 
-{% block title %}FPV Gamification Pico – Plugin-Store{% endblock %}
+{% block title %}{{ _("FPV Gamification Pico – Plugin-Store") }}{% endblock %}
 
 {% block content %}
   <section class="shop-header">
-    <h1>Plugin-Store</h1>
+    <h1>{{ _("Plugin-Store") }}</h1>
     <p>
-      Erweitere deinen FPV Gamification Pico um zusätzliche Mods. Installation direkt auf dem
-      Pico über die Weboberfläche (Tab "Plugins" → "Webshop Store &amp; Updates") oder bequem
-      über die Android-App.
+      {{ _("Erweitere deinen FPV Gamification Pico um zusätzliche Mods. Installation direkt auf dem Pico über die Weboberfläche (Tab \"Plugins\" → \"Webshop Store & Updates\") oder bequem über die Android-App.") }}
     </p>
   </section>
 
   <section class="product-grid">
     <article class="product-card">
       <div class="product-card-body">
-        <h2 class="product-name">Shooter-Plugin – Quellcode-Vorlage</h2>
-        <p class="product-type">Roher Quellcode (.py) – kein fertiges Store-Plugin</p>
+        <h2 class="product-name">{{ _("Shooter-Plugin – Quellcode-Vorlage") }}</h2>
+        <p class="product-type">{{ _("Roher Quellcode (.py) – kein fertiges Store-Plugin") }}</p>
         <p class="product-description">
-          Lern-Vorlage dafür, wie ein eigener Spielmodus komplett als Plugin gebaut wird
-          (Spiellogik, eigene IR-Hardware-Treiber und eigene Weboberfläche in einem Ordner).
-          Muss vor der Installation erst mit mpy-cross zu <code>.mpy</code> kompiliert werden –
-          manuell oder über den Plugin-Packager (siehe unten).
+          {{ _("Lern-Vorlage dafür, wie ein eigener Spielmodus komplett als Plugin gebaut wird (Spiellogik, eigene IR-Hardware-Treiber und eigene Weboberfläche in einem Ordner). Muss vor der Installation erst mit mpy-cross zu") }} <code>.mpy</code> {{ _("kompiliert werden – manuell oder über den Plugin-Packager (siehe unten).") }}
         </p>
         <a class="btn btn-primary" href="{{ url_for('plugins_shooter_template') }}">
-          Vorlage herunterladen (.zip)
+          {{ _("Vorlage herunterladen (.zip)") }}
         </a>
       </div>
     </article>
 
     <article class="product-card">
       <div class="product-card-body">
-        <h2 class="product-name">Plugin-Vorlage – Leeres Boilerplate</h2>
-        <p class="product-type">Roher Quellcode (.py) – kein fertiges Store-Plugin</p>
+        <h2 class="product-name">{{ _("Plugin-Vorlage – Leeres Boilerplate") }}</h2>
+        <p class="product-type">{{ _("Roher Quellcode (.py) – kein fertiges Store-Plugin") }}</p>
         <p class="product-description">
-          Leerer Startpunkt für ein komplett eigenes Plugin: alle Hooks/Tab-Erweiterungen
-          (System/Ausweis/Dashboard/Zuschauer-Ansicht) sind vorhanden, aber auskommentiert.
-          Ordner nach <code>source/mods/&lt;eigener_name&gt;/</code> kopieren, Namen in
-          <code>manifest.json</code> anpassen. Muss vor der Installation ebenfalls erst mit
-          mpy-cross zu <code>.mpy</code> kompiliert werden.
+          {{ _("Leerer Startpunkt für ein komplett eigenes Plugin: alle Hooks/Tab-Erweiterungen (System/Ausweis/Dashboard/Zuschauer-Ansicht) sind vorhanden, aber auskommentiert. Ordner nach") }} <code>source/mods/&lt;eigener_name&gt;/</code> {{ _("kopieren, Namen in") }}
+          <code>manifest.json</code> {{ _("anpassen. Muss vor der Installation ebenfalls erst mit mpy-cross zu") }} <code>.mpy</code> {{ _("kompiliert werden.") }}
         </p>
         <a class="btn btn-primary" href="{{ url_for('plugins_plugin_template') }}">
-          Vorlage herunterladen (.zip)
+          {{ _("Vorlage herunterladen (.zip)") }}
         </a>
       </div>
     </article>
   </section>
 
   <section class="s" style="margin-top: 1.5rem">
-    <h2>Plugin hochladen</h2>
+    <h2>{{ _("Plugin hochladen") }}</h2>
     {% if session.get('account_email') %}
       <p class="admin-empty-hint">
-        Eingeloggt als {{ session.get('account_email') }}. ZIP-Datei mit mindestens
-        <code>manifest.json</code> und <code>main.mpy</code> (keine rohen <code>.py</code>-Dateien –
-        siehe Vorlage oben).
+        {{ _("Eingeloggt als") }} {{ session.get('account_email') }}{{ _(". ZIP-Datei mit mindestens") }}
+        <code>manifest.json</code> {{ _("und") }} <code>main.mpy</code> {{ _("(keine rohen") }} <code>.py</code>{{ _("-Dateien – siehe Vorlage oben).") }}
       </p>
       <form method="post" action="{{ url_for('plugins_upload') }}" enctype="multipart/form-data">
         <input type="file" name="plugin_zip" accept=".zip" required />
-        <button type="submit" class="btn btn-primary">Hochladen</button>
+        <button type="submit" class="btn btn-primary">{{ _("Hochladen") }}</button>
       </form>
     {% else %}
       <p class="admin-empty-hint">
-        <a href="{{ url_for('login') }}">Einloggen</a>, um ein eigenes Plugin hochzuladen.
+        <a href="{{ url_for('login') }}">{{ _("Einloggen") }}</a>{{ _(", um ein eigenes Plugin hochzuladen.") }}
       </p>
     {% endif %}
     <p class="admin-empty-hint" style="margin-top: 1rem">
-      Zum Kompilieren (mpy-cross) und Hochladen gibt es ein Windows-Werkzeug mit
-      grafischer Oberfläche – kein Terminal/Python-Installation nötig:
+      {{ _("Zum Kompilieren (mpy-cross) und Hochladen gibt es ein Windows-Werkzeug mit grafischer Oberfläche – kein Terminal/Python-Installation nötig:") }}
     </p>
     <a
       class="btn btn-secondary"
       href="https://github.com/Devilwitha/FPV_Gamification_Pico/releases/latest/download/PluginPackager.zip"
-      >Plugin-Packager herunterladen (.zip)</a
+      >{{ _("Plugin-Packager herunterladen (.zip)") }}</a
     >
   </section>
 
@@ -80,18 +70,18 @@
       <article class="product-card">
         <div class="product-card-body">
           <h2 class="product-name">{{ plugin.name }}</h2>
-          <p class="product-type">Version {{ plugin.version }}{% if plugin.author %} · Code by {{ plugin.author }}{% endif %}</p>
-          <p class="product-description">{{ plugin.description or "Keine Beschreibung vorhanden." }}</p>
+          <p class="product-type">{{ _("Version") }} {{ plugin.version }}{% if plugin.author %} {{ _("· Code by") }} {{ plugin.author }}{% endif %}</p>
+          <p class="product-description">{{ _(plugin.description) if plugin.description else _("Keine Beschreibung vorhanden.") }}</p>
           {% if plugin.uploaded_by_display %}
-            <p class="product-type">Hochgeladen von {{ plugin.uploaded_by_display }}</p>
+            <p class="product-type">{{ _("Hochgeladen von") }} {{ plugin.uploaded_by_display }}</p>
           {% endif %}
           <a class="btn btn-primary" href="{{ url_for('plugins_download', name=plugin.name) }}">
-            Herunterladen (.zip)
+            {{ _("Herunterladen (.zip)") }}
           </a>
         </div>
       </article>
     {% else %}
-      <p class="admin-empty-hint">Aktuell sind keine Plugins im Store verfügbar.</p>
+      <p class="admin-empty-hint">{{ _("Aktuell sind keine Plugins im Store verfügbar.") }}</p>
     {% endfor %}
   </section>
 {% endblock %}

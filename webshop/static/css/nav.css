@@ -332,3 +332,22 @@
     padding: 12px 16px;
   }
 }
+
+/* Sprachwahl (templates/_nav.html, i18n.py) */
+.nav-lang {
+  margin-right: 12px;
+}
+
+.nav-lang .nav-dropdown {
+  min-width: 170px;
+}
+
+.nav-lang-icon {
+  font-size: 0.95em;
+}
+
+@media (max-width: 900px) {
+  .nav-lang {
+    margin: 0 0 8px;
+  }
+}

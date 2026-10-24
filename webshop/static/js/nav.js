@@ -24,6 +24,13 @@ window.initSiteNav = (header) => {
     }
   });
 
+  // Sprachwahl (/sprache/<code>): danach zur aktuellen Seite zurueck - auch
+  // in den eingebetteten Projekten, deren Navigation unter /site-nav.js entsteht.
+  header.querySelectorAll("[data-lang]").forEach((link) => {
+    const next = window.location.pathname + window.location.search + window.location.hash;
+    link.href = "/sprache/" + link.dataset.lang + "?next=" + encodeURIComponent(next);
+  });
+
   const closeGroups = (except) => {
     groups.forEach((group) => {
       if (group !== except) {
@@ -44,7 +51,7 @@ window.initSiteNav = (header) => {
     toggle.addEventListener("click", () => {
       const isOpen = header.classList.toggle("nav-open");
       toggle.setAttribute("aria-expanded", String(isOpen));
-      toggle.setAttribute("aria-label", isOpen ? "Menü schließen" : "Menü öffnen");
+      toggle.setAttribute("aria-label", isOpen ? toggle.dataset.labelClose || "Menü schließen" : toggle.dataset.labelOpen || "Menü öffnen");
       if (!isOpen) {
         closeGroups(null);
       }

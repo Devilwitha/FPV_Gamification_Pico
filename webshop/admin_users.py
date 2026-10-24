@@ -29,6 +29,7 @@ import community
 import db
 import leaderboard
 import pilot_license
+import roles
 import tx15_backups
 import tx15_projects
 from tx15_backups import remove_file
@@ -299,6 +300,7 @@ def user(account_id):
         age=age_since(account["created_at"]),
         blocked=blocked,
         content=_contents(account["email"]),
+        role_labels=roles.ROLE_LABELS,
         message=request.args.get("ok"),
     )
 
@@ -344,6 +346,63 @@ def delete_user(account_id):
     delete_account(account["email"], with_posts=request.form.get("posts") == "1")
     name = account["username"] or account["email"]
     return _back(None, f"Konto „{name}“ mit allen Inhalten gelöscht.")
+
+
+@bp.post("/benutzer/<int:account_id>/rolle")
+@admin_required
+def set_role(account_id):
+    """Rolle vergeben (admin, moderator, support, tester, vip) oder entfernen."""
+    account = _account_or_404(account_id)
+    role = request.form.get("role") or ""
+    if role and not roles.valid(role):
+        return _back(account_id, "Unbekannte Rolle.")
+    own = (session.get("account_email") or "").lower() == account["email"].lower()
+    if own:
+        return _back(account_id, "Die eigene Rolle kannst du nicht ändern – das macht ein anderer Admin.")
+    db.set_account_role_by_id(account_id, role or None)
+    name = account["username"] or account["email"]
+    if role:
+        return _back(account_id, f"{name} ist jetzt {roles.ROLES[role]['title']}.")
+    return _back(account_id, f"{name} hat keine besondere Rolle mehr.")
+
+
+TEAM_TEXT_LIMITS = {"status_text": 60, "bio": 2000, "signature": 300, "website": 200, "youtube": 200}
+
+
+@bp.route("/team-profil", methods=["GET", "POST"])
+@admin_required
+def team_profile_edit():
+    """Profil des Bollisoft-Teams (Beitraege des Admins ohne eigenes Konto)."""
+    email = community.TEAM_EMAIL
+    error = None
+    values = dict(db.get_profile(email) or {})
+    if request.method == "POST":
+        values = {key: (request.form.get(key) or "").strip() for key in TEAM_TEXT_LIMITS}
+        for key, limit in TEAM_TEXT_LIMITS.items():
+            if len(values[key]) > limit:
+                error = f"Ein Feld ist zu lang (höchstens {limit} Zeichen)."
+        for key in ("website", "youtube"):
+            if values[key] and not values[key].lower().startswith(("https://", "http://")):
+                error = "Links bitte mit https:// angeben."
+        if error is None:
+            try:
+                if request.form.get("remove_avatar"):
+                    community.remove_avatar(email)
+                upload = request.files.get("avatar")
+                if upload is not None and upload.filename:
+                    community.save_avatar(email, upload)
+            except community.UploadError as exc:
+                error = str(exc)
+        if error is None:
+            db.save_profile(email, values)
+            return redirect(url_for("admin_users.team_profile_edit", ok="Team-Profil gespeichert."))
+    return render_template(
+        "admin_team_profile.html",
+        team=community.team_card(),
+        values=values,
+        error=error,
+        message=request.args.get("ok"),
+    )
 
 
 @bp.post("/ip-sperre")

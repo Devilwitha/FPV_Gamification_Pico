@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}{{ copter.name }} von {{ copter.username }} – Bollisoft{% endblock %}
+{% block title %}{{ _("{copter} von {user}", copter=copter.name, user=copter.username) }} – Bollisoft{% endblock %}
 
 {% block head %}
-  <meta name="description" content="{{ copter.name }} ({{ copter.category }}) von {{ copter.username }}{% for label, value in specs[:3] %} · {{ label }}: {{ value }}{% endfor %}" />
+  <meta name="description" content="{{ copter.name }} ({{ _(copter.category) }}) · {{ copter.username }}{% for label, value in specs[:3] %} · {{ label }}: {{ value }}{% endfor %}" />
 {% endblock %}
 
 {% block content %}
   <section class="lb-page">
-    <nav class="forum-breadcrumbs" aria-label="Pfad">
+    <nav class="forum-breadcrumbs" aria-label="{{ _("Pfad") }}">
       <a href="{{ url_for('community.profile', username=copter.username) }}">{{ copter.username }}</a>
-      <span>›</span> <span>Copter</span> <span>›</span> <span>{{ copter.name }}</span>
+      <span>›</span> <span>{{ _("Copter") }}</span> <span>›</span> <span>{{ copter.name }}</span>
     </nav>
 
     {% if hidden %}
       <div class="license-warning">
-        Deine Copter sind öffentlich ausgeblendet – diese Seite siehst nur du.
-        <a href="{{ url_for('konto.profile') }}#oeffentliches-profil">Einstellung ändern</a>
+        {{ _("Deine Copter sind öffentlich ausgeblendet – diese Seite siehst nur du.") }}
+        <a href="{{ url_for('konto.profile') }}#oeffentliches-profil">{{ _("Einstellung ändern") }}</a>
       </div>
     {% endif %}
 
@@ -28,14 +28,14 @@
       {% endif %}
 
       <div class="copter-page-info">
-        <p class="profile-title">{{ copter.category }}</p>
+        <p class="profile-title">{{ _(copter.category) }}</p>
         <h1>{{ copter.name }}</h1>
         <p class="profile-meta">
           <a class="copter-owner" href="{{ url_for('community.profile', username=copter.username) }}">
             <span class="avatar avatar-sm">{% if avatar %}<img src="{{ avatar }}" alt="" width="36" height="36" />{% else %}<span>{{ initials(copter.username) }}</span>{% endif %}</span>
             {{ copter.username }}
           </a>
-          · aktualisiert {{ (copter.updated_at|forum_time)[:10] }}
+          {{ _("· aktualisiert") }} {{ (copter.updated_at|forum_time)[:10] }}
         </p>
 
         {% if specs or copter.weight_g %}
@@ -44,35 +44,35 @@
               <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
             {% endfor %}
             {% if copter.weight_g %}
-              <div><dt>Gewicht</dt><dd>{{ copter.weight_g }} g</dd></div>
+              <div><dt>{{ _("Gewicht") }}</dt><dd>{{ copter.weight_g }} g</dd></div>
             {% endif %}
           </dl>
         {% else %}
-          <p class="form-hint">Keine weiteren Angaben zu diesem Copter.</p>
+          <p class="form-hint">{{ _("Keine weiteren Angaben zu diesem Copter.") }}</p>
         {% endif %}
 
         {% if copter.notes %}
-          <h2>Notizen</h2>
+          <h2>{{ _("Notizen") }}</h2>
           <p class="copter-notes">{{ copter.notes }}</p>
         {% endif %}
 
         {% if is_own %}
           <p>
-            <a class="btn btn-secondary" href="{{ url_for('konto.copters', bearbeiten=copter.id) }}#copter-formular">Bearbeiten</a>
+            <a class="btn btn-secondary" href="{{ url_for('konto.copters', bearbeiten=copter.id) }}#copter-formular">{{ _("Bearbeiten") }}</a>
           </p>
         {% endif %}
       </div>
     </div>
 
     {% if others %}
-      <h2>Weitere Copter von {{ copter.username }}</h2>
+      <h2>{{ _("Weitere Copter von") }} {{ copter.username }}</h2>
       <ul class="copter-others">
         {% for other in others %}
           <li>
             <a href="{{ url_for('community.copter', copter_id=other.id) }}">
               {% if other.image_filename %}<img src="{{ copter_image_url(other.image_filename) }}" alt="" loading="lazy" />{% else %}<span class="forum-copter-icon" aria-hidden="true">✈</span>{% endif %}
               <strong>{{ other.name }}</strong>
-              <span class="copter-category">{{ other.category }}</span>
+              <span class="copter-category">{{ _(other.category) }}</span>
             </a>
           </li>
         {% endfor %}

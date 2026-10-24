@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Bollisoft – Intelligent Software Solutions{% endblock %}
+{% block title %}{{ _("Bollisoft – Intelligent Software Solutions") }}{% endblock %}
 {% block body_class %}company-page{% endblock %}
 
 {% block head %}
-  <meta name="description" content="Bollisoft entwickelt präzise Software, Schnittstellen und hardwarenahe Systeme für Industrie und Technik." />
+  <meta name="description" content="{{ _("Bollisoft entwickelt präzise Software, Schnittstellen und hardwarenahe Systeme für Industrie und Technik.") }}" />
 {% endblock %}
 
 {% block content %}
@@ -12,98 +12,85 @@
     <section class="company-hero" id="home">
       <div class="company-hero-grid"></div>
       <div class="company-hero-content">
-        <p class="company-kicker">Bollisoft · Schweiz</p>
-        <h1>Code trifft Control.<br /><span>Intelligent Software Solutions.</span></h1>
+        <p class="company-kicker">{{ _("Bollisoft · Schweiz") }}</p>
+        <h1>{{ _("Code trifft Control.") }}<br /><span>{{ _("Intelligent Software Solutions.") }}</span></h1>
         <p class="company-lead">
-          Maßgeschneiderte Softwareentwicklung, präzise Schnittstellen und
-          intelligente Systemintegration für Industrie und Technik.
+          {{ _("Maßgeschneiderte Softwareentwicklung, präzise Schnittstellen und intelligente Systemintegration für Industrie und Technik.") }}
         </p>
         <div class="company-actions">
           {# "Projekt anfragen" (mailto-Kontaktlink) vorerst ausgeklammert,
              gleiches Muster wie die Kontakt-Sektion weiter unten - Kommentar
              entfernen, um den Button wieder sichtbar zu machen. #}
           {# <a class="company-button company-button-primary" href="mailto:info@bollisoft.ch">Projekt anfragen</a> #}
-          <a class="company-button company-button-secondary" href="#leistungen">Leistungen entdecken</a>
+          <a class="company-button company-button-secondary" href="#leistungen">{{ _("Leistungen entdecken") }}</a>
         </div>
       </div>
       <p class="company-proof">
-        Höchste Code-Qualität, performante Architektur und direkte
-        Hardware-Schnittstellen aus einer Hand.
+        {{ _("Höchste Code-Qualität, performante Architektur und direkte Hardware-Schnittstellen aus einer Hand.") }}
       </p>
     </section>
 
     <section class="company-section company-overview" id="ueber-uns">
       <div class="company-section-heading">
-        <p class="company-index">01 / Über uns</p>
-        <h2>Pragmatisch.<br />Präzise. Performant.</h2>
+        <p class="company-index">{{ _("01 / Über uns") }}</p>
+        <h2>{{ _("Pragmatisch.") }}<br />{{ _("Präzise. Performant.") }}</h2>
       </div>
       <div class="company-section-copy">
         <p class="company-large-copy">
-          Bollisoft entwickelt Software dort, wo Standardlösungen an ihre
-          Grenzen stoßen.
+          {{ _("Bollisoft entwickelt Software dort, wo Standardlösungen an ihre Grenzen stoßen.") }}
         </p>
         <p>
-          Mit einem tiefen Verständnis für logische Prozesse,
-          Hardware-Schnittstellen und Systemarchitektur realisieren wir
-          Softwarelösungen, die sich nahtlos in bestehende Umgebungen
-          einfügen. Unser Fokus liegt auf Zuverlässigkeit, sauberer
-          Code-Struktur und maximaler Effizienz im täglichen Betrieb.
+          {{ _("Mit einem tiefen Verständnis für logische Prozesse, Hardware-Schnittstellen und Systemarchitektur realisieren wir Softwarelösungen, die sich nahtlos in bestehende Umgebungen einfügen. Unser Fokus liegt auf Zuverlässigkeit, sauberer Code-Struktur und maximaler Effizienz im täglichen Betrieb.") }}
         </p>
       </div>
     </section>
 
-    <section class="company-values" aria-label="Kernwerte">
-      <article><span>01</span><h3>Präzision &amp; Logik</h3><p>Jede Zeile Code ist auf maximale Stabilität und klare Funktionalität ausgelegt.</p></article>
-      <article><span>02</span><h3>Praxisorientierung</h3><p>Entwicklung aus der Praxis für die Praxis – lösungsorientiert und ohne unnötigen Overhead.</p></article>
-      <article><span>03</span><h3>Nahtlose Integration</h3><p>Perfektes Zusammenspiel zwischen Software, Datenstrukturen und Hardware-Komponenten.</p></article>
-      <article><span>04</span><h3>Zukunftssicherheit</h3><p>Skalierbare Architektur, die mit den Anforderungen Ihres Unternehmens wächst.</p></article>
+    <section class="company-values" aria-label="{{ _("Kernwerte") }}">
+      <article><span>01</span><h3>{{ _("Präzision & Logik") }}</h3><p>{{ _("Jede Zeile Code ist auf maximale Stabilität und klare Funktionalität ausgelegt.") }}</p></article>
+      <article><span>02</span><h3>{{ _("Praxisorientierung") }}</h3><p>{{ _("Entwicklung aus der Praxis für die Praxis – lösungsorientiert und ohne unnötigen Overhead.") }}</p></article>
+      <article><span>03</span><h3>{{ _("Nahtlose Integration") }}</h3><p>{{ _("Perfektes Zusammenspiel zwischen Software, Datenstrukturen und Hardware-Komponenten.") }}</p></article>
+      <article><span>04</span><h3>{{ _("Zukunftssicherheit") }}</h3><p>{{ _("Skalierbare Architektur, die mit den Anforderungen Ihres Unternehmens wächst.") }}</p></article>
     </section>
 
     <section class="company-section company-services" id="werkzeuge">
       <div class="company-section-heading">
-        <p class="company-index">02 / Werkzeuge</p>
-        <h2>Direkt im Browser arbeiten.</h2>
+        <p class="company-index">{{ _("02 / Werkzeuge") }}</p>
+        <h2>{{ _("Direkt im Browser arbeiten.") }}</h2>
       </div>
       <div class="company-service-list">
         <article>
           <span>01</span>
           <div>
-            <h3>Drohnen Tools</h3>
+            <h3>{{ _("Drohnen Tools") }}</h3>
             <p>
-              Themes für EdgeTX gestalten, Lua-Skripte bauen, die SD-Karte
-              sichern und Blackbox-Logs auswerten. Vorschau und Export laufen
-              vollständig im Browser.
+              {{ _("Themes für EdgeTX gestalten, Lua-Skripte bauen, die SD-Karte sichern und Blackbox-Logs auswerten. Vorschau und Export laufen vollständig im Browser.") }}
             </p>
             <a class="company-button company-button-primary" href="/tx15-werkstatt/">
-              Drohnen Tools öffnen
+              {{ _("Drohnen Tools öffnen") }}
             </a>
           </div>
         </article>
         <article>
           <span>02</span>
           <div>
-            <h3>Forum</h3>
+            <h3>{{ _("Forum") }}</h3>
             <p>
-              Fragen, Copter-Builds und Tipps rund um FPV, EdgeTX, Betaflight
-              und den FPV Gamification Pico. Lesen kann jeder, mitschreiben
-              alle mit Bollisoft-Konto.
+              {{ _("Fragen, Copter-Builds und Tipps rund um FPV, EdgeTX, Betaflight und den FPV Gamification Pico. Lesen kann jeder, mitschreiben alle mit Bollisoft-Konto.") }}
             </p>
             <a class="company-button company-button-primary" href="{{ url_for('forum.index') }}">
-              Zum Forum
+              {{ _("Zum Forum") }}
             </a>
           </div>
         </article>
         <article>
           <span>03</span>
           <div>
-            <h3>Leaderboard</h3>
+            <h3>{{ _("Leaderboard") }}</h3>
             <p>
-              Die besten Trick-Flüge aus dem Blackbox Viewer – jeder Eintrag
-              mit Video. Weltweit oder nach Ländern sortiert: Wer fliegt in
-              deinem Land vorne mit?
+              {{ _("Die besten Trick-Flüge aus dem Blackbox Viewer – jeder Eintrag mit Video. Weltweit oder nach Ländern sortiert: Wer fliegt in deinem Land vorne mit?") }}
             </p>
             <a class="company-button company-button-primary" href="{{ url_for('leaderboard_pages.page') }}">
-              Zum Leaderboard
+              {{ _("Zum Leaderboard") }}
             </a>
           </div>
         </article>
@@ -112,47 +99,47 @@
 
     <section class="company-section company-services" id="leistungen">
       <div class="company-section-heading">
-        <p class="company-index">03 / Leistungen</p>
-        <h2>Systeme, die im Betrieb bestehen.</h2>
+        <p class="company-index">{{ _("03 / Leistungen") }}</p>
+        <h2>{{ _("Systeme, die im Betrieb bestehen.") }}</h2>
       </div>
       <div class="company-service-list">
         <article>
           <span>01</span>
-          <div><h3>Individuelle Softwareentwicklung</h3><p>Maßgeschneiderte Anwendungen für spezifische Workflows, Datenverarbeitungen und betriebliche Prozesse.</p><small>Desktop-Anwendungen · Web-Plattformen · Automatisierung · Datenbank-Design</small></div>
+          <div><h3>{{ _("Individuelle Softwareentwicklung") }}</h3><p>{{ _("Maßgeschneiderte Anwendungen für spezifische Workflows, Datenverarbeitungen und betriebliche Prozesse.") }}</p><small>{{ _("Desktop-Anwendungen · Web-Plattformen · Automatisierung · Datenbank-Design") }}</small></div>
         </article>
         <article>
           <span>02</span>
-          <div><h3>Schnittstellen &amp; Systemintegration</h3><p>Verbindung unterschiedlicher Systeme, Datenformate und Netzwerke für automatisierten Datenaustausch.</p><small>API-Entwicklung · Protokollkonvertierung · Drittsysteme · IoT-Integration</small></div>
+          <div><h3>{{ _("Schnittstellen & Systemintegration") }}</h3><p>{{ _("Verbindung unterschiedlicher Systeme, Datenformate und Netzwerke für automatisierten Datenaustausch.") }}</p><small>{{ _("API-Entwicklung · Protokollkonvertierung · Drittsysteme · IoT-Integration") }}</small></div>
         </article>
         <article>
           <span>03</span>
-          <div><h3>Hardwarenahe Software &amp; Steuerungen</h3><p>Entwicklung und Optimierung von Code an den Schnittstellen zu Steuerungen, Microcontrollern und technischen Geräten.</p><small>Embedded-Logik · Sensorik · Test- und Messsoftware · Steuerungsanbindungen</small></div>
+          <div><h3>{{ _("Hardwarenahe Software & Steuerungen") }}</h3><p>{{ _("Entwicklung und Optimierung von Code an den Schnittstellen zu Steuerungen, Microcontrollern und technischen Geräten.") }}</p><small>{{ _("Embedded-Logik · Sensorik · Test- und Messsoftware · Steuerungsanbindungen") }}</small></div>
         </article>
         <article>
           <span>04</span>
-          <div><h3>Prozessautomatisierung &amp; Tools</h3><p>Intelligente Hilfsmittel und Dashboards, die Aufgaben automatisieren und Fehlerquellen minimieren.</p><small>Datenimport und -export · Monitoring · Systemanalysen · Qualitätssicherung</small></div>
+          <div><h3>{{ _("Prozessautomatisierung & Tools") }}</h3><p>{{ _("Intelligente Hilfsmittel und Dashboards, die Aufgaben automatisieren und Fehlerquellen minimieren.") }}</p><small>{{ _("Datenimport und -export · Monitoring · Systemanalysen · Qualitätssicherung") }}</small></div>
         </article>
       </div>
     </section>
 
-    <section class="company-metrics" aria-label="Kennzahlen">
-      <div><strong>99.9%</strong><span>Zuverlässigkeit in Kernprozessen</span></div>
-      <div><strong>100%</strong><span>Maßgeschneiderter Code</span></div>
-      <div><strong>End-to-End</strong><span>Von Architektur bis Einsatz</span></div>
-      <div><strong>Multi-Plattform</strong><span>Windows, Linux &amp; Embedded</span></div>
+    <section class="company-metrics" aria-label="{{ _("Kennzahlen") }}">
+      <div><strong>99.9%</strong><span>{{ _("Zuverlässigkeit in Kernprozessen") }}</span></div>
+      <div><strong>100%</strong><span>{{ _("Maßgeschneiderter Code") }}</span></div>
+      <div><strong>{{ _("End-to-End") }}</strong><span>{{ _("Von Architektur bis Einsatz") }}</span></div>
+      <div><strong>{{ _("Multi-Plattform") }}</strong><span>{{ _("Windows, Linux & Embedded") }}</span></div>
     </section>
 
     <section class="company-section company-process" id="prozess">
       <div class="company-section-heading">
-        <p class="company-index">04 / Prozess</p>
-        <h2>Strukturiert vom Problem zur Lösung.</h2>
+        <p class="company-index">{{ _("04 / Prozess") }}</p>
+        <h2>{{ _("Strukturiert vom Problem zur Lösung.") }}</h2>
       </div>
       <ol class="company-process-list">
-        <li><span>01</span><div><h3>Analyse &amp; Konzept</h3><p>Anforderungen, Schnittstellen und Zielarchitektur detailliert aufnehmen.</p></div></li>
-        <li><span>02</span><div><h3>Architektur &amp; Prototyping</h3><p>Kernfunktionen frühzeitig in einem strukturierten Gesamtsystem validieren.</p></div></li>
-        <li><span>03</span><div><h3>Entwicklung &amp; Refactoring</h3><p>Sauberen, gut strukturierten Code nach hohen Qualitätsstandards entwickeln.</p></div></li>
-        <li><span>04</span><div><h3>Integration &amp; Testing</h3><p>Schnittstellen, Ausnahmeszenarien und vollständige Logikketten gründlich testen.</p></div></li>
-        <li><span>05</span><div><h3>Deployment &amp; Support</h3><p>Das System reibungslos in Betrieb nehmen und langfristig betreuen.</p></div></li>
+        <li><span>01</span><div><h3>{{ _("Analyse & Konzept") }}</h3><p>{{ _("Anforderungen, Schnittstellen und Zielarchitektur detailliert aufnehmen.") }}</p></div></li>
+        <li><span>02</span><div><h3>{{ _("Architektur & Prototyping") }}</h3><p>{{ _("Kernfunktionen frühzeitig in einem strukturierten Gesamtsystem validieren.") }}</p></div></li>
+        <li><span>03</span><div><h3>{{ _("Entwicklung & Refactoring") }}</h3><p>{{ _("Sauberen, gut strukturierten Code nach hohen Qualitätsstandards entwickeln.") }}</p></div></li>
+        <li><span>04</span><div><h3>{{ _("Integration & Testing") }}</h3><p>{{ _("Schnittstellen, Ausnahmeszenarien und vollständige Logikketten gründlich testen.") }}</p></div></li>
+        <li><span>05</span><div><h3>{{ _("Deployment & Support") }}</h3><p>{{ _("Das System reibungslos in Betrieb nehmen und langfristig betreuen.") }}</p></div></li>
       </ol>
     </section>
 

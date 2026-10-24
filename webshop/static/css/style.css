@@ -3484,3 +3484,59 @@ code {
   display: grid;
   gap: 6px;
 }
+
+/* Rollen-Abzeichen (roles.py) */
+.forum-badge-role {
+  font-weight: 600;
+}
+
+.forum-badge-role.role-admin {
+  color: #1a0606;
+  background: var(--color-error);
+}
+
+.forum-badge-role.role-moderator {
+  color: #06121f;
+  background: var(--color-info);
+}
+
+.forum-badge-role.role-support {
+  color: #061a10;
+  background: var(--color-success);
+}
+
+.forum-badge-role.role-tester {
+  color: #1a1206;
+  background: var(--color-warning);
+}
+
+.forum-badge-role.role-vip {
+  color: #160a1f;
+  background: #c77dff;
+}
+
+.forum-badge-role.role-team {
+  color: #07100b;
+  background: var(--color-accent);
+}
+
+.admin-role-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.admin-role-form select {
+  padding: 8px 10px;
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-medium);
+  color: var(--color-text);
+  font: inherit;
+  min-width: 320px;
+}
+
+a.avatar-team {
+  text-decoration: none;
+}

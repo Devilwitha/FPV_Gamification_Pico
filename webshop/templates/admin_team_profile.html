@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Admin – Team-Profil{% endblock %}
+
+{% block content %}
+  <section class="account-page">
+    <nav class="forum-breadcrumbs" aria-label="Pfad">
+      <a href="{{ url_for('admin_dashboard') }}">Admin</a> <span>›</span> <span>Team-Profil</span>
+    </nav>
+    <h1>Profil des Bollisoft-Teams</h1>
+    <p class="license-intro">
+      So erscheint das <strong>{{ team.name }}</strong> neben Beiträgen, die du als Admin ohne eigenes Konto schreibst,
+      und auf der Seite <a href="{{ url_for('community.team_profile') }}">{{ url_for('community.team_profile') }}</a>.
+    </p>
+
+    {% if message %}
+      <div class="license-success">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+      <div class="checkout-error">{{ error }}</div>
+    {% endif %}
+
+    <div class="login-card account-card">
+      <form method="post" action="{{ url_for('admin_users.team_profile_edit') }}" enctype="multipart/form-data">
+        <div class="avatar-edit">
+          <div class="avatar avatar-lg avatar-team">
+            {% if team.avatar %}<img src="{{ team.avatar }}" alt="" width="96" height="96" />{% else %}<span>B</span>{% endif %}
+          </div>
+          <div class="form-field">
+            <label for="team-avatar">Profilbild / Logo (JPG, PNG, WebP – wird quadratisch zugeschnitten)</label>
+            <input type="file" id="team-avatar" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" />
+            {% if team.avatar %}
+              <label class="checkbox-label"><input type="checkbox" name="remove_avatar" value="1" /> Profilbild entfernen</label>
+            {% endif %}
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="team-status">Status (kurz, z. B. „Wir antworten werktags innert 24 h“)</label>
+          <input type="text" id="team-status" name="status_text" maxlength="60" value="{{ values.status_text or '' }}" />
+        </div>
+        <div class="form-field">
+          <label for="team-bio">Über uns</label>
+          <textarea id="team-bio" name="bio" rows="6" maxlength="2000">{{ values.bio or '' }}</textarea>
+        </div>
+        <div class="form-field">
+          <label for="team-signature">Signatur (unter Team-Beiträgen)</label>
+          <input type="text" id="team-signature" name="signature" maxlength="300" value="{{ values.signature or '' }}" />
+        </div>
+        <div class="form-row">
+          <div class="form-field">
+            <label for="team-website">Webseite (optional)</label>
+            <input type="text" id="team-website" name="website" maxlength="200" placeholder="https://" value="{{ values.website or '' }}" />
+          </div>
+          <div class="form-field">
+            <label for="team-youtube">YouTube-Kanal (optional)</label>
+            <input type="text" id="team-youtube" name="youtube" maxlength="200" placeholder="https://youtube.com/@…" value="{{ values.youtube or '' }}" />
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Team-Profil speichern</button>
+        <a class="btn btn-secondary" href="{{ url_for('community.team_profile') }}">Ansehen</a>
+      </form>
+    </div>
+  </section>
+{% endblock %}

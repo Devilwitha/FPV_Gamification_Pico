@@ -37,7 +37,7 @@
           </div>
         </details>
         {% endif %}
-        <a class="nav-trigger nav-link" href="/tx15-werkstatt/">{{ _("Drohnen Tools") }}</a>
+        <a class="nav-trigger nav-link" href="{{ url_for('index') }}#werkzeuge">{{ _("Drohnen Tools") }}</a>
         <a class="nav-trigger nav-link" href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a>
         <a class="nav-trigger nav-link" href="{{ url_for('leaderboard_pages.page') }}">{{ _("Leaderboard") }}</a>
         {% if shop_enabled %}

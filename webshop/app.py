@@ -31,6 +31,7 @@ import konto
 import leaderboard
 import pilot_license
 import trick_labels
+import hub
 import orders_db
 import simulator_manager
 import tx15_backups
@@ -432,7 +433,13 @@ def get_paypal_access_token():
 
 @app.route("/")
 def index():
-    """Bollisoft-Unternehmensseite."""
+    """Startseite: die Drohnen Tools (Werkzeuge, Einstiegswege, Forum, Leaderboard), siehe hub.py."""
+    return render_template("home.html", **hub.home_context())
+
+
+@app.route("/ueber-bollisoft")
+def about():
+    """Bisherige Unternehmensseite von Bollisoft (Leistungen, Prozess) - im Footer verlinkt."""
     return render_template("bollisoft_home.html")
 
 

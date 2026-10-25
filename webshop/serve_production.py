@@ -105,7 +105,11 @@ def make_static_app(root):
             return redirect(target, 308)(environ, start_response)
 
         relative = path.lstrip("/")
-        if not relative or relative.endswith("/"):
+        # Die Uebersicht der Drohnen Tools ist jetzt die Startseite "/" (hub.py);
+        # die alte statische index.html bleibt nur fuer den lokalen Betrieb.
+        if relative in ("", "index.html"):
+            return redirect("/", 302)(environ, start_response)
+        if relative.endswith("/"):
             relative += "index.html"
         if any(part.startswith(".") for part in relative.split("/")):
             return NotFound()(environ, start_response)

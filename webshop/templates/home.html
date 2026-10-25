@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _("Bollisoft – Drohnen Tools: FPV planen, einrichten, fliegen") }}{% endblock %}
+{% block body_class %}hub-page{% endblock %}
+
+{% block head %}
+  <meta name="description" content="{{ _("Kostenlose Drohnen Tools im Browser: Build Studio, Betaflight, ESC und ELRS, EdgeTX-Themes und Lua-Skripte, Blackbox Viewer mit Trick-Erkennung – dazu Forum und Leaderboard.") }}" />
+{% endblock %}
+
+{% macro icon(key) -%}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    {%- if key == "build" -%}<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4a2.5 2.5 0 0 1 2.5 2.5v5"/><circle cx="17.5" cy="6.5" r="1.5"/><path d="M6.5 10v4a2.5 2.5 0 0 0 2.5 2.5h5"/>
+    {%- elif key == "betaflight" -%}<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>
+    {%- elif key == "esc" -%}<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>
+    {%- elif key == "elrs" -%}<circle cx="12" cy="13" r="2"/><path d="M8.5 9.5a5 5 0 0 0 0 7M15.5 9.5a5 5 0 0 1 0 7M5.5 6.5a9 9 0 0 0 0 13M18.5 6.5a9 9 0 0 1 0 13"/>
+    {%- elif key == "theme" -%}<path d="M12 3a9 9 0 1 0 0 18c1.3 0 2-.9 2-2 0-1.4-1.2-1.6-1.2-2.8 0-1 .8-1.7 1.9-1.7H17a4 4 0 0 0 4-4c0-4.2-4-7.5-9-7.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>
+    {%- elif key == "lua" -%}<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>
+    {%- elif key == "backup" -%}<path d="M4 7h11l5 5v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 7V4h6M12 11v6M9.5 14.5 12 17l2.5-2.5"/>
+    {%- elif key == "blackbox" -%}<path d="M3 3v18h18"/><path d="m7 15 3-4 3 2 5-7"/>
+    {%- else -%}<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>
+    {%- endif -%}
+  </svg>
+{%- endmacro %}
+
+{% block content %}
+  <div class="hub">
+    <section class="hub-hero">
+      <div class="hub-hero-copy">
+        <p class="hub-kicker">{{ _("Bollisoft · Drohnen Tools") }}</p>
+        <h1>{{ _("Alles für deine FPV-Drohne.") }} <em>{{ _("Direkt im Browser.") }}</em></h1>
+        <p class="hub-lead">
+          {{ _("Planen, verkabeln, einrichten, fliegen und auswerten – ohne Installation. Flugcontroller, Regler und Sender verbindest du einfach per USB.") }}
+        </p>
+        <div class="hub-actions">
+          <a class="hub-btn hub-btn-primary" href="#werkzeuge">{{ _("Werkzeug wählen") }}</a>
+          <a class="hub-btn" href="/blackbox-viewer/">{{ _("Blackbox-Log auswerten") }}</a>
+        </div>
+        <ul class="hub-facts">
+          <li><b>{{ tool_count }}</b> {{ _("Werkzeuge") }}</li>
+          <li><b>{{ _("Kostenlos") }}</b> {{ _("ohne Installation") }}</li>
+          <li><b>{{ _("Chrome & Edge") }}</b> {{ _("für USB und SD-Karte") }}</li>
+        </ul>
+      </div>
+      <aside class="hub-live" aria-label="{{ _("Aus der Community") }}">
+        <p class="hub-live-head">{{ _("Aus der Community") }}</p>
+        <dl class="hub-live-stats">
+          <div><dt>{{ _("Piloten") }}</dt><dd>{{ stats.pilots }}</dd></div>
+          <div><dt>{{ _("Forenbeiträge") }}</dt><dd>{{ stats.posts }}</dd></div>
+          <div><dt>{{ _("Flüge im Leaderboard") }}</dt><dd>{{ stats.flights }}</dd></div>
+        </dl>
+        {% if leader %}
+          <a class="hub-leader" href="{{ url_for('leaderboard_pages.entry', entry_id=leader.id) }}">
+            <span class="hub-leader-rank">#1</span>
+            <span>
+              <strong>{{ leader.pilot }}</strong>
+              <small>{{ leader.best or _("Leaderboard") }}{% if leader.cells %} · {{ leader.cells }}S{% endif %}</small>
+            </span>
+            <span class="hub-leader-score">{{ "{:,}".format(leader.score).replace(",", "'") }}</span>
+          </a>
+        {% else %}
+          <p class="hub-live-empty">{{ _("Noch kein Flug im Leaderboard – reich den ersten ein!") }}</p>
+        {% endif %}
+      </aside>
+    </section>
+
+    <section class="hub-section" id="werkzeuge">
+      <div class="hub-section-head">
+        <h2>{{ _("Werkzeuge") }}</h2>
+        <p>{{ _("Alle laufen im Browser und merken sich deinen Stand. Mit Konto speicherst du Builds, Themes, Skripte und Backups auf dem Server.") }}</p>
+      </div>
+      <div class="hub-groups">
+        {% for group in groups %}
+          <div class="hub-group" id="gruppe-{{ group.key }}">
+            <div class="hub-group-head">
+              <h3>{{ group.name }}</h3>
+              <p>{{ group.desc }}</p>
+            </div>
+            <div class="hub-tools">
+              {% for tool in group.tools %}
+                <a class="hub-tool" href="{{ tool.href }}">
+                  <span class="hub-tool-icon">{{ icon(tool.key) }}</span>
+                  <span class="hub-tool-body">
+                    <strong>{{ tool.name }}</strong>
+                    <span>{{ tool.desc }}</span>
+                    <span class="hub-tags">{% for tag in tool.tags %}<i>{{ tag }}</i>{% endfor %}</span>
+                  </span>
+                  <span class="hub-tool-go" aria-hidden="true">→</span>
+                </a>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="hub-section">
+      <div class="hub-section-head">
+        <h2>{{ _("Wo fange ich an?") }}</h2>
+        <p>{{ _("Drei typische Wege durch die Werkzeuge – einfach von links nach rechts.") }}</p>
+      </div>
+      <div class="hub-paths">
+        {% for path in paths %}
+          <div class="hub-path">
+            <h3>{{ path.name }}</h3>
+            <p>{{ path.desc }}</p>
+            <ol>
+              {% for step in path.steps %}
+                <li><a href="{{ step.href }}"><span class="hub-step-icon">{{ icon(step.key) }}</span>{{ step.name }}</a></li>
+              {% endfor %}
+            </ol>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="hub-section hub-community">
+      <div class="hub-panel">
+        <div class="hub-panel-head">
+          <h2>{{ _("Neu im Forum") }}</h2>
+          <a href="{{ url_for('forum.index') }}">{{ _("Zum Forum") }} →</a>
+        </div>
+        {% if latest_threads %}
+          <ul class="hub-list">
+            {% for thread in latest_threads %}
+              <li>
+                <a href="{{ url_for('forum.thread', thread_id=thread.id) }}">{{ thread.title }}</a>
+                <small>{{ categories.get(thread.category, thread.category) }} · {{ thread.last_author_name or thread.author_name or "–" }} · {{ thread.last_post_at|forum_time }}</small>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="hub-muted">{{ _("Noch keine Themen – stell die erste Frage!") }}</p>
+        {% endif %}
+      </div>
+      <div class="hub-panel">
+        <div class="hub-panel-head">
+          <h2>{{ _("Leaderboard") }}</h2>
+          <a href="{{ url_for('leaderboard_pages.page') }}">{{ _("Ganze Rangliste") }} →</a>
+        </div>
+        {% if top_entries %}
+          <ol class="hub-ranking">
+            {% for entry in top_entries %}
+              <li>
+                <span class="hub-rank">{{ loop.index }}</span>
+                <a href="{{ url_for('leaderboard_pages.entry', entry_id=entry.id) }}">{{ entry.pilot }}</a>
+                <small>{{ entry.best or "–" }}{% if entry.cells %} · {{ entry.cells }}S{% endif %}</small>
+                <b>{{ "{:,}".format(entry.score).replace(",", "'") }}</b>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <p class="hub-muted">{{ _("Noch keine Flüge – lade im Blackbox Viewer dein Log und reich deinen Score ein.") }}</p>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if not session.get("account_email") %}
+      <section class="hub-section hub-account">
+        <div>
+          <h2>{{ _("Kostenloses Konto") }}</h2>
+          <p>{{ _("Builds, Themes, Lua-Skripte und Sender-Backups auf dem Server speichern, im Forum mitschreiben, deine Copter zeigen und Flüge ins Leaderboard einreichen.") }}</p>
+        </div>
+        <div class="hub-actions">
+          <a class="hub-btn hub-btn-primary" href="{{ url_for('register') }}">{{ _("Konto erstellen") }}</a>
+          <a class="hub-btn" href="{{ url_for('login') }}">{{ _("Einloggen") }}</a>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="hub-section" id="hilfe">
+      <div class="hub-section-head">
+        <h2>{{ _("Häufige Fragen") }}</h2>
+      </div>
+      <div class="hub-faq">
+        <details>
+          <summary>{{ _("Welchen Browser brauche ich?") }}</summary>
+          <p>{{ _("Für USB (Flugcontroller, Regler, ELRS) und das direkte Schreiben auf die SD-Karte brauchst du Chrome oder Edge am PC. Alles andere – Planen, Vorschau, Export als ZIP, Blackbox-Auswertung – geht in jedem aktuellen Browser.") }}</p>
+        </details>
+        <details>
+          <summary>{{ _("Kostet das etwas, und werden meine Dateien hochgeladen?") }}</summary>
+          <p>{{ _("Die Werkzeuge sind kostenlos. Logs, Videos und SD-Karten werden im Browser verarbeitet. Hochgeladen wird nur, was du ausdrücklich im Konto speicherst oder ins Leaderboard einreichst.") }}</p>
+        </details>
+        <details>
+          <summary>{{ _("Wo gehört was auf die SD-Karte des Senders?") }}</summary>
+          <p>{{ _("Theme Studio, Lua Studio und Backup Studio legen alles an die richtige Stelle. Zur Orientierung:") }}</p>
+<pre class="hub-tree">SD-Karte/
+├─ RADIO/            ← {{ _("Sender-Einstellungen") }}
+├─ MODELS/           ← {{ _("Modelle") }}
+├─ THEMES/MeinTheme/ ← Theme Studio
+├─ WIDGETS/FLUGDAT/  ← Lua Studio ({{ _("Widget") }})
+├─ SCRIPTS/TOOLS/    ← Lua Studio ({{ _("Tool") }})
+├─ SCRIPTS/FUNCTIONS/, SCRIPTS/MIXES/
+└─ SOUNDS/de/        ← {{ _("eigene Sounds") }}</pre>
+          <p>{{ _("Neue Widgets und Themes erkennt EdgeTX erst nach einem Neustart. Die Firmware (.uf2) installiert das Backup Studio über den Bootloader – nicht über die SD-Karte.") }}</p>
+        </details>
+        <details>
+          <summary>{{ _("Wie sichere ich Flugcontroller und Sender vor einem Update?") }}</summary>
+          <p>{{ _("Flugcontroller: im Betaflight Configurator unter CLI „diff all“ ausgeben und als Datei speichern. Sender: im Backup Studio die SD-Karte sichern – vor jedem Zurückspielen legt es automatisch eine Sicherung an.") }}</p>
+        </details>
+        <details>
+          <summary>{{ _("Wie kommt mein Flug ins Leaderboard?") }}</summary>
+          <p>{{ _("Im Blackbox Viewer das Log (.bbl/.bfl) und optional das Video laden, Akku-Klasse prüfen und mit Konto einreichen. Jeder Flug kann nur einmal eingereicht werden, Demo-Flüge zählen nicht.") }}</p>
+        </details>
+      </div>
+    </section>
+  </div>
+{% endblock %}

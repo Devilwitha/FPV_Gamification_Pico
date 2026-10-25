@@ -15,8 +15,10 @@ Node-Server des Viewers (blackbox-viewer/server/leaderboard.mjs).
   Eintraege als geprueft und loescht fehlerhafte.
 """
 
+import hashlib
 import json
 import os
+import re
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -50,6 +52,8 @@ MAX_LOG_BYTES = _env_int("LEADERBOARD_MAX_LOG_BYTES", 64 * 1024 * 1024)
 REPORT_THRESHOLD = _env_int("LEADERBOARD_REPORT_THRESHOLD", 10)
 SUBMIT_INTERVAL = timedelta(seconds=60)
 MAX_TRICKS = 2000
+# Akku-Klassen (Zellenzahl): Rangliste je Klasse, siehe _ranking() und ?klasse=4s
+CELL_CLASSES = (1, 2, 3, 4, 6, 8)
 AJAX_HEADER_VALUE = "blackbox-viewer"
 VIEWER_PATH = "/blackbox-viewer/"
 LOGIN_URL = f"/login?next={VIEWER_PATH}"
@@ -83,6 +87,53 @@ def _num(value, low, high, default=0.0):
     if number != number:  # NaN
         return default
     return min(high, max(low, number))
+
+
+HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+DUPLICATE_MESSAGES = {
+    "log_hash": "Dieses Log ist schon im Leaderboard (Eintrag #{id}). Jeder Flug kann nur einmal eingereicht werden.",
+    "flight_hash": "Dieser Flug ist schon im Leaderboard (Eintrag #{id}). Jeder Flug kann nur einmal eingereicht werden.",
+    "video_hash": "Dieses Video wurde schon eingereicht (Eintrag #{id}). Jedes Video kann nur einmal verwendet werden.",
+}
+
+
+def _clean_hash(value):
+    text = value.strip().lower() if isinstance(value, str) else ""
+    return text if HASH_RE.match(text) else None
+
+
+def log_fingerprint(path, log_index):
+    """SHA-256 der Log-Datei plus Log-Nummer (eine Datei kann mehrere Fluege enthalten)."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return hashlib.sha256(f"{digest.hexdigest()}:{int(log_index)}".encode()).hexdigest()
+
+
+def _duplicate(log_hash=None, flight_hash=None, video_hash=None):
+    """Fehlertext + Eintrags-ID, wenn Log, Flugdaten oder Video schon eingereicht wurden."""
+    row, kind = db.leaderboard_find_duplicate(log_hash, flight_hash, video_hash)
+    if row is None:
+        return None, None
+    return _(DUPLICATE_MESSAGES[kind], id=row["id"]), row["id"]
+
+
+def backfill_log_hashes():
+    """Fingerabdruecke fuer Eintraege von vor der Duplikat-Pruefung aus den gespeicherten Logs."""
+    count = 0
+    for row in db.leaderboard_without_log_hash():
+        path = MEDIA_DIR / row["log_filename"]
+        if path.is_file():
+            db.leaderboard_set_log_hash(row["id"], log_fingerprint(path, row["log_index"]))
+            count += 1
+    return count
+
+
+def parse_cells(value):
+    """'4', '4s', '4S' oder 4 -> 4; alles andere -> None."""
+    text = str(value if value is not None else "").strip().lower().removesuffix("s")
+    return int(text) if text.isdigit() and int(text) in CELL_CLASSES else None
 
 
 def _video_mime(head):
@@ -132,6 +183,7 @@ def _public(row, rank=None, account=None):
         "best": row["best"],
         "maxCombo": row["max_combo"],
         "craft": row["craft"],
+        "cells": row["cells"],
         "duration": row["duration"],
         "createdAt": row["created_at"],
         "hasVideo": bool(row["video_filename"]),
@@ -213,7 +265,7 @@ def auth_state():
 def list_entries():
     limit = int(_num(request.args.get("limit"), 1, 200, 50))
     account = _account()
-    rows = db.leaderboard_list(limit)
+    rows = db.leaderboard_list(limit, cells=parse_cells(request.args.get("klasse")))
     response = jsonify({"entries": [_public(row, rank=index + 1, account=account) for index, row in enumerate(rows)]})
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -281,6 +333,19 @@ def entry_log(entry_id):
 
 # --- Einreichen -----------------------------------------------------------
 
+@bp.post("/pruefen")
+def check_duplicate():
+    """Vorab-Pruefung des Viewers, bevor er den Flug aufnimmt (spart das Warten auf ein abgelehntes Video)."""
+    if _account() is None:
+        return jsonify({"error": _("Zum Einreichen bitte einloggen."), "loginUrl": LOGIN_URL}), 401
+    if not _require_ajax():
+        return error_response(_("Ungültige Anfrage."), 400)
+    payload = request.get_json(silent=True) or {}
+    message, entry_id = _duplicate(_clean_hash(payload.get("logHash")), _clean_hash(payload.get("flightHash")),
+                                   _clean_hash(payload.get("videoHash")))
+    return jsonify({"duplicate": bool(message), "error": message, "entryId": entry_id})
+
+
 @bp.post("")
 def submit():
     account = _account()
@@ -310,6 +375,15 @@ def submit():
     video = request.files.get("video")
     if video is None:
         return error_response(_("Das Video mit Overlay fehlt."), 400)
+    log = request.files.get("log")
+    if log is None:
+        return error_response(_("Das Log fehlt."), 400)
+    flight_hash = _clean_hash(meta.get("flightHash"))
+    video_hash = _clean_hash(meta.get("videoHash"))
+    log_index = int(_num(meta.get("logIndex"), 0, 1000))
+    message, _entry = _duplicate(None, flight_hash, video_hash)
+    if message:
+        return error_response(message, 409)
 
     staged = []
     try:
@@ -320,13 +394,15 @@ def submit():
         mime = _video_mime(head)
         if mime is None:
             return error_response(_("Das Video ist kein WebM- oder MP4-Video."), 400)
-        log_name = log_size = None
-        log = request.files.get("log")
-        if log is not None:
-            log_name, log_size, _head, problem = _stage(log, MAX_LOG_BYTES)
-            if problem:
-                return error_response(f"Log: {problem}", 413)
-            staged.append(log_name)
+        log_name, log_size, _head, problem = _stage(log, MAX_LOG_BYTES)
+        if problem:
+            return error_response(f"Log: {problem}", 413)
+        staged.append(log_name)
+        # dieselbe Datei (gleiche Log-Nummer) wurde schon eingereicht?
+        log_hash = log_fingerprint(MEDIA_DIR / f"{log_name}.part", log_index)
+        message, _entry = _duplicate(log_hash)
+        if message:
+            return error_response(message, 409)
         tricks = _clean_tricks(meta.get("trickList"))
         settings = meta.get("settings") if isinstance(meta.get("settings"), dict) else {}
         entry_id = db.leaderboard_add({
@@ -337,10 +413,14 @@ def submit():
             "best": clean_text(meta.get("best"), 40),
             "max_combo": int(_num(meta.get("maxCombo"), 0, 1000)),
             "craft": clean_text(meta.get("craft"), 40),
+            "cells": parse_cells(meta.get("cells")),
             "duration": _num(meta.get("duration"), 0, 86400),
             "source": source,
             "log_name": clean_text(meta.get("logName"), 120),
-            "log_index": int(_num(meta.get("logIndex"), 0, 1000)),
+            "log_index": log_index,
+            "log_hash": log_hash,
+            "flight_hash": flight_hash,
+            "video_hash": video_hash,
             "tricks_json": json.dumps(tricks, ensure_ascii=False),
             "settings_json": json.dumps(settings, ensure_ascii=False)[:20000],
             "video_filename": video_name,
@@ -469,6 +549,7 @@ def admin_overview():
                 "id": row["id"],
                 "pilot": row["pilot"],
                 "score": row["score"],
+                "cells": row["cells"],
                 "email": row["email"],
                 "username": row["account_username"],
                 "created_at": row["created_at"],
@@ -496,9 +577,12 @@ def _pilot_key(row):
     return (row["email"] or f"pilot:{row['pilot']}").lower()
 
 
-def _ranking(view, land):
-    """(eintraege mit Platz, Laender-Uebersicht). view: 'piloten' = bester Flug je Pilot."""
+def _ranking(view, land, cells=None):
+    """(eintraege mit Platz, Laender-Uebersicht). view: 'piloten' = bester Flug je Pilot.
+    cells: nur eine Akku-Klasse - Plaetze und "bester Flug" gelten dann innerhalb der Klasse."""
     rows = db.leaderboard_all()
+    if cells is not None:
+        rows = [row for row in rows if row["cells"] == cells]
     global_rank = {row["id"]: index + 1 for index, row in enumerate(rows)}
     best, seen = [], set()
     for row in rows:
@@ -524,7 +608,9 @@ def page():
     land = (request.args.get("land") or "").upper()
     if land and not countries.is_valid(land):
         land = ""
-    items, overview = _ranking(view, land)
+    cells = parse_cells(request.args.get("klasse"))
+    klasse = f"{cells}s" if cells else None
+    items, overview = _ranking(view, land, cells)
     pages_total = max(1, (len(items) + PAGE_SIZE - 1) // PAGE_SIZE)
     current = min(max(1, request.args.get("seite", 1, type=int)), pages_total)
     account = _account()
@@ -535,6 +621,9 @@ def page():
         total=len(items),
         view=view,
         land=land,
+        cells=cells,
+        klasse=klasse,
+        cell_classes=CELL_CLASSES,
         overview=overview,
         page=current,
         pages=pages_total,
@@ -551,6 +640,8 @@ def entry(entry_id):
         abort(404)
     items, _overview = _ranking("fluege", row["country"] or "")
     country_rank = next((item["rank"] for item in items if item["row"]["id"] == entry_id), None) if row["country"] else None
+    class_items, _overview = _ranking("fluege", "", row["cells"]) if row["cells"] else ([], None)
+    class_rank = next((item["rank"] for item in class_items if item["row"]["id"] == entry_id), None)
     account = _account()
     mine = bool(account is not None and row["email"] and row["email"].lower() == account["email"].lower())
     return render_template(
@@ -558,6 +649,7 @@ def entry(entry_id):
         entry=row,
         rank=db.leaderboard_rank(entry_id),
         country_rank=country_rank,
+        class_rank=class_rank,
         tricks=json.loads(row["tricks_json"] or "[]"),
         video_url=url_for("leaderboard.entry_video", entry_id=entry_id) if row["video_filename"] else None,
         avatar=community.avatar_url(row["avatar_filename"]),

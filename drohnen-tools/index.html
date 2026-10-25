@@ -208,6 +208,7 @@ footer .container { display: flex; flex-wrap: wrap; justify-content: space-betwe
       <a data-tool="esc" data-feature="escconfigurator" href="esc-configurator.html" hidden>ESC</a>
       <a data-tool="betaflight" data-feature="betaflight" href="betaflight.html" hidden>Betaflight</a>
       <a data-tool="backup" href="backup-studio.html">Backup Studio</a>
+      <a data-tool="build" href="build-studio.html">Build Studio</a>
       <a data-tool="blackbox" data-feature="blackbox" href="/blackbox-viewer/" hidden>Blackbox</a>
       <a href="#ablauf">Ablauf</a>
       <a href="#sd-karte">SD-Karte</a>
@@ -334,6 +335,27 @@ footer .container { display: flex; flex-wrap: wrap; justify-content: space-betwe
           <p>Konfiguration, Modding und Updates: Empfänger und Sendemodul flashen, Regler einstellen und den Flugcontroller einrichten.</p>
         </div>
         <div class="tools">
+        <article class="tool">
+          <div class="tool-visual">
+            <div class="flash-visual" aria-hidden="true">
+              <div class="bf-tabs"><span class="on">Teile</span><span>Verkabelung</span><span>Prüfung</span><span>CLI</span></div>
+              <div class="term">Abfluggewicht 536 g · Schub/Gewicht <i>11,9 : 1</i><br>Flugzeit ≈ 3,9–10 min<br>UART1: Empfänger · UART2: DJI O4<br><i>Keine Fehler gefunden.</i></div>
+            </div>
+          </div>
+          <div class="tool-body">
+            <span class="num">Werkzeug</span>
+            <h3>Build Studio</h3>
+            <p>Deine Drohne planen: Teileliste mit Gewicht, Preis, Schub/Gewicht und Flugzeit – und der Schaltplan, in dem du Kabel von Pad zu Pad ziehst. Fehler wie TX an TX oder 5-V-Geräte am Akku fallen sofort auf.</p>
+            <div class="chips"><span class="chip">Teileliste</span><span class="chip">Schaltplan</span><span class="chip">Betaflight-CLI</span><span class="chip">SVG/PNG</span></div>
+            <ul>
+              <li>Kompatibilität: Prop-Größe, Stack, Zellen, KV, Strom</li>
+              <li>Verdrahtungsassistent belegt UARTs und Versorgung</li>
+              <li>Betaflight-Befehle direkt aus der UART-Belegung</li>
+            </ul>
+            <a class="btn primary" data-tool="build" href="build-studio.html">Build Studio öffnen</a>
+          </div>
+        </article>
+
         <article class="tool" data-feature="webflasher" hidden>
           <div class="tool-visual">
             <div class="flash-visual" aria-hidden="true">
@@ -550,7 +572,7 @@ document.querySelectorAll('[data-flow]').forEach(f => { const g = document.getEl
 document.getElementById('statTools').textContent = String(visibleTools.length);
 document.getElementById('toolCount').textContent = ['', 'Ein', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs', 'Sieben', 'Acht'][visibleTools.length] || String(visibleTools.length);
 
-const ONLINE = { theme: 'https://claude.ai/artifact/ChEip3M9VTVKBTe52yZ84z', lua: 'https://claude.ai/artifact/NqNAfXKkzoAaimnJWVsEsb', backup: 'https://claude.ai/artifact/TCs6tidxPkAh8dBvptW5Md', elrs: 'https://claude.ai/artifact/4uwyvsqHaX8CLSAWAY3FAz', esc: 'https://esc-configurator.com', betaflight: 'https://app.betaflight.com', blackbox: 'https://www.bollisoft.ch/blackbox-viewer/' };
+const ONLINE = { theme: 'https://claude.ai/artifact/ChEip3M9VTVKBTe52yZ84z', lua: 'https://claude.ai/artifact/NqNAfXKkzoAaimnJWVsEsb', backup: 'https://claude.ai/artifact/TCs6tidxPkAh8dBvptW5Md', elrs: 'https://claude.ai/artifact/4uwyvsqHaX8CLSAWAY3FAz', esc: 'https://esc-configurator.com', betaflight: 'https://app.betaflight.com', blackbox: 'https://www.bollisoft.ch/blackbox-viewer/', build: 'https://www.bollisoft.ch/tx15-werkstatt/build-studio.html' };
 if (window.claude && typeof window.claude.use === 'function') {
   document.querySelectorAll('[data-tool]').forEach(a => { a.href = ONLINE[a.dataset.tool]; a.target = '_blank'; a.rel = 'noopener'; });
 }

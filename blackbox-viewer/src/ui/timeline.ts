@@ -1,4 +1,5 @@
-// Scrollable / zoomable telemetry timeline: gyro rates, throttle, detected tricks, sync markers.
+// Scrollable / zoomable telemetry timeline: gyro rates, throttle, detected tricks, sync markers,
+// marked spans ("trick not detected") and – in marking mode – dragging selects a span.
 import { TRICK_COLOR, type Analysis } from '../analysis/tricks.ts';
 import type { FlightData } from '../types.ts';
 
@@ -6,6 +7,16 @@ export interface TimelineCallbacks {
   onSeek: (t: number) => void;
   /** when set (anchor picking mode) a click picks a log time instead of seeking */
   onPick?: ((t: number) => void) | null;
+  /** marking mode: a drag selected the span [t0, t1] */
+  onRange?: ((t0: number, t1: number) => void) | null;
+}
+
+/** A span marked by the pilot (drawn dashed with its label). */
+export interface TimelineMark {
+  start: number;
+  end: number;
+  label: string;
+  color: string;
 }
 
 const AXIS_COLORS = ['#ff4d6d', '#3ddc97', '#4cc9f0'];
@@ -24,7 +35,11 @@ export class Timeline {
   private marker: number | null = null;
   private dataVersion = 0;
   private dpr = 1;
+  private marks: TimelineMark[] = [];
+  private range: [number, number] | null = null;
   picking = false;
+  /** marking mode: dragging selects a span instead of panning */
+  marking = false;
 
   constructor(private canvas: HTMLCanvasElement, private cb: TimelineCallbacks) {
     this.ctx = canvas.getContext('2d')!;
@@ -64,6 +79,32 @@ export class Timeline {
     this.draw();
   }
 
+  setMarks(marks: TimelineMark[]) {
+    this.marks = marks;
+    this.draw();
+  }
+
+  setRange(range: [number, number] | null) {
+    this.range = range;
+    this.draw();
+  }
+
+  /** Make sure [t0, t1] is visible (zoom out / pan as needed). */
+  reveal(t0: number, t1: number) {
+    if (!this.flight) return;
+    const span = this.v1 - this.v0;
+    if (t1 - t0 > span * 0.9) {
+      const pad = (t1 - t0) * 0.2;
+      this.v0 = t0 - pad;
+      this.v1 = t1 + pad;
+    } else if (t0 < this.v0 || t1 > this.v1) {
+      this.v0 = (t0 + t1) / 2 - span / 2;
+      this.v1 = this.v0 + span;
+    }
+    this.clampView();
+    this.draw();
+  }
+
   private x2t(x: number) {
     return this.v0 + (x / this.canvas.clientWidth) * (this.v1 - this.v0);
   }
@@ -87,6 +128,7 @@ export class Timeline {
     let downV0 = 0;
     let dragging = false;
     let pointerDown = false;
+    const clampT = (t: number) => Math.max(0, Math.min(this.flight?.info.duration ?? 0, t));
     this.canvas.addEventListener('pointerdown', (e) => {
       pointerDown = true;
       dragging = false;
@@ -97,7 +139,10 @@ export class Timeline {
     this.canvas.addEventListener('pointermove', (e) => {
       this.hover = this.x2t(e.offsetX);
       if (pointerDown && Math.abs(e.offsetX - downX) > 4) dragging = true;
-      if (pointerDown && dragging) {
+      if (pointerDown && dragging && this.marking) {
+        const a = clampT(this.x2t(downX)), b = clampT(this.x2t(e.offsetX));
+        this.range = [Math.min(a, b), Math.max(a, b)];
+      } else if (pointerDown && dragging) {
         const span = this.v1 - this.v0;
         this.v0 = downV0 - ((e.offsetX - downX) / this.canvas.clientWidth) * span;
         this.v1 = this.v0 + span;
@@ -106,8 +151,10 @@ export class Timeline {
       this.draw();
     });
     this.canvas.addEventListener('pointerup', (e) => {
-      if (pointerDown && !dragging && this.flight) {
-        const t = Math.max(0, Math.min(this.flight.info.duration, this.x2t(e.offsetX)));
+      if (pointerDown && dragging && this.marking && this.range && this.cb.onRange) {
+        this.cb.onRange(this.range[0], this.range[1]);
+      } else if (pointerDown && !dragging && this.flight) {
+        const t = clampT(this.x2t(e.offsetX));
         if (this.picking && this.cb.onPick) this.cb.onPick(t);
         else this.cb.onSeek(t);
       }
@@ -291,6 +338,29 @@ export class Timeline {
     g.drawImage(this.cache, 0, 0);
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
+    // marked spans: dashed outline with label at the bottom
+    g.font = '600 10px system-ui, sans-serif';
+    for (const m of this.marks) {
+      const x0 = this.t2x(m.start, w), x1 = this.t2x(m.end, w);
+      if (x1 < 0 || x0 > w) continue;
+      g.strokeStyle = m.color;
+      g.setLineDash([5, 3]);
+      g.strokeRect(x0 + 0.5, 22.5, Math.max(2, x1 - x0 - 1), h - 26);
+      g.setLineDash([]);
+      g.fillStyle = m.color;
+      g.fillText(`✎ ${m.label}`, x0 + 3, h - 16);
+    }
+    if (this.range) {
+      const x0 = this.t2x(this.range[0], w), x1 = this.t2x(this.range[1], w);
+      g.fillStyle = 'rgba(241,91,181,0.18)';
+      g.fillRect(x0, 0, Math.max(2, x1 - x0), h);
+      g.fillStyle = '#f15bb5';
+      g.fillRect(x0 - 1, 0, 2, h);
+      g.fillRect(x1 - 1, 0, 2, h);
+      g.font = '600 11px system-ui, sans-serif';
+      g.fillText(`${(this.range[1] - this.range[0]).toFixed(2)} s`, x0 + 4, 30);
+    }
+
     if (this.videoSpan) {
       const x0 = this.t2x(this.videoSpan[0], w), x1 = this.t2x(this.videoSpan[1], w);
       g.fillStyle = 'rgba(88,240,168,0.5)';
@@ -308,7 +378,7 @@ export class Timeline {
     }
     if (this.hover !== null) {
       const x = this.t2x(this.hover, w);
-      g.strokeStyle = this.picking ? '#f15bb5' : 'rgba(255,255,255,0.35)';
+      g.strokeStyle = this.picking || this.marking ? '#f15bb5' : 'rgba(255,255,255,0.35)';
       g.beginPath();
       g.moveTo(x + 0.5, 0);
       g.lineTo(x + 0.5, h);

@@ -51,6 +51,8 @@ AJAX_HEADER_VALUE = "tx15-werkstatt"
 KINDS = {
     "theme": {"label": "Theme", "studio": "/tx15-werkstatt/theme-studio.html"},
     "lua": {"label": "Lua-Skript", "studio": "/tx15-werkstatt/lua-studio.html"},
+    # Build Studio: Teileliste + Schaltplan; das ZIP ist das Build-Paket (CSV, SVG, Betaflight-CLI)
+    "build": {"label": "Build", "studio": "/tx15-werkstatt/build-studio.html"},
 }
 
 bp = Blueprint("tx15_projects", __name__, url_prefix="/api/tx15-projects")

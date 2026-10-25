@@ -86,6 +86,9 @@
       <button type="button" class="admin-tab-button" data-tab-target="ausweise">
         Drohnen-Ausweise <span class="admin-tab-count">{{ ausweise["items"]|length }}{% if pending_licenses %} · {{ pending_licenses|length }} offen{% endif %}</span>
       </button>
+      <button type="button" class="admin-tab-button" data-tab-target="tricks">
+        Trick-Markierungen <span class="admin-tab-count">{{ tricks.pending|length }} offen</span>
+      </button>
       {% set reported = leaderboard.entries|selectattr("report_count")|list %}
       <button type="button" class="admin-tab-button" data-tab-target="leaderboard">
         Leaderboard <span class="admin-tab-count">{{ leaderboard.entries|length }}{% if reported %} · {{ reported|length }} gemeldet{% endif %}</span>
@@ -425,6 +428,145 @@
       {% endif %}
     </div>
 
+    <div id="tab-tricks" class="admin-tab-panel">
+      <p class="admin-empty-hint">
+        Im Blackbox Viewer markierte Bereiche, in denen ein Trick nicht erkannt wurde. Freigegebene Markierungen
+        trainieren das Community-Modell ({{ tricks.examples }} Beispiele) – der Viewer erkennt den Trick danach in
+        allen Flügen. Ein beantragter neuer Trick erscheint nach der Freigabe für alle in der Auswahlliste.
+      </p>
+      {% macro trick_options(item) %}
+        {% if item.trick_type_id and item.type_status in ("pending", "approved") %}
+          <option value="antrag" selected>{{ "Neuen Trick freigeben: " if item.is_request else "" }}{{ item.name }}</option>
+        {% endif %}
+        <optgroup label="Eingebaute Tricks">
+          {% for key, name in tricks.builtin.items() %}
+            <option value="{{ key }}"{% if key == item.label %} selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </optgroup>
+        {% if tricks.approved_types %}
+          <optgroup label="Community-Tricks">
+            {% for t in tricks.approved_types %}
+              {% if t.id != item.trick_type_id %}<option value="c{{ t.id }}">{{ t.name }}</option>{% endif %}
+            {% endfor %}
+          </optgroup>
+        {% endif %}
+      {% endmacro %}
+      {% if tricks.pending %}
+        <div class="trick-review-list">
+          {% for item in tricks.pending %}
+            <article class="trick-review">
+              <div class="trick-review-video">
+                {% if item.clip_url %}
+                  <video src="{{ item.clip_url }}#t={{ item.clip_offset }}" controls loop muted playsinline preload="metadata"></video>
+                {% else %}
+                  <p class="admin-empty-hint">Kein Video-Ausschnitt.</p>
+                {% endif %}
+              </div>
+              <div class="trick-review-body">
+                <h3>
+                  #{{ item.id }} · {{ item.name }}
+                  {% if item.is_request %}<span class="trick-review-badge">neuer Trick beantragt</span>{% endif %}
+                </h3>
+                <p class="admin-empty-hint">
+                  von {% if item.account_id %}<a href="{{ url_for('admin_users.user', account_id=item.account_id) }}">{{ item.username or item.email }}</a>{% else %}{{ item.email }}{% endif %}
+                  · {{ item.created_at|forum_time }}
+                  {% if item.log_name %}· {{ item.log_name }}{% endif %}{% if item.craft %} · {{ item.craft }}{% endif %}
+                </p>
+                <p class="trick-review-facts">
+                  {{ "%.2f"|format(item.start) }}–{{ "%.2f"|format(item.end) }} s ({{ item.duration }} s)
+                  {% if item.angles %}· Roll {{ item.angles[0] }}° · Pitch {{ item.angles[1] }}° · Yaw {{ item.angles[2] }}°{% endif %}
+                  · Spitze {{ item.peak_rate }} °/s · Gas Ø {{ item.mean_throttle }} %
+                </p>
+                {% if item.comment %}<p class="trick-review-comment">„{{ item.comment }}“</p>{% endif %}
+                <form method="post" action="{{ url_for('tricks.admin_review', label_id=item.id) }}" class="trick-review-form">
+                  <label>Freigeben als
+                    <select name="label">{{ trick_options(item) }}</select>
+                  </label>
+                  {% if item.is_request %}
+                    <label>Name <input type="text" name="name" maxlength="40" value="{{ item.name }}" /></label>
+                    <label>Punkte <input type="number" name="points" min="10" max="1000" step="5" value="{{ item.type_points }}" /></label>
+                  {% endif %}
+                  <label class="trick-review-note">Notiz an den Piloten <input type="text" name="note" maxlength="300" placeholder="z. B. Grund bei Ablehnung" /></label>
+                  <div class="trick-review-actions">
+                    <button class="btn btn-primary btn-small" name="action" value="approve">Freigeben</button>
+                    <button class="btn btn-secondary btn-small" name="action" value="reject">Ablehnen</button>
+                  </div>
+                </form>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="admin-empty-hint">Keine offenen Markierungen.</p>
+      {% endif %}
+
+      <h2 class="admin-subheading">Community-Tricks</h2>
+      {% if tricks.types %}
+        <div class="admin-table-wrapper">
+          <table class="admin-table">
+            <thead><tr><th>Trick</th><th>Status</th><th>Beispiele</th><th>Beantragt von</th><th>Bearbeiten</th></tr></thead>
+            <tbody>
+              {% for t in tricks.types %}
+                <tr>
+                  <td><strong>{{ t.name }}</strong><br /><small>c{{ t.id }}</small></td>
+                  <td>{{ tricks.status_labels.get(t.status, t.status) }}</td>
+                  <td>{{ t.approved_labels }} freigegeben{% if t.pending_labels %}<br /><small>{{ t.pending_labels }} offen</small>{% endif %}</td>
+                  <td>{{ t.requested_username or t.requested_by or "–" }}<br /><small>{{ t.created_at|forum_time }}</small></td>
+                  <td>
+                    <form method="post" action="{{ url_for('tricks.admin_type', type_id=t.id) }}" class="trick-type-form">
+                      <input type="text" name="name" maxlength="40" value="{{ t.name }}" aria-label="Name" />
+                      <input type="number" name="points" min="10" max="1000" step="5" value="{{ t.points }}" aria-label="Punkte" />
+                      <input type="text" name="description" maxlength="300" value="{{ t.description }}" placeholder="Beschreibung" aria-label="Beschreibung" />
+                      <button class="btn btn-secondary btn-small" name="action" value="save">Speichern</button>
+                      {% if t.status == "approved" %}
+                        <button class="btn btn-secondary btn-small" name="action" value="hide">Ausblenden</button>
+                      {% else %}
+                        <button class="btn btn-primary btn-small" name="action" value="approve">Freigeben</button>
+                      {% endif %}
+                      {% if t.status != "rejected" %}
+                        <button class="btn btn-secondary btn-small" name="action" value="reject">Ablehnen</button>
+                      {% endif %}
+                    </form>
+                    <form method="post" action="{{ url_for('tricks.admin_type', type_id=t.id) }}" class="trick-type-form"
+                          data-confirm="„{{ t.name }}“ endgültig löschen? {{ t.approved_labels + t.pending_labels }} Markierungen samt Video-Ausschnitten werden mit gelöscht; der Trick verschwindet für alle aus der Liste.">
+                      <button class="btn btn-secondary btn-small admin-danger" name="action" value="delete">Löschen</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-empty-hint">Noch keine Community-Tricks beantragt.</p>
+      {% endif %}
+
+      {% if tricks.reviewed %}
+        <h2 class="admin-subheading">Zuletzt geprüft</h2>
+        <div class="admin-table-wrapper">
+          <table class="admin-table">
+            <thead><tr><th>#</th><th>Trick</th><th>Konto</th><th>Status</th><th>Ausschnitt</th><th></th></tr></thead>
+            <tbody>
+              {% for item in tricks.reviewed %}
+                <tr>
+                  <td>{{ item.id }}</td>
+                  <td>{{ item.name }}{% if item.note %}<br /><small>{{ item.note }}</small>{% endif %}</td>
+                  <td>{{ item.username or item.email }}</td>
+                  <td>{{ tricks.status_labels.get(item.status, item.status) }}<br /><small>{{ item.reviewed_at|forum_time if item.reviewed_at else "" }}</small></td>
+                  <td>{% if item.clip_url %}<a href="{{ item.clip_url }}" target="_blank" rel="noopener">Video</a>{% else %}–{% endif %}</td>
+                  <td>
+                    <form method="post" action="{{ url_for('tricks.admin_review', label_id=item.id) }}" data-confirm="Markierung #{{ item.id }} samt Ausschnitt löschen? Sie zählt dann nicht mehr als Trainingsbeispiel.">
+                      <button class="btn btn-secondary btn-small" name="action" value="delete">Löschen</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+
     <div id="tab-leaderboard" class="admin-tab-panel">
       <p class="admin-empty-hint">
         Blackbox-Viewer-Leaderboard, gemeldete Einträge zuerst. Ab {{ leaderboard.threshold }} Meldungen
@@ -446,6 +588,7 @@
                 <th>#</th>
                 <th>Pilot</th>
                 <th>Punkte</th>
+                <th>Akku</th>
                 <th>Konto</th>
                 <th>Eingereicht</th>
                 <th>Meldungen</th>
@@ -459,6 +602,7 @@
                   <td>{{ entry.id }}</td>
                   <td>{{ entry.pilot }}</td>
                   <td>{{ entry.score }}</td>
+                  <td>{{ entry.cells ~ "S" if entry.cells else "–" }}</td>
                   <td>{{ entry.username or "–" }}{% if entry.email %}<br /><small>{{ entry.email }}</small>{% endif %}</td>
                   <td>{{ entry.created_at|forum_time }}</td>
                   <td>

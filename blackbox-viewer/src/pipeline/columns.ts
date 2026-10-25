@@ -20,6 +20,7 @@ export const NEEDED = new Set<string>([
   ...RC_NAMES,
   'setpoint[3]',
   ...MOTOR_NAMES,
+  'vbatLatest',
 ]);
 
 export type Columns = Map<string, Float64Array>;
@@ -31,6 +32,52 @@ export interface ColumnUnits {
   gyroToDeg: number;
   /** divide acc by this to get g (null = auto) */
   accScale: number | null;
+  /** multiply vbatLatest by this to get volts (null = auto) */
+  vbatToVolt?: number | null;
+}
+
+/** Battery classes of the leaderboard (cell count). */
+export const CELL_CLASSES = [1, 2, 3, 4, 6, 8];
+
+/**
+ * Cell count from the resting voltage at the start of the log: the class whose per-cell voltage is
+ * plausible (3.2 … 4.45 V) and closest to 3.95 V. 5S/7S are not classes, so e.g. 21 V counts as 6S.
+ */
+export function estimateCells(volts: number | null): number | null {
+  if (volts === null || !Number.isFinite(volts) || volts < 2.5) return null;
+  let best: number | null = null;
+  let bestErr = Infinity;
+  for (const cells of CELL_CLASSES) {
+    const perCell = volts / cells;
+    if (perCell < 3.2 || perCell > 4.45) continue;
+    const err = Math.abs(perCell - 3.95);
+    if (err < bestErr) [best, bestErr] = [cells, err];
+  }
+  return best;
+}
+
+/** vbatLatest unit for .bbl logs: Betaflight 4+/INAV/EmuFlight log 0.01 V, Betaflight 3 raw ADC. */
+export function vbatToVoltFromHeaders(headers: Record<string, string>): number | null {
+  const fw = `${headers['Firmware revision'] ?? ''} ${headers['Firmware type'] ?? ''}`;
+  const bf = fw.match(/betaflight\s+(\d+)\./i);
+  if ((bf && Number(bf[1]) >= 4) || /inav|emuflight|rotorflight/i.test(fw)) return 0.01;
+  const scale = Number(headers['vbat_scale'] ?? headers['vbatscale']);
+  if (bf && Number.isFinite(scale) && scale > 0) return (scale * 3.3) / 40950;
+  return null;
+}
+
+/** Resting voltage: upper quartile of the first 3 s (before the pack sags under load). */
+function startVoltage(t: Float64Array, raw: Float64Array | undefined, factor: number | null | undefined): number | null {
+  if (!raw || !raw.length) return null;
+  const values: number[] = [];
+  for (let i = 0; i < raw.length && t[i] - t[0] <= 3; i++) if (raw[i] > 0) values.push(raw[i]);
+  if (!values.length) return null;
+  values.sort((a, b) => a - b);
+  const value = values[Math.floor(values.length * 0.75)];
+  // auto: centivolts (Betaflight 4) or volts (CSV export of Blackbox Explorer)
+  const k = factor ?? (value > 100 ? 0.01 : 1);
+  const volts = value * k;
+  return volts >= 1 && volts <= 60 ? Math.round(volts * 100) / 100 : null;
 }
 
 const first = (cols: Columns, names: string[]) => {
@@ -107,7 +154,8 @@ export function columnsToSeries(cols: Columns, headers: Record<string, string>, 
     }
   }
 
-  return { t, gyro, acc, accScale: units.accScale, throttle, sticks, motor };
+  const vbatStart = startVoltage(t, cols.get('vbatLatest'), units.vbatToVolt);
+  return { t, gyro, acc, accScale: units.accScale, throttle, sticks, motor, vbatStart };
 }
 
 /** Gyro scale for .bbl logs. Betaflight logs deg/s directly (gyro_scale = 1.0f). */

@@ -18,6 +18,7 @@
     </button>
     <div class="nav-panel" id="site-nav">
       <div class="nav-main">
+        {% if shop_enabled %}
         <details class="nav-group">
           <summary class="nav-trigger">{{ _("Produkte") }} {{ chevron }}</summary>
           <div class="nav-dropdown">
@@ -35,21 +36,11 @@
             </a>
           </div>
         </details>
-        <details class="nav-group">
-          <summary class="nav-trigger">{{ _("Tools") }} {{ chevron }}</summary>
-          <div class="nav-dropdown">
-            <a class="nav-item" href="/tx15-werkstatt/">
-              <span class="nav-item-title">{{ _("Drohnen Tools") }}</span>
-              <span class="nav-item-text">{{ _("Themes, Lua-Skripte, Konfiguratoren und Blackbox-Auswertung") }}</span>
-            </a>
-            <a class="nav-item" href="/coverstore-maker/">
-              <span class="nav-item-title">{{ _("CoverStore/Maker") }}</span>
-              <span class="nav-item-text">{{ _("Spiele-Cover gestalten, finden und teilen") }}</span>
-            </a>
-          </div>
-        </details>
+        {% endif %}
+        <a class="nav-trigger nav-link" href="/tx15-werkstatt/">{{ _("Drohnen Tools") }}</a>
         <a class="nav-trigger nav-link" href="{{ url_for('forum.index') }}">{{ _("Forum") }}</a>
         <a class="nav-trigger nav-link" href="{{ url_for('leaderboard_pages.page') }}">{{ _("Leaderboard") }}</a>
+        {% if shop_enabled %}
         <details class="nav-group">
           <summary class="nav-trigger">{{ _("Shop") }} {{ chevron }}</summary>
           <div class="nav-dropdown">
@@ -63,6 +54,7 @@
             </a>
           </div>
         </details>
+        {% endif %}
       </div>
       <div class="nav-account">
         <details class="nav-group nav-group-end nav-lang">

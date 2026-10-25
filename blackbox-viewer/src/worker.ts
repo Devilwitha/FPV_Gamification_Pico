@@ -2,7 +2,7 @@
 // Decoding runs off the main thread: .bbl/.bfl binary or CSV → FlightData, plus raw CSV export.
 import { decodeLog, findLogs, type LogSpan } from './decoder/blackbox.ts';
 import { parseCsvLog } from './decoder/csv.ts';
-import { NEEDED, columnsToSeries, gyroToDegFromHeaders, type Columns } from './pipeline/columns.ts';
+import { NEEDED, columnsToSeries, gyroToDegFromHeaders, vbatToVoltFromHeaders, type Columns } from './pipeline/columns.ts';
 import { buildFlightData } from './pipeline/process.ts';
 import type { FlightData, LogEvent, WorkerRequest, WorkerResponse } from './types.ts';
 
@@ -67,6 +67,7 @@ function processBbl(index: number): FlightData {
     timeToSec: 1e-6,
     gyroToDeg: gyroToDegFromHeaders(h),
     accScale: Number.isFinite(acc1g) && acc1g > 0 ? acc1g : null,
+    vbatToVolt: vbatToVoltFromHeaders(h),
   });
   const t0 = series.t[0];
   const events: LogEvent[] = result.events.map((e) => ({ type: e.type, time: e.time / 1e6 - t0, value: e.value }));

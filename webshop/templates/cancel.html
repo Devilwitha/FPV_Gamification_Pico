@@ -7,6 +7,10 @@
     <div class="status-icon">&#10007;</div>
     <h1>{{ _("Zahlung nicht abgeschlossen") }}</h1>
     <p>{{ message or _("Der Bezahlvorgang wurde abgebrochen.") }}</p>
-    <a class="btn btn-primary btn-large" href="{{ url_for('shop') }}">{{ _("Zurück zum Shop") }}</a>
+    {% if shop_enabled %}
+      <a class="btn btn-primary btn-large" href="{{ url_for('shop') }}">{{ _("Zurück zum Shop") }}</a>
+    {% else %}
+      <a class="btn btn-primary btn-large" href="{{ url_for('account') }}">{{ _("Zum Konto") }}</a>
+    {% endif %}
   </section>
 {% endblock %}

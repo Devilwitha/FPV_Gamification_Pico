@@ -16,7 +16,7 @@ from pathlib import Path
 import requests
 import stripe
 from dotenv import load_dotenv
-from flask import Flask, Response, flash, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, Response, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -30,6 +30,7 @@ import forum
 import konto
 import leaderboard
 import pilot_license
+import trick_labels
 import orders_db
 import simulator_manager
 import tx15_backups
@@ -65,6 +66,9 @@ def _is_https_url(url):
 # zusaetzlichen "Dummy-Kauf simulieren"-Button frei, der Stripe/PayPal komplett
 # umgeht. Ruehrt die echten Zahlungspfade nicht an und ist standardmaessig aus.
 DUMMY_MODE = os.environ.get("DUMMY_MODE", "true").strip().lower() == "true"
+# Shop und Produktseiten (FPV Gamification Pico, Picodesk, Steam Deck RFID
+# Launcher, Plugin-Store, Checkout) - ausgeblendet, solange nicht SHOP_ENABLED=true.
+SHOP_ENABLED = _env_flag("SHOP_ENABLED", False)
 DOMAIN_URL = os.environ.get("DOMAIN_URL", "http://localhost:5000")
 TRUST_PROXY_COUNT = max(0, _env_int("TRUST_PROXY_COUNT", 0))
 HTTPS_ENABLED = _is_https_url(DOMAIN_URL)
@@ -134,10 +138,12 @@ app.register_blueprint(forum.bp)
 # leaderboard.py; uebernimmt einmalig die Eintraege des alten Node-Leaderboards.
 app.register_blueprint(leaderboard.bp)
 leaderboard.import_legacy_entries()
+leaderboard.backfill_log_hashes()
 # Oeffentliche Profile, Avatare, Forum-Anhaenge (community.py) und der
 # private Drohnen-Ausweis im Konto (pilot_license.py).
 app.register_blueprint(community.bp)
 app.register_blueprint(pilot_license.bp)
+app.register_blueprint(trick_labels.bp)
 app.register_blueprint(admin_users.bp)
 community.register(app)
 admin_users.register(app)
@@ -393,7 +399,22 @@ def track_account_activity():
 def inject_dummy_mode():
     """Macht dummy_mode in allen Templates verfuegbar (siehe base.html-Banner
     und den bedingt eingeblendeten Dummy-Kauf-Button in checkout.html)."""
-    return {"dummy_mode": DUMMY_MODE}
+    return {"dummy_mode": DUMMY_MODE, "shop_enabled": SHOP_ENABLED}
+
+
+def shop_required(view_func):
+    """Shop- und Produktseiten nur bei SHOP_ENABLED=true (.env), sonst 404.
+    Der Code bleibt erhalten; bestehende Lizenzen, Downloads im Konto, die
+    Lizenz-Einrichtung offener Bestellungen und der Plugin-Store fuer die
+    Picos (/api/plugins) funktionieren weiter."""
+
+    @wraps(view_func)
+    def wrapped_view(*args, **kwargs):
+        if not SHOP_ENABLED:
+            abort(404)
+        return view_func(*args, **kwargs)
+
+    return wrapped_view
 
 
 def get_paypal_access_token():
@@ -443,6 +464,7 @@ def impressum():
 
 
 @app.route("/picodesk")
+@shop_required
 def picodesk_home():
     """Projektseite fuer Picodesk (Pico-W-WLAN-Steuerung fuer einen
     Sitz-/Steh-Tisch, siehe github.com/Devilwitha/Pico) - rein informativ,
@@ -451,6 +473,7 @@ def picodesk_home():
 
 
 @app.route("/steamdeck-rfid-launcher")
+@shop_required
 def steamdeck_rfid_launcher_home():
     """Projektseite fuer den Steam Deck RFID Launcher (Pico-W-basierter
     RFID-Tag-Spielstarter fuer SteamOS, siehe
@@ -460,6 +483,7 @@ def steamdeck_rfid_launcher_home():
 
 
 @app.route("/steamos-pogram")
+@shop_required
 def steamos_pogram_home():
     """Legacy-URL der Projektseite - leitet auf die neue, klar benannte
     Route weiter."""
@@ -467,12 +491,14 @@ def steamos_pogram_home():
 
 
 @app.route("/webshop")
+@shop_required
 def webshop_home():
     """Startseite des FPV-Gamification-Webshops."""
     return render_template("index.html")
 
 
 @app.route("/jetzt-testen")
+@shop_required
 def jetzt_testen():
     """"Jetzt Testen"-Button (siehe index.html): startet (oder findet die
     bereits laufende) isolierte Simulator-Instanz dieses Besuchers - jeder
@@ -526,6 +552,7 @@ def _rewrite_demo_html(html_text, token):
 
 @app.route("/demo/<token>/", defaults={"subpath": ""}, methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 @app.route("/demo/<token>/<path:subpath>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@shop_required
 def demo_proxy(token, subpath):
     """Reicht die Anfrage an die isolierte Simulator-Instanz dieses Besuchers
     weiter (127.0.0.1:<eigener Port>, siehe simulator_manager.py) und liefert
@@ -580,6 +607,7 @@ def demo_proxy(token, subpath):
 
 
 @app.route("/shop")
+@shop_required
 def shop():
     """Shop-Übersicht mit allen verfügbaren Artikeln."""
     if not session.get("account_email"):
@@ -589,6 +617,7 @@ def shop():
 
 
 @app.route("/plugins")
+@shop_required
 def plugins_store():
     """Oeffentliche Plugin-Store-Seite - listet alle im Admin-Bereich
     hochgeladenen Mods (siehe /admin/plugins/upload)."""
@@ -596,6 +625,7 @@ def plugins_store():
 
 
 @app.route("/plugins/shooter-template.zip")
+@shop_required
 def plugins_shooter_template():
     """Stellt den ROHEN Quellcode des mitgelieferten shooter-Plugins (.py,
     NICHT .mpy-kompiliert) als ZIP-Download bereit - eine Lern-Vorlage
@@ -622,6 +652,7 @@ def plugins_shooter_template():
 
 
 @app.route("/plugins/plugin-template.zip")
+@shop_required
 def plugins_plugin_template():
     """Stellt das leere Plugin-Boilerplate aus template/plugin_template/ als
     ZIP-Download bereit - Startpunkt fuer ein komplett eigenes Plugin (siehe
@@ -685,6 +716,7 @@ def api_plugins():
 
 
 @app.route("/gatehill-install")
+@shop_required
 def gatehill_install():
     """Anleitungsseite für die kostenlose Einrichtung eines "Gate/Hill Pico"
     (stationärer King-of-the-Hill-Hügel/Race-Tor, siehe source/role_setup.py
@@ -700,6 +732,7 @@ def gatehill_install():
 
 
 @app.route("/checkout/<product_id>")
+@shop_required
 def checkout(product_id):
     """Checkout-Seite für ein bestimmtes Produkt mit Auswahl der Zahlungsmethode.
 
@@ -722,6 +755,7 @@ def checkout(product_id):
 
 
 @app.route("/api/stripe/create-checkout-session", methods=["POST"])
+@shop_required
 def stripe_create_checkout_session():
     """Erstellt eine echte Stripe Checkout Session und liefert die Weiterleitungs-URL."""
     data = request.get_json(silent=True) or {}
@@ -772,6 +806,7 @@ def stripe_create_checkout_session():
 
 
 @app.route("/api/paypal/create-order", methods=["POST"])
+@shop_required
 def paypal_create_order():
     """Erstellt eine echte PayPal-Bestellung über die Orders v2 API."""
     data = request.get_json(silent=True) or {}
@@ -835,6 +870,7 @@ def paypal_create_order():
 
 
 @app.route("/api/paypal/capture-order/<order_id>", methods=["POST"])
+@shop_required
 def paypal_capture_order(order_id):
     """Erfasst (captured) eine bestätigte PayPal-Bestellung über die Orders v2 API."""
     try:
@@ -869,6 +905,7 @@ def paypal_capture_order(order_id):
 
 
 @app.route("/api/dummy/create-purchase", methods=["POST"])
+@shop_required
 def dummy_create_purchase():
     """Simuliert einen abgeschlossenen Kauf OHNE Stripe/PayPal anzusprechen.
 
@@ -901,6 +938,7 @@ def dummy_create_purchase():
 
 
 @app.route("/api/free/create-purchase", methods=["POST"])
+@shop_required
 def free_create_purchase():
     """Schliesst eine kostenlose Bestellung direkt ohne Stripe/PayPal ab."""
     data = request.get_json(silent=True) or {}
@@ -1469,6 +1507,7 @@ def admin_dashboard():
         users=admin_users.admin_overview(),
         message=request.args.get("ok"),
         leaderboard=leaderboard.admin_overview(),
+        tricks=trick_labels.admin_overview(),
         ausweise=pilot_license.admin_overview(),
         online_accounts=db.list_online_accounts(online_since),
         online_minutes=int(ONLINE_WINDOW.total_seconds() // 60),
@@ -1657,6 +1696,7 @@ def admin_plugins_upload():
 
 
 @app.route("/plugins/upload", methods=["POST"])
+@shop_required
 def plugins_upload():
     """Oeffentlicher Kunden-Upload auf der Store-Seite (/plugins) - jeder
     eingeloggte Kunde (normales Konto, siehe _current_account_email()) darf

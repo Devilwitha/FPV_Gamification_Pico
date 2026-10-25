@@ -16,6 +16,8 @@ export interface ScoreEntry {
   best: string;
   maxCombo: number;
   craft: string;
+  /** battery class (cell count 1, 2, 3, 4, 6, 8), null = unknown */
+  cells?: number | null;
   duration: number;
   createdAt?: string;
   rank?: number;
@@ -72,6 +74,77 @@ export interface SubmitMeta extends ScoreEntry {
   settings: Record<string, unknown>;
   /** Log time (s) at the first frame of the recorded video. */
   videoStart: number;
+  /** Fingerprints against submitting the same flight / video twice (see fingerprints()). */
+  flightHash: string | null;
+  videoHash: string | null;
+}
+
+export interface Fingerprints {
+  logHash: string | null;
+  flightHash: string | null;
+  videoHash: string | null;
+}
+
+async function sha256Hex(data: BufferSource | string): Promise<string> {
+  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Fingerprints of a flight: the log file (+ log number, same as the server computes), the flight data
+ * (gyro and throttle at 50 Hz, coarsely rounded – also matches the same flight as CSV) and the original
+ * video (size + first/last 2 MB, fast even for large files). Missing parts are null.
+ */
+export async function fingerprints(
+  flight: { rate: number; t: Float64Array; gyro: Float32Array[]; throttle: Float32Array; info: { duration: number } },
+  logFile: Blob | null,
+  logIndex: number,
+  videoFile: Blob | null,
+): Promise<Fingerprints> {
+  if (!globalThis.crypto?.subtle) return { logHash: null, flightHash: null, videoHash: null };
+  const step = Math.max(1, Math.round(flight.rate / 50));
+  const n = Math.floor(flight.t.length / step);
+  const values = new Int32Array(n * 4 + 1);
+  values[0] = Math.round(flight.info.duration * 10);
+  for (let k = 0; k < n; k++) {
+    const i = k * step;
+    for (let a = 0; a < 3; a++) values[1 + k * 4 + a] = Math.round(flight.gyro[a][i] / 5);
+    values[4 + k * 4] = Math.round(flight.throttle[i] * 100);
+  }
+  const flightHash = await sha256Hex(values);
+  const logHash = logFile ? await sha256Hex(`${await sha256Hex(await logFile.arrayBuffer())}:${logIndex}`) : null;
+  let videoHash: string | null = null;
+  if (videoFile) {
+    const part = 2 * 1024 * 1024;
+    const head = new Uint8Array(await videoFile.slice(0, part).arrayBuffer());
+    const tail = new Uint8Array(await videoFile.slice(Math.max(0, videoFile.size - part)).arrayBuffer());
+    const size = new TextEncoder().encode(`${videoFile.size}:`);
+    const all = new Uint8Array(size.length + head.length + tail.length);
+    all.set(size);
+    all.set(head, size.length);
+    all.set(tail, size.length + head.length);
+    videoHash = await sha256Hex(all);
+  }
+  return { logHash, flightHash, videoHash };
+}
+
+/** Ask the server before recording whether this log / flight / video was already submitted. */
+export async function checkDuplicate(prints: Fingerprints): Promise<string | null> {
+  try {
+    const res = await fetch('api/leaderboard/pruefen', {
+      method: 'POST',
+      headers: { ...AJAX, 'Content-Type': 'application/json' },
+      body: JSON.stringify(prints),
+    });
+    if (res.status === 401) throw await rejection(res, 'Bitte einloggen.');
+    if (!res.ok || !isJson(res)) return null; // the server checks again when submitting
+    const data = await res.json();
+    return data.duplicate ? String(data.error) : null;
+  } catch (err) {
+    if (err instanceof SubmitRejectedError) throw err;
+    return null;
+  }
 }
 
 const LOCAL_KEY = 'bba.leaderboard.local';
@@ -86,14 +159,14 @@ function readLocal(): ScoreEntry[] {
   }
 }
 
-export async function fetchLeaderboard(): Promise<{ entries: ScoreEntry[]; online: boolean }> {
+export async function fetchLeaderboard(cells: number | null = null): Promise<{ entries: ScoreEntry[]; online: boolean }> {
   try {
-    const res = await fetch('api/leaderboard?limit=50', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    const res = await fetch(`api/leaderboard?limit=50${cells ? `&klasse=${cells}s` : ''}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
     if (!res.ok || !isJson(res)) throw new Error();
     const data = await res.json();
     return { entries: data.entries ?? [], online: true };
   } catch {
-    return { entries: readLocal(), online: false };
+    return { entries: readLocal().filter((e) => !cells || e.cells === cells), online: false };
   }
 }
 

@@ -128,7 +128,8 @@ export function simulateFlight(): FlightData {
     motor[i] = t[i] < 1 ? 0 : Math.min(1, 0.04 + 0.9 * throttle[i] + effort);
   }
 
-  const raw: RawSeries = { t, gyro, acc, accScale: 1, throttle, sticks, motor };
+  // fully charged 4S pack
+  const raw: RawSeries = { t, gyro, acc, accScale: 1, throttle, sticks, motor, vbatStart: 16.6 };
   return buildFlightData(
     raw,
     {

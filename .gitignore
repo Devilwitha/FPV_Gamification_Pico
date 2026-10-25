@@ -32,3 +32,5 @@ android_app/tempCodeRunnerFile.ps1
 # (pilot_license.py) - Nutzerdaten, nicht ins Repo.
 /community_media
 /private_media
+# Video-Ausschnitte der Trick-Markierungen (webshop/trick_labels.py) - Nutzerdaten.
+/trick_clips

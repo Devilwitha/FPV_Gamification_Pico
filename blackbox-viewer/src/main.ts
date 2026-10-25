@@ -2,9 +2,11 @@ import './styles.css';
 import { indexAt } from './analysis/filters.ts';
 import { MIN_EXAMPLES, TrickClassifier } from './analysis/ml.ts';
 import { attitudeAt } from './analysis/orientation.ts';
+import type { LabelExample } from './analysis/learned.ts';
 import {
   DEFAULT_SETTINGS, TRICK_COLOR, TRICK_LABEL, TRICK_TYPES,
-  detectTricks, summarize, type Analysis, type DetectSettings,
+  detectTricks, getCustomTricks, registerCustomTricks, spanFeatures, summarize,
+  type Analysis, type CustomTrick, type DetectSettings,
 } from './analysis/tricks.ts';
 import { MspClient, serialSupported } from './decoder/msp.ts';
 import { simulateFlight } from './demo/simulate.ts';
@@ -12,11 +14,12 @@ import { audioEnvelope, correlate, logSignal, throttlePunches } from './sync/aud
 import type { FlightData, Trick, TrickType, WorkerRequest, WorkerResponse } from './types.ts';
 import { DEFAULT_HUD, Hud, type HudOptions } from './ui/hud.ts';
 import {
-  SubmitRejectedError, deleteEntry, fetchAuth, fetchEntry, fetchLeaderboard, reportEntry, submitScore, verifyEntry,
+  SubmitRejectedError, checkDuplicate, deleteEntry, fetchAuth, fingerprints, fetchEntry, fetchLeaderboard, reportEntry, submitScore, verifyEntry,
   type AuthState, type EntryDetail, type SubmitMeta,
 } from './ui/leaderboard.ts';
 import { SimView, computeTrack, type Track } from './ui/simview.ts';
 import { Timeline } from './ui/timeline.ts';
+import { deleteOwnMark, fetchCatalog, fetchOwnMarks, submitMark, type OwnMark, type TrickCatalog } from './ui/tricklabels.ts';
 
 // ---------- helpers ----------
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -84,6 +87,44 @@ const state = {
   logName: '',
   logIndex: 0,
 };
+/** A span the pilot marked as trick ("not detected"). Gives no points until approved. */
+interface Mark {
+  id: number;
+  start: number;
+  end: number;
+  /** trick key; empty while a new trick request is being sent */
+  type: string;
+  name: string;
+  features: number[];
+  status: 'local' | 'sending' | 'sent' | 'error';
+  error?: string;
+}
+let markSeq = 0;
+const marking = {
+  marks: [] as Mark[],
+  range: null as [number, number] | null,
+  /** stop playback here (▶ Bereich abspielen) */
+  playUntil: null as number | null,
+};
+let catalog: TrickCatalog = { online: false, loggedIn: false, custom: [], mine: [], examples: [] };
+let communityEnabled = (() => {
+  try {
+    return localStorage.getItem('bba.community') !== 'off';
+  } catch {
+    return true;
+  }
+})();
+const trickLabel = (t: string) => TRICK_LABEL[t] ?? t;
+/** Translation for attributes the DOM translator does not see (optgroup labels), see i18n-dom.js. */
+function tr(s: string): string {
+  try {
+    return (window as unknown as { I18N?: { t: (s: string) => string } }).I18N?.t(s) ?? s;
+  } catch {
+    return s; // older i18n-dom.js without catalog (German)
+  }
+}
+const trickColor = (t: string) => TRICK_COLOR[t] ?? '#f15bb5';
+
 /** log index to open next (admin: re-open a submitted log exactly as submitted) */
 let pendingLogIndex: number | null = null;
 const ml = new TrickClassifier();
@@ -104,6 +145,7 @@ const timeline = new Timeline($<HTMLCanvasElement>('timeline'), {
     $('btnPickLog').textContent = 'In Timeline wählen';
     updateAnchorUi();
   },
+  onRange: (t0, t1) => setMarkRange(t0, t1),
 });
 
 // ---------- worker ----------
@@ -172,8 +214,17 @@ function setFlight(f: FlightData) {
   state.playing = false;
   state.markLog = null;
   timeline.setMarker(null);
+  marking.marks = [];
+  marking.playUntil = null;
+  setMarkRange(null);
   $('emptyState').hidden = true;
-  for (const id of ['btnPlay', 'btnBack', 'btnFwd', 'btnRec', 'btnExport', 'btnExportVideo']) $<HTMLButtonElement>(id).disabled = false;
+  for (const id of ['btnPlay', 'btnBack', 'btnFwd', 'btnRec', 'btnExport', 'btnExportVideo', 'btnMark']) $<HTMLButtonElement>(id).disabled = false;
+  cellsSelect.value = f.info.cells ? String(f.info.cells) : '';
+  $('cellsHint').textContent =
+    f.info.source === 'demo' ? ''
+    : f.info.vbat && f.info.cells ? `Akku erkannt: ${f.info.vbat.toFixed(1)} V beim Start → ${f.info.cells}S (bei Bedarf korrigieren).`
+    : 'Akku-Spannung nicht im Log – bitte die Akku-Klasse wählen.';
+  updateMarkUi();
   $('sourceChip').textContent = f.info.source === 'demo' ? 'Demo' : f.info.fileName;
   reanalyze(true);
   renderInfo();
@@ -190,8 +241,10 @@ function reanalyze(resetView = false) {
   state.analysis = detectTricks(f, state.settings, {
     labeler: ml.ready ? (feat) => ml.predict(feat) : null,
     userLabels: state.userLabels,
+    learned: learnedExamples(),
   });
   timeline.setData(f, state.analysis, resetView);
+  timeline.setMarks(marking.marks.map((m) => ({ start: m.start, end: m.end, label: m.name, color: m.type ? trickColor(m.type) : '#f15bb5' })));
   renderTricks();
   renderScore();
   renderMl();
@@ -208,21 +261,45 @@ function renderScore() {
   $('statBest').title = s.best ? `${s.best.name}: ${s.best.points} Punkte` : '';
 }
 
+/** Examples for the community search: approved ones from the server plus (with local ML on) own corrections. */
+function learnedExamples(): LabelExample[] {
+  const list: LabelExample[] = communityEnabled ? [...catalog.examples] : [];
+  if (ml.enabled) list.push(...ml.examples.map((e) => ({ label: e.label, f: e.f })));
+  return list;
+}
+
+/** Options for a trick dropdown: built-in, community tricks and own requests. */
+function trickOptions(selected: string, opts: { none?: boolean; placeholder?: string; request?: boolean } = {}): HTMLElement[] {
+  const opt = (value: string, label: string) => el('option', { value, textContent: label, selected: value === selected });
+  const out: HTMLElement[] = [];
+  if (opts.placeholder) out.push(el('option', { value: '', textContent: opts.placeholder, selected: !selected }));
+  const builtin = el('optgroup', { label: tr('Tricks') }, ...TRICK_TYPES.filter((t) => t !== 'none').map((t) => opt(t, TRICK_LABEL[t])));
+  out.push(builtin);
+  const approved = getCustomTricks().filter((c) => !c.pending);
+  if (approved.length) out.push(el('optgroup', { label: tr('Community-Tricks') }, ...approved.map((c) => opt(c.key, c.name))));
+  const pending = getCustomTricks().filter((c) => c.pending);
+  if (pending.length) out.push(el('optgroup', { label: tr('Meine Anträge (noch nicht freigegeben)') }, ...pending.map((c) => opt(c.key, `${c.name} (beantragt)`))));
+  if (opts.none) out.push(opt('none', TRICK_LABEL.none));
+  if (opts.request) out.push(opt('__new', '＋ Neuen Trick beantragen …'));
+  return out;
+}
+
 function trickRow(tr: Trick, rejected: boolean) {
   const select = el('select', { title: 'Label korrigieren (wird als Trainingsbeispiel gespeichert)' });
   select.setAttribute('aria-label', 'Trick-Label korrigieren');
-  select.append(...TRICK_TYPES.map((t) => el('option', { value: t, textContent: TRICK_LABEL[t], selected: t === tr.type })));
+  select.append(...trickOptions(tr.type, { none: true }));
   select.addEventListener('click', (e) => e.stopPropagation());
   select.addEventListener('change', () => {
     const label = select.value as TrickType;
     state.userLabels.set(tr.key, label);
     ml.add(tr.features, label);
     reanalyze();
-    toast(`Als „${TRICK_LABEL[label]}“ markiert – ${ml.examples.length} Trainingsbeispiele.`);
+    toast(`Als „${trickLabel(label)}“ markiert – ${ml.examples.length} Trainingsbeispiele.`);
   });
   const badges: Node[] = [];
   if (tr.source === 'ml') badges.push(el('span', { className: 'badge ml', textContent: 'ML' }));
   if (tr.source === 'user') badges.push(el('span', { className: 'badge user', textContent: 'manuell' }));
+  if (tr.source === 'community') badges.push(el('span', { className: 'badge community', title: 'Vom Community-Modell erkannt', textContent: 'Community' }));
   const li = el(
     'li',
     { className: rejected ? 'rejected' : '' },
@@ -238,11 +315,44 @@ function trickRow(tr: Trick, rejected: boolean) {
       { className: 'pts' },
       rejected ? '–' : `${tr.points}`,
       ...(tr.comboLevel > 0 && !rejected ? [el('small', { textContent: `COMBO ×${tr.comboMult.toFixed(2)}` })] : []),
+      ...(tr.repeat > 0 && !rejected ? [el('small', { className: 'repeat', title: 'Gleicher Trick direkt hintereinander gibt weniger Punkte', textContent: `WIEDERHOLUNG ×${tr.repeatMult.toFixed(2)}` })] : []),
     ),
   );
-  (li.firstChild as HTMLElement).style.background = TRICK_COLOR[tr.type];
+  (li.firstChild as HTMLElement).style.background = trickColor(tr.type);
   li.dataset.id = rejected ? '' : String(tr.id);
   li.addEventListener('click', () => seek(Math.max(0, tr.start - 0.8)));
+  return li;
+}
+
+const MARK_STATUS: Record<Mark['status'], string> = {
+  local: 'nur lokal',
+  sending: 'wird gesendet …',
+  sent: 'gesendet – wartet auf Freigabe',
+  error: 'Senden fehlgeschlagen',
+};
+
+function markRow(m: Mark) {
+  const remove = el('button', { className: 'icon-btn mark-remove', type: 'button', title: 'Markierung entfernen', textContent: '×' });
+  remove.setAttribute('aria-label', 'Markierung entfernen');
+  remove.addEventListener('click', (e) => {
+    e.stopPropagation();
+    marking.marks = marking.marks.filter((x) => x !== m);
+    reanalyze();
+  });
+  const li = el(
+    'li',
+    { className: 'marked', title: m.error ?? '' },
+    el('span', { className: 'swatch' }),
+    el(
+      'div',
+      {},
+      el('div', { className: 'name' }, m.name, el('span', { className: 'badge mark', textContent: 'markiert' })),
+      el('div', { className: 'meta' }, `${fmtTime(m.start)} · ${(m.end - m.start).toFixed(2)} s · `, el('span', { textContent: MARK_STATUS[m.status] })),
+    ),
+    el('div', { className: 'pts' }, '–', remove),
+  );
+  (li.firstChild as HTMLElement).style.background = m.type ? trickColor(m.type) : '#f15bb5';
+  li.addEventListener('click', () => seek(Math.max(0, m.start - 0.8)));
   return li;
 }
 
@@ -250,10 +360,14 @@ function renderTricks() {
   const list = $('trickList');
   const a = state.analysis;
   if (!a) return list.replaceChildren();
-  const rows = [...a.tricks.map((t) => ({ t, rejected: false })), ...(state.showRejected ? a.rejected.map((t) => ({ t, rejected: true })) : [])];
-  rows.sort((x, y) => x.t.start - y.t.start);
-  list.replaceChildren(...rows.map(({ t, rejected }) => trickRow(t, rejected)));
-  if (!rows.length) list.append(el('li', { className: 'empty-list', textContent: 'Keine Tricks erkannt. Schwellwerte unter „Erkennung“ anpassen.' }));
+  const rows = [
+    ...a.tricks.map((t) => ({ start: t.start, node: () => trickRow(t, false) })),
+    ...(state.showRejected ? a.rejected.map((t) => ({ start: t.start, node: () => trickRow(t, true) })) : []),
+    ...marking.marks.map((m) => ({ start: m.start, node: () => markRow(m) })),
+  ];
+  rows.sort((x, y) => x.start - y.start);
+  list.replaceChildren(...rows.map((r) => r.node()));
+  if (!rows.length) list.append(el('li', { className: 'empty-list', textContent: 'Keine Tricks erkannt. Schwellwerte unter „Erkennung“ anpassen oder mit „✎ Trick markieren“ einen Bereich markieren.' }));
   state.activeTrickId = -1;
 }
 
@@ -330,6 +444,10 @@ function frame(now: number) {
   }
   const t = logTime();
   subRec?.tick(t);
+  if (marking.playUntil !== null && t >= marking.playUntil) {
+    marking.playUntil = null;
+    setPlaying(false);
+  }
   const i = indexAt(f.t, t);
   if (hasVideo() && video.videoWidth) {
     sctx.fillStyle = '#000';
@@ -468,6 +586,7 @@ function loadVideo(file: File) {
       stage.width = big ? 1920 : 1280;
       stage.height = big ? 1080 : 720;
       updateVideoUi();
+      updateMarkUi();
       seek(logTime());
       toast(`Video geladen: ${file.name}`);
     },
@@ -480,6 +599,7 @@ function setOffset(v: number) {
   state.offset = Math.round(v * 1000) / 1000;
   $<HTMLInputElement>('offset').value = state.offset.toFixed(3);
   updateVideoUi();
+  updateMarkUi();
 }
 
 function updateVideoUi() {
@@ -614,6 +734,7 @@ const SETTING_DEFS: SettingDef[] = [
   { key: 'yawMinPeak', label: 'Yaw Spin: min. Rate', min: 200, max: 1500, step: 10, fmt: deg, desc: 'Trennt Spins von Orbits' },
   { key: 'seqGap', label: 'Split-S: max. Pause', min: 0.1, max: 1.5, step: 0.05, fmt: sec, desc: 'Zwischen halber Rolle und halbem Loop' },
   { key: 'comboWindow', label: 'Combo-Fenster', min: 0.3, max: 4, step: 0.1, fmt: sec, desc: 'Nächster Trick innerhalb → Combo-Multiplikator' },
+  { key: 'repeatGap', label: 'Wiederholung: max. Pause', min: 1, max: 15, step: 0.5, fmt: sec, desc: 'Gleicher Trick direkt danach → halbe Punkte; der 3. gleiche in Folge beginnt eine neue Combo' },
   { key: 'hangMinTime', label: 'Inverted Hang: min. Dauer', min: 0.3, max: 3, step: 0.05, fmt: sec, desc: 'So lange kopfüber (nur mit Beschleunigungssensor im Log)' },
   { key: 'diveMinTime', label: 'Dive: min. Dauer', min: 0.3, max: 3, step: 0.05, fmt: sec, desc: 'So lange mit der Nase nach unten (nur mit Beschleunigungssensor)' },
   { key: 'diveMaxThrottle', label: 'Dive: max. Gas', min: 0.05, max: 0.6, step: 0.01, fmt: (v) => `${Math.round(v * 100)}%`, desc: 'Durchschnittsgas im Sturzflug' },
@@ -660,12 +781,91 @@ function renderMl() {
   $('mlStats').replaceChildren(
     el('span', { textContent: `${n} Beispiele · Modell ${status}` }),
     ...(Object.entries(counts) as [TrickType, number][]).map(([k, v]) => {
-      const s = el('span', { textContent: `${TRICK_LABEL[k]}: ${v}` });
-      s.style.borderLeft = `3px solid ${TRICK_COLOR[k]}`;
+      const s = el('span', { textContent: `${trickLabel(k)}: ${v}` });
+      s.style.borderLeft = `3px solid ${trickColor(k)}`;
       return s;
     }),
   );
 }
+
+function renderCommunity() {
+  $<HTMLInputElement>('communityEnabled').checked = communityEnabled;
+  const custom = getCustomTricks().filter((c) => !c.pending);
+  $('communityStats').replaceChildren(
+    ...(catalog.online
+      ? [
+          el('span', { textContent: `${catalog.examples.length} freigegebene Beispiele` }),
+          el('span', { textContent: `${custom.length} Community-Tricks` }),
+          ...custom.map((c) => {
+            const s = el('span', { textContent: `${c.name} · ${c.points} P.`, title: c.description ?? '' });
+            s.style.borderLeft = `3px solid ${trickColor(c.key)}`;
+            return s;
+          }),
+        ]
+      : [el('span', { textContent: 'Server nicht erreichbar – Markierungen bleiben lokal.' })]),
+  );
+}
+
+async function loadCatalog() {
+  catalog = await fetchCatalog();
+  registerCustomTricks([...catalog.custom, ...catalog.mine]);
+  renderMarkTypes();
+  renderCommunity();
+  updateMarkUi();
+  if (state.flight) reanalyze();
+}
+
+let ownMarks: OwnMark[] = [];
+const OWN_STATUS: Record<OwnMark['status'], string> = { pending: 'wartet auf Prüfung', approved: 'freigegeben', rejected: 'abgelehnt' };
+async function refreshOwnMarks() {
+  ownMarks = catalog.loggedIn ? await fetchOwnMarks() : [];
+  const list = $('myMarks');
+  if (!catalog.loggedIn) {
+    list.replaceChildren(el('li', { className: 'muted small', textContent: catalog.online ? 'Einloggen, um Markierungen zu senden und hier zu sehen.' : 'Server nicht erreichbar.' }));
+    return;
+  }
+  if (!ownMarks.length) {
+    list.replaceChildren(el('li', { className: 'muted small', textContent: 'Noch keine Markierungen gesendet.' }));
+    return;
+  }
+  list.replaceChildren(
+    ...ownMarks.map((m) => {
+      const li = el(
+        'li',
+        { className: `own-${m.status}` },
+        el('strong', { textContent: m.name }),
+        el('span', { className: `badge status-${m.status}`, textContent: OWN_STATUS[m.status] ?? m.status }),
+        el('span', { className: 'muted small', textContent: `${m.logName || 'Log'} · ${fmtTime(m.start)}–${fmtTime(m.end)} · ${new Date(m.createdAt).toLocaleDateString('de-DE')}` }),
+      );
+      if (m.note) li.append(el('span', { className: 'small', textContent: `Admin: ${m.note}` }));
+      if (m.status === 'pending') {
+        const del = el('button', { className: 'btn tiny', type: 'button', textContent: 'Zurückziehen' });
+        del.addEventListener('click', async () => {
+          if (!confirm('Markierung zurückziehen?')) return;
+          try {
+            await deleteOwnMark(m.id);
+            toast('Markierung zurückgezogen.');
+            await loadCatalog();
+            void refreshOwnMarks();
+          } catch (err) {
+            toast((err as Error).message, 'error');
+          }
+        });
+        li.append(del);
+      }
+      return li;
+    }),
+  );
+}
+$<HTMLInputElement>('communityEnabled').addEventListener('change', (e) => {
+  communityEnabled = (e.target as HTMLInputElement).checked;
+  try {
+    localStorage.setItem('bba.community', communityEnabled ? 'on' : 'off');
+  } catch {
+    /* ignore */
+  }
+  reanalyze();
+});
 $<HTMLInputElement>('mlEnabled').addEventListener('change', (e) => {
   ml.enabled = (e.target as HTMLInputElement).checked;
   ml.save();
@@ -701,6 +901,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((btn) =>
     document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b === btn)));
     document.querySelectorAll<HTMLElement>('[data-panel]').forEach((p) => (p.hidden = p.dataset.panel !== btn.dataset.tab));
     if (btn.dataset.tab === 'board') refreshBoard();
+    if (btn.dataset.tab === 'ml') void refreshOwnMarks();
   }),
 );
 // Betaflight-Hinweis: vom Startbildschirm (und per #betaflight) direkt in den Tab springen
@@ -736,6 +937,7 @@ function renderInfo() {
     ['Frames', `${i.frames.toLocaleString('de-DE')} (${Math.round(i.srcRate)} Hz → Analyse ${Math.round(f.rate)} Hz)`],
     ['Felder', `${i.fields.length}: ${i.fields.slice(0, 14).join(', ')}${i.fields.length > 14 ? ' …' : ''}`],
     ['Beschleunigungssensor', f.acc ? 'ja (für Lageschätzung genutzt)' : 'nein (Lage nur aus Gyro)'],
+    ['Akku', i.vbat ? `${i.vbat.toFixed(2)} V beim Start → ${i.cells ? `${i.cells}S` : 'Klasse unklar'}` : 'Spannung nicht im Log'],
     ['Events', f.events.length ? f.events.map((e) => `${e.type}@${e.time.toFixed(2)}s`).slice(0, 8).join(', ') : '–'],
     ['Korrupte Frames', String(i.corruptFrames)],
   ];
@@ -762,7 +964,7 @@ function trickJson(t: Trick) {
     start: +t.start.toFixed(3), end: +t.end.toFixed(3), duration: +t.duration.toFixed(3),
     angles: t.angles.map((a) => Math.round(a)), peakRate: Math.round(t.peakRate),
     meanThrottle: +t.meanThrottle.toFixed(3), purity: +t.purity.toFixed(3),
-    basePoints: t.basePoints, comboMultiplier: t.comboMult, points: t.points, source: t.source,
+    basePoints: t.basePoints, comboMultiplier: t.comboMult, repeatMultiplier: t.repeatMult, points: t.points, source: t.source,
   };
 }
 exportMenu.addEventListener('click', (e) => {
@@ -839,6 +1041,8 @@ $('btnRec').addEventListener('click', () => (recorder ? stopRecording() : startR
 
 // ---------- leaderboard ----------
 const pilotInput = $<HTMLInputElement>('pilotName');
+const cellsSelect = $<HTMLSelectElement>('cellsSelect');
+cellsSelect.addEventListener('change', () => updateSubmit());
 pilotInput.value = localStorage.getItem('bba.pilot') ?? '';
 // Login requirement for submitting (set by the server, see server/leaderboard.mjs).
 let auth: AuthState = { required: false, loggedIn: true, loginUrl: '', isAdmin: false, username: null };
@@ -858,7 +1062,8 @@ const isDemoFlight = () => state.flight?.info.source === 'demo';
 function updateSubmit() {
   $('demoHint').hidden = !isDemoFlight();
   $<HTMLButtonElement>('btnSubmit').disabled =
-    loginBlocked() || isDemoFlight() || !state.flight || !pilotInput.value.trim() || !(state.analysis?.tricks.length);
+    loginBlocked() || isDemoFlight() || !state.flight || !pilotInput.value.trim() || !cellsSelect.value || !(state.analysis?.tricks.length);
+  $<HTMLButtonElement>('btnSubmit').title = cellsSelect.value || !state.flight ? '' : 'Bitte zuerst die Akku-Klasse wählen.';
 }
 pilotInput.addEventListener('input', () => {
   try {
@@ -884,6 +1089,8 @@ interface RecordOptions {
   maxHeight: number | null;
   bitrate: number;
   preferMp4: boolean;
+  /** only this log span (trick marks), otherwise the whole flight */
+  range?: [number, number];
 }
 const MP4_TYPES = ['video/mp4;codecs=avc1.640033,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4'];
 const WEBM_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
@@ -893,13 +1100,16 @@ async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions
     throw new Error('Dieser Browser kann kein Video aufnehmen. Bitte Chrome, Edge oder Firefox verwenden.');
   }
   if (recorder) stopRecording();
+  // a running "▶ Bereich abspielen" preview would pause the video mid-recording
+  marking.playUntil = null;
   setPlaying(false);
   const prevRate = state.rate;
   state.rate = 1;
   video.playbackRate = 1;
-  seek(0);
+  seek(opts.range?.[0] ?? 0);
   await waitSeeked();
   const videoStart = Math.max(0, logTime());
+  const stopAt = opts.range?.[1] ?? duration();
   // Recorded is always the stage (video + overlay), never the original file. Leaderboard: capped at
   // 720p / 2.5 Mbit/s to save space; export: the original video resolution (up to 4K).
   const prevSize = [stage.width, stage.height];
@@ -953,8 +1163,8 @@ async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions
     };
     subRec = {
       tick: (t) => {
-        onProgress(Math.min(1, Math.max(0, (t - videoStart) / Math.max(0.1, duration() - videoStart))));
-        if (t >= duration() - 0.02) end();
+        onProgress(Math.min(1, Math.max(0, (t - videoStart) / Math.max(0.1, stopAt - videoStart))));
+        if (t >= stopAt - 0.02) end();
       },
       finish: () => end(),
       cancel: () => end(new Error('Abgebrochen.')),
@@ -1028,7 +1238,7 @@ $('submitForm').addEventListener('submit', async (e) => {
   $('submitView').hidden = true;
   $('submitClose').hidden = true;
   $('submitTitle').textContent = 'Score einreichen';
-  submitPhase('Aufnahme startet …', 0);
+  submitPhase('Prüfe, ob der Flug schon eingereicht wurde …', 0);
   submitDialog.showModal();
   submitting = true;
   const ctl = new AbortController();
@@ -1037,6 +1247,12 @@ $('submitForm').addEventListener('submit', async (e) => {
     subRec?.cancel();
   };
   try {
+    // each log / flight / video only once – checked before the long recording
+    const prints = await fingerprints(f, state.logFile, state.logIndex, state.videoFile);
+    const duplicate = await checkDuplicate(prints);
+    if (duplicate) throw new SubmitRejectedError(duplicate, false, '');
+    if (ctl.signal.aborted) throw new Error('Abgebrochen.');
+    submitPhase('Aufnahme startet …', 0);
     const { blob, videoStart } = await recordFlight((v) => submitPhase(`Aufnahme läuft … ${Math.round(v * 100)} %`, v * 0.7), {
       maxHeight: 720, bitrate: 2_500_000, preferMp4: false,
     });
@@ -1049,6 +1265,7 @@ $('submitForm').addEventListener('submit', async (e) => {
       best: s.best?.name ?? '',
       maxCombo: s.maxCombo,
       craft: f.info.craft,
+      cells: Number(cellsSelect.value) || null,
       duration: f.info.duration,
       logName: state.logName || f.info.fileName,
       logIndex: state.logIndex,
@@ -1058,6 +1275,8 @@ $('submitForm').addEventListener('submit', async (e) => {
       })),
       settings: { ...state.settings },
       videoStart,
+      flightHash: prints.flightHash,
+      videoHash: prints.videoHash,
     };
     submitPhase(`Lade hoch (${(blob.size / 1048576).toFixed(1)} MB) …`, 0.7);
     const res = await submitScore(meta, blob, state.logFile, (v) => submitPhase(`Lade hoch … ${Math.round(v * 100)} %`, 0.7 + v * 0.3), ctl.signal);
@@ -1085,7 +1304,7 @@ $('submitForm').addEventListener('submit', async (e) => {
 window.addEventListener('focus', () => void refreshAuth());
 void refreshAuth();
 async function refreshBoard() {
-  const { entries, online } = await fetchLeaderboard();
+  const { entries, online } = await fetchLeaderboard(Number($<HTMLSelectElement>('boardCells').value) || null);
   $('boardMode').textContent = online ? 'Online-Leaderboard – Eintrag anklicken für Video und Tricks' : 'Lokales Leaderboard (Server nicht erreichbar)';
   $('boardFull').hidden = !online;
   const me = pilotInput.value.trim().toLowerCase();
@@ -1104,6 +1323,7 @@ async function refreshBoard() {
             el('td', { textContent: String(e.rank ?? k + 1) }),
             pilot,
             el('td', { textContent: e.score.toLocaleString('de-DE') }),
+            el('td', { textContent: e.cells ? `${e.cells}S` : '–' }),
             el('td', { textContent: String(e.tricks) }),
             el('td', { textContent: e.best || '–' }),
             el('td', { textContent: e.maxCombo ? `${e.maxCombo}×` : '–' }),
@@ -1117,9 +1337,214 @@ async function refreshBoard() {
           }
           return row;
         })
-      : [el('tr', {}, el('td', { colSpan: 7, className: 'muted', textContent: 'Noch keine Einträge.' }))]),
+      : [el('tr', {}, el('td', { colSpan: 8, className: 'muted', textContent: 'Noch keine Einträge.' }))]),
   );
 }
+
+// ---------- marking: span → trick (or new trick request), sent with a short clip ----------
+const MARK_MIN = 0.1;
+const MARK_MAX = 30;
+const markType = $<HTMLSelectElement>('markType');
+const markSend = $<HTMLInputElement>('markSend');
+
+function renderMarkTypes() {
+  const current = markType.value;
+  markType.replaceChildren(...trickOptions(current, { placeholder: 'Trick wählen …', request: true }));
+  if (![...markType.options].some((o) => o.value === current)) markType.value = '';
+}
+
+function setMarking(on: boolean) {
+  timeline.marking = on;
+  $('markPanel').hidden = !on;
+  $('btnMark').classList.toggle('active', on);
+  $('timelineHint').textContent = on
+    ? 'Ziehen = Bereich markieren · Klick = springen · Mausrad = Zoom'
+    : 'Klick = springen · Ziehen = verschieben · Mausrad = Zoom · Doppelklick = alles';
+  if (!on) setMarkRange(null);
+  updateMarkUi();
+}
+
+function setMarkRange(t0: number | null, t1?: number) {
+  if (t0 === null || t1 === undefined || !state.flight) {
+    marking.range = null;
+  } else {
+    const a = Math.max(0, Math.min(t0, t1)), b = Math.min(duration(), Math.max(t0, t1));
+    marking.range = [a, b];
+  }
+  timeline.setRange(marking.range);
+  updateMarkUi();
+}
+
+/** Angles etc. of the marked span (same features as the classifier uses). */
+function rangeFeatures() {
+  const f = state.flight, a = state.analysis, r = marking.range;
+  if (!f || !a || !r) return null;
+  const i0 = indexAt(f.t, r[0]), i1 = indexAt(f.t, r[1]);
+  return i1 > i0 ? spanFeatures(f, a, i0, i1) : null;
+}
+
+/** The admin reviews the real flight video: sending needs a loaded video that covers the marked span. */
+function videoCoversRange(): boolean {
+  const r = marking.range;
+  if (!hasVideo() || !r) return hasVideo();
+  return r[0] + state.offset >= -0.05 && r[1] + state.offset <= (video.duration || 0) + 0.05;
+}
+const canSend = () => catalog.online && catalog.loggedIn && !isDemoFlight() && hasVideo() && videoCoversRange();
+
+function updateMarkUi() {
+  const r = marking.range;
+  const len = r ? r[1] - r[0] : 0;
+  const sf = rangeFeatures();
+  $('markRangeLabel').textContent = r
+    ? `${fmtTime(r[0])} – ${fmtTime(r[1])} (${len.toFixed(2)} s)` +
+      (sf ? ` · Roll ${Math.round(sf.angles[0])}° · Pitch ${Math.round(sf.angles[1])}° · Yaw ${Math.round(sf.angles[2])}°` : '')
+    : '–';
+  $<HTMLButtonElement>('btnMarkPlay').disabled = !r;
+  const isNew = markType.value === '__new';
+  $('markNewFields').hidden = !isNew;
+  markSend.disabled = !canSend();
+  if (!canSend()) markSend.checked = false;
+  $('markLoginHint').hidden = !catalog.online || catalog.loggedIn;
+  $('markDemoHint').hidden = !isDemoFlight();
+  const videoHint = $('markVideoHint');
+  videoHint.hidden = isDemoFlight() || !catalog.online || !catalog.loggedIn || (hasVideo() && videoCoversRange());
+  videoHint.textContent = hasVideo()
+    ? 'Der markierte Bereich liegt außerhalb des Videos – Versatz im Tab „Video-Sync“ prüfen.'
+    : 'Senden an den Admin geht nur mit Video: das Flugvideo laden und im Tab „Video-Sync“ synchronisieren. Ohne Video bleibt die Markierung lokal.';
+  const nameOk = !isNew || ($<HTMLInputElement>('markNewName').value.trim().length >= 2 && markSend.checked);
+  $<HTMLButtonElement>('btnMarkSave').disabled = !r || len < MARK_MIN || len > MARK_MAX || !markType.value || !nameOk || !sf;
+  $<HTMLButtonElement>('btnMarkSave').title =
+    len > MARK_MAX ? `Höchstens ${MARK_MAX} Sekunden markieren.`
+    : isNew && !markSend.checked ? 'Neue Tricks werden beim Admin beantragt – dafür muss „An Bollisoft senden“ an sein (mit Konto).'
+    : '';
+}
+
+$('btnMark').addEventListener('click', () => setMarking(!timeline.marking));
+$('btnMarkClose').addEventListener('click', () => setMarking(false));
+$('btnMarkStart').addEventListener('click', () => {
+  const t = logTime();
+  const end = marking.range ? marking.range[1] : t + 1;
+  setMarkRange(t, end > t + MARK_MIN ? end : t + 1);
+  timeline.reveal(marking.range![0], marking.range![1]);
+});
+$('btnMarkEnd').addEventListener('click', () => {
+  const t = logTime();
+  const start = marking.range ? marking.range[0] : t - 1;
+  setMarkRange(start < t - MARK_MIN ? start : t - 1, t);
+  timeline.reveal(marking.range![0], marking.range![1]);
+});
+$('btnMarkPlay').addEventListener('click', () => {
+  if (!marking.range) return;
+  seek(Math.max(0, marking.range[0] - 1));
+  marking.playUntil = marking.range[1] + 0.5;
+  setPlaying(true);
+});
+markType.addEventListener('change', updateMarkUi);
+markSend.addEventListener('change', updateMarkUi);
+$('markNewName').addEventListener('input', updateMarkUi);
+
+$('btnMarkSave').addEventListener('click', async () => {
+  const f = state.flight, r = marking.range, sf = rangeFeatures();
+  if (!f || !r || !sf || submitting) return;
+  const choice = markType.value;
+  const isNew = choice === '__new';
+  const newName = $<HTMLInputElement>('markNewName').value.trim();
+  const send = markSend.checked && canSend();
+  const mark: Mark = {
+    id: ++markSeq,
+    start: r[0],
+    end: r[1],
+    type: isNew ? '' : choice,
+    name: isNew ? newName : trickLabel(choice),
+    features: sf.features,
+    status: send ? 'sending' : 'local',
+  };
+  marking.marks.push(mark);
+  // local model learns right away (known tricks only – a request has no key yet)
+  if (!isNew) ml.add(sf.features, choice);
+  setMarkRange(null);
+  reanalyze();
+  if (!send) {
+    toast(`„${mark.name}“ markiert (nur lokal${ml.enabled ? '' : ' – zählt als Trainingsbeispiel, sobald „ML-Klassifizierung“ aktiv ist'}).`);
+    return;
+  }
+  const meta = {
+    label: isNew ? '' : choice,
+    newName: isNew ? newName : '',
+    newDescription: isNew ? $<HTMLInputElement>('markNewDesc').value.trim() : '',
+    comment: $<HTMLInputElement>('markComment').value.trim(),
+    start: +r[0].toFixed(3),
+    end: +r[1].toFixed(3),
+    features: sf.features.map((v) => +v.toFixed(5)),
+    angles: sf.angles.map((v) => Math.round(v)),
+    peakRate: Math.round(sf.peak),
+    meanThrottle: +sf.meanThrottle.toFixed(3),
+    logName: state.logName || f.info.fileName,
+    craft: f.info.craft,
+    source: f.info.source,
+    clipStart: 0,
+  };
+  $('submitTitle').textContent = 'Markierung senden';
+  if (!hasVideo()) return toast('Senden an den Admin geht nur mit geladenem Flugvideo.', 'error');
+  $('submitText').textContent =
+    `Der markierte Bereich wird mit je einer Sekunde Vor- und Nachlauf einmal abgespielt und als kurzer Ausschnitt aufgenommen ` +
+    `(${(r[1] - r[0] + 2).toFixed(1)} s) – nur diesen sieht der Admin bei der Prüfung.`;
+  $('submitCancel').hidden = false;
+  $('submitView').hidden = true;
+  $('submitClose').hidden = true;
+  submitPhase('Aufnahme startet …', 0);
+  submitDialog.showModal();
+  submitting = true;
+  $('submitCancel').onclick = () => subRec?.cancel();
+  try {
+    const range: [number, number] = [Math.max(0, r[0] - 1), Math.min(duration(), r[1] + 1)];
+    const { blob, videoStart } = await recordFlight((v) => submitPhase(`Aufnahme läuft … ${Math.round(v * 100)} %`, v * 0.6), {
+      maxHeight: 720, bitrate: 2_500_000, preferMp4: false, range,
+    });
+    meta.clipStart = +videoStart.toFixed(3);
+    submitPhase(`Lade hoch (${(blob.size / 1048576).toFixed(1)} MB) …`, 0.6);
+    const res = await submitMark(meta, blob, (v) => submitPhase(`Lade hoch … ${Math.round(v * 100)} %`, 0.6 + v * 0.4));
+    mark.status = 'sent';
+    if (res.type) {
+      // new request: known locally from now on (own requests are listed in the dropdown)
+      const others = getCustomTricks().filter((c) => c.key !== res.type!.key);
+      registerCustomTricks([...others, res.type as CustomTrick]);
+      catalog.mine = [...catalog.mine.filter((c) => c.key !== res.type!.key), ...(res.type.pending ? [res.type] : [])];
+      renderMarkTypes();
+    }
+    mark.type = res.label.label;
+    mark.name = res.label.name;
+    if (isNew) ml.add(mark.features, mark.type);
+    $<HTMLInputElement>('markNewName').value = '';
+    $<HTMLInputElement>('markNewDesc').value = '';
+    $<HTMLInputElement>('markComment').value = '';
+    markType.value = '';
+    submitPhase(
+      isNew ? `Gesendet – der neue Trick „${mark.name}“ ist beantragt. Nach der Freigabe erscheint er für alle in der Liste.`
+      : 'Gesendet – nach der Freigabe durch den Admin trainiert die Markierung das Community-Modell.',
+      1,
+    );
+    void refreshOwnMarks();
+  } catch (err) {
+    mark.status = 'error';
+    mark.error = (err as Error).message;
+    if (err instanceof SubmitRejectedError && err.loginRequired) {
+      catalog.loggedIn = false;
+      auth = { ...auth, required: true, loggedIn: false, loginUrl: err.loginUrl || auth.loginUrl };
+      showAuth();
+    }
+    submitPhase((err as Error).message || 'Senden fehlgeschlagen.', 0);
+  } finally {
+    submitting = false;
+    $('submitCancel').hidden = true;
+    $('submitClose').hidden = false;
+    reanalyze();
+    updateMarkUi();
+  }
+});
+renderMarkTypes();
+renderCommunity();
+void loadCatalog().then(() => refreshOwnMarks());
 
 // ---------- leaderboard entry: video, tricks, report, admin ----------
 const entryDialog = $<HTMLDialogElement>('entryDialog');
@@ -1287,6 +1712,7 @@ function renderEntryAdmin(e: EntryDetail) {
   if (deep) void refreshAuth().then(() => openEntry(deep));
 }
 $('btnBoardRefresh').addEventListener('click', refreshBoard);
+$('boardCells').addEventListener('change', refreshBoard);
 
 // ---------- USB / MSP ----------
 const usbDialog = $<HTMLDialogElement>('usbDialog');

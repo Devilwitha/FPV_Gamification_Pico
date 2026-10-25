@@ -45,6 +45,9 @@ falls geloggt – der **Beschleunigungssensor**. Code: [`src/analysis/tricks.ts`
 5. **Punkte** – Basispunkte je Trick × Anzahl Umdrehungen × Stil (Drehrate bzw. Gas bzw. Haltedauer)
    × Sauberkeit (wie wenig die anderen Achsen mitdrehen). Folgt der nächste Trick innerhalb von 1,5 s,
    steigt der **Combo-Multiplikator** (+0,25 je Stufe, höchstens ×3).
+   **Wiederholungen** zählen weniger: Derselbe Trick direkt noch einmal (kein anderer Trick dazwischen,
+   höchstens 5 s Pause) gibt halbe Punkte, der dritte ein Viertel, danach ein Achtel. In einer Combo zählen
+   höchstens zwei gleiche Tricks hintereinander – der dritte gleiche beginnt eine neue Combo.
 
 | Trick | Erkennung | Basispunkte |
 | --- | --- | --- |
@@ -69,6 +72,20 @@ auch verworfene Kandidaten. Jede Korrektur wird als Beispiel gespeichert; ein k-
 ([`src/analysis/ml.ts`](src/analysis/ml.ts)) ordnet damit alle Kandidaten neu ein (Tab **ML-Training**,
 Export/Import als JSON).
 
+**Trick markieren & Community-Modell:** Wurde ein Trick gar nicht erkannt, markiert man mit **„✎ Trick markieren“**
+an der Timeline den Bereich (Ziehen oder „Anfang/Ende = Position“) und wählt den Trick – oder beantragt einen
+neuen. Mit Konto und geladenem Flugvideo (Pflicht – ohne Video bleibt die Markierung lokal) wird die Markierung samt Merkmalsvektor und einem kurzen Video-Ausschnitt (Bereich ±1 s,
+720p) an den Webshop gesendet (`webshop/trick_labels.py`, `/api/tricks`). Der Admin prüft den Ausschnitt im
+Admin-Dashboard (Tab **Trick-Markierungen**), gibt ihn frei – auf Wunsch als anderer Trick – oder lehnt ab;
+ein beantragter Trick erscheint nach der Freigabe für alle in der Auswahlliste (Schlüssel `c<id>`, Name und
+Punkte legt der Admin fest). Freigegebene Markierungen sind die Trainingsdaten des **Community-Modells**
+([`src/analysis/learned.ts`](src/analysis/learned.ts)): Der Viewer lädt sie über `/api/tricks/katalog` und sucht
+in jedem Flug mit gleitenden Fenstern der Beispiel-Dauer (±10 %) nach Stellen mit ähnlichen Merkmalen
+(Umdrehungen je Achse, Dauer, Gas, Spitzenrate, Reihenfolge). Treffer füllen nur Lücken, die die Regeln
+lassen, und tragen das Abzeichen „Community“. Markierte Bereiche selbst geben keine Punkte – erst das
+freigegebene Modell. Spannen ohne echte Drehung (Hängen, Sturzflug) trainieren nur das lokale Modell,
+weil sie sich mit diesen Merkmalen nicht von normalem Fliegen unterscheiden lassen.
+
 ## Betaflight richtig einstellen
 
 Im Viewer unter dem Tab **„Betaflight einrichten“** (oder `…/blackbox-viewer/#betaflight`) – Kurzfassung:
@@ -76,8 +93,9 @@ Im Viewer unter dem Tab **„Betaflight einrichten“** (oder `…/blackbox-view
 - Logging-Gerät SD-Karte, wenn vorhanden; Logging-Rate **500 Hz** (oder 250 Hz für längere Aufnahmen) –
   mehr nutzt der Viewer nicht.
 - Debug-Modus `NONE`.
-- Felder **Gyro, Beschleunigungssensor, RC-Befehle, Motoren** an lassen; PID, Setpoint, ungefiltertes Gyro,
-  Debug, Motor-RPM, Akku, Höhe, Magnetometer, GPS, RSSI ausschalten (Betaflight 4.3+).
+- Felder **Gyro, Beschleunigungssensor, RC-Befehle, Motoren, Akku** an lassen (Akku: Zellenzahl fürs
+  Leaderboard); PID, Setpoint, ungefiltertes Gyro, Debug, Motor-RPM, Höhe, Magnetometer, GPS, RSSI
+  ausschalten (Betaflight 4.3+).
 - Vor dem Flug den Flash löschen.
 
 ## Leaderboard
@@ -86,7 +104,17 @@ Einreichen geht nur mit Bollisoft-Konto. Gespeichert werden ein platzsparendes V
 (720p, 2,5 Mbit/s), das Log und die Trickliste. Andere Piloten können Einträge melden; ab 10 Meldungen
 bekommt der Admin eine E-Mail. Die API dazu stellt der Webshop bereit (`webshop/leaderboard.py`,
 `/blackbox-viewer/api/leaderboard` wird per IIS-Regel dorthin geleitet). Die eigene Seite
-`/leaderboard` zeigt die Rangliste weltweit und nach Ländern.
+`/leaderboard` zeigt die Rangliste weltweit, nach Ländern und nach **Akku-Klasse** (1S, 2S, 3S, 4S, 6S, 8S).
+Die Klasse schätzt der Viewer aus der Akkuspannung am Log-Anfang (`vbatLatest`, Klasse mit plausibler
+Zellenspannung 3,2–4,45 V, am nächsten an 3,95 V); vor dem Einreichen lässt sie sich korrigieren und muss
+gewählt sein, wenn das Log keine Spannung enthält.
+
+Jeder Flug kommt nur einmal ins Leaderboard: Der Server speichert Fingerabdrücke (SHA-256) der Log-Datei
+samt Log-Nummer, der Flugdaten (Gyro und Gas mit 50 Hz, grob gerundet – erkennt denselben Flug auch als CSV)
+und des Original-Videos (Größe, erste und letzte 2 MB). Stimmt einer davon mit einem bestehenden Eintrag
+überein (egal von welchem Konto), wird die Einreichung abgelehnt. Der Viewer fragt das vor der Aufnahme
+ab (`/api/leaderboard/pruefen`), damit niemand umsonst auf das Video wartet; ein gelöschter Eintrag gibt
+den Flug wieder frei.
 
 Ohne Webshop (lokal) führt der eingebaute Node-Server ein einfaches Leaderboard ohne Videos in
 `data/leaderboard.json` ([`server/leaderboard.mjs`](server/leaderboard.mjs)); Einreichen mit Video braucht den Webshop.

@@ -112,7 +112,9 @@
       </ul>
     {% else %}
       <p>{{ _("Für diese E-Mail-Adresse liegen noch keine ausgestellten Lizenzen vor.") }}</p>
-      <a class="btn btn-primary" href="{{ url_for('shop') }}">{{ _("Zum Shop") }}</a>
+      {% if shop_enabled %}
+        <a class="btn btn-primary" href="{{ url_for('shop') }}">{{ _("Zum Shop") }}</a>
+      {% endif %}
     {% endif %}
 
     {% if werkstatt %}
@@ -165,6 +167,7 @@
       {% for kind, heading, studio, studio_name in [
         ("theme", "Themes", "/tx15-werkstatt/theme-studio.html", "Theme Studio"),
         ("lua", "Lua-Skripte", "/tx15-werkstatt/lua-studio.html", "Lua Studio"),
+        ("build", "Drohnen-Builds", "/tx15-werkstatt/build-studio.html", "Build Studio"),
       ] %}
         <h3>{{ heading }}</h3>
         {% if werkstatt.projects[kind] %}

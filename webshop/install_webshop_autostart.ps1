@@ -113,6 +113,17 @@ $webServer = Get-OrCreateChild $config.DocumentElement 'system.webServer'
 $rewrite = Get-OrCreateChild $webServer 'rewrite'
 $rules = Get-OrCreateChild $rewrite 'rules'
 
+# Cover Store/Maker nur mit COVERSTORE_ENABLED=true in webshop/.env (Standard: an,
+# wenn die Zeile fehlt) - sonst entfaellt seine Regel und /coverstore-maker geht an den Webshop (404).
+$coverStoreEnabled = $true
+$envFile = Join-Path $PSScriptRoot '.env'
+if (Test-Path $envFile) {
+    $envLine = Select-String -Path $envFile -Pattern '^\s*COVERSTORE_ENABLED\s*=\s*(\S*)' | Select-Object -Last 1
+    if ($envLine -and $envLine.Matches[0].Groups[1].Value) {
+        $coverStoreEnabled = $envLine.Matches[0].Groups[1].Value -match '^(1|true|yes|on)$'
+    }
+}
+
 # Reihenfolge ist wichtig: spezifische Pfade vor dem Webshop-Catch-all.
 $proxyRules = @(
     @{
@@ -145,6 +156,15 @@ $proxyRules = @(
         Target = "http://127.0.0.1:$WebshopPort/{R:1}"
     }
 )
+
+if (-not $coverStoreEnabled) {
+    $proxyRules = @($proxyRules | Where-Object { $_.Name -ne 'CoverStoreProxy' })
+    $coverRule = $rules.SelectSingleNode("rule[@name='CoverStoreProxy']")
+    if ($coverRule) {
+        [void]$rules.RemoveChild($coverRule)
+    }
+    Write-Host "Cover Store ist deaktiviert (COVERSTORE_ENABLED) - keine IIS-Regel fuer /coverstore-maker."
+}
 
 foreach ($definition in $proxyRules) {
     $existing = $rules.SelectSingleNode("rule[@name='$($definition.Name)']")

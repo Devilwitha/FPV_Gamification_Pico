@@ -265,6 +265,29 @@
       <p class="admin-empty-hint">Keine Leaderboard-Einträge.</p>
     {% endif %}
 
+    <h2>Trick-Markierungen <small>{{ content.sizes.tricks|filesizeformat }}</small></h2>
+    {% if content.trick_marks %}
+      <div class="admin-table-wrapper">
+        <table class="admin-table">
+          <thead><tr><th>#</th><th>Trick</th><th>Status</th><th>Gesendet</th><th>Ausschnitt</th><th></th></tr></thead>
+          <tbody>
+            {% for m in content.trick_marks %}
+              <tr>
+                <td>{{ m.id }}</td>
+                <td>{{ m.name }}</td>
+                <td>{{ m.status }}</td>
+                <td>{{ m.created_at|forum_time }}</td>
+                <td>{% if m.clip_url %}<a href="{{ m.clip_url }}" target="_blank" rel="noopener">Video</a> <small>{{ m.size|filesizeformat }}</small>{% else %}–{% endif %}</td>
+                <td>{{ delete_button("trickmarke", m.id, "Löschen", "Trick-Markierung samt Video-Ausschnitt löschen?") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="admin-empty-hint">Keine Trick-Markierungen.</p>
+    {% endif %}
+
     <h2>Drohnen-Ausweis <small>{{ content.sizes.licence|filesizeformat }}</small></h2>
     {% if content.licence %}
       <p>

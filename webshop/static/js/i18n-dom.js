@@ -25,7 +25,8 @@
   const fill = (s, args) => String(s).replace(/\{(\d+)\}/g, (m, i) => (args[i] !== undefined ? args[i] : m));
   const api = {
     lang,
-    t: (s, ...args) => fill(lookup(String(s)) ?? s, args),
+    // Deutsch: kein Katalog (das Skript endet unten frueh, lookup() gibt es dann nicht)
+    t: (s, ...args) => fill(lang === "de" || !bundle ? s : lookup(String(s)) ?? s, args),
     ready: Promise.resolve(),
   };
   window.I18N = api;

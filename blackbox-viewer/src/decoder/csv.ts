@@ -79,5 +79,7 @@ export function parseCsvLog(text: string): CsvLog {
   const acc1g = parseFloat(headers['acc_1G'] ?? '');
   const accScale = aUnit === 'g' ? 1 : aUnit.startsWith('m/s') ? 9.80665 : Number.isFinite(acc1g) && acc1g > 0 ? acc1g : null;
 
-  return { names, columns, headers, units: { timeToSec, gyroToDeg, accScale }, rows };
+  const vUnit = unitOf.get('vbatLatest') ?? '';
+  const vbatToVolt = vUnit === 'v' ? 1 : vUnit === 'mv' ? 0.001 : null;
+  return { names, columns, headers, units: { timeToSec, gyroToDeg, accScale, vbatToVolt }, rows };
 }

@@ -20,6 +20,10 @@ export interface LogInfo {
   logIndex: number;
   logCount: number;
   corruptFrames: number;
+  /** battery voltage at the start of the log (V), null if not logged */
+  vbat: number | null;
+  /** estimated cell count (1, 2, 3, 4, 6, 8), null if unknown */
+  cells: number | null;
 }
 
 /** Processed flight data at a uniform-ish rate (≈500 Hz). */
@@ -54,9 +58,11 @@ export interface RawSeries {
   throttle: Float32Array;
   sticks: Vec3Arr;
   motor: Float32Array | null;
+  /** battery voltage at the start of the log (V), null if not logged */
+  vbatStart: number | null;
 }
 
-export type TrickType =
+export type BuiltinTrickType =
   | 'roll'
   | 'flip'
   | 'powerloop'
@@ -71,6 +77,9 @@ export type TrickType =
   | 'invertedhang'
   | 'dive'
   | 'none';
+
+/** Built-in trick or a community trick from the server ("c<id>", see analysis/learned.ts). */
+export type TrickType = BuiltinTrickType | (string & {});
 
 export interface Trick {
   id: number;
@@ -91,8 +100,12 @@ export interface Trick {
   basePoints: number;
   comboLevel: number;
   comboMult: number;
+  /** 0 = first of its kind, 1 = same trick directly again, 2 = third in a row … */
+  repeat: number;
+  /** point factor for repeats: 1, 0.5, 0.25, 0.125 */
+  repeatMult: number;
   points: number;
-  source: 'rules' | 'ml' | 'user';
+  source: 'rules' | 'ml' | 'user' | 'community';
   features: number[];
   /** axis whose angle drives the live progress gauge */
   axis: 0 | 1 | 2;

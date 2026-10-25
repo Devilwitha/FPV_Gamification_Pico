@@ -176,6 +176,11 @@ export class Hud {
       ctx.fillStyle = '#fee440';
       ctx.fillText(`${tr.comboLevel + 1}er COMBO  ×${tr.comboMult.toFixed(2)}`, 0, 76 * s);
     }
+    if (tr.repeat > 0) {
+      ctx.font = `800 ${15 * s}px ${FONT}`;
+      ctx.fillStyle = '#fb8500';
+      ctx.fillText(`WIEDERHOLUNG ×${tr.repeatMult.toFixed(2)}`, 0, (tr.comboLevel > 0 ? 100 : 76) * s);
+    }
     ctx.restore();
   }
 

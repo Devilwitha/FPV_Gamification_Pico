@@ -6,8 +6,12 @@
   <section class="login-page">
     <h1>{{ _("Registrieren") }}</h1>
     <p class="license-intro">
-      {{ _("Erstelle ein Konto, um Bestellungen einzusehen und eigene Plugins im") }}
-      <a href="{{ url_for('plugins_store') }}">{{ _("Plugin-Store") }}</a> {{ _("hochzuladen.") }}
+      {% if shop_enabled %}
+        {{ _("Erstelle ein Konto, um Bestellungen einzusehen und eigene Plugins im") }}
+        <a href="{{ url_for('plugins_store') }}">{{ _("Plugin-Store") }}</a> {{ _("hochzuladen.") }}
+      {% else %}
+        {{ _("Erstelle ein Konto, um im Forum mitzuschreiben, deine Copter zu zeigen und Tricks ins Leaderboard einzutragen.") }}
+      {% endif %}
     </p>
 
     <div class="login-card">

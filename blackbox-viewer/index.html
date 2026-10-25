@@ -104,8 +104,18 @@
           </div>
           <form class="submit-row" id="submitForm">
             <input id="pilotName" placeholder="Pilotname" maxlength="32" autocomplete="nickname" />
+            <select id="cellsSelect" aria-label="Akku (Zellen)" title="Akku-Klasse: das Leaderboard wertet 1S bis 8S getrennt">
+              <option value="">Akku?</option>
+              <option value="1">1S</option>
+              <option value="2">2S</option>
+              <option value="3">3S</option>
+              <option value="4">4S</option>
+              <option value="6">6S</option>
+              <option value="8">8S</option>
+            </select>
             <button class="btn primary" id="btnSubmit" disabled>Einreichen</button>
           </form>
+          <p class="cells-hint small muted" id="cellsHint"></p>
           <p class="login-hint" id="demoHint" hidden>
             Demo-Flüge zählen nicht fürs Leaderboard – lade ein eigenes Blackbox-Log, um Punkte einzureichen.
           </p>
@@ -129,9 +139,44 @@
           <span><i style="background:#4cc9f0"></i>Yaw</span>
           <span><i style="background:#ffb703"></i>Gas</span>
           <span><i style="background:#fee440"></i>Arm-Beep</span>
-          <span class="hint">Klick = springen · Ziehen = verschieben · Mausrad = Zoom · Doppelklick = alles</span>
+          <span class="hint" id="timelineHint">Klick = springen · Ziehen = verschieben · Mausrad = Zoom · Doppelklick = alles</span>
+          <button class="btn tiny mark-toggle" id="btnMark" disabled title="Bereich markieren, in dem ein Trick nicht erkannt wurde">✎ Trick markieren</button>
         </div>
         <canvas id="timeline"></canvas>
+        <div class="mark-panel" id="markPanel" hidden>
+          <div class="mark-head">
+            <h2>Trick markieren</h2>
+            <span class="small muted">Bereich in der Timeline mit gedrückter Maustaste aufziehen – oder Anfang und Ende an der aktuellen Position setzen.</span>
+          </div>
+          <div class="mark-grid">
+            <div class="mark-range">
+              <span class="small muted">Bereich</span>
+              <strong id="markRangeLabel">–</strong>
+              <button class="btn tiny" id="btnMarkStart" type="button">Anfang = Position</button>
+              <button class="btn tiny" id="btnMarkEnd" type="button">Ende = Position</button>
+              <button class="btn tiny" id="btnMarkPlay" type="button" disabled>▶ Bereich abspielen</button>
+            </div>
+            <label class="mark-field">
+              <span class="small muted">Trick</span>
+              <select id="markType"></select>
+            </label>
+            <div class="mark-new" id="markNewFields" hidden>
+              <input id="markNewName" maxlength="40" placeholder="Name des neuen Tricks" />
+              <input id="markNewDesc" maxlength="300" placeholder="Kurze Beschreibung (optional)" />
+            </div>
+            <input id="markComment" maxlength="300" placeholder="Kommentar für den Admin (optional)" />
+            <label class="check"><input type="checkbox" id="markSend" checked /> An Bollisoft senden – trainiert das Community-Modell (nur mit Flugvideo: der Admin prüft einen kurzen Ausschnitt daraus)</label>
+            <p class="login-hint" id="markLoginHint" hidden>
+              Senden und neue Tricks beantragen geht nur mit Konto. <a id="markLoginLink" href="/login?next=/blackbox-viewer/">Jetzt einloggen</a>
+            </p>
+            <p class="login-hint" id="markVideoHint" hidden></p>
+            <p class="login-hint" id="markDemoHint" hidden>Demo-Flüge können nicht gesendet werden – die Markierung bleibt lokal.</p>
+            <div class="row wrap">
+              <button class="btn primary" id="btnMarkSave" type="button" disabled>Markierung übernehmen</button>
+              <button class="btn" id="btnMarkClose" type="button">Schließen</button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section class="panels card">
@@ -206,17 +251,36 @@
             <label class="btn tiny">Importieren<input type="file" id="mlImport" accept=".json" hidden /></label>
             <button class="btn tiny danger" id="btnMlClear">Alle löschen</button>
           </div>
+          <h3 class="ml-head">Community-Modell</h3>
+          <p class="muted small">
+            Wurde ein Trick nicht erkannt? Mit „✎ Trick markieren“ an der Timeline den Bereich markieren und den Trick wählen –
+            oder einen neuen Trick beantragen. Der Admin prüft einen kurzen Video-Ausschnitt; freigegebene Markierungen trainieren
+            das Community-Modell, das diese Tricks dann in allen Flügen findet. Markierte Bereiche geben erst nach der Freigabe Punkte.
+          </p>
+          <label class="check"><input type="checkbox" id="communityEnabled" checked /> Community-Modell nutzen</label>
+          <div id="communityStats" class="ml-stats"></div>
+          <h3 class="ml-head">Meine Markierungen</h3>
+          <ol class="my-marks" id="myMarks"></ol>
         </div>
 
         <div class="tab" data-panel="board" hidden>
           <div class="row">
             <span class="small" id="boardMode"></span>
             <span class="spacer"></span>
+            <select id="boardCells" aria-label="Akku-Klasse">
+              <option value="">Alle Klassen</option>
+              <option value="1">1S</option>
+              <option value="2">2S</option>
+              <option value="3">3S</option>
+              <option value="4">4S</option>
+              <option value="6">6S</option>
+              <option value="8">8S</option>
+            </select>
             <a class="btn tiny" id="boardFull" href="../leaderboard" target="_blank" rel="noopener" hidden>Ganze Rangliste &amp; Länder</a>
             <button class="btn tiny" id="btnBoardRefresh">Aktualisieren</button>
           </div>
           <table class="board">
-            <thead><tr><th>#</th><th>Pilot</th><th>Punkte</th><th>Tricks</th><th>Bester Trick</th><th>Combo</th><th>Datum</th></tr></thead>
+            <thead><tr><th>#</th><th>Pilot</th><th>Punkte</th><th>Akku</th><th>Tricks</th><th>Bester Trick</th><th>Combo</th><th>Datum</th></tr></thead>
             <tbody id="boardBody"></tbody>
           </table>
         </div>
@@ -240,8 +304,8 @@
               <h3>2 · Geloggte Felder</h3>
               <p class="small">Ab Betaflight 4.3 im Blackbox-Tab einzeln wählbar:</p>
               <ul class="setup-list">
-                <li><b>An lassen:</b> Gyro, Beschleunigungssensor (für Inverted Hang, Dive, Trippy Spin), RC-Befehle (Gas &amp; Sticks), Motoren (Gas-Anzeige und Audio-Sync).</li>
-                <li><b>Ausschalten:</b> PID, Setpoint, ungefiltertes Gyro, Debug, Motor-RPM, Akku, Höhe/Barometer, Magnetometer, GPS, RSSI.</li>
+                <li><b>An lassen:</b> Gyro, Beschleunigungssensor (für Inverted Hang, Dive, Trippy Spin), RC-Befehle (Gas &amp; Sticks), Motoren (Gas-Anzeige und Audio-Sync), Akku (erkennt die Akku-Klasse 1S–8S fürs Leaderboard, kostet kaum Platz).</li>
+                <li><b>Ausschalten:</b> PID, Setpoint, ungefiltertes Gyro, Debug, Motor-RPM, Höhe/Barometer, Magnetometer, GPS, RSSI.</li>
               </ul>
             </div>
             <div class="group">
@@ -266,7 +330,7 @@ set blackbox_disable_setpoint = ON
 set blackbox_disable_gyrounfilt = ON
 set blackbox_disable_debug = ON
 set blackbox_disable_rpm = ON
-set blackbox_disable_bat = ON
+set blackbox_disable_bat = OFF
 set blackbox_disable_alt = ON
 set blackbox_disable_mag = ON
 set blackbox_disable_gps = ON

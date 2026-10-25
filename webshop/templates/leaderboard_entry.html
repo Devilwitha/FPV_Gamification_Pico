@@ -64,6 +64,7 @@
             <div><dt>{{ _("Bester Trick") }}</dt><dd>{{ entry.best or "–" }}</dd></div>
             <div><dt>{{ _("Max. Combo") }}</dt><dd>{{ entry.max_combo }}×</dd></div>
             <div><dt>{{ _("Copter") }}</dt><dd>{{ entry.craft or "–" }}</dd></div>
+            <div><dt>{{ _("Akku") }}</dt><dd>{% if entry.cells %}<a href="{{ url_for('leaderboard_pages.page', klasse=entry.cells ~ 's', ansicht='fluege') }}">{{ entry.cells }}S</a>{% if class_rank %} · {{ _("Platz") }} {{ class_rank }}{% endif %}{% else %}–{% endif %}</dd></div>
             <div><dt>{{ _("Flugdauer") }}</dt><dd>{{ "%d:%02d"|format(entry.duration // 60, entry.duration % 60) }}</dd></div>
           </dl>
         </section>

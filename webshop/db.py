@@ -346,6 +346,65 @@ def init_db():
             """
         )
         connection.execute("CREATE INDEX IF NOT EXISTS idx_leaderboard_score ON leaderboard_entries (score DESC, id)")
+        # Akku-Klasse (Zellenzahl 1S ... 8S) - nachtraeglich ergaenzt, alte Eintraege NULL.
+        leaderboard_columns = {row["name"] for row in connection.execute("PRAGMA table_info(leaderboard_entries)")}
+        if "cells" not in leaderboard_columns:
+            connection.execute("ALTER TABLE leaderboard_entries ADD COLUMN cells INTEGER")
+        # Fingerabdruecke gegen doppelte Einreichungen (leaderboard.py): SHA-256 der Log-Datei
+        # samt Log-Nummer, der Flugdaten (vom Viewer) und des Original-Videos (Anfang/Ende/Groesse).
+        for column in ("log_hash", "flight_hash", "video_hash"):
+            if column not in leaderboard_columns:
+                connection.execute(f"ALTER TABLE leaderboard_entries ADD COLUMN {column} TEXT")
+            connection.execute(f"CREATE INDEX IF NOT EXISTS idx_leaderboard_{column} ON leaderboard_entries ({column})")
+        # Eigene Tricks der Community (trick_labels.py): beantragt von einem Benutzer,
+        # freigegeben vom Admin. Schluessel im Viewer: "c<id>".
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS trick_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                points INTEGER NOT NULL DEFAULT 150,
+                status TEXT NOT NULL DEFAULT 'pending',
+                requested_by TEXT COLLATE NOCASE,
+                created_at TEXT NOT NULL,
+                approved_at TEXT
+            )
+            """
+        )
+        # Im Blackbox Viewer markierte Bereiche (Trainingsbeispiele fuer das
+        # Community-Modell) samt kurzem Video-Ausschnitt fuer die Pruefung.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS trick_labels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL COLLATE NOCASE,
+                label TEXT NOT NULL,
+                trick_type_id INTEGER REFERENCES trick_types (id) ON DELETE SET NULL,
+                requested_name TEXT NOT NULL DEFAULT '',
+                t_start REAL NOT NULL DEFAULT 0,
+                t_end REAL NOT NULL DEFAULT 0,
+                features_json TEXT NOT NULL,
+                angles_json TEXT NOT NULL DEFAULT '[]',
+                peak_rate REAL NOT NULL DEFAULT 0,
+                mean_throttle REAL NOT NULL DEFAULT 0,
+                comment TEXT NOT NULL DEFAULT '',
+                log_name TEXT NOT NULL DEFAULT '',
+                craft TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL DEFAULT '',
+                clip_filename TEXT,
+                clip_size INTEGER NOT NULL DEFAULT 0,
+                clip_mime TEXT NOT NULL DEFAULT '',
+                clip_start REAL NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'pending',
+                review_note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                reviewed_at TEXT
+            )
+            """
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_trick_labels_status ON trick_labels (status, id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_trick_labels_email ON trick_labels (email, id)")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS leaderboard_reports (
@@ -1134,6 +1193,7 @@ def list_accounts_admin():
                    (SELECT COALESCE(SUM(size), 0) FROM tx15_backups b WHERE b.email = a.email COLLATE NOCASE)
                  + (SELECT COALESCE(SUM(zip_size), 0) FROM tx15_projects t WHERE t.email = a.email COLLATE NOCASE)
                  + (SELECT COALESCE(SUM(video_size + log_size), 0) FROM leaderboard_entries e WHERE e.email = a.email COLLATE NOCASE)
+                 + (SELECT COALESCE(SUM(clip_size), 0) FROM trick_labels t WHERE t.email = a.email COLLATE NOCASE)
                  + (SELECT COALESCE(SUM(f.size), 0) FROM forum_attachments f JOIN forum_posts fp ON fp.id = f.post_id
                      WHERE fp.author_email = a.email COLLATE NOCASE)
                  + (SELECT COALESCE(SUM(size), 0) FROM pilot_licenses l WHERE l.email = a.email COLLATE NOCASE) AS stored_bytes,
@@ -1260,11 +1320,12 @@ def leaderboard_count():
         return connection.execute("SELECT COUNT(*) FROM leaderboard_entries").fetchone()[0]
 
 
-def leaderboard_list(limit, offset=0):
-    """Eintraege nach Punkten (bei Gleichstand der fruehere zuerst)."""
+def leaderboard_list(limit, offset=0, cells=None):
+    """Eintraege nach Punkten (bei Gleichstand der fruehere zuerst), optional nur eine Akku-Klasse."""
+    where, params = ("", ()) if cells is None else (" WHERE e.cells = ?", (cells,))
     with _get_connection() as connection:
         return connection.execute(
-            _LEADERBOARD_SELECT + " ORDER BY e.score DESC, e.id ASC LIMIT ? OFFSET ?", (limit, offset)
+            _LEADERBOARD_SELECT + where + " ORDER BY e.score DESC, e.id ASC LIMIT ? OFFSET ?", (*params, limit, offset)
         ).fetchall()
 
 
@@ -1337,6 +1398,32 @@ def leaderboard_last_submission(email):
         ).fetchone()[0]
 
 
+def leaderboard_find_duplicate(log_hash=None, flight_hash=None, video_hash=None):
+    """Erster Eintrag mit gleichem Log, gleichen Flugdaten oder gleichem Video: (row, art) oder (None, None)."""
+    with _get_connection() as connection:
+        for column, value in (("log_hash", log_hash), ("flight_hash", flight_hash), ("video_hash", video_hash)):
+            if not value:
+                continue
+            row = connection.execute(
+                f"SELECT id, pilot, email FROM leaderboard_entries WHERE {column} = ? ORDER BY id LIMIT 1", (value,)
+            ).fetchone()
+            if row is not None:
+                return row, column
+    return None, None
+
+
+def leaderboard_without_log_hash():
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT id, log_filename, log_index FROM leaderboard_entries WHERE log_hash IS NULL AND log_filename IS NOT NULL"
+        ).fetchall()
+
+
+def leaderboard_set_log_hash(entry_id, log_hash):
+    with _get_connection() as connection:
+        connection.execute("UPDATE leaderboard_entries SET log_hash = ? WHERE id = ?", (log_hash, entry_id))
+
+
 def leaderboard_filenames():
     """Alle Video- und Log-Dateinamen (zum Aufraeumen verwaister Dateien)."""
     with _get_connection() as connection:
@@ -1344,6 +1431,189 @@ def leaderboard_filenames():
         for row in connection.execute("SELECT video_filename, log_filename FROM leaderboard_entries"):
             names.update(name for name in row if name)
         return names
+
+
+# --- Trick-Markierungen und eigene Tricks (trick_labels.py) -------------------------
+
+_TRICK_LABEL_SELECT = """
+    SELECT l.*, a.username AS account_username, a.id AS account_id,
+           t.name AS type_name, t.status AS type_status, t.points AS type_points
+    FROM trick_labels l
+    LEFT JOIN accounts a ON a.email = l.email COLLATE NOCASE
+    LEFT JOIN trick_types t ON t.id = l.trick_type_id
+"""
+
+
+def trick_type_create(name, description, email):
+    with _get_connection() as connection:
+        return connection.execute(
+            "INSERT INTO trick_types (name, description, requested_by, created_at) VALUES (?, ?, ?, ?)",
+            (name, description, email, _now_iso()),
+        ).lastrowid
+
+
+def trick_type_get(type_id):
+    with _get_connection() as connection:
+        return connection.execute("SELECT * FROM trick_types WHERE id = ?", (type_id,)).fetchone()
+
+
+def trick_type_by_name(name):
+    """Beantragter oder freigegebener Trick gleichen Namens (gross/klein egal)."""
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT * FROM trick_types WHERE name = ? COLLATE NOCASE AND status IN ('pending', 'approved', 'hidden') "
+            "ORDER BY status = 'approved' DESC, id LIMIT 1",
+            (name,),
+        ).fetchone()
+
+
+def trick_types_list():
+    """Alle eigenen Tricks mit Anzahl Markierungen (fuer das Admin-Dashboard)."""
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT t.*, a.username AS requested_username,
+                   (SELECT COUNT(*) FROM trick_labels l WHERE l.trick_type_id = t.id AND l.status = 'approved') AS approved_labels,
+                   (SELECT COUNT(*) FROM trick_labels l WHERE l.trick_type_id = t.id AND l.status = 'pending') AS pending_labels
+            FROM trick_types t
+            LEFT JOIN accounts a ON a.email = t.requested_by COLLATE NOCASE
+            ORDER BY CASE t.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 WHEN 'hidden' THEN 2 ELSE 3 END, t.name COLLATE NOCASE
+            """
+        ).fetchall()
+
+
+def trick_types_with_status(*statuses):
+    marks = ", ".join("?" for _ in statuses)
+    with _get_connection() as connection:
+        return connection.execute(
+            f"SELECT * FROM trick_types WHERE status IN ({marks}) ORDER BY name COLLATE NOCASE", statuses
+        ).fetchall()
+
+
+def trick_types_requested_by(email):
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT * FROM trick_types WHERE requested_by = ? COLLATE NOCASE AND status = 'pending' ORDER BY id",
+            (email,),
+        ).fetchall()
+
+
+def trick_type_update(type_id, **fields):
+    if not fields:
+        return
+    if fields.get("status") == "approved":
+        fields.setdefault("approved_at", _now_iso())
+    assignments = ", ".join(f"{column} = ?" for column in fields)
+    with _get_connection() as connection:
+        connection.execute(f"UPDATE trick_types SET {assignments} WHERE id = ?", (*fields.values(), type_id))
+
+
+def trick_labels_of_type(type_id):
+    with _get_connection() as connection:
+        return connection.execute("SELECT * FROM trick_labels WHERE trick_type_id = ? ORDER BY id", (type_id,)).fetchall()
+
+
+def trick_labels_reject_pending_of_type(type_id, note):
+    """Offene Markierungen eines abgelehnten Tricks mit ablehnen; liefert die Anzahl."""
+    with _get_connection() as connection:
+        return connection.execute(
+            "UPDATE trick_labels SET status = 'rejected', review_note = ?, reviewed_at = ? "
+            "WHERE trick_type_id = ? AND status = 'pending'",
+            (note, _now_iso(), type_id),
+        ).rowcount
+
+
+def trick_type_delete(type_id):
+    with _get_connection() as connection:
+        connection.execute("DELETE FROM trick_types WHERE id = ?", (type_id,))
+
+
+def trick_type_open_labels(type_id):
+    """Markierungen, die einen Trick noch tragen (offen oder freigegeben)."""
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT COUNT(*) FROM trick_labels WHERE trick_type_id = ? AND status IN ('pending', 'approved')", (type_id,)
+        ).fetchone()[0]
+
+
+def trick_label_add(fields):
+    fields = {"created_at": _now_iso(), **fields}
+    columns = ", ".join(fields)
+    placeholders = ", ".join("?" for _ in fields)
+    with _get_connection() as connection:
+        return connection.execute(
+            f"INSERT INTO trick_labels ({columns}) VALUES ({placeholders})", tuple(fields.values())
+        ).lastrowid
+
+
+def trick_label_get(label_id):
+    with _get_connection() as connection:
+        return connection.execute(_TRICK_LABEL_SELECT + " WHERE l.id = ?", (label_id,)).fetchone()
+
+
+def trick_labels_by_status(status, limit=500):
+    order = "ASC" if status == "pending" else "DESC"
+    with _get_connection() as connection:
+        return connection.execute(
+            _TRICK_LABEL_SELECT + f" WHERE l.status = ? ORDER BY l.id {order} LIMIT ?", (status, limit)
+        ).fetchall()
+
+
+def trick_labels_for(email, limit=200):
+    with _get_connection() as connection:
+        return connection.execute(
+            _TRICK_LABEL_SELECT + " WHERE l.email = ? COLLATE NOCASE ORDER BY l.id DESC LIMIT ?", (email, limit)
+        ).fetchall()
+
+
+def trick_labels_pending_count(email):
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT COUNT(*) FROM trick_labels WHERE email = ? COLLATE NOCASE AND status = 'pending'", (email,)
+        ).fetchone()[0]
+
+
+def trick_label_last(email):
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT MAX(created_at) FROM trick_labels WHERE email = ? COLLATE NOCASE", (email,)
+        ).fetchone()[0]
+
+
+def trick_label_review(label_id, status, label, trick_type_id, note):
+    with _get_connection() as connection:
+        connection.execute(
+            "UPDATE trick_labels SET status = ?, label = ?, trick_type_id = ?, review_note = ?, reviewed_at = ? WHERE id = ?",
+            (status, label, trick_type_id, note, _now_iso(), label_id),
+        )
+
+
+def trick_label_delete(label_id):
+    """Loescht eine Markierung; liefert sie (fuer den Clip) oder None."""
+    with _get_connection() as connection:
+        row = connection.execute("SELECT * FROM trick_labels WHERE id = ?", (label_id,)).fetchone()
+        if row is not None:
+            connection.execute("DELETE FROM trick_labels WHERE id = ?", (label_id,))
+        return row
+
+
+def trick_examples(limit=5000):
+    """Freigegebene Trainingsbeispiele: eingebaute Tricks und freigegebene eigene Tricks."""
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT l.label, l.features_json FROM trick_labels l
+            LEFT JOIN trick_types t ON t.id = l.trick_type_id
+            WHERE l.status = 'approved' AND (l.trick_type_id IS NULL OR t.status = 'approved')
+            ORDER BY l.id DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+
+def trick_label_filenames():
+    with _get_connection() as connection:
+        return {row[0] for row in connection.execute("SELECT clip_filename FROM trick_labels WHERE clip_filename IS NOT NULL")}
 
 
 def leaderboard_add_report(entry_id, email, reason):

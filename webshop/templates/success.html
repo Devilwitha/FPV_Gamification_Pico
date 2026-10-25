@@ -13,6 +13,10 @@
     {% if order_id %}
       <p class="status-detail">{{ _("Bestellnummer:") }} {{ order_id }}</p>
     {% endif %}
-    <a class="btn btn-primary btn-large" href="{{ url_for('shop') }}">{{ _("Zurück zum Shop") }}</a>
+    {% if shop_enabled %}
+      <a class="btn btn-primary btn-large" href="{{ url_for('shop') }}">{{ _("Zurück zum Shop") }}</a>
+    {% else %}
+      <a class="btn btn-primary btn-large" href="{{ url_for('account') }}">{{ _("Zum Konto") }}</a>
+    {% endif %}
   </section>
 {% endblock %}

@@ -1,0 +1,1410 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Build Studio</title>
+<script src="/static/js/i18n-dom.js" data-bundle="tools"></script>
+<script src="/site-nav.js" defer></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Build Studio: Tab "Teile" (Teileliste, Gewicht, Preis, Schub, Flugzeit, Kompatibilität)
+   und Tab "Verkabelung" (Schaltplan mit Pads, Kabel, Prüfung, Assistent, Betaflight-CLI). */
+:root {
+  --bg: #eef0f2; --panel: #ffffff; --ink: #1b2126; --muted: #5d6973; --line: #d5dbe0;
+  --accent: #2f7fd0; --accent-ink: #ffffff; --good: #1f8a4c; --warn: #b7791f; --bad: #c43c2c;
+  --code-bg: #f5f7f8; --sel: #ff7a1a; --canvas: #f7f8f9; --dot: #d3d9de; --comp: #ffffff; --comp-line: #9aa6b0;
+  --f-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15191c; --panel: #1e2327; --ink: #e6eaed; --muted: #95a1ab; --line: #333b42;
+    --accent: #5aa2ec; --accent-ink: #08121c; --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a;
+    --code-bg: #171b1e; --sel: #ff9a4a; --canvas: #181c1f; --dot: #2c3338; --comp: #232a2f; --comp-line: #4b5660;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15191c; --panel: #1e2327; --ink: #e6eaed; --muted: #95a1ab; --line: #333b42;
+  --accent: #5aa2ec; --accent-ink: #08121c; --good: #4cc282; --warn: #e0a84a; --bad: #ef6b5a;
+  --code-bg: #171b1e; --sel: #ff9a4a; --canvas: #181c1f; --dot: #2c3338; --comp: #232a2f; --comp-line: #4b5660;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--f-body); padding: 0 16px 32px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; margin: 0; text-wrap: balance; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, pre { font-family: var(--f-mono); }
+
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding-block: 18px 14px; max-width: 1640px; margin: 0 auto; }
+header.top h1 { font-size: 30px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+header.top h1 span { color: var(--accent); }
+header.top p { margin: 0; color: var(--muted); }
+header.top a.back { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 13px; }
+header.top a.back:hover { color: var(--accent); }
+
+.buildbar { max-width: 1640px; margin: 0 auto 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: end; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.buildbar label.field { margin: 0; }
+.buildbar .name { flex: 1 1 260px; }
+.buildbar .sp { flex: 1; }
+.tabs { display: flex; gap: 4px; }
+.tabs button { padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); cursor: pointer; font: 600 16px var(--f-display); letter-spacing: .05em; text-transform: uppercase; }
+.tabs button[aria-selected="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+
+.wrap { max-width: 1640px; margin: 0 auto; display: grid; gap: 16px; align-items: start; }
+.wrap.parts { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
+.wrap.wiring { grid-template-columns: minmax(230px, 270px) minmax(0, 1fr) minmax(300px, 360px); }
+@media (max-width: 1240px) { .wrap.wiring { grid-template-columns: minmax(230px, 270px) minmax(0, 1fr); } .wrap.wiring .col-right { grid-column: 1 / -1; } }
+@media (max-width: 900px) { .wrap.parts, .wrap.wiring { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+.panel + .panel { margin-top: 16px; }
+.panel h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 10px; }
+label.field { display: grid; gap: 3px; margin-bottom: 10px; min-width: 0; }
+label.field > span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+label.check { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; cursor: pointer; }
+input[type="text"], input[type="number"], input[type="url"], select, textarea {
+  width: 100%; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg);
+}
+input[type="color"] { width: 100%; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); cursor: pointer; }
+.hint { font-size: 12px; color: var(--muted); margin: 2px 0 10px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 11px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-weight: 500; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.small { padding: 3px 8px; font-size: 12px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.danger:hover { border-color: var(--bad); color: var(--bad); }
+.btn.on { border-color: var(--sel); box-shadow: inset 0 0 0 1px var(--sel); }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn-row .btn { flex: 1 1 auto; }
+.toast { min-height: 1.5em; font-size: 13px; margin-top: 8px; color: var(--muted); }
+.toast.ok { color: var(--good); } .toast.err { color: var(--bad); }
+
+/* ---------- Teile ---------- */
+.cat { border-top: 1px solid var(--line); padding: 12px 0 6px; }
+.cat:first-of-type { border-top: 0; padding-top: 0; }
+.cat-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.cat-head h3 { font-size: 18px; letter-spacing: .04em; text-transform: uppercase; }
+.cat-head .sum { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.part { display: grid; grid-template-columns: minmax(160px, 2fr) 76px 64px 86px minmax(110px, 1fr) 32px; gap: 6px; align-items: end; margin-bottom: 8px; }
+.part .specs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: -2px; }
+.part .specs label { display: grid; gap: 2px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; flex: 0 1 132px; }
+.part .specs input, .part .specs select { font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--ink); padding: 4px 6px; }
+.part label.field { margin: 0; }
+.part .x { height: 34px; padding: 0; }
+.part + .part { border-top: 1px dashed var(--line); padding-top: 8px; }
+@media (max-width: 760px) { .part { grid-template-columns: 1fr 1fr 1fr; } .part .nm { grid-column: 1 / -1; } }
+.empty-cat { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.kpi { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.kpi span { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.kpi b { font: 700 24px/1.2 var(--f-display); font-variant-numeric: tabular-nums; }
+.kpi small { display: block; color: var(--muted); font-size: 12px; }
+.bar { height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 99px; overflow: hidden; margin: 4px 0 2px; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.weights { font-size: 12px; display: grid; gap: 3px; }
+.weights div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.weights i { display: block; height: 4px; border-radius: 2px; background: var(--accent); opacity: .5; grid-column: 1 / -1; }
+
+.issues { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.issues li { border-left: 3px solid var(--muted); padding: 4px 8px; font-size: 13px; background: var(--bg); border-radius: 0 4px 4px 0; cursor: default; }
+.issues li.err { border-color: var(--bad); }
+.issues li.warn { border-color: var(--warn); }
+.issues li.ok { border-color: var(--good); }
+.issues li.info { border-color: var(--accent); }
+.issues li[data-keys] { cursor: pointer; }
+.issues li b { font-weight: 600; }
+
+/* ---------- Verkabelung ---------- */
+.palette { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.palette button { padding: 7px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); cursor: pointer; font-size: 12px; text-align: left; display: flex; align-items: center; gap: 6px; }
+.palette button:hover { border-color: var(--accent); }
+.palette i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.stagebar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.stagebar .sp { flex: 1; }
+.stagebar select { width: auto; }
+.stage { position: relative; height: min(76vh, 820px); min-height: 420px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1.2px, transparent 1.2px); touch-action: none; }
+#sch { width: 100%; height: 100%; display: block; user-select: none; }
+.stage.wiring-mode, .stage.wiring-mode * { cursor: crosshair; }
+.stage-hint { position: absolute; left: 10px; bottom: 8px; font-size: 12px; color: var(--muted); pointer-events: none; background: var(--canvas); padding: 2px 6px; border-radius: 4px; }
+.pads-edit { display: grid; gap: 4px; margin-bottom: 8px; }
+.pads-edit .row { display: grid; grid-template-columns: minmax(0, 1fr) 92px 62px 26px; gap: 4px; }
+.pads-edit input, .pads-edit select { padding: 4px 5px; font-size: 12px; }
+pre.cli { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; font-size: 12px; line-height: 1.5; margin: 0 0 8px; overflow: auto; max-height: 340px; white-space: pre; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend i { width: 14px; height: 3px; border-radius: 2px; }
+
+/* SVG */
+.sch-comp rect.box { fill: var(--comp); stroke: var(--comp-line); stroke-width: 1.2; }
+.sch-comp.sel rect.box { stroke: var(--sel); stroke-width: 2.4; }
+.sch-comp text { font: 11px var(--f-mono); fill: var(--ink); }
+.sch-comp text.title { font: 600 14px var(--f-display); letter-spacing: .04em; fill: #fff; }
+.sch-comp text.sub { font: 10px var(--f-body); fill: rgba(255,255,255,.85); }
+.sch-comp { cursor: grab; }
+.sch-pad circle { stroke: var(--comp); stroke-width: 1.5; cursor: crosshair; }
+.sch-pad:hover circle { r: 7; }
+.sch-pad.hot circle { stroke: var(--sel); stroke-width: 3; }
+.sch-pad.bad circle { stroke: var(--bad); stroke-width: 3; }
+.sch-wire path.hit { stroke: transparent; stroke-width: 12; fill: none; cursor: pointer; }
+.sch-wire path.vis { fill: none; stroke-width: 2.4; stroke-linecap: round; }
+.sch-wire.sel path.vis { stroke-width: 4.5; }
+.sch-wire.bad path.vis { stroke-dasharray: 6 4; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Build <span>Studio</span></h1>
+  <p>Drohne planen: Teileliste mit Gewicht, Preis, Schub und Flugzeit – und der Schaltplan mit Prüfung und fertigen Betaflight-Befehlen.</p>
+  <a class="back" id="backLink" href="index.html">← Übersicht</a>
+</header>
+
+<section class="buildbar">
+  <label class="field name"><span>Name des Builds</span><input type="text" id="bName" maxlength="60"></label>
+  <label class="field"><span>Vorlage</span>
+    <select id="bTemplate">
+      <option value="">Vorlage laden …</option>
+      <option value="freestyle5">5" Freestyle · 6S · digital</option>
+      <option value="whoop35">3,5" Cinewhoop · 4S · analog</option>
+      <option value="lr7">7" Long Range · 6S · GPS</option>
+      <option value="empty">Leerer Build</option>
+    </select>
+  </label>
+  <label class="field"><span>Währung</span>
+    <select id="bCurrency"><option>CHF</option><option>EUR</option><option>USD</option></select>
+  </label>
+  <span class="sp"></span>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" id="tabParts" aria-selected="true">Teile</button>
+    <button type="button" role="tab" id="tabWiring" aria-selected="false">Verkabelung</button>
+  </div>
+</section>
+
+<main class="wrap parts" id="viewParts">
+  <section>
+    <div class="panel" id="partsPanel"></div>
+  </section>
+  <aside>
+    <div class="panel">
+      <h2>Übersicht</h2>
+      <div class="kpis" id="kpis"></div>
+      <div class="weights" id="weights"></div>
+      <p class="hint" style="margin-top:10px">Schub/Gewicht und Flugzeit sind grobe Schätzungen aus den eingetragenen Werten (Herstellerangaben zum Schub, typischer Wirkungsgrad je Prop-Größe).</p>
+    </div>
+    <div class="panel">
+      <h2>Kompatibilität</h2>
+      <ul class="issues" id="partIssues"></ul>
+    </div>
+    <div class="panel" id="savePanel">
+      <h2>Speichern &amp; Export</h2>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="dlZip">Build-Paket (ZIP)</button>
+        <button class="btn" type="button" id="dlCsv">Teileliste (CSV)</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn" type="button" id="srvSave">Auf dem Server speichern</button>
+        <button class="btn" type="button" id="srvNew" hidden>Als neu speichern</button>
+      </div>
+      <p class="hint" id="srvHint"></p>
+      <p class="hint">Das Build-Paket enthält Teileliste, Schaltplan (SVG) und Betaflight-Befehle. Der Stand bleibt zusätzlich in diesem Browser gespeichert.</p>
+      <div class="toast" id="toast" role="status"></div>
+    </div>
+  </aside>
+</main>
+
+<main class="wrap wiring" id="viewWiring" hidden>
+  <section class="col-left">
+    <div class="panel">
+      <h2>Bauteil einfügen</h2>
+      <div class="palette" id="palette"></div>
+      <p class="hint" style="margin-top:10px">Bauteil auf die Fläche ziehen oder anklicken. Kabel: auf ein Pad klicken, dann auf das Ziel-Pad.</p>
+    </div>
+    <div class="panel" id="inspector"></div>
+  </section>
+  <section class="col-center">
+    <div class="stagebar">
+      <button class="btn primary" type="button" id="wAssist" title="Fehlende Verbindungen nach Standard-Belegung ergänzen">Verdrahtungsassistent</button>
+      <button class="btn" type="button" id="wFromParts" title="Für FC, ESC, Motoren, Empfänger, VTX, GPS … aus der Teileliste Bauteile anlegen">Aus Teileliste übernehmen</button>
+      <label class="check" style="margin:0">Akku <select id="wCells"></select></label>
+      <span class="sp"></span>
+      <button class="btn small" type="button" id="wUndo" title="Rückgängig (Strg+Z)">↶</button>
+      <button class="btn small" type="button" id="wRedo" title="Wiederholen (Strg+Y)">↷</button>
+      <button class="btn small" type="button" id="wZoomOut" title="Verkleinern">−</button>
+      <button class="btn small" type="button" id="wZoomIn" title="Vergrößern">+</button>
+      <button class="btn small" type="button" id="wFit" title="Alles einpassen">Einpassen</button>
+      <button class="btn small" type="button" id="wSvg">SVG</button>
+      <button class="btn small" type="button" id="wPng">PNG</button>
+      <button class="btn small danger" type="button" id="wClear">Leeren</button>
+    </div>
+    <div class="stage" id="stage">
+      <svg id="sch" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="stage-hint" id="stageHint">Ziehen = verschieben · Mausrad = Zoom · Entf = löschen · Esc = Kabel abbrechen</div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </section>
+  <section class="col-right">
+    <div class="panel">
+      <h2>Prüfung</h2>
+      <ul class="issues" id="wireIssues"></ul>
+    </div>
+    <div class="panel">
+      <h2>Betaflight-CLI</h2>
+      <p class="hint">Aus der UART-Belegung erzeugt. Im Betaflight Configurator im Tab <b>CLI</b> einfügen – vorher prüfen, ob die Pads auf deinem FC wirklich so heißen.</p>
+      <pre class="cli" id="cli"></pre>
+      <div class="btn-row">
+        <button class="btn" type="button" id="cliCopy">Kopieren</button>
+        <a class="btn" href="betaflight.html" id="cliBf">Betaflight öffnen</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<script src="konto.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const num = v => { const n = parseFloat(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
+const fmt = (v, d = 0) => Number(v).toLocaleString('de-CH', { minimumFractionDigits: d, maximumFractionDigits: d });
+let tt; function toast(m, k) { const t = $('toast'); t.textContent = m; t.className = 'toast ' + (k || ''); clearTimeout(tt); tt = setTimeout(() => { t.textContent = ''; }, 6000); }
+if (window.claude) $('backLink').hidden = true;
+
+// =====================================================================
+// Teile
+// =====================================================================
+const MOUNTS = ['30.5', '25.5', '20', '16'];
+const MOTOR_MOUNTS = ['16x16', '12x12', '9x9', '6.6x6.6'];
+const CATS = [
+  { id: 'frame', name: 'Frame', qty: 1, fields: [['size', 'Größe (Zoll)', 'num'], ['maxProp', 'Max. Prop (Zoll)', 'num'], ['fcMount', 'FC-Stack (mm)', 'sel', MOUNTS], ['motorMount', 'Motor-Lochbild', 'sel', MOTOR_MOUNTS]] },
+  { id: 'motor', name: 'Motoren', qty: 4, fields: [['stator', 'Stator', 'text'], ['kv', 'KV', 'num'], ['thrust', 'Max. Schub je Motor (g)', 'num'], ['amps', 'Max. Strom je Motor (A)', 'num'], ['mount', 'Lochbild', 'sel', MOTOR_MOUNTS]] },
+  { id: 'esc', name: 'ESC', qty: 1, fields: [['amps', 'Dauerstrom (A)', 'num'], ['cellsMin', 'Zellen min.', 'num'], ['cellsMax', 'Zellen max.', 'num'], ['mount', 'Stack (mm)', 'sel', MOUNTS]] },
+  { id: 'fc', name: 'Flight Controller', qty: 1, fields: [['mcu', 'Prozessor', 'text'], ['uarts', 'UARTs', 'num'], ['bec', 'BEC', 'sel', ['5V', '5V + 9V', '5V + 10V', '5V + 12V']], ['mount', 'Stack (mm)', 'sel', MOUNTS]] },
+  { id: 'prop', name: 'Propeller', qty: 4, fields: [['size', 'Größe (Zoll)', 'num'], ['pitch', 'Steigung', 'num'], ['blades', 'Blätter', 'num']] },
+  { id: 'battery', name: 'Akku', qty: 1, fields: [['cells', 'Zellen (S)', 'num'], ['mah', 'Kapazität (mAh)', 'num'], ['c', 'Entladerate (C)', 'num'], ['plug', 'Stecker', 'sel', ['XT60', 'XT30', 'XT90', 'BT2.0', 'PH2.0']]] },
+  { id: 'vtx', name: 'Video / VTX', qty: 1, fields: [['system', 'System', 'sel', ['DJI O4', 'DJI O3', 'Walksnail', 'HDZero', 'Analog']], ['vmin', 'Spannung min. (V)', 'num'], ['vmax', 'Spannung max. (V)', 'num']] },
+  { id: 'camera', name: 'Kamera', qty: 1, fields: [] },
+  { id: 'rx', name: 'Empfänger', qty: 1, fields: [['protocol', 'Protokoll', 'sel', ['CRSF', 'GHST', 'SBUS']], ['band', 'Band', 'sel', ['2,4 GHz', '900 MHz', 'Dual-Band']]] },
+  { id: 'antenna', name: 'Antennen', qty: 1, fields: [] },
+  { id: 'gps', name: 'GPS', qty: 1, fields: [] },
+  { id: 'other', name: 'Sonstiges', qty: 1, fields: [] },
+];
+const CAT = Object.fromEntries(CATS.map(c => [c.id, c]));
+
+// KV × Zellen, übliche Bereiche je Prop-Größe (Zoll) – nur ein Hinweis, kein Fehler
+const KV_RANGE = [[2, 18000, 30000], [2.5, 16000, 26000], [3, 13000, 20000], [3.5, 11000, 17000], [4, 9500, 14000], [5, 9000, 12500], [6, 7500, 10500], [7, 6500, 9500], [8, 5500, 8500], [10, 4000, 7000]];
+// Wirkungsgrad im Schwebeflug (g/W) je Prop-Größe – für die Flugzeit-Schätzung
+const EFF = [[2, 2.8], [3, 3.5], [3.5, 3.8], [5, 4.5], [7, 6], [10, 7.5]];
+const nearest = (table, x) => table.reduce((a, b) => (Math.abs(b[0] - x) < Math.abs(a[0] - x) ? b : a));
+function interp(table, x) {
+  if (x <= table[0][0]) return table[0][1];
+  for (let i = 1; i < table.length; i++) if (x <= table[i][0]) {
+    const [x0, y0] = table[i - 1], [x1, y1] = table[i];
+    return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
+  }
+  return table[table.length - 1][1];
+}
+
+let uid = 1;
+const mkPart = (cat, name, weight, price, specs = {}, qty) => ({ id: uid++, cat, name, weight, qty: qty ?? CAT[cat].qty, price, link: '', specs });
+
+// Beispielwerte – typische Größenordnungen, keine Herstellerangaben
+const TEMPLATES = {
+  freestyle5: {
+    name: '5" Freestyle digital', cells: 6,
+    parts: () => [
+      mkPart('frame', '5" Freestyle-Frame (Beispiel)', 115, 65, { size: 5, maxProp: 5.1, fcMount: '30.5', motorMount: '16x16' }),
+      mkPart('motor', '2207 1850KV (Beispiel)', 33, 24, { stator: '2207', kv: 1850, thrust: 1600, amps: 42, mount: '16x16' }),
+      mkPart('esc', '4in1-ESC 55A 30×30 (Beispiel)', 16, 75, { amps: 55, cellsMin: 3, cellsMax: 6, mount: '30.5' }),
+      mkPart('fc', 'F7-Flight-Controller 30×30 (Beispiel)', 8, 60, { mcu: 'F722', uarts: 5, bec: '5V + 10V', mount: '30.5' }),
+      mkPart('prop', '5,1×3,6×3 (Beispiel)', 4.3, 1.5, { size: 5.1, pitch: 3.6, blades: 3 }),
+      mkPart('battery', '6S 1100 mAh (Beispiel)', 190, 35, { cells: 6, mah: 1100, c: 120, plug: 'XT60' }),
+      mkPart('vtx', 'HD-Air-Unit (Beispiel)', 32, 190, { system: 'DJI O4', vmin: 7, vmax: 26 }),
+      mkPart('rx', 'ELRS-Empfänger 2,4 GHz', 1.5, 18, { protocol: 'CRSF', band: '2,4 GHz' }),
+      mkPart('antenna', 'VTX-Antenne', 5, 12),
+      mkPart('other', 'Low-ESR-Kondensator 35 V 1000 µF', 5, 2),
+      mkPart('other', 'XT60-Pigtail', 6, 3),
+      mkPart('other', 'Buzzer', 2, 3),
+      mkPart('other', 'Akku-Strap, Pads', 6, 5),
+    ],
+  },
+  whoop35: {
+    name: '3,5" Cinewhoop analog', cells: 4,
+    parts: () => [
+      mkPart('frame', '3,5" Cinewhoop-Frame mit Ducts (Beispiel)', 82, 55, { size: 3.5, maxProp: 3.5, fcMount: '20', motorMount: '12x12' }),
+      mkPart('motor', '1804 2800KV (Beispiel)', 18, 18, { stator: '1804', kv: 2800, thrust: 750, amps: 22, mount: '12x12' }),
+      mkPart('esc', '4in1-ESC 35A 20×20 (Beispiel)', 7, 45, { amps: 35, cellsMin: 2, cellsMax: 6, mount: '20' }),
+      mkPart('fc', 'F4-Flight-Controller 20×20 (Beispiel)', 5, 40, { mcu: 'F405', uarts: 4, bec: '5V + 9V', mount: '20' }),
+      mkPart('prop', '3,5" 5-Blatt (Beispiel)', 2.2, 1, { size: 3.5, pitch: 2.5, blades: 5 }),
+      mkPart('battery', '4S 850 mAh (Beispiel)', 98, 22, { cells: 4, mah: 850, c: 100, plug: 'XT30' }),
+      mkPart('vtx', 'Analog-VTX 600 mW (Beispiel)', 6, 25, { system: 'Analog', vmin: 7, vmax: 26 }),
+      mkPart('camera', 'Analog-Kamera Micro (Beispiel)', 6, 30),
+      mkPart('rx', 'ELRS-Empfänger 2,4 GHz', 1.5, 18, { protocol: 'CRSF', band: '2,4 GHz' }),
+      mkPart('other', 'Low-ESR-Kondensator 35 V 470 µF', 3, 2),
+      mkPart('other', 'XT30-Pigtail', 3, 2),
+    ],
+  },
+  lr7: {
+    name: '7" Long Range GPS', cells: 6,
+    parts: () => [
+      mkPart('frame', '7" Long-Range-Frame (Beispiel)', 145, 85, { size: 7, maxProp: 7.5, fcMount: '30.5', motorMount: '16x16' }),
+      mkPart('motor', '2806.5 1300KV (Beispiel)', 48, 30, { stator: '2806.5', kv: 1300, thrust: 2100, amps: 38, mount: '16x16' }),
+      mkPart('esc', '4in1-ESC 50A 30×30 (Beispiel)', 15, 70, { amps: 50, cellsMin: 3, cellsMax: 6, mount: '30.5' }),
+      mkPart('fc', 'F7-Flight-Controller 30×30 (Beispiel)', 8, 60, { mcu: 'F722', uarts: 6, bec: '5V + 10V', mount: '30.5' }),
+      mkPart('prop', '7×3,5×2 (Beispiel)', 7, 2.5, { size: 7, pitch: 3.5, blades: 2 }),
+      mkPart('battery', '6S Li-Ion 4000 mAh (Beispiel)', 420, 70, { cells: 6, mah: 4000, c: 10, plug: 'XT60' }),
+      mkPart('vtx', 'HD-VTX (Beispiel)', 30, 150, { system: 'Walksnail', vmin: 7, vmax: 26 }),
+      mkPart('rx', 'ELRS-Empfänger 900 MHz', 3, 25, { protocol: 'CRSF', band: '900 MHz' }),
+      mkPart('gps', 'GPS-Modul M10 mit Kompass (Beispiel)', 9, 25),
+      mkPart('antenna', 'Antennen (VTX + Empfänger)', 12, 25),
+      mkPart('other', 'Low-ESR-Kondensator 35 V 1000 µF', 5, 2),
+      mkPart('other', 'XT60-Pigtail', 6, 3),
+      mkPart('other', 'Buzzer', 2, 3),
+    ],
+  },
+};
+
+// =====================================================================
+// Schaltplan: Bauteiltypen und Pads
+// =====================================================================
+// Rollen: vin (Versorgung rein), vout (Versorgung raus), gnd, tx, rx, sin/sout (Signal rein/raus),
+// bus (I2C), pin/pout (Motorphasen). sig = Signalart, v = Spannung, src:'bat' = Akkuspannung.
+const pad = (id, role, side, extra = {}) => ({ id, label: extra.label || id, role, side, ...extra });
+const TYPES = {
+  fc: {
+    name: 'Flight Controller', color: '#2f7fd0', w: 210,
+    props: { uarts: 5, bec: '10', bec5A: 2, analog: false, cellsMax: 6 },
+    fields: [['uarts', 'UARTs', 'num', 1, 8], ['bec', 'Zusatz-BEC', 'sel', [['none', 'keins'], ['9', '9 V'], ['10', '10 V'], ['12', '12 V']]], ['bec5A', '5-V-BEC (A)', 'num', 0.5, 5], ['cellsMax', 'Akku max. (S)', 'num', 2, 8], ['analog', 'Analog-OSD (CAM/VTX-Pads)', 'bool']],
+    pads: p => {
+      const left = [pad('BAT', 'vin', 'l', { label: 'BAT (vom ESC)', vmin: 6, vmax: p.cellsMax * 4.35 + 0.3 }), pad('GND', 'gnd', 'l'), pad('CURR', 'sin', 'l', { sig: 'curr' })];
+      for (let n = 1; n <= 4; n++) left.push(pad('M' + n, 'sout', 'l', { sig: 'motor', n }));
+      const right = [pad('VBAT', 'vout', 'r', { src: 'bat' })];
+      if (p.bec !== 'none') right.push(pad(p.bec + 'V', 'vout', 'r', { v: +p.bec, bec: 'aux' }));
+      right.push(pad('5V', 'vout', 'r', { v: 5, bec: '5' }), pad('GND2', 'gnd', 'r', { label: 'GND' }));
+      for (let n = 1; n <= Math.max(1, Math.min(8, p.uarts | 0)); n++) right.push(pad('TX' + n, 'tx', 'r', { uart: n }), pad('RX' + n, 'rx', 'r', { uart: n }));
+      right.push(pad('SDA', 'bus', 'r', { sig: 'sda' }), pad('SCL', 'bus', 'r', { sig: 'scl' }), pad('LED', 'sout', 'r', { sig: 'led' }), pad('BZ+', 'vout', 'r', { v: 5, bec: '5' }), pad('BZ-', 'sout', 'r', { sig: 'buzzer', label: 'BZ−' }));
+      if (p.analog) right.push(pad('CAM', 'sin', 'r', { sig: 'video' }), pad('VTX', 'sout', 'r', { sig: 'video' }));
+      return { left, right };
+    },
+  },
+  esc: {
+    name: '4in1-ESC', color: '#8e44ad', w: 180,
+    props: { cellsMax: 6, amps: 45 },
+    fields: [['cellsMax', 'Akku max. (S)', 'num', 2, 8], ['amps', 'Dauerstrom (A)', 'num', 5, 120]],
+    pads: p => ({
+      left: [pad('BAT+', 'vin', 'l', { vmin: 6, vmax: p.cellsMax * 4.35 + 0.3, main: true }), pad('BAT-', 'gnd', 'l', { label: 'BAT−' }),
+        ...[1, 2, 3, 4].map(n => pad('MOT' + n, 'pout', 'l', { n, label: 'Motor ' + n }))],
+      right: [pad('VBAT', 'vout', 'r', { src: 'bat' }), pad('GND', 'gnd', 'r'), pad('CURR', 'sout', 'r', { sig: 'curr' }),
+        ...[1, 2, 3, 4].map(n => pad('S' + n, 'sin', 'r', { sig: 'motor', n }))],
+    }),
+  },
+  motor: {
+    name: 'Motor', color: '#636e72', w: 120,
+    props: { n: 1 },
+    fields: [['n', 'Motor-Nummer', 'num', 1, 8]],
+    pads: p => ({ left: [], right: [pad('PH', 'pin', 'r', { n: p.n | 0, label: '3 Phasen' })] }),
+    title: c => 'Motor ' + (c.props.n | 0),
+  },
+  xt60: {
+    name: 'Akku-Stecker', color: '#c0392b', w: 130,
+    props: {},
+    pads: () => ({ left: [], right: [pad('BAT+', 'vout', 'r', { src: 'bat', main: true }), pad('BAT-', 'gnd', 'r', { label: 'BAT−' })] }),
+  },
+  cap: {
+    name: 'Kondensator', color: '#16a085', w: 130, passive: true,
+    props: { vmax: 35 },
+    fields: [['vmax', 'Spannungsfestigkeit (V)', 'num', 10, 100]],
+    pads: p => ({ left: [], right: [pad('+', 'vin', 'r', { vmin: 0, vmax: p.vmax, cap: true }), pad('-', 'gnd', 'r', { label: '−' })] }),
+  },
+  rx: {
+    name: 'Empfänger', color: '#00a8a8', w: 150, uartDevice: 'rx',
+    props: { vmin: 4.5, vmax: 5.5, mA: 100, protocol: 'CRSF' },
+    fields: [['protocol', 'Protokoll', 'sel', [['CRSF', 'CRSF (ELRS, Crossfire)'], ['GHST', 'GHST (Ghost)'], ['SBUS', 'SBUS']]], ['vmin', 'Spannung min. (V)', 'num', 0, 60], ['vmax', 'Spannung max. (V)', 'num', 0, 60], ['mA', 'Stromaufnahme (mA)', 'num', 0, 5000]],
+    pads: () => ({ left: [pad('5V', 'vin', 'l', { label: 'VCC' }), pad('GND', 'gnd', 'l'), pad('TX', 'tx', 'l'), pad('RX', 'rx', 'l')], right: [] }),
+  },
+  vtxd: {
+    name: 'HD-VTX', color: '#d35400', w: 160, uartDevice: 'msp',
+    props: { vmin: 7, vmax: 26, mA: 0, system: 'DJI O4' },
+    fields: [['system', 'System', 'sel', [['DJI O4', 'DJI O4'], ['DJI O3', 'DJI O3'], ['Walksnail', 'Walksnail'], ['HDZero', 'HDZero']]], ['vmin', 'Spannung min. (V)', 'num', 0, 60], ['vmax', 'Spannung max. (V)', 'num', 0, 60]],
+    pads: () => ({ left: [pad('VIN', 'vin', 'l'), pad('GND', 'gnd', 'l'), pad('TX', 'tx', 'l'), pad('RX', 'rx', 'l')], right: [] }),
+    title: c => c.props.system || 'HD-VTX',
+  },
+  vtxa: {
+    name: 'Analog-VTX', color: '#e67e22', w: 160, uartDevice: 'smartaudio',
+    props: { vmin: 7, vmax: 26, mA: 0 },
+    fields: [['vmin', 'Spannung min. (V)', 'num', 0, 60], ['vmax', 'Spannung max. (V)', 'num', 0, 60]],
+    pads: () => ({ left: [pad('VIN', 'vin', 'l'), pad('GND', 'gnd', 'l'), pad('VIDEO', 'sin', 'l', { sig: 'video', label: 'VIDEO IN' }), pad('SA', 'rx', 'l', { label: 'SmartAudio' })], right: [] }),
+  },
+  cam: {
+    name: 'Analog-Kamera', color: '#e84393', w: 150,
+    props: { vmin: 4.5, vmax: 20, mA: 150 },
+    fields: [['vmin', 'Spannung min. (V)', 'num', 0, 60], ['vmax', 'Spannung max. (V)', 'num', 0, 60], ['mA', 'Stromaufnahme (mA)', 'num', 0, 5000]],
+    pads: () => ({ left: [pad('VCC', 'vin', 'l'), pad('GND', 'gnd', 'l'), pad('VIDEO', 'sout', 'l', { sig: 'video', label: 'VIDEO OUT' })], right: [] }),
+  },
+  gps: {
+    name: 'GPS', color: '#27ae60', w: 150, uartDevice: 'gps',
+    props: { vmin: 4.5, vmax: 5.5, mA: 60 },
+    fields: [['vmin', 'Spannung min. (V)', 'num', 0, 60], ['vmax', 'Spannung max. (V)', 'num', 0, 60], ['mA', 'Stromaufnahme (mA)', 'num', 0, 5000]],
+    pads: () => ({ left: [pad('5V', 'vin', 'l', { label: 'VCC' }), pad('GND', 'gnd', 'l'), pad('TX', 'tx', 'l'), pad('RX', 'rx', 'l'), pad('SDA', 'bus', 'l', { sig: 'sda' }), pad('SCL', 'bus', 'l', { sig: 'scl' })], right: [] }),
+  },
+  buzzer: {
+    name: 'Buzzer', color: '#7f8c8d', w: 130,
+    props: { mA: 30 },
+    pads: () => ({ left: [pad('+', 'vin', 'l', { vmin: 3, vmax: 6 }), pad('-', 'sin', 'l', { sig: 'buzzer', label: '−' })], right: [] }),
+  },
+  led: {
+    name: 'LED-Streifen', color: '#9b59b6', w: 140,
+    props: { mA: 300 },
+    fields: [['mA', 'Stromaufnahme (mA)', 'num', 0, 5000]],
+    pads: () => ({ left: [pad('5V', 'vin', 'l', { vmin: 4.5, vmax: 5.5 }), pad('GND', 'gnd', 'l'), pad('DIN', 'sin', 'l', { sig: 'led' })], right: [] }),
+  },
+  custom: {
+    name: 'Eigenes Bauteil', color: '#34495e', w: 160,
+    props: { mA: 0, pads: [{ label: 'VCC', role: 'vin', vmin: 4.5, vmax: 5.5, side: 'l' }, { label: 'GND', role: 'gnd', side: 'l' }, { label: 'TX', role: 'tx', side: 'l' }, { label: 'RX', role: 'rx', side: 'l' }] },
+    fields: [['mA', 'Stromaufnahme (mA)', 'num', 0, 5000]],
+    pads: p => {
+      const out = { left: [], right: [] };
+      (p.pads || []).forEach((d, i) => {
+        const extra = { label: d.label || `Pad ${i + 1}` };
+        if (d.role === 'vin') Object.assign(extra, { vmin: num(d.vmin), vmax: num(d.vmax) || 60 });
+        if (d.role === 'vout') Object.assign(extra, d.v === 'bat' ? { src: 'bat' } : { v: num(d.v) });
+        if (d.role === 'sin' || d.role === 'sout') extra.sig = d.sig || 'signal';
+        if (d.role === 'bus') extra.sig = d.sig || 'sda';
+        (d.side === 'r' ? out.right : out.left).push(pad('P' + i, d.role, d.side === 'r' ? 'r' : 'l', extra));
+      });
+      return out;
+    },
+  },
+};
+const PALETTE = ['fc', 'esc', 'motor', 'xt60', 'cap', 'rx', 'vtxd', 'vtxa', 'cam', 'gps', 'buzzer', 'led', 'custom'];
+const CUSTOM_ROLES = [['vin', 'Strom rein'], ['vout', 'Strom raus'], ['gnd', 'GND'], ['tx', 'TX'], ['rx', 'RX'], ['sin', 'Signal rein'], ['sout', 'Signal raus'], ['bus', 'I2C']];
+const WIRE_COLORS = { bat: '#d63031', v5: '#e17055', vaux: '#fdcb6e', gnd: '#2d3436', gndDark: '#b2bec3', uart: '#0984e3', motor: '#00b894', phase: '#7f8c8d', video: '#e84393', bus: '#00cec9', curr: '#fab1a0', other: '#a29bfe' };
+
+// =====================================================================
+// Zustand, Speichern im Browser, Rückgängig
+// =====================================================================
+const STORE = 'build-studio-v1';
+const DEFAULT = () => ({ v: 1, name: 'Mein Build', currency: 'CHF', tab: 'parts', parts: [], wiring: { cells: 6, comps: [], wires: [] } });
+let S = DEFAULT();
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+  if (saved && Array.isArray(saved.parts)) S = { ...DEFAULT(), ...saved, wiring: { ...DEFAULT().wiring, ...saved.wiring } };
+} catch (e) { /* kein Speicher */ }
+function fixUid() {
+  for (const p of S.parts) uid = Math.max(uid, (p.id | 0) + 1);
+  for (const c of S.wiring.comps) uid = Math.max(uid, (c.id | 0) + 1);
+  for (const w of S.wiring.wires) uid = Math.max(uid, (w.id | 0) + 1);
+}
+fixUid();
+let saveTimer = 0;
+function persist() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { /* voll */ } }, 250);
+}
+const undoStack = [], redoStack = [];
+let lastSnap = JSON.stringify(S);
+function commit() {
+  const snap = JSON.stringify(S);
+  if (snap !== lastSnap) { undoStack.push(lastSnap); if (undoStack.length > 80) undoStack.shift(); redoStack.length = 0; lastSnap = snap; }
+  persist();
+  refresh();
+}
+function restore(snap) { S = JSON.parse(snap); lastSnap = snap; sel = null; wireFrom = null; persist(); renderParts(); refresh(); }
+function undo() { if (!undoStack.length) return; redoStack.push(lastSnap); restore(undoStack.pop()); }
+function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); restore(redoStack.pop()); }
+
+// =====================================================================
+// Teileliste
+// =====================================================================
+const partsOf = cat => S.parts.filter(p => p.cat === cat);
+const first = cat => partsOf(cat)[0] || null;
+const spec = (cat, key) => { const p = first(cat); return p ? p.specs?.[key] : undefined; };
+const money = v => `${S.currency} ${fmt(v, 2)}`;
+
+function renderParts() {
+  const host = $('partsPanel');
+  host.innerHTML = CATS.map(cat => {
+    const list = partsOf(cat.id);
+    const w = list.reduce((a, p) => a + num(p.weight) * num(p.qty), 0), pr = list.reduce((a, p) => a + num(p.price) * num(p.qty), 0);
+    return `<div class="cat" data-cat="${cat.id}">
+      <div class="cat-head"><h3>${esc(cat.name)}</h3>
+        <button class="btn small" type="button" data-add="${cat.id}">+ Teil</button>
+        <span class="sum">${list.length ? `${fmt(w, 1)} g · ${money(pr)}` : ''}</span></div>
+      ${list.length ? list.map(p => partRow(cat, p)).join('') : `<p class="empty-cat">Noch kein Teil.</p>`}
+    </div>`;
+  }).join('');
+}
+function partRow(cat, p) {
+  const specs = cat.fields.map(([key, label, type, opts]) => {
+    const v = p.specs?.[key] ?? '';
+    const input = type === 'sel'
+      ? `<select data-spec="${key}"><option value=""></option>${opts.map(o => `<option${String(v) === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`
+      : `<input type="${type === 'num' ? 'number' : 'text'}" step="any" data-spec="${key}" value="${esc(v)}">`;
+    return `<label>${esc(label)}${input}</label>`;
+  }).join('');
+  return `<div class="part" data-part="${p.id}">
+    <label class="field nm"><span>Name</span><input type="text" data-f="name" value="${esc(p.name)}" maxlength="80"></label>
+    <label class="field"><span>Gewicht (g)</span><input type="number" step="any" min="0" data-f="weight" value="${esc(p.weight)}"></label>
+    <label class="field"><span>Anzahl</span><input type="number" step="1" min="0" data-f="qty" value="${esc(p.qty)}"></label>
+    <label class="field"><span>Preis (Stk.)</span><input type="number" step="any" min="0" data-f="price" value="${esc(p.price)}"></label>
+    <label class="field"><span>Link</span><input type="url" data-f="link" value="${esc(p.link)}" placeholder="https://"></label>
+    <button class="btn x danger" type="button" data-del="${p.id}" title="Teil entfernen" aria-label="Teil entfernen">×</button>
+    ${specs ? `<div class="specs">${specs}</div>` : ''}
+  </div>`;
+}
+$('partsPanel').addEventListener('click', e => {
+  const add = e.target.closest('[data-add]');
+  if (add) { S.parts.push(mkPart(add.dataset.add, '', 0, 0)); renderParts(); commit(); const rows = document.querySelectorAll(`[data-cat="${add.dataset.add}"] [data-f="name"]`); rows[rows.length - 1]?.focus(); return; }
+  const del = e.target.closest('[data-del]');
+  if (del) { S.parts = S.parts.filter(p => p.id !== +del.dataset.del); renderParts(); commit(); }
+});
+$('partsPanel').addEventListener('input', e => {
+  const row = e.target.closest('[data-part]');
+  if (!row) return;
+  const p = S.parts.find(x => x.id === +row.dataset.part);
+  if (!p) return;
+  if (e.target.dataset.f) {
+    const f = e.target.dataset.f;
+    p[f] = f === 'name' || f === 'link' ? e.target.value : e.target.value === '' ? '' : num(e.target.value);
+  } else if (e.target.dataset.spec) {
+    p.specs = p.specs || {};
+    const key = e.target.dataset.spec, field = CAT[p.cat].fields.find(f => f[0] === key);
+    p.specs[key] = field && field[2] === 'num' && e.target.value !== '' ? num(e.target.value) : e.target.value;
+  }
+  // Summen der Kategorie aktualisieren, ohne die Eingabe neu zu zeichnen
+  const cat = row.closest('[data-cat]'), list = partsOf(cat.dataset.cat);
+  cat.querySelector('.sum').textContent = `${fmt(list.reduce((a, x) => a + num(x.weight) * num(x.qty), 0), 1)} g · ${money(list.reduce((a, x) => a + num(x.price) * num(x.qty), 0))}`;
+  commit();
+});
+
+function calc() {
+  const total = (filter = () => true) => S.parts.filter(filter).reduce((a, p) => a + num(p.weight) * num(p.qty), 0);
+  const auw = total(), dry = total(p => p.cat !== 'battery');
+  const price = S.parts.reduce((a, p) => a + num(p.price) * num(p.qty), 0);
+  const motors = partsOf('motor'), motorQty = motors.reduce((a, p) => a + num(p.qty), 0);
+  const thrust = motors.reduce((a, p) => a + num(p.specs?.thrust) * num(p.qty), 0);
+  const cells = num(spec('battery', 'cells')), mah = num(spec('battery', 'mah'));
+  const propSize = num(spec('prop', 'size')) || num(spec('frame', 'size'));
+  let flight = null;
+  if (auw > 0 && cells && mah && propSize) {
+    const eff = interp(EFF, propSize);
+    const wh = cells * 3.7 * (mah / 1000) * 0.8;          // 80 % nutzbar
+    const hover = (wh / (auw / eff)) * 60;
+    flight = { hover, cruise: hover / 1.6, freestyle: hover / 2.6 };
+  }
+  return { auw, dry, price, thrust, motorQty, ratio: auw > 0 && thrust > 0 ? thrust / auw : null, cells, flight, propSize };
+}
+
+function partChecks(c) {
+  const out = [];
+  const add = (level, msg) => out.push({ level, msg });
+  const frameMount = spec('frame', 'fcMount'), maxProp = num(spec('frame', 'maxProp')), propSize = num(spec('prop', 'size'));
+  if (!first('frame') && !first('motor') && !first('fc')) { add('info', 'Teile eintragen oder oben eine Vorlage laden.'); return out; }
+  if (maxProp && propSize) propSize > maxProp + 0.01
+    ? add('err', `Propeller ${fmt(propSize, 1)}" sind größer als der Frame erlaubt (max. ${fmt(maxProp, 1)}").`)
+    : add('ok', `Propeller ${fmt(propSize, 1)}" passen in den Frame (max. ${fmt(maxProp, 1)}").`);
+  for (const [cat, label] of [['fc', 'Flight Controller'], ['esc', 'ESC']]) {
+    const m = spec(cat, 'mount');
+    if (frameMount && m) m === frameMount ? add('ok', `${label}: Stack ${m} mm passt zum Frame.`) : add('err', `${label}: Stack ${m} mm passt nicht zum Frame (${frameMount} mm) – Adapter nötig.`);
+  }
+  const fcM = spec('fc', 'mount'), escM = spec('esc', 'mount');
+  if (fcM && escM && fcM !== escM) add('warn', `FC (${fcM} mm) und ESC (${escM} mm) haben verschiedene Stack-Maße.`);
+  const mm = spec('motor', 'mount'), fm = spec('frame', 'motorMount');
+  if (mm && fm) mm === fm ? add('ok', `Motoren (${mm}) passen auf die Arme.`) : add('err', `Motor-Lochbild ${mm} passt nicht zu den Armen (${fm}).`);
+  const cells = c.cells, cmin = num(spec('esc', 'cellsMin')), cmax = num(spec('esc', 'cellsMax'));
+  if (cells && cmax) (cells > cmax || (cmin && cells < cmin))
+    ? add('err', `ESC ist für ${cmin || '?'}–${cmax}S, der Akku hat ${cells}S.`)
+    : add('ok', `ESC verträgt den ${cells}S-Akku.`);
+  const vtxMax = num(spec('vtx', 'vmax')), vtxMin = num(spec('vtx', 'vmin'));
+  if (cells && vtxMax) {
+    const vfull = cells * 4.2;
+    if (vfull > vtxMax) add('warn', `VTX verträgt max. ${fmt(vtxMax, 1)} V, voller ${cells}S-Akku hat ${fmt(vfull, 1)} V – über einen BEC versorgen.`);
+    else if (vtxMin && cells * 3.3 < vtxMin) add('warn', `VTX braucht mind. ${fmt(vtxMin, 1)} V, ein leerer ${cells}S-Akku liefert nur ${fmt(cells * 3.3, 1)} V.`);
+    else add('ok', `VTX kann direkt am Akku (${fmt(cells * 3.3, 1)}–${fmt(vfull, 1)} V) hängen.`);
+  }
+  const kv = num(spec('motor', 'kv'));
+  if (kv && cells && c.propSize) {
+    const [, lo, hi] = nearest(KV_RANGE, c.propSize), v = kv * cells, size = fmt(c.propSize, 1);
+    v > hi ? add('warn', `KV × Zellen = ${fmt(v)} – für ${size}"-Props üblich sind ${fmt(lo)}–${fmt(hi)}. Motoren könnten überlasten oder heiß werden.`)
+      : v < lo ? add('warn', `KV × Zellen = ${fmt(v)} – für ${size}"-Props üblich sind ${fmt(lo)}–${fmt(hi)}. Der Copter wird eher träge.`)
+      : add('ok', `KV × Zellen = ${fmt(v)} passt zu ${size}"-Props (${fmt(lo)}–${fmt(hi)}).`);
+  }
+  const mAmps = num(spec('motor', 'amps')), escA = num(spec('esc', 'amps'));
+  if (mAmps && escA) mAmps > escA ? add('warn', `Motoren ziehen bis ${fmt(mAmps)} A, der ESC ist für ${fmt(escA)} A pro Motor ausgelegt.`) : add('ok', `ESC (${fmt(escA)} A) reicht für die Motoren (${fmt(mAmps)} A).`);
+  const bc = num(spec('battery', 'c')), mah = num(spec('battery', 'mah'));
+  if (bc && mah && mAmps && c.motorQty) {
+    const bmax = (bc * mah) / 1000, need = mAmps * c.motorQty;
+    if (bmax >= need) add('ok', `Akku (${fmt(bmax)} A) reicht für Vollgas (${fmt(need)} A).`);
+    else if (bmax >= need * 0.7) add('info', `Akku liefert ca. ${fmt(bmax)} A, bei Vollgas ziehen die Motoren bis ${fmt(need)} A – kurze Spitzen sind üblich.`);
+    else add('warn', `Akku liefert nur ca. ${fmt(bmax)} A, die Motoren können bei Vollgas ${fmt(need)} A ziehen – Akku wird heiß, Spannung bricht ein.`);
+  }
+  const plug = spec('battery', 'plug');
+  if (plug) {
+    const pig = S.parts.find(p => p.cat === 'other' && /xt\d{2}|bt2|ph2/i.test(p.name));
+    if (pig && !pig.name.toUpperCase().replace(/\s/g, '').includes(plug.toUpperCase().replace('.', ''))) add('warn', `Akku hat ${plug}, das Kabel „${pig.name}“ passt vermutlich nicht.`);
+  }
+  const uarts = num(spec('fc', 'uarts'));
+  if (uarts) {
+    const need = (first('rx') ? 1 : 0) + (first('vtx') ? 1 : 0) + (first('gps') ? 1 : 0);
+    need > uarts ? add('err', `Der FC hat ${uarts} UARTs, gebraucht werden ${need}.`) : need && add('ok', `UARTs: ${need} von ${uarts} belegt (Empfänger, VTX, GPS).`);
+  }
+  if (spec('vtx', 'system') === 'Analog' && !first('camera')) add('warn', 'Analog-VTX ohne Kamera in der Liste.');
+  if (first('battery') && !S.parts.some(p => /kondensator|capacitor|low.?esr/i.test(p.name))) add('info', 'Tipp: Low-ESR-Kondensator an die ESC-Akkupads gegen Spannungsspitzen.');
+  if (c.ratio !== null && c.ratio < 2.5) add('err', `Schub/Gewicht nur ${fmt(c.ratio, 1)}:1 – der Copter hebt kaum ab.`);
+  return out;
+}
+
+function renderSummary() {
+  const c = calc();
+  const ratioTxt = c.ratio === null ? '–' : `${fmt(c.ratio, 1)} : 1`;
+  const ratioHint = c.ratio === null ? 'Max. Schub je Motor eintragen' : c.ratio < 3 ? 'zu schwach' : c.ratio < 5 ? 'gemütlich – Cinematic, Long Range' : c.ratio < 8 ? 'sportlich' : 'Freestyle, Racing';
+  $('kpis').innerHTML = `
+    <div class="kpi"><span>Abfluggewicht</span><b>${fmt(c.auw)} g</b><small>ohne Akku ${fmt(c.dry)} g</small></div>
+    <div class="kpi"><span>Preis</span><b>${money(c.price)}</b><small>${S.parts.length} Positionen</small></div>
+    <div class="kpi"><span>Schub/Gewicht</span><b>${ratioTxt}</b><small>${esc(ratioHint)}</small></div>
+    <div class="kpi"><span>Flugzeit (Schätzung)</span><b>${c.flight ? `${fmt(c.flight.freestyle, 1)}–${fmt(c.flight.hover, 1)} min` : '–'}</b>
+      <small>${c.flight ? `Freestyle ≈ ${fmt(c.flight.freestyle, 1)} · zügig ≈ ${fmt(c.flight.cruise, 1)} · schweben ≈ ${fmt(c.flight.hover, 1)} min` : 'Akku (S, mAh) und Prop-Größe eintragen'}</small></div>`;
+  const byCat = CATS.map(cat => [cat.name, partsOf(cat.id).reduce((a, p) => a + num(p.weight) * num(p.qty), 0)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]);
+  $('weights').innerHTML = byCat.length ? byCat.map(([n, w]) => `<div><span>${esc(n)}</span><span>${fmt(w, 1)} g · ${fmt((w / c.auw) * 100)} %</span><i style="width:${Math.max(2, (w / c.auw) * 100).toFixed(1)}%"></i></div>`).join('') : '';
+  $('partIssues').innerHTML = partChecks(c).map(i => `<li class="${i.level}">${esc(i.msg)}</li>`).join('');
+}
+
+// =====================================================================
+// Schaltplan
+// =====================================================================
+const W = () => S.wiring;
+const typeOf = c => TYPES[c.type] || TYPES.custom;
+function padsOf(c) {
+  const props = { ...typeOf(c).props, ...c.props };
+  const out = typeOf(c).pads(props);
+  // Versorgungs-Pads ohne eigene Grenzen nehmen die des Bauteils (Spannung min./max.)
+  for (const side of [out.left, out.right]) for (const p of side) if (p.role === 'vin') {
+    if (p.vmin === undefined) p.vmin = num(props.vmin);
+    if (p.vmax === undefined) p.vmax = props.vmax === undefined ? 60 : num(props.vmax);
+  }
+  return out;
+}
+const allPads = c => { const p = padsOf(c); return [...p.left, ...p.right]; };
+const keyOf = (cid, pid) => `${cid}:${pid}`;
+const titleOf = c => c.label || (typeOf(c).title ? typeOf(c).title(c) : typeOf(c).name);
+const HEAD = 34, ROW = 18;
+function geom(c) {
+  const p = padsOf(c), rows = Math.max(p.left.length, p.right.length, 1), w = typeOf(c).w;
+  const pos = {};
+  p.left.forEach((d, i) => { pos[d.id] = { x: c.x, y: c.y + HEAD + i * ROW + ROW / 2, dir: -1, pad: d }; });
+  p.right.forEach((d, i) => { pos[d.id] = { x: c.x + w, y: c.y + HEAD + i * ROW + ROW / 2, dir: 1, pad: d }; });
+  return { w, h: HEAD + rows * ROW + 8, pos, pads: p };
+}
+function padInfo(key) {
+  const [cid, pid] = key.split(':');
+  const c = W().comps.find(x => String(x.id) === cid);
+  if (!c) return null;
+  const g = geom(c), at = g.pos[pid];
+  return at ? { comp: c, pad: at.pad, x: at.x, y: at.y, dir: at.dir } : null;
+}
+function pruneWires() { W().wires = W().wires.filter(w => padInfo(w.a) && padInfo(w.b)); }
+
+const batteryVolts = () => num(W().cells) * 4.2;
+const srcVolts = p => (p.src === 'bat' ? batteryVolts() : num(p.v));
+const vlabel = v => `${fmt(v, 1)} V`;
+
+// Netze: alle über Kabel verbundenen Pads
+function nets() {
+  const parent = new Map();
+  const find = k => { while (parent.get(k) !== k) { parent.set(k, parent.get(parent.get(k))); k = parent.get(k); } return k; };
+  const add = k => { if (!parent.has(k)) parent.set(k, k); };
+  for (const w of W().wires) { add(w.a); add(w.b); parent.set(find(w.a), find(w.b)); }
+  const groups = new Map();
+  for (const k of parent.keys()) { const r = find(k); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(k); }
+  const byKey = new Map();
+  const list = [...groups.values()].map(keys => {
+    const pads = keys.map(k => ({ key: k, ...padInfo(k) })).filter(p => p.pad);
+    const net = { keys, pads };
+    keys.forEach(k => byKey.set(k, net));
+    return net;
+  });
+  return { list, byKey };
+}
+
+function analyze() {
+  const issues = [];
+  const add = (level, msg, keys = []) => issues.push({ level, msg, keys });
+  const { list, byKey } = nets();
+  const name = p => `${titleOf(p.comp)} ${p.pad.label}`;
+  const comps = W().comps;
+  if (!comps.length) return { issues: [{ level: 'info', msg: 'Bauteile links einfügen oder „Aus Teileliste übernehmen“, dann den Verdrahtungsassistenten nutzen.', keys: [] }], uartMap: new Map(), netOf: byKey };
+  for (const net of list) {
+    const roles = r => net.pads.filter(p => p.pad.role === r);
+    const srcs = roles('vout'), gnds = roles('gnd'), vins = roles('vin');
+    const sigs = net.pads.filter(p => ['tx', 'rx', 'sin', 'sout', 'bus', 'pin', 'pout'].includes(p.pad.role));
+    const volts = [...new Set(srcs.map(p => srcVolts(p.pad).toFixed(2)))];
+    if (volts.length > 1) add('err', `Kurzschluss: ${srcs.map(name).join(' und ')} (${volts.map(v => vlabel(+v)).join(' / ')}) sind verbunden.`, net.keys);
+    if (srcs.length && gnds.length) add('err', `Kurzschluss: ${name(srcs[0])} ist mit GND verbunden.`, net.keys);
+    if (vins.length && gnds.length && !srcs.length) add('err', `${name(vins[0])} (Plus) ist mit GND verbunden.`, net.keys);
+    if ((srcs.length || gnds.length || vins.length) && sigs.length) add('err', `Signal-Pad ${name(sigs[0])} hängt an der Stromversorgung.`, net.keys);
+    if (srcs.length && volts.length === 1) {
+      const v = +volts[0];
+      for (const p of vins) {
+        if (v > num(p.pad.vmax) + 0.05) add('err', `${titleOf(p.comp)} verträgt höchstens ${vlabel(num(p.pad.vmax))}, bekommt aber ${vlabel(v)} von ${name(srcs[0])}.`, [p.key, srcs[0].key]);
+        else if (v < num(p.pad.vmin) - 0.05) add('warn', `${titleOf(p.comp)} braucht mindestens ${vlabel(num(p.pad.vmin))}, ${name(srcs[0])} liefert ${vlabel(v)}.`, [p.key, srcs[0].key]);
+      }
+    }
+    if (sigs.length && !srcs.length && !gnds.length && !vins.length) {
+      const tx = sigs.filter(p => p.pad.role === 'tx'), rx = sigs.filter(p => p.pad.role === 'rx');
+      if (tx.length > 1) add('err', `TX an TX: ${tx.map(name).join(' – ')}. TX muss an RX (gekreuzt).`, net.keys);
+      if (rx.length > 1) add('err', `RX an RX: ${rx.map(name).join(' – ')}. RX muss an TX (gekreuzt).`, net.keys);
+      if (tx.length + rx.length && sigs.length !== tx.length + rx.length) add('err', `UART-Leitung ${name(sigs[0])} ist mit einem anderen Signal verbunden.`, net.keys);
+      const outs = sigs.filter(p => p.pad.role === 'sout'), ins = sigs.filter(p => p.pad.role === 'sin');
+      for (const o of outs) for (const i of ins) {
+        if (o.pad.sig !== i.pad.sig) add('err', `${name(o)} passt nicht zu ${name(i)}.`, [o.key, i.key]);
+        else if (o.pad.sig === 'motor' && o.pad.n !== i.pad.n) add('warn', `${name(o)} geht an ${name(i)} – Motorreihenfolge in Betaflight anpassen (resource) oder umlöten.`, [o.key, i.key]);
+      }
+      if (outs.length > 1) add('err', `Zwei Ausgänge verbunden: ${outs.map(name).join(' – ')}.`, net.keys);
+      const bus = sigs.filter(p => p.pad.role === 'bus');
+      if (bus.length && new Set(bus.map(p => p.pad.sig)).size > 1) add('err', `I2C vertauscht: ${bus.map(name).join(' – ')} (SDA an SDA, SCL an SCL).`, net.keys);
+      const pin = sigs.filter(p => p.pad.role === 'pin'), pout = sigs.filter(p => p.pad.role === 'pout');
+      if ((pin.length || pout.length) && (pin.length !== 1 || pout.length !== 1 || sigs.length !== 2)) add('err', `Motorphasen: ein Motor gehört an genau einen ESC-Ausgang (${sigs.map(name).join(' – ')}).`, net.keys);
+      else if (pin.length && pin[0].pad.n && pout[0].pad.n !== pin[0].pad.n) add('info', `${name(pin[0])} hängt an ${name(pout[0])}.`, net.keys);
+    }
+  }
+  // Je Bauteil: Versorgung, GND, UART
+  const fcs = comps.filter(c => c.type === 'fc');
+  const uartMap = new Map(); // "fcId:n" -> [{comp, kind}]
+  for (const c of comps) {
+    const pads = allPads(c), t = typeOf(c);
+    const k = p => keyOf(c.id, p.id), net = p => byKey.get(k(p));
+    const powered = p => net(p)?.pads.some(x => x.pad.role === 'vout');
+    for (const p of pads.filter(p => p.role === 'vin')) {
+      if (c.type === 'fc' && fcs.length === 1 && !net(p)) add('warn', 'Flight Controller: BAT-Pad ist nicht mit dem ESC (VBAT) verbunden.', [k(p)]);
+      else if (!net(p)) add('warn', `${titleOf(c)}: ${p.label} ist nicht angeschlossen.`, [k(p)]);
+      else if (!powered(p) && !t.passive) add('warn', `${titleOf(c)} hat keine Stromversorgung (${p.label}).`, [k(p)]);
+    }
+    if (!t.passive && c.type !== 'xt60' && c.type !== 'motor' && pads.some(p => p.role === 'gnd') && !pads.some(p => p.role === 'gnd' && net(p))) add('warn', `${titleOf(c)}: GND fehlt.`, pads.filter(p => p.role === 'gnd').map(k));
+    if (c.type === 'motor' && !net(pads[0])) add('warn', `${titleOf(c)} ist nicht am ESC angeschlossen.`, [k(pads[0])]);
+    if (t.uartDevice) {
+      const used = new Set();
+      for (const p of pads.filter(p => p.role === 'tx' || p.role === 'rx')) {
+        for (const x of net(p)?.pads || []) if (x.comp.type === 'fc' && x.pad.uart) used.add(`${x.comp.id}:${x.pad.uart}`);
+      }
+      if (used.size > 1) add('warn', `${titleOf(c)}: TX und RX hängen an verschiedenen UARTs.`, pads.map(k));
+      for (const u of used) { if (!uartMap.has(u)) uartMap.set(u, []); uartMap.get(u).push({ comp: c, kind: t.uartDevice }); }
+      if (!used.size && pads.some(p => (p.role === 'tx' || p.role === 'rx'))) add('warn', `${titleOf(c)} ist an keinem UART des FC angeschlossen.`, pads.filter(p => p.role === 'tx' || p.role === 'rx').map(k));
+    }
+  }
+  for (const [u, devs] of uartMap) if (devs.length > 1) {
+    const fc = comps.find(c => String(c.id) === u.split(':')[0]);
+    add('err', `UART${u.split(':')[1]} ist doppelt belegt: ${devs.map(d => titleOf(d.comp)).join(' und ')}.`, [keyOf(fc.id, 'TX' + u.split(':')[1]), keyOf(fc.id, 'RX' + u.split(':')[1])]);
+  }
+  // Kondensator an den Akkupads
+  const main = comps.find(c => c.type === 'xt60');
+  if (main) {
+    const mainNet = byKey.get(keyOf(main.id, 'BAT+'));
+    const caps = comps.filter(c => c.type === 'cap');
+    if (!caps.length) add('info', 'Tipp: Low-ESR-Kondensator an die Akkupads des ESC (gegen Spannungsspitzen).');
+    else if (!caps.some(c => mainNet && mainNet.keys.includes(keyOf(c.id, '+')))) add('warn', 'Der Kondensator sitzt nicht an den Akkupads (BAT+/BAT−).', caps.map(c => keyOf(c.id, '+')));
+    for (const c of caps) if (num(c.props.vmax) < batteryVolts() * 1.2) add('warn', `Kondensator (${fmt(num(c.props.vmax))} V) hat zu wenig Reserve für ${vlabel(batteryVolts())} – mind. ${fmt(Math.ceil(batteryVolts() * 1.25))} V nehmen.`, [keyOf(c.id, '+')]);
+  }
+  // Last am 5-V-BEC
+  for (const fc of fcs) {
+    const net5 = byKey.get(keyOf(fc.id, '5V'));
+    if (!net5) continue;
+    const loads = net5.pads.filter(p => p.pad.role === 'vin').map(p => p.comp);
+    const mA = [...new Set(loads)].reduce((a, c) => a + num(c.props.mA ?? typeOf(c).props.mA), 0);
+    const cap = num(fc.props.bec5A ?? 2) * 1000;
+    if (mA > cap * 0.8) add('warn', `5-V-BEC: ca. ${fmt(mA)} mA Last bei ${fmt(cap)} mA – knapp, eventuell eigener BEC.`, [keyOf(fc.id, '5V')]);
+  }
+  // Grundausstattung
+  if (fcs.length && !comps.some(c => c.type === 'esc')) add('info', 'Kein ESC im Schaltplan (bei einem AIO-Board die Motoren direkt an den FC planen).');
+  if (comps.some(c => c.type === 'esc') && comps.filter(c => c.type === 'motor').length < 4) add('info', `Erst ${comps.filter(c => c.type === 'motor').length} von 4 Motoren eingefügt.`);
+  if (!issues.some(i => i.level === 'err' || i.level === 'warn')) add('ok', W().wires.length ? 'Keine Fehler gefunden.' : 'Noch keine Kabel – Pads anklicken oder den Assistenten nutzen.');
+  return { issues, uartMap, netOf: byKey };
+}
+
+// ---------- Verdrahtungsassistent ----------
+function connected(a, b) { return W().wires.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a)); }
+function hasWire(k) { return W().wires.some(w => w.a === k || w.b === k); }
+function wire(a, b) { if (a && b && a !== b && !connected(a, b)) { W().wires.push({ id: uid++, a, b }); return 1; } return 0; }
+function assist() {
+  const comps = W().comps, fc = comps.find(c => c.type === 'fc'), escC = comps.find(c => c.type === 'esc'), xt = comps.find(c => c.type === 'xt60');
+  let n = 0;
+  const K = (c, p) => (c ? keyOf(c.id, p) : null);
+  if (xt && escC) { if (!hasWire(K(escC, 'BAT+'))) n += wire(K(xt, 'BAT+'), K(escC, 'BAT+')); if (!hasWire(K(escC, 'BAT-'))) n += wire(K(xt, 'BAT-'), K(escC, 'BAT-')); }
+  for (const cap of comps.filter(c => c.type === 'cap')) {
+    const plus = escC ? K(escC, 'BAT+') : K(xt, 'BAT+'), minus = escC ? K(escC, 'BAT-') : K(xt, 'BAT-');
+    if (plus && !hasWire(K(cap, '+'))) n += wire(K(cap, '+'), plus);
+    if (minus && !hasWire(K(cap, '-'))) n += wire(K(cap, '-'), minus);
+  }
+  if (escC) {
+    const motors = comps.filter(c => c.type === 'motor').sort((a, b) => num(a.props.n) - num(b.props.n));
+    motors.forEach((m, i) => { const out = Math.min(4, num(m.props.n) || i + 1); if (!hasWire(K(m, 'PH')) && !hasWire(K(escC, 'MOT' + out))) n += wire(K(m, 'PH'), K(escC, 'MOT' + out)); });
+  }
+  if (!fc) return n;
+  if (escC) {
+    for (const [a, b] of [['VBAT', 'BAT'], ['GND', 'GND'], ['CURR', 'CURR'], ['S1', 'M1'], ['S2', 'M2'], ['S3', 'M3'], ['S4', 'M4']]) if (!hasWire(K(fc, b))) n += wire(K(escC, a), K(fc, b));
+  }
+  const fp = padsOf(fc).right.map(p => p.id);
+  const uarts = []; for (let u = 1; u <= num(fc.props.uarts); u++) uarts.push(u);
+  const usedU = new Set(uarts.filter(u => hasWire(K(fc, 'TX' + u)) || hasWire(K(fc, 'RX' + u))));
+  const freeUart = () => { const u = uarts.find(x => !usedU.has(x)); if (u) usedU.add(u); return u; };
+  const powerFor = c => {
+    const p = allPads(c).find(x => x.role === 'vin');
+    if (!p) return null;
+    const vmin = num(p.vmin ?? c.props.vmin), vmax = num(p.vmax ?? c.props.vmax);
+    const opts = [['5V', 5], ...(fc.props.bec !== 'none' ? [[fc.props.bec + 'V', +fc.props.bec]] : []), ['VBAT', batteryVolts()]];
+    // kleinste passende Spannung; HD-VTX lieber am Zusatz-BEC oder Akku
+    const order = c.type === 'vtxd' || c.type === 'vtxa' ? [...opts].reverse().filter(o => o[0] !== '5V').concat([opts[0]]) : opts;
+    const ok = order.find(([, v]) => v <= vmax + 0.05 && v >= vmin - 0.05 && v * (o => o)(1) >= 0);
+    return ok && fp.includes(ok[0]) ? [p.id, ok[0]] : null;
+  };
+  const order = ['rx', 'vtxd', 'gps', 'vtxa', 'cam', 'buzzer', 'led', 'custom'];
+  for (const type of order) for (const c of comps.filter(x => x.type === type)) {
+    const pads = allPads(c);
+    const pw = powerFor(c);
+    if (pw && !hasWire(K(c, pw[0]))) n += wire(K(c, pw[0]), K(fc, pw[1]));
+    const g = pads.find(p => p.role === 'gnd');
+    if (g && !hasWire(K(c, g.id))) n += wire(K(c, g.id), K(fc, 'GND2'));
+    const tx = pads.find(p => p.role === 'tx'), rx = pads.find(p => p.role === 'rx');
+    if (typeOf(c).uartDevice && (tx || rx) && !(tx && hasWire(K(c, tx.id))) && !(rx && hasWire(K(c, rx.id)))) {
+      const u = freeUart();
+      if (u) { if (tx) n += wire(K(c, tx.id), K(fc, 'RX' + u)); if (rx) n += wire(K(c, rx.id), K(fc, 'TX' + u)); }
+    }
+    if (c.type === 'gps') for (const s of ['SDA', 'SCL']) if (!hasWire(K(c, s)) && !hasWire(K(fc, s))) n += wire(K(c, s), K(fc, s));
+    if (c.type === 'cam' && fc.props.analog && !hasWire(K(c, 'VIDEO'))) n += wire(K(c, 'VIDEO'), K(fc, 'CAM'));
+    if (c.type === 'vtxa' && fc.props.analog && !hasWire(K(c, 'VIDEO'))) n += wire(K(c, 'VIDEO'), K(fc, 'VTX'));
+    if (c.type === 'vtxa' && !fc.props.analog) { const cam = comps.find(x => x.type === 'cam'); if (cam && !hasWire(K(cam, 'VIDEO'))) n += wire(K(cam, 'VIDEO'), K(c, 'VIDEO')); }
+    if (c.type === 'buzzer' && !hasWire(K(c, '-'))) n += wire(K(c, '-'), K(fc, 'BZ-'));
+    if (c.type === 'buzzer' && !hasWire(K(c, '+'))) n += wire(K(c, '+'), K(fc, 'BZ+'));
+    if (c.type === 'led' && !hasWire(K(c, 'DIN'))) n += wire(K(c, 'DIN'), K(fc, 'LED'));
+  }
+  return n;
+}
+
+// ---------- Aus der Teileliste ----------
+function compsFromParts() {
+  const comps = W().comps, has = t => comps.some(c => c.type === t);
+  const made = [];
+  const addComp = (type, props = {}, label = '') => { const c = { id: uid++, type, x: 0, y: 0, label, props: { ...JSON.parse(JSON.stringify(TYPES[type].props)), ...props } }; comps.push(c); made.push(c); return c; };
+  const cells = num(spec('battery', 'cells'));
+  if (cells) W().cells = cells;
+  if (first('battery') && !has('xt60')) addComp('xt60', {}, spec('battery', 'plug') || 'XT60');
+  if (S.parts.some(p => /kondensator|capacitor|low.?esr/i.test(p.name)) && !has('cap')) addComp('cap', { vmax: num((S.parts.find(p => /kondensator|capacitor|low.?esr/i.test(p.name)).name.match(/(\d+)\s*V\b/) || [])[1]) || 35 });
+  if (first('esc') && !has('esc')) addComp('esc', { cellsMax: num(spec('esc', 'cellsMax')) || 6, amps: num(spec('esc', 'amps')) || 45 });
+  const motorQty = partsOf('motor').reduce((a, p) => a + num(p.qty), 0);
+  for (let i = comps.filter(c => c.type === 'motor').length + 1; i <= Math.min(8, motorQty); i++) addComp('motor', { n: i });
+  if (first('fc') && !has('fc')) {
+    const bec = String(spec('fc', 'bec') || ''), m = bec.match(/\+\s*(\d+)V/);
+    const analog = spec('vtx', 'system') === 'Analog';
+    addComp('fc', { uarts: num(spec('fc', 'uarts')) || 5, bec: m ? m[1] : 'none', cellsMax: num(spec('esc', 'cellsMax')) || 6, analog });
+  }
+  if (first('rx') && !has('rx')) addComp('rx', { protocol: spec('rx', 'protocol') || 'CRSF' });
+  const sys = spec('vtx', 'system');
+  if (first('vtx') && !has('vtxd') && !has('vtxa')) sys === 'Analog'
+    ? addComp('vtxa', { vmin: num(spec('vtx', 'vmin')) || 7, vmax: num(spec('vtx', 'vmax')) || 26 })
+    : addComp('vtxd', { system: sys || 'DJI O4', vmin: num(spec('vtx', 'vmin')) || 7, vmax: num(spec('vtx', 'vmax')) || 26 });
+  if ((first('camera') || sys === 'Analog') && sys === 'Analog' && !has('cam')) addComp('cam');
+  if (first('gps') && !has('gps')) addComp('gps');
+  if (S.parts.some(p => /buzzer|summer|piepser/i.test(p.name)) && !has('buzzer')) addComp('buzzer');
+  if (S.parts.some(p => /\bled/i.test(p.name)) && !has('led')) addComp('led');
+  autoLayout(made);
+  return made.length;
+}
+// Platzierung: Akku/Kondensator/Motoren links, ESC, FC in der Mitte, Geräte rechts
+function autoLayout(only) {
+  const comps = W().comps, list = only || comps;
+  const col = { xt60: -360, cap: -360, motor: -360, esc: -120, fc: 160, other: 480 };
+  const ys = { left: 0, other: 0 };
+  const fc = comps.find(c => c.type === 'fc'), escC = comps.find(c => c.type === 'esc');
+  for (const c of comps) if (!list.includes(c)) {
+    const g = geom(c);
+    if (c.x <= col.motor + 40) ys.left = Math.max(ys.left, c.y + g.h + 24);
+    if (c.x >= col.other - 40) ys.other = Math.max(ys.other, c.y + g.h + 24);
+  }
+  for (const c of list) {
+    const g = geom(c);
+    if (c.type === 'fc') { c.x = col.fc; c.y = 0; }
+    else if (c.type === 'esc') { c.x = col.esc; c.y = fc ? 20 : 0; }
+    else if (['xt60', 'cap', 'motor'].includes(c.type)) {
+      c.x = col.motor; c.y = ys.left; ys.left += g.h + 24;
+    } else { c.x = col.other; c.y = ys.other; ys.other += g.h + 24; }
+  }
+  if (escC && fc && list.includes(escC)) escC.y = Math.max(0, fc.y + 10);
+}
+
+// ---------- Betaflight-CLI ----------
+const SERIAL_FN = { rx: 64, msp: 1, gps: 2, smartaudio: 2048 };
+function buildCli(an) {
+  const fc = W().comps.find(c => c.type === 'fc');
+  if (!fc) return '# Kein Flight Controller im Schaltplan.';
+  const lines = [`# ${S.name || 'Build'} – erzeugt vom Bollisoft Build Studio`, '# Vor dem Einfügen prüfen: UART-Nummern laut Schaltplan, Pads auf dem FC.', ''];
+  const used = [...an.uartMap.entries()].filter(([u]) => u.startsWith(fc.id + ':')).map(([u, devs]) => [num(u.split(':')[1]), devs[0]]).sort((a, b) => a[0] - b[0]);
+  if (!used.length) lines.push('# Noch kein Gerät an einem UART angeschlossen.');
+  for (const [u, d] of used) {
+    const fn = SERIAL_FN[d.kind];
+    if (!fn) continue;
+    lines.push(`# UART${u}: ${titleOf(d.comp)}`, `serial ${u - 1} ${fn} 115200 57600 0 115200`);
+  }
+  const kinds = new Set(used.map(([, d]) => d.kind));
+  if (kinds.has('rx')) {
+    const rx = used.find(([, d]) => d.kind === 'rx')[1].comp;
+    lines.push('', '# Empfänger', 'feature RX_SERIAL', `set serialrx_provider = ${rx.props.protocol || 'CRSF'}`);
+  }
+  if (kinds.has('msp')) lines.push('', '# HD-Video: OSD über MSP DisplayPort', 'set osd_displayport_device = MSP', 'set vcd_video_system = HD');
+  if (kinds.has('gps')) lines.push('', '# GPS', 'feature GPS');
+  const net = k => an.netOf.get(k);
+  if (net(keyOf(fc.id, 'LED'))) lines.push('', '# LED-Streifen', 'feature LED_STRIP');
+  if (net(keyOf(fc.id, 'CURR'))) lines.push('', '# Strommessung vom ESC', 'set current_meter = ADC');
+  if (net(keyOf(fc.id, 'BAT'))) lines.push('set battery_meter = ADC');
+  lines.push('', 'save');
+  return lines.join('\n');
+}
+
+// ---------- Zeichnen ----------
+let view = { x: 420, y: 80, k: 0.9 };
+let sel = null;            // { kind: 'comp'|'wire', id }
+let wireFrom = null;       // Pad-Schlüssel beim Kabelziehen
+let pointerWorld = null;
+let lastAnalysis = { issues: [], uartMap: new Map(), netOf: new Map() };
+let hotKeys = new Set();
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function wireColor(w) {
+  if (w.color) return w.color;
+  const a = padInfo(w.a)?.pad, b = padInfo(w.b)?.pad;
+  const ps = [a, b].filter(Boolean);
+  const has = r => ps.some(p => p.role === r);
+  const dark = cssVar('--ink').toLowerCase() !== '#1b2126';
+  if (has('gnd')) return dark ? WIRE_COLORS.gndDark : WIRE_COLORS.gnd;
+  const pw = ps.find(p => p.role === 'vout') || ps.find(p => p.role === 'vin');
+  if (pw) { const v = pw.role === 'vout' ? srcVolts(pw) : 0; return pw.src === 'bat' || pw.main || v > 12 ? WIRE_COLORS.bat : v && v <= 5.5 ? WIRE_COLORS.v5 : WIRE_COLORS.vaux; }
+  if (has('tx') || has('rx')) return WIRE_COLORS.uart;
+  if (has('pin') || has('pout')) return WIRE_COLORS.phase;
+  const sig = ps.find(p => p.sig)?.sig;
+  return sig === 'motor' ? WIRE_COLORS.motor : sig === 'video' ? WIRE_COLORS.video : sig === 'curr' ? WIRE_COLORS.curr : sig === 'sda' || sig === 'scl' ? WIRE_COLORS.bus : WIRE_COLORS.other;
+}
+function wirePath(a, b) {
+  const d = Math.max(40, Math.min(160, Math.abs(b.x - a.x) * 0.5));
+  return `M${a.x} ${a.y} C${a.x + a.dir * d} ${a.y} ${b.x + b.dir * d} ${b.y} ${b.x} ${b.y}`;
+}
+function padColor(p) {
+  return { vin: '#e17055', vout: '#d63031', gnd: '#2d3436', tx: '#0984e3', rx: '#6c5ce7', sin: '#00b894', sout: '#00b894', bus: '#00cec9', pin: '#7f8c8d', pout: '#7f8c8d' }[p.role] || '#888';
+}
+// SVG des Schaltplans; forExport = feste helle Farben ohne Interaktion
+function schematicMarkup(forExport) {
+  const comps = W().comps, badKeys = new Set(lastAnalysis.issues.filter(i => i.level === 'err').flatMap(i => i.keys));
+  const wires = W().wires.map(w => {
+    const a = padInfo(w.a), b = padInfo(w.b);
+    if (!a || !b) return '';
+    const d = wirePath(a, b), col = wireColor(w);
+    const bad = w.keys || (badKeys.has(w.a) && badKeys.has(w.b));
+    return `<g class="sch-wire${sel?.kind === 'wire' && sel.id === w.id ? ' sel' : ''}${bad ? ' bad' : ''}" data-wire="${w.id}"><path class="vis" d="${d}" stroke="${col}"${forExport ? ' fill="none" stroke-width="2.4"' : ''}/>${forExport ? '' : `<path class="hit" d="${d}"/>`}</g>`;
+  }).join('');
+  const boxes = comps.map(c => {
+    const g = geom(c), t = typeOf(c);
+    const pads = [...g.pads.left, ...g.pads.right].map(p => {
+      const at = g.pos[p.id], key = keyOf(c.id, p.id), left = at.dir < 0;
+      const lx = left ? at.x + 10 : at.x - 10;
+      const cls = `sch-pad${hotKeys.has(key) || wireFrom === key ? ' hot' : ''}${badKeys.has(key) ? ' bad' : ''}`;
+      return `<g class="${cls}" data-pad="${key}"><circle cx="${at.x}" cy="${at.y}" r="5" fill="${padColor(p)}"${forExport ? ' stroke="#fff" stroke-width="1.5"' : ''}/>` +
+        `<text x="${lx}" y="${at.y + 4}" text-anchor="${left ? 'start' : 'end'}"${forExport ? ' font-family="monospace" font-size="11" fill="#1b2126"' : ''}>${esc(p.label)}</text></g>`;
+    }).join('');
+    const sub = c.label && c.label !== t.name ? t.name : (t.title ? t.name : '');
+    return `<g class="sch-comp${sel?.kind === 'comp' && sel.id === c.id ? ' sel' : ''}" data-comp="${c.id}">
+      <rect class="box" x="${c.x}" y="${c.y}" width="${g.w}" height="${g.h}" rx="8"${forExport ? ' fill="#fff" stroke="#9aa6b0"' : ''}/>
+      <path d="M${c.x} ${c.y + 8} a8 8 0 0 1 8 -8 h${g.w - 16} a8 8 0 0 1 8 8 v${HEAD - 10} h${-g.w} z" fill="${t.color}"/>
+      <text class="title" x="${c.x + 10}" y="${c.y + (sub ? 16 : 21)}"${forExport ? ' font-family="sans-serif" font-weight="600" font-size="14" fill="#fff"' : ''}>${esc(titleOf(c))}</text>
+      ${sub ? `<text class="sub" x="${c.x + 10}" y="${c.y + 29}"${forExport ? ' font-family="sans-serif" font-size="10" fill="#fff"' : ''}>${esc(sub)}</text>` : ''}
+      ${pads}</g>`;
+  }).join('');
+  let preview = '';
+  if (!forExport && wireFrom && pointerWorld) {
+    const a = padInfo(wireFrom);
+    if (a) preview = `<path d="${wirePath(a, { x: pointerWorld.x, y: pointerWorld.y, dir: -a.dir })}" fill="none" stroke="${cssVar('--sel')}" stroke-width="2" stroke-dasharray="5 4"/>`;
+  }
+  return wires + boxes + preview;
+}
+const svg = $('sch');
+function drawSchematic() {
+  svg.innerHTML = `<g transform="translate(${view.x} ${view.y}) scale(${view.k})">${schematicMarkup(false)}</g>`;
+  const stage = $('stage');
+  stage.style.backgroundSize = `${20 * view.k}px ${20 * view.k}px`;
+  stage.style.backgroundPosition = `${view.x}px ${view.y}px`;
+  stage.classList.toggle('wiring-mode', !!wireFrom);
+}
+function bounds() {
+  const comps = W().comps;
+  if (!comps.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const c of comps) { const g = geom(c); x0 = Math.min(x0, c.x - 60); y0 = Math.min(y0, c.y - 20); x1 = Math.max(x1, c.x + g.w + 60); y1 = Math.max(y1, c.y + g.h + 20); }
+  return { x0, y0, x1, y1 };
+}
+function fit() {
+  const b = bounds(), r = svg.getBoundingClientRect();
+  if (!b || !r.width) { view = { x: r.width / 2 || 400, y: 60, k: 0.9 }; return drawSchematic(); }
+  const k = Math.min(1.4, Math.max(0.2, Math.min(r.width / (b.x1 - b.x0), r.height / (b.y1 - b.y0))));
+  view = { k, x: (r.width - (b.x1 - b.x0) * k) / 2 - b.x0 * k, y: (r.height - (b.y1 - b.y0) * k) / 2 - b.y0 * k };
+  drawSchematic();
+}
+function zoomAt(f, cx, cy) {
+  const k = Math.min(3, Math.max(0.15, view.k * f));
+  view.x = cx - ((cx - view.x) * k) / view.k; view.y = cy - ((cy - view.y) * k) / view.k; view.k = k;
+  drawSchematic();
+}
+
+// ---------- Bedienung ----------
+const toWorld = (cx, cy) => { const r = svg.getBoundingClientRect(); return { x: (cx - r.left - view.x) / view.k, y: (cy - r.top - view.y) / view.k }; };
+let drag = null;
+function connectTo(key) {
+  if (!wireFrom || key === wireFrom) { wireFrom = null; drawSchematic(); return; }
+  const [ca] = wireFrom.split(':'), [cb] = key.split(':');
+  if (ca === cb) { toast('Beide Pads gehören zum selben Bauteil.', 'err'); wireFrom = null; drawSchematic(); return; }
+  if (connected(wireFrom, key)) toast('Diese Verbindung gibt es schon.');
+  else { const w = { id: uid++, a: wireFrom, b: key }; W().wires.push(w); sel = { kind: 'wire', id: w.id }; }
+  wireFrom = null; commit();
+}
+svg.addEventListener('pointerdown', e => {
+  if (e.button !== 0 && e.button !== 1) return;
+  const padEl = e.target.closest('[data-pad]'), compEl = e.target.closest('[data-comp]'), wireEl = e.target.closest('[data-wire]');
+  svg.setPointerCapture(e.pointerId);
+  if (padEl && e.button === 0) {
+    const key = padEl.dataset.pad;
+    if (wireFrom) connectTo(key); else { wireFrom = key; pointerWorld = toWorld(e.clientX, e.clientY); drag = { mode: 'wire', from: key, sx: e.clientX, sy: e.clientY }; drawSchematic(); }
+    return;
+  }
+  if (compEl && e.button === 0) {
+    const c = W().comps.find(x => x.id === +compEl.dataset.comp);
+    sel = { kind: 'comp', id: c.id }; wireFrom = null;
+    const p = toWorld(e.clientX, e.clientY);
+    drag = { mode: 'comp', comp: c, dx: p.x - c.x, dy: p.y - c.y, moved: false };
+    renderInspector(); drawSchematic(); return;
+  }
+  if (wireEl && e.button === 0) { sel = { kind: 'wire', id: +wireEl.dataset.wire }; wireFrom = null; renderInspector(); drawSchematic(); return; }
+  drag = { mode: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
+});
+svg.addEventListener('pointermove', e => {
+  if (wireFrom) { pointerWorld = toWorld(e.clientX, e.clientY); }
+  if (!drag) { if (wireFrom) drawSchematic(); return; }
+  if (drag.mode === 'comp') {
+    const p = toWorld(e.clientX, e.clientY);
+    const nx = Math.round((p.x - drag.dx) / 10) * 10, ny = Math.round((p.y - drag.dy) / 10) * 10;
+    if (nx !== drag.comp.x || ny !== drag.comp.y) { drag.comp.x = nx; drag.comp.y = ny; drag.moved = true; }
+  } else if (drag.mode === 'pan') {
+    view.x = drag.vx + e.clientX - drag.sx; view.y = drag.vy + e.clientY - drag.sy;
+    if (Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 3) drag.moved = true;
+  }
+  drawSchematic();
+});
+svg.addEventListener('pointerup', e => {
+  const d = drag; drag = null;
+  if (!d) return;
+  if (d.mode === 'wire') {
+    // Ziehen von Pad zu Pad: beim Loslassen auf einem anderen Pad verbinden
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-pad]');
+    if (el && el.dataset.pad !== d.from && Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) > 6) connectTo(el.dataset.pad);
+    return;
+  }
+  if (d.mode === 'comp' && d.moved) commit();
+  if (d.mode === 'pan' && !d.moved) { sel = null; wireFrom = null; renderInspector(); drawSchematic(); }
+});
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+document.addEventListener('keydown', e => {
+  if ($('viewWiring').hidden) return;
+  const tag = e.target.tagName;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && tag !== 'INPUT') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && tag !== 'INPUT') { e.preventDefault(); redo(); return; }
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key === 'Escape') { wireFrom = null; sel = null; renderInspector(); drawSchematic(); }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); removeSelected(); }
+});
+function removeSelected() {
+  if (!sel) return;
+  if (sel.kind === 'wire') W().wires = W().wires.filter(w => w.id !== sel.id);
+  else { W().comps = W().comps.filter(c => c.id !== sel.id); pruneWires(); }
+  sel = null; renderInspector(); commit();
+}
+
+// Palette
+$('palette').innerHTML = PALETTE.map(t => `<button type="button" draggable="true" data-type="${t}"><i style="background:${TYPES[t].color}"></i>${esc(TYPES[t].name)}</button>`).join('');
+function addComponent(type, at) {
+  const c = { id: uid++, type, x: 0, y: 0, label: '', props: JSON.parse(JSON.stringify(TYPES[type].props)) };
+  if (type === 'motor') c.props.n = Math.min(8, W().comps.filter(x => x.type === 'motor').length + 1);
+  if (type === 'fc' || type === 'esc') c.props.cellsMax = Math.max(num(W().cells), num(c.props.cellsMax));
+  const r = svg.getBoundingClientRect();
+  const p = at || toWorld(r.left + r.width / 2, r.top + r.height / 2);
+  c.x = Math.round((p.x - TYPES[type].w / 2) / 10) * 10; c.y = Math.round((p.y - 40) / 10) * 10;
+  W().comps.push(c); sel = { kind: 'comp', id: c.id };
+  renderInspector(); commit();
+}
+$('palette').addEventListener('click', e => { const b = e.target.closest('[data-type]'); if (b) addComponent(b.dataset.type); });
+$('palette').addEventListener('dragstart', e => { const b = e.target.closest('[data-type]'); if (b) e.dataTransfer.setData('text/plain', 'bs:' + b.dataset.type); });
+$('stage').addEventListener('dragover', e => e.preventDefault());
+$('stage').addEventListener('drop', e => {
+  const t = e.dataTransfer.getData('text/plain');
+  if (!t.startsWith('bs:') || !TYPES[t.slice(3)]) return;
+  e.preventDefault(); addComponent(t.slice(3), toWorld(e.clientX, e.clientY));
+});
+
+// Inspektor
+function renderInspector() {
+  const host = $('inspector');
+  if (!sel) { host.innerHTML = `<h2>Auswahl</h2><p class="hint">Bauteil oder Kabel anklicken, um es zu bearbeiten. Ein Kabel ziehst du von Pad zu Pad.</p>`; return; }
+  if (sel.kind === 'wire') {
+    const w = W().wires.find(x => x.id === sel.id);
+    if (!w) { sel = null; return renderInspector(); }
+    const a = padInfo(w.a), b = padInfo(w.b);
+    host.innerHTML = `<h2>Kabel</h2>
+      <p>${esc(titleOf(a.comp))} <b>${esc(a.pad.label)}</b> → ${esc(titleOf(b.comp))} <b>${esc(b.pad.label)}</b></p>
+      <label class="field"><span>Farbe</span><input type="color" id="iColor" value="${esc(wireColor(w))}"></label>
+      <div class="btn-row"><button class="btn small" type="button" id="iColorReset">Standardfarbe</button><button class="btn small danger" type="button" id="iDel">Kabel entfernen</button></div>`;
+    $('iColor').oninput = e => { w.color = e.target.value; drawSchematic(); };
+    $('iColor').onchange = () => commit();
+    $('iColorReset').onclick = () => { delete w.color; renderInspector(); commit(); };
+    $('iDel').onclick = removeSelected;
+    return;
+  }
+  const c = W().comps.find(x => x.id === sel.id);
+  if (!c) { sel = null; return renderInspector(); }
+  const t = typeOf(c);
+  const fields = (t.fields || []).map(([key, label, type, a, b]) => {
+    const v = c.props[key] ?? t.props[key];
+    if (type === 'bool') return `<label class="check"><input type="checkbox" data-prop="${key}"${v ? ' checked' : ''}> ${esc(label)}</label>`;
+    if (type === 'sel') return `<label class="field"><span>${esc(label)}</span><select data-prop="${key}">${a.map(([val, txt]) => `<option value="${esc(val)}"${String(v) === String(val) ? ' selected' : ''}>${esc(txt)}</option>`).join('')}</select></label>`;
+    return `<label class="field"><span>${esc(label)}</span><input type="number" step="any" min="${a}" max="${b}" data-prop="${key}" value="${esc(v)}"></label>`;
+  }).join('');
+  const padsEdit = c.type === 'custom' ? `<h2 style="margin-top:6px">Pads</h2><div class="pads-edit">${(c.props.pads || []).map((d, i) => `
+      <div class="row" data-cpad="${i}">
+        <input type="text" data-cp="label" value="${esc(d.label)}" maxlength="16" aria-label="Name">
+        <select data-cp="role" aria-label="Art">${CUSTOM_ROLES.map(([r, n]) => `<option value="${r}"${d.role === r ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
+        <input type="text" data-cp="${d.role === 'vout' ? 'v' : d.role === 'vin' ? 'vmax' : 'sig'}" value="${esc(d.role === 'vout' ? (d.v ?? '') : d.role === 'vin' ? (d.vmax ?? '') : (d.sig ?? ''))}" placeholder="${d.role === 'vout' ? 'V / bat' : d.role === 'vin' ? 'max. V' : d.role === 'bus' ? 'sda/scl' : d.role === 'sin' || d.role === 'sout' ? 'Signal' : ''}" aria-label="Wert">
+        <button class="btn small danger" type="button" data-cpdel="${i}" aria-label="Pad entfernen">×</button>
+      </div>`).join('')}</div>
+      <div class="btn-row"><button class="btn small" type="button" id="iPadAddL">+ Pad links</button><button class="btn small" type="button" id="iPadAddR">+ Pad rechts</button></div>
+      <p class="hint">Strom rein: max. Spannung · Strom raus: Volt oder „bat“ · Signal: gleiche Bezeichnung an beiden Enden (z. B. video).</p>` : '';
+  host.innerHTML = `<h2>${esc(t.name)}</h2>
+    <label class="field"><span>Beschriftung</span><input type="text" id="iLabel" value="${esc(c.label)}" placeholder="${esc(titleOf({ ...c, label: '' }))}" maxlength="40"></label>
+    ${fields}${padsEdit}
+    <div class="btn-row" style="margin-top:6px"><button class="btn small" type="button" id="iDup">Duplizieren</button><button class="btn small danger" type="button" id="iDel">Entfernen</button></div>`;
+  $('iLabel').oninput = e => { c.label = e.target.value; drawSchematic(); };
+  $('iLabel').onchange = () => commit();
+  host.querySelectorAll('[data-prop]').forEach(el => {
+    el.onchange = () => {
+      const key = el.dataset.prop, f = t.fields.find(x => x[0] === key);
+      c.props[key] = f[2] === 'bool' ? el.checked : f[2] === 'num' ? num(el.value) : el.value;
+      const before = W().wires.length; pruneWires();
+      if (W().wires.length < before) toast(`${before - W().wires.length} Kabel entfernt (Pad gibt es nicht mehr).`);
+      commit();
+    };
+  });
+  host.querySelectorAll('[data-cpad]').forEach(row => {
+    const d = c.props.pads[+row.dataset.cpad];
+    row.querySelectorAll('[data-cp]').forEach(el => {
+      el.onchange = () => {
+        const f = el.dataset.cp;
+        d[f] = f === 'v' && el.value.trim().toLowerCase() === 'bat' ? 'bat' : f === 'v' || f === 'vmax' ? num(el.value) : el.value;
+        if (f === 'role') { delete d.v; delete d.sig; if (d.role === 'vin') { d.vmin = 0; d.vmax = d.vmax || 5.5; } }
+        pruneWires(); renderInspector(); commit();
+      };
+    });
+  });
+  host.querySelectorAll('[data-cpdel]').forEach(b => { b.onclick = () => { c.props.pads.splice(+b.dataset.cpdel, 1); pruneWires(); renderInspector(); commit(); }; });
+  if ($('iPadAddL')) { $('iPadAddL').onclick = () => { c.props.pads.push({ label: 'PAD', role: 'sin', sig: 'signal', side: 'l' }); renderInspector(); commit(); }; $('iPadAddR').onclick = () => { c.props.pads.push({ label: 'PAD', role: 'sout', sig: 'signal', side: 'r' }); renderInspector(); commit(); }; }
+  $('iDup').onclick = () => { const d = JSON.parse(JSON.stringify(c)); d.id = uid++; d.x += 30; d.y += 30; if (d.type === 'motor') d.props.n = Math.min(8, num(d.props.n) + 1); W().comps.push(d); sel = { kind: 'comp', id: d.id }; renderInspector(); commit(); };
+  $('iDel').onclick = removeSelected;
+}
+
+function renderIssues(an) {
+  $('wireIssues').innerHTML = an.issues.map((i, n) => `<li class="${i.level}"${i.keys.length ? ` data-keys="${n}"` : ''}>${esc(i.msg)}</li>`).join('');
+}
+$('wireIssues').addEventListener('mouseover', e => { const li = e.target.closest('[data-keys]'); hotKeys = new Set(li ? lastAnalysis.issues[+li.dataset.keys].keys : []); drawSchematic(); });
+$('wireIssues').addEventListener('mouseleave', () => { hotKeys = new Set(); drawSchematic(); });
+$('legend').innerHTML = [['Akku / VBAT', WIRE_COLORS.bat], ['5 V', WIRE_COLORS.v5], ['9–12 V', WIRE_COLORS.vaux], ['GND', WIRE_COLORS.gndDark], ['UART', WIRE_COLORS.uart], ['Motorsignal', WIRE_COLORS.motor], ['Motorphasen', WIRE_COLORS.phase], ['Video', WIRE_COLORS.video], ['I2C', WIRE_COLORS.bus]]
+  .map(([n, c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('');
+
+// Werkzeugleiste
+$('wCells').innerHTML = [1, 2, 3, 4, 5, 6, 8].map(n => `<option value="${n}">${n}S (${fmt(n * 4.2, 1)} V)</option>`).join('');
+$('wCells').onchange = e => { W().cells = num(e.target.value); commit(); };
+$('wAssist').onclick = () => { const n = assist(); toast(n ? `${n} Kabel ergänzt.` : 'Nichts zu ergänzen – fehlen Bauteile (FC, ESC …)?', n ? 'ok' : ''); commit(); };
+$('wFromParts').onclick = () => { const n = compsFromParts(); toast(n ? `${n} Bauteile aus der Teileliste angelegt.` : 'Alle Bauteile der Teileliste sind schon im Schaltplan.', n ? 'ok' : ''); commit(); if (n) fit(); };
+$('wUndo').onclick = undo; $('wRedo').onclick = redo;
+$('wZoomIn').onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(1.2, r.width / 2, r.height / 2); };
+$('wZoomOut').onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(1 / 1.2, r.width / 2, r.height / 2); };
+$('wFit').onclick = fit;
+$('wClear').onclick = () => { if (!W().comps.length || !confirm('Schaltplan leeren? (Rückgängig ist möglich.)')) return; W().comps = []; W().wires = []; sel = null; renderInspector(); commit(); };
+$('cliCopy').onclick = async () => { try { await navigator.clipboard.writeText($('cli').textContent); toast('CLI-Befehle kopiert.', 'ok'); } catch (e) { toast('Kopieren nicht möglich – Text markieren und kopieren.', 'err'); } };
+if (window.WERKSTATT_CONFIG && window.WERKSTATT_CONFIG.betaflight === false) $('cliBf').hidden = true;
+
+// =====================================================================
+// Export
+// =====================================================================
+function exportSvgString() {
+  const b = bounds() || { x0: 0, y0: 0, x1: 400, y1: 200 };
+  const w = Math.ceil(b.x1 - b.x0), h = Math.ceil(b.y1 - b.y0) + 40;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${b.x0} ${b.y0 - 30} ${w} ${h}">
+<rect x="${b.x0}" y="${b.y0 - 30}" width="${w}" height="${h}" fill="#ffffff"/>
+<text x="${b.x0 + 10}" y="${b.y0 - 10}" font-family="sans-serif" font-size="16" font-weight="600" fill="#1b2126">${esc(S.name)} – Schaltplan</text>
+${schematicMarkup(true)}
+</svg>`;
+}
+function csvString() {
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [['Kategorie', 'Name', 'Anzahl', 'Gewicht je Stück (g)', `Preis je Stück (${S.currency})`, 'Gewicht gesamt (g)', `Preis gesamt (${S.currency})`, 'Daten', 'Link']];
+  for (const p of S.parts) {
+    const specs = CAT[p.cat].fields.filter(f => p.specs?.[f[0]] !== undefined && p.specs?.[f[0]] !== '').map(f => `${f[1]}: ${p.specs[f[0]]}`).join('; ');
+    rows.push([CAT[p.cat].name, p.name, p.qty, p.weight, p.price, (num(p.weight) * num(p.qty)).toFixed(1), (num(p.price) * num(p.qty)).toFixed(2), specs, p.link]);
+  }
+  const c = calc();
+  rows.push([], ['Summe', '', '', '', '', c.auw.toFixed(1), c.price.toFixed(2)]);
+  return '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n');
+}
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(entries) {
+  const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
+  const d = new Date(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dt = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const { name, data } of entries) {
+    const nb = enc.encode(name), crc = crc32(data), sz = data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);
+    lh.setUint16(10, tm, true); lh.setUint16(12, dt, true); lh.setUint32(14, crc, true); lh.setUint32(18, sz, true); lh.setUint32(22, sz, true); lh.setUint16(26, nb.length, true);
+    parts.push(new Uint8Array(lh.buffer), nb, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(12, tm, true); ch.setUint16(14, dt, true); ch.setUint32(16, crc, true); ch.setUint32(20, sz, true); ch.setUint32(24, sz, true); ch.setUint16(28, nb.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), nb); offset += 30 + nb.length + sz;
+  }
+  const cd = central.reduce((a, p) => a + p.length, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true); end.setUint32(12, cd, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+const baseName = () => (S.name || 'build').replace(/[^\w\-äöüÄÖÜ ]+/g, '').trim().replace(/\s+/g, '-') || 'build';
+function buildZip() {
+  const enc = new TextEncoder(), c = calc();
+  const summary = [`${S.name}`, '', `Abfluggewicht: ${fmt(c.auw)} g (ohne Akku ${fmt(c.dry)} g)`, `Preis: ${money(c.price)}`,
+    `Schub/Gewicht: ${c.ratio === null ? '–' : fmt(c.ratio, 1) + ' : 1'}`, `Flugzeit (Schätzung): ${c.flight ? `${fmt(c.flight.freestyle, 1)}–${fmt(c.flight.hover, 1)} min` : '–'}`,
+    '', 'Prüfung Teile:', ...partChecks(c).map(i => `- ${i.msg}`), '', 'Prüfung Verkabelung:', ...lastAnalysis.issues.map(i => `- ${i.msg}`)].join('\r\n');
+  const files = [
+    { name: 'build.json', data: enc.encode(JSON.stringify(S, null, 1)) },
+    { name: 'teileliste.csv', data: enc.encode(csvString()) },
+    { name: 'zusammenfassung.txt', data: enc.encode(summary) },
+  ];
+  if (W().comps.length) files.push({ name: 'schaltplan.svg', data: enc.encode(exportSvgString()) }, { name: 'betaflight-cli.txt', data: enc.encode(buildCli(lastAnalysis)) });
+  return makeZip(files);
+}
+function download(blob, filename) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast(`${filename} gespeichert.`, 'ok');
+}
+$('dlZip').onclick = () => download(buildZip(), `${baseName()}.zip`);
+$('dlCsv').onclick = () => download(new Blob([csvString()], { type: 'text/csv' }), `${baseName()}-teileliste.csv`);
+$('wSvg').onclick = () => { if (!W().comps.length) return toast('Der Schaltplan ist leer.', 'err'); download(new Blob([exportSvgString()], { type: 'image/svg+xml' }), `${baseName()}-schaltplan.svg`); };
+$('wPng').onclick = () => {
+  if (!W().comps.length) return toast('Der Schaltplan ist leer.', 'err');
+  const src = exportSvgString(), img = new Image();
+  const m = src.match(/width="(\d+)" height="(\d+)"/), w = +m[1], h = +m[2], scale = Math.min(2, 4000 / Math.max(w, h));
+  img.onload = () => {
+    const cv = document.createElement('canvas'); cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+    const g = cv.getContext('2d'); g.scale(scale, scale); g.drawImage(img, 0, 0, w, h);
+    cv.toBlob(b => download(b, `${baseName()}-schaltplan.png`), 'image/png');
+  };
+  img.onerror = () => toast('PNG-Export nicht möglich – SVG verwenden.', 'err');
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(src);
+};
+
+// =====================================================================
+// Vorlagen, Kopfzeile, Tabs
+// =====================================================================
+function loadTemplate(key) {
+  if (key === 'empty') { S = { ...DEFAULT(), currency: S.currency, tab: S.tab }; }
+  else {
+    const t = TEMPLATES[key];
+    if (!t) return;
+    S = { ...DEFAULT(), currency: S.currency, tab: S.tab, name: t.name, parts: t.parts() };
+    S.wiring.cells = t.cells;
+    compsFromParts();
+    assist();
+  }
+  sel = null; wireFrom = null;
+  $('bName').value = S.name;
+  renderParts(); commit(); renderInspector();
+  if (!$('viewWiring').hidden) fit();
+}
+$('bTemplate').onchange = e => {
+  const key = e.target.value; e.target.value = '';
+  if (!key) return;
+  if ((S.parts.length || W().comps.length) && !confirm('Den aktuellen Build ersetzen? (Rückgängig ist möglich.)')) return;
+  loadTemplate(key);
+  toast(key === 'empty' ? 'Neuer leerer Build.' : 'Vorlage geladen – alle Werte sind Beispiele, bitte durch deine Teile ersetzen.', 'ok');
+};
+$('bName').oninput = e => { S.name = e.target.value; persist(); };
+$('bName').onchange = () => commit();
+$('bCurrency').onchange = e => { S.currency = e.target.value; renderParts(); commit(); };
+function setTab(tab) {
+  S.tab = tab;
+  $('tabParts').setAttribute('aria-selected', String(tab === 'parts'));
+  $('tabWiring').setAttribute('aria-selected', String(tab === 'wiring'));
+  $('viewParts').hidden = tab !== 'parts';
+  $('viewWiring').hidden = tab !== 'wiring';
+  if (tab === 'wiring') requestAnimationFrame(() => (W().comps.length ? fit() : drawSchematic()));
+  persist();
+}
+$('tabParts').onclick = () => setTab('parts');
+$('tabWiring').onclick = () => setTab('wiring');
+
+function refresh() {
+  renderSummary();
+  lastAnalysis = analyze();
+  renderIssues(lastAnalysis);
+  $('cli').textContent = buildCli(lastAnalysis);
+  $('wCells').value = String(W().cells);
+  $('wUndo').disabled = !undoStack.length; $('wRedo').disabled = !redoStack.length;
+  if (!$('viewWiring').hidden) drawSchematic();
+}
+
+// =====================================================================
+// Im Bollisoft-Konto speichern (konto.js)
+// =====================================================================
+async function applyState(saved) {
+  if (!saved || !Array.isArray(saved.parts)) throw new Error('Der gespeicherte Build ist beschädigt.');
+  S = { ...DEFAULT(), ...saved, wiring: { ...DEFAULT().wiring, ...saved.wiring } };
+  fixUid(); sel = null; wireFrom = null;
+  $('bName').value = S.name; $('bCurrency').value = S.currency;
+  renderParts(); renderInspector(); commit(); setTab(S.tab || 'parts');
+}
+if (window.WerkstattKonto && !window.claude) {
+  window.WerkstattKonto.mount({
+    kind: 'build', label: 'Build', storageKey: 'build-studio-konto',
+    saveBtn: $('srvSave'), newBtn: $('srvNew'), hint: $('srvHint'), toast,
+    collect: async () => {
+      const c = calc();
+      const detail = [c.propSize ? `${fmt(c.propSize, 1)}"` : '', c.cells ? `${c.cells}S` : '', c.auw ? `${fmt(c.auw)} g` : '', c.price ? money(c.price) : ''].filter(Boolean).join(' · ');
+      return { name: S.name || 'Build', detail, state: S, zip: buildZip() };
+    },
+    apply: async saved => applyState(saved),
+  });
+} else { $('srvSave').closest('.btn-row').hidden = true; $('srvHint').hidden = true; }
+
+// ---------- Start ----------
+if (!S.parts.length && !W().comps.length) { loadTemplate('freestyle5'); undoStack.length = 0; lastSnap = JSON.stringify(S); }
+$('bName').value = S.name; $('bCurrency').value = S.currency;
+renderParts(); renderInspector(); refresh(); setTab(S.tab || 'parts');
+window.addEventListener('resize', () => { if (!$('viewWiring').hidden) drawSchematic(); });
+})();
+</script>
+</body>
+</html>

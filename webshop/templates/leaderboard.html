@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ _("Bollisoft – Leaderboard") }}{% if land %} – {{ land|country_name }}{% endif %}{% endblock %}
+{% block title %}{{ _("Bollisoft – Leaderboard") }}{% if cells %} – {{ cells }}S{% endif %}{% if land %} – {{ land|country_name }}{% endif %}{% endblock %}
 
 {% block head %}
   <meta name="description" content="{{ _("FPV-Trick-Leaderboard: die besten Flüge aus dem Blackbox Viewer – weltweit und nach Ländern.") }}" />
@@ -10,7 +10,7 @@
   <section class="lb-page">
     <div class="forum-hero">
       <p class="forum-kicker">{{ _("Blackbox Viewer") }}</p>
-      <h1>{{ _("Leaderboard") }}{% if land %} · {{ land|country_name }}{% endif %}</h1>
+      <h1>{{ _("Leaderboard") }}{% if cells %} · {{ cells }}S{% endif %}{% if land %} · {{ land|country_name }}{% endif %}</h1>
       <p class="license-intro">
         {{ _("Punkte aus erkannten Tricks in echten Blackbox-Logs – jeder Eintrag mit Video und Overlay. Eigene Flüge reichst du im") }} <a href="/blackbox-viewer/">{{ _("Blackbox Viewer") }}</a> {{ _("ein.") }}
       </p>
@@ -18,9 +18,18 @@
 
     <form class="lb-filters" method="get" action="{{ url_for('leaderboard_pages.page') }}">
       <div class="lb-toggle" role="group" aria-label="{{ _("Ansicht") }}">
-        <a href="{{ url_for('leaderboard_pages.page', land=land or None) }}"{% if view == "piloten" %} aria-current="true"{% endif %}>{{ _("Beste pro Pilot") }}</a>
-        <a href="{{ url_for('leaderboard_pages.page', ansicht='fluege', land=land or None) }}"{% if view == "fluege" %} aria-current="true"{% endif %}>{{ _("Alle Flüge") }}</a>
+        <a href="{{ url_for('leaderboard_pages.page', land=land or None, klasse=klasse) }}"{% if view == "piloten" %} aria-current="true"{% endif %}>{{ _("Beste pro Pilot") }}</a>
+        <a href="{{ url_for('leaderboard_pages.page', ansicht='fluege', land=land or None, klasse=klasse) }}"{% if view == "fluege" %} aria-current="true"{% endif %}>{{ _("Alle Flüge") }}</a>
       </div>
+      <label class="lb-country">
+        <span>{{ _("Akku") }}</span>
+        <select name="klasse" onchange="this.form.submit()">
+          <option value="">{{ _("Alle Klassen") }}</option>
+          {% for c in cell_classes %}
+            <option value="{{ c }}s"{% if c == cells %} selected{% endif %}>{{ c }}S</option>
+          {% endfor %}
+        </select>
+      </label>
       <label class="lb-country">
         <span>{{ _("Land") }}</span>
         <select name="land" onchange="this.form.submit()">
@@ -34,9 +43,9 @@
       {% if view == "fluege" %}<input type="hidden" name="ansicht" value="fluege" />{% endif %}
       <noscript><button class="btn btn-secondary btn-small">{{ _("Anzeigen") }}</button></noscript>
       {% if own_country and own_country != land %}
-        <a class="btn btn-secondary btn-small" href="{{ url_for('leaderboard_pages.page', land=own_country, ansicht=('fluege' if view == 'fluege' else None)) }}">{{ _("Mein Land:") }} {{ own_country|country_name }}</a>
+        <a class="btn btn-secondary btn-small" href="{{ url_for('leaderboard_pages.page', land=own_country, ansicht=('fluege' if view == 'fluege' else None), klasse=klasse) }}">{{ _("Mein Land:") }} {{ own_country|country_name }}</a>
       {% elif land %}
-        <a class="btn btn-secondary btn-small" href="{{ url_for('leaderboard_pages.page', ansicht=('fluege' if view == 'fluege' else None)) }}">{{ _("Weltweit anzeigen") }}</a>
+        <a class="btn btn-secondary btn-small" href="{{ url_for('leaderboard_pages.page', ansicht=('fluege' if view == 'fluege' else None), klasse=klasse) }}">{{ _("Weltweit anzeigen") }}</a>
       {% endif %}
     </form>
 
@@ -50,6 +59,7 @@
                   <th>{{ _("Platz im Land") if land else _("Platz") }}</th>
                   <th>{{ _("Pilot") }}</th>
                   <th class="lb-num">{{ _("Punkte") }}</th>
+                  <th>{{ _("Akku") }}</th>
                   <th class="lb-num">{{ _("Tricks") }}</th>
                   <th>{{ _("Bester Trick") }}</th>
                   <th>{{ _("Datum") }}</th>
@@ -62,7 +72,7 @@
                   <tr class="{% if item.rank <= 3 %}lb-top lb-top-{{ item.rank }}{% endif %}">
                     <td class="lb-rank">
                       <span class="lb-medal">{{ item.rank }}</span>
-                      {% if land %}<small>#{{ item.global_rank }} {{ _("weltweit") }}</small>{% endif %}
+                      {% if land %}<small>#{{ item.global_rank }} {{ _("weltweit") }}{% if cells %} · {{ cells }}S{% endif %}</small>{% endif %}
                     </td>
                     <td>
                       <div class="lb-pilot">
@@ -76,6 +86,7 @@
                       </div>
                     </td>
                     <td class="lb-num lb-score">{{ "{:,}".format(row.score).replace(",", "'") }}</td>
+                    <td>{% if row.cells %}<span class="lb-cells">{{ row.cells }}S</span>{% else %}<small>–</small>{% endif %}</td>
                     <td class="lb-num">{{ row.tricks }}</td>
                     <td>{{ row.best or "–" }}{% if row.max_combo > 1 %} <small>· {{ row.max_combo }}{{ _("× Combo") }}</small>{% endif %}</td>
                     <td><small>{{ (row.created_at|forum_time)[:10] }}</small></td>
@@ -88,13 +99,13 @@
               </tbody>
             </table>
           </div>
-          <p class="form-hint">{{ total }} {{ _("Pilot") if view == "piloten" and total == 1 else (_("Piloten") if view == "piloten" else (_("Flug") if total == 1 else _("Flüge"))) }}{% if land %} · {{ land|country_name }}{% endif %}</p>
+          <p class="form-hint">{{ total }} {{ _("Pilot") if view == "piloten" and total == 1 else (_("Piloten") if view == "piloten" else (_("Flug") if total == 1 else _("Flüge"))) }}{% if cells %} · {{ cells }}S{% endif %}{% if land %} · {{ land|country_name }}{% endif %}</p>
           {% set page_endpoint = "leaderboard_pages.page" %}
-          {% set page_args = {"ansicht": ("fluege" if view == "fluege" else None), "land": (land or None)} %}
+          {% set page_args = {"ansicht": ("fluege" if view == "fluege" else None), "land": (land or None), "klasse": klasse} %}
           {% include "_forum_pagination.html" %}
         {% else %}
           <p class="form-hint">
-            {% if land %}{{ _("Aus {country} gibt es noch keine Einträge – sei die oder der Erste!", country=land|country_name) }}{% else %}{{ _("Noch keine Einträge.") }}{% endif %}
+            {% if land %}{{ _("Aus {country} gibt es noch keine Einträge – sei die oder der Erste!", country=land|country_name) }}{% elif cells %}{{ _("In dieser Akku-Klasse gibt es noch keine Einträge.") }}{% else %}{{ _("Noch keine Einträge.") }}{% endif %}
             <a href="/blackbox-viewer/">{{ _("Zum Blackbox Viewer") }}</a>
           </p>
         {% endif %}
@@ -107,7 +118,7 @@
             <ol class="lb-countries">
               {% for c in overview %}
                 <li>
-                  <a href="{{ url_for('leaderboard_pages.page', land=c.code, ansicht=('fluege' if view == 'fluege' else None)) }}"{% if c.code == land %} aria-current="true"{% endif %}>
+                  <a href="{{ url_for('leaderboard_pages.page', land=c.code, ansicht=('fluege' if view == 'fluege' else None), klasse=klasse) }}"{% if c.code == land %} aria-current="true"{% endif %}>
                     <span class="lb-flag">{{ c.code }}</span>
                     <span class="lb-country-name">{{ c.code|country_name }}<small>{{ c.pilots }} {{ _("Pilot") if c.pilots == 1 else _("Piloten") }} {{ _("· beste:") }} {{ c.top.pilot }}</small></span>
                     <span class="lb-country-score">{{ "{:,}".format(c.top.score).replace(",", "'") }}</span>

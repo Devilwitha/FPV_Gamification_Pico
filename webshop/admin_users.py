@@ -30,6 +30,7 @@ import db
 import leaderboard
 import pilot_license
 import roles
+import trick_labels
 import tx15_backups
 import tx15_projects
 from tx15_backups import remove_file
@@ -160,6 +161,7 @@ def _contents(email):
         "size": row["video_size"] + row["log_size"], "has_video": bool(row["video_filename"]),
     } for row in db.leaderboard_rows_for(email)]
     attachments = db.forum_attachments_by(email)
+    trick_marks = trick_labels.labels_of(email)
     posts = db.forum_posts_by(email)
     licence = db.get_pilot_license(email)
     avatar_size = _file_size(community.AVATAR_DIR / profile["avatar_filename"]) if profile and profile["avatar_filename"] else 0
@@ -169,6 +171,7 @@ def _contents(email):
         "copters": sum(c["image_size"] for c in copters),
         "leaderboard": sum(e["size"] for e in entries),
         "attachments": sum(a["size"] for a in attachments),
+        "tricks": sum(m["size"] for m in trick_marks),
         "licence": licence["size"] if licence else 0,
         "avatar": avatar_size,
     }
@@ -182,6 +185,7 @@ def _contents(email):
         "copters": copters,
         "entries": entries,
         "attachments": attachments,
+        "trick_marks": trick_marks,
         "posts": posts,
         "licence": licence,
         "sizes": sizes,
@@ -251,6 +255,12 @@ def _delete_item(email, kind, item_id):
             if name:
                 remove_file(leaderboard.MEDIA_DIR / name)
         return f"Leaderboard-Eintrag ({row['score']} Punkte) gelöscht."
+    if kind == "trickmarke":
+        row = db.trick_label_get(item_id)
+        if row is None or row["email"].lower() != email.lower():
+            return None
+        trick_labels.delete_label(item_id)
+        return f"Trick-Markierung #{item_id} gelöscht."
     if kind == "ausweis":
         filename = db.delete_pilot_license(email)
         if filename is None:
@@ -270,6 +280,8 @@ def delete_account(email, with_posts=True):
         _delete_item(email, "copter", row["id"])
     for row in db.leaderboard_rows_for(email):
         _delete_item(email, "leaderboard", row["id"])
+    for mark in trick_labels.labels_of(email):
+        _delete_item(email, "trickmarke", mark["id"])
     _delete_item(email, "ausweis", 0)
     community.remove_avatar(email)
     if with_posts:

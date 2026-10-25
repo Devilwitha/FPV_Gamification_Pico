@@ -334,3 +334,36 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
 .entry-admin p { margin: 0; }
 .entry-reports { margin: 0; padding-left: 20px; font-size: 12px; display: grid; gap: 4px; max-height: 180px; overflow-y: auto; }
 .entry-head a.btn, .entry-head a.btn:hover { text-decoration: none; }
+
+.trick-list .pts small.repeat { color: #fb8500; }
+
+/* ---------- battery class ---------- */
+.submit-row select { width: 76px; flex: none; }
+.cells-hint { margin: 6px 0 0; }
+.cells-hint:empty { display: none; }
+
+/* ---------- trick marking ---------- */
+.legend .mark-toggle { margin-left: auto; font-family: var(--f-body); }
+.mark-toggle.active { border-color: #f15bb5; color: #f15bb5; background: rgba(241, 91, 181, 0.12); }
+.mark-panel { margin-top: 12px; padding: 14px; border: 1px dashed #f15bb5; border-radius: var(--radius-s); background: var(--panel-2); }
+.mark-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 10px; }
+.mark-head h2 { margin: 0; font-size: 15px; }
+.mark-grid { display: grid; gap: 10px; }
+.mark-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mark-range strong { font: 12px var(--f-mono); }
+.mark-field { display: grid; gap: 4px; max-width: 420px; }
+.mark-new { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px; }
+@media (max-width: 640px) { .mark-new { grid-template-columns: minmax(0, 1fr); } }
+.trick-list li.marked { border: 1px dashed #f15bb5; }
+.trick-list li.marked .pts { display: flex; align-items: center; gap: 6px; }
+.mark-remove { width: 24px; height: 24px; font-size: 15px; }
+.badge.mark { background: rgba(241, 91, 181, 0.14); color: #f9a8d4; }
+.badge.community { background: rgba(144, 190, 109, 0.16); color: #b5e48c; }
+
+/* ---------- community model / own marks ---------- */
+.ml-head { margin: 18px 0 6px; font-size: 14px; }
+.my-marks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.my-marks li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--panel-2); font-size: 13px; }
+.badge.status-pending { background: rgba(254, 228, 64, 0.14); color: var(--warn); }
+.badge.status-approved { background: var(--accent-soft); color: var(--accent); }
+.badge.status-rejected { background: rgba(248, 113, 113, 0.14); color: var(--accent-2); }

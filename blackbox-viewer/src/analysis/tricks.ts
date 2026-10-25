@@ -10,9 +10,12 @@
 // 4. With a trustworthy attitude (accelerometer logged): Yaw Spin while inverted → Trippy Spin,
 //    holding inverted → Inverted Hang, nose down with low throttle → Dive. A slow 360° yaw → Orbit.
 // 5. Every candidate gets a feature vector (used by the optional kNN classifier) and points.
+// 6. Gaps are searched with the community model (learned.ts): approved marked examples, including
+//    community tricks ("c<id>") that have no rule at all.
 import { cumulative, pt1ZeroPhase } from './filters.ts';
+import { findLearnedTricks, type LabelExample } from './learned.ts';
 import { rotationAt } from './orientation.ts';
-import type { FlightData, Trick, TrickType, Vec3Arr } from '../types.ts';
+import type { BuiltinTrickType, FlightData, Trick, TrickType, Vec3Arr } from '../types.ts';
 
 export interface DetectSettings {
   startRate: number;
@@ -27,6 +30,7 @@ export interface DetectSettings {
   yawMinPeak: number;
   seqGap: number;
   comboWindow: number;
+  repeatGap: number;
   hangMinTime: number;
   diveMinTime: number;
   diveMaxThrottle: number;
@@ -46,18 +50,19 @@ export const DEFAULT_SETTINGS: DetectSettings = {
   yawMinPeak: 450,
   seqGap: 0.6,
   comboWindow: 1.5,
+  repeatGap: 5,
   hangMinTime: 0.8,
   diveMinTime: 0.7,
   diveMaxThrottle: 0.3,
   orbitMinTime: 2,
 };
 
-export const TRICK_TYPES: TrickType[] = [
+export const TRICK_TYPES: BuiltinTrickType[] = [
   'roll', 'flip', 'powerloop', 'mattyflip', 'splits', 'immelmann', 'yawspin', 'trippyspin',
   'corkscrew', 'helix', 'orbit', 'invertedhang', 'dive', 'none',
 ];
 
-export const TRICK_LABEL: Record<TrickType, string> = {
+export const TRICK_LABEL: Record<string, string> = {
   roll: 'Roll',
   flip: 'Flip',
   powerloop: 'Power Loop',
@@ -74,7 +79,7 @@ export const TRICK_LABEL: Record<TrickType, string> = {
   none: 'Kein Trick',
 };
 
-export const TRICK_COLOR: Record<TrickType, string> = {
+export const TRICK_COLOR: Record<string, string> = {
   roll: '#ff4d6d',
   flip: '#3ddc97',
   powerloop: '#ffb703',
@@ -91,7 +96,7 @@ export const TRICK_COLOR: Record<TrickType, string> = {
   none: '#6b7280',
 };
 
-const BASE_POINTS: Record<TrickType, number> = {
+const BASE_POINTS: Record<string, number> = {
   roll: 100,
   flip: 120,
   powerloop: 250,
@@ -107,6 +112,49 @@ const BASE_POINTS: Record<TrickType, number> = {
   dive: 160,
   none: 0,
 };
+
+/** Community trick approved on the website (key "c<id>"); `pending` = own request, not yet approved. */
+export interface CustomTrick {
+  key: string;
+  name: string;
+  points: number;
+  description?: string;
+  pending?: boolean;
+}
+
+let customTricks: CustomTrick[] = [];
+
+export const isBuiltin = (type: TrickType): type is BuiltinTrickType => (TRICK_TYPES as string[]).includes(type);
+
+/** Stable colour per community trick (hex, the timeline appends an alpha suffix). */
+function customColor(key: string): string {
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  const hue = (h * 137) % 360;
+  const f = (n: number) => {
+    const k = (n + hue / 30) % 12;
+    const c = 0.65 - 0.35 * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(c * 255).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+/** Replace the known community tricks (names, colours, points). */
+export function registerCustomTricks(list: CustomTrick[]) {
+  for (const c of customTricks) {
+    delete TRICK_LABEL[c.key];
+    delete TRICK_COLOR[c.key];
+    delete BASE_POINTS[c.key];
+  }
+  customTricks = list.filter((c) => !isBuiltin(c.key));
+  for (const c of customTricks) {
+    TRICK_LABEL[c.key] = c.name;
+    TRICK_COLOR[c.key] = customColor(c.key);
+    BASE_POINTS[c.key] = c.points;
+  }
+}
+
+export const getCustomTricks = () => customTricks;
 
 /** Tricks without a rotation goal – the HUD shows elapsed time instead of degrees. */
 export const HOLD_TRICKS: TrickType[] = ['invertedhang', 'dive'];
@@ -128,6 +176,8 @@ interface Candidate {
   count: number;
   axis: 0 | 1 | 2;
   sign: number;
+  /** found by the community model */
+  learned?: boolean;
 }
 
 export interface Analysis {
@@ -141,7 +191,7 @@ export interface Analysis {
 export type Labeler = (features: number[]) => { label: TrickType; confidence: number } | null;
 
 export function trickName(type: TrickType, count: number): string {
-  const base = TRICK_LABEL[type];
+  const base = TRICK_LABEL[type] ?? type;
   if (count <= 1 || type === 'none') return base;
   const prefix = count === 2 ? 'Double' : count === 3 ? 'Triple' : count === 4 ? 'Quad' : `${count}×`;
   return `${prefix} ${base}`;
@@ -250,7 +300,7 @@ function coveredBy(f: FlightData, i0: number, i1: number, cands: Candidate[]): n
 export function detectTricks(
   f: FlightData,
   s: DetectSettings,
-  opts: { labeler?: Labeler | null; userLabels?: Map<string, TrickType> } = {},
+  opts: { labeler?: Labeler | null; userLabels?: Map<string, TrickType>; learned?: LabelExample[] | null } = {},
 ): Analysis {
   const smooth = f.gyro.map((g) => pt1ZeroPhase(g, f.rate, s.smoothHz)) as Vec3Arr;
   const cum = f.gyro.map((g) => cumulative(g, f.t)) as [Float64Array, Float64Array, Float64Array];
@@ -407,9 +457,24 @@ export function detectTricks(
   }
 
   const final = cands.filter((c) => c.type !== 'none');
+  // Community model: approved examples fill the gaps the rules left
+  const learned: [number, number][] = [];
+  if (opts.learned?.length) {
+    const known = new Set([...TRICK_TYPES, ...customTricks.map((c) => c.key)] as string[]);
+    const examples = opts.learned.filter((e) => known.has(e.label));
+    for (const h of findLearnedTricks(f, cum, smooth, examples, final.map((c): [number, number] => [c.i0, c.i1]))) {
+      const angles = [0, 1, 2].map((ax) => cum[ax][h.i1] - cum[ax][h.i0]);
+      const dominant = angles.reduce((best, v, ax) => (Math.abs(v) > Math.abs(angles[best]) ? ax : best), 0) as 0 | 1 | 2;
+      final.push({ i0: h.i0, i1: h.i1, type: h.label, count: countFor(h.label, angles), axis: dominant, sign: 1, learned: true });
+      learned.push([h.i0, h.i1]);
+    }
+  }
   // Leftover sizeable rotations become "none" candidates so the user/ML can label them
+  const inLearned = (run: Run) => learned.some(([a, b]) => Math.min(run.i1, b) - Math.max(run.i0, a) > 0.5 * (run.i1 - run.i0));
   for (const run of runs) {
-    if (!run.used && Math.abs(run.angle) >= 120) final.push({ i0: run.i0, i1: run.i1, type: 'none', count: 0, axis: run.axis, sign: run.sign });
+    if (!run.used && Math.abs(run.angle) >= 120 && !inLearned(run)) {
+      final.push({ i0: run.i0, i1: run.i1, type: 'none', count: 0, axis: run.axis, sign: run.sign });
+    }
   }
   final.sort((a, b) => a.i0 - b.i0);
 
@@ -419,9 +484,9 @@ export function detectTricks(
     const { angles, duration, meanThrottle, peak, features } = spanFeatures(f, analysis, c.i0, c.i1);
     const key = f.t[c.i0].toFixed(2);
     let type = c.type;
-    let source: Trick['source'] = 'rules';
+    let source: Trick['source'] = c.learned ? 'community' : 'rules';
     let count = c.count;
-    const ml = opts.labeler?.(features);
+    const ml = c.learned ? null : opts.labeler?.(features);
     if (ml && ml.confidence >= 0.6 && ml.label !== type) {
       type = ml.label;
       source = 'ml';
@@ -442,7 +507,7 @@ export function detectTricks(
         ? Math.max(0, 1 - Math.abs(angles[2]) / (Math.abs(angles[0]) + Math.abs(angles[1]) || 1))
         : type === 'helix'
           ? Math.max(0, 1 - Math.abs(angles[1]) / (Math.abs(angles[0]) + Math.abs(angles[2]) || 1))
-          : type === 'orbit' || HOLD_TRICKS.includes(type)
+          : type === 'orbit' || HOLD_TRICKS.includes(type) || !isBuiltin(type)
             ? 1
             : Math.max(0, Math.min(1, 1 - (Math.abs(angles[0]) + Math.abs(angles[1]) + Math.abs(angles[2]) - dominant) / dominant));
     const dirSign = Math.sign(angles[axis]);
@@ -467,6 +532,8 @@ export function detectTricks(
       basePoints: 0,
       comboLevel: 0,
       comboMult: 1,
+      repeat: 0,
+      repeatMult: 1,
       points: 0,
       source,
       features,
@@ -478,10 +545,20 @@ export function detectTricks(
   return analysis;
 }
 
+/** Repeats score less: the same trick directly again gives half the points, then a quarter, … */
+export const REPEAT_FACTOR = 0.5;
+export const REPEAT_MIN = 0.125;
+/** At most this many identical tricks in a row count for one combo; the next one starts a new combo. */
+export const MAX_SAME_IN_COMBO = 2;
+
 export function scoreTricks(tricks: Trick[], s: DetectSettings) {
   let combo = 0;
   let lastEnd = -Infinity;
+  let prev: Trick | null = null;
   for (const t of tricks) {
+    // same trick (type) directly after the previous one, without another trick in between
+    t.repeat = prev && prev.type === t.type && t.start - prev.end <= s.repeatGap ? prev.repeat + 1 : 0;
+    t.repeatMult = Math.max(REPEAT_MIN, REPEAT_FACTOR ** t.repeat);
     const countMult = 1 + 0.8 * (t.count - 1);
     let style = 1;
     if (t.type === 'roll' || t.type === 'flip' || t.type === 'yawspin' || t.type === 'trippyspin' || t.type === 'corkscrew' || t.type === 'helix') {
@@ -493,12 +570,13 @@ export function scoreTricks(tricks: Trick[], s: DetectSettings) {
       style = Math.min(1.5, Math.max(1, t.duration / 1.2));
     }
     const clean = 0.6 + 0.4 * t.purity;
-    t.basePoints = Math.round((BASE_POINTS[t.type] * countMult * style * clean) / 5) * 5;
-    combo = t.start - lastEnd <= s.comboWindow ? combo + 1 : 0;
+    t.basePoints = Math.round(((BASE_POINTS[t.type] ?? 0) * countMult * style * clean * t.repeatMult) / 5) * 5;
+    combo = t.start - lastEnd <= s.comboWindow && t.repeat < MAX_SAME_IN_COMBO ? combo + 1 : 0;
     t.comboLevel = combo;
     t.comboMult = Math.min(3, 1 + 0.25 * combo);
     t.points = Math.round(t.basePoints * t.comboMult);
     lastEnd = t.end;
+    prev = t;
   }
 }
 

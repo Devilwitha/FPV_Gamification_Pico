@@ -1,10 +1,16 @@
 // RawSeries → FlightData: monotonic time, decimation to ~500 Hz, acc scaling, attitude.
 import { computeOrientation } from '../analysis/orientation.ts';
+import { estimateCells } from './columns.ts';
 import type { FlightData, LogEvent, LogInfo, RawSeries, Vec3Arr } from '../types.ts';
 
 export const TARGET_RATE = 500;
 
-export function buildFlightData(raw: RawSeries, info: Omit<LogInfo, 'srcRate' | 'duration' | 'frames'>, events: LogEvent[], t0Override?: number): FlightData {
+export function buildFlightData(
+  raw: RawSeries,
+  info: Omit<LogInfo, 'srcRate' | 'duration' | 'frames' | 'vbat' | 'cells'>,
+  events: LogEvent[],
+  t0Override?: number,
+): FlightData {
   const N = raw.t.length;
   // keep strictly increasing timestamps only
   const keep: number[] = [];
@@ -67,7 +73,7 @@ export function buildFlightData(raw: RawSeries, info: Omit<LogInfo, 'srcRate' | 
     motor: raw.motor ? avg(raw.motor) : null,
     quat: computeOrientation(t, gyro, acc),
     events: events.filter((e) => e.time >= -1 && e.time <= t[n - 1] + 1),
-    info: { ...info, srcRate, duration: t[n - 1], frames: m },
+    info: { ...info, srcRate, duration: t[n - 1], frames: m, vbat: raw.vbatStart, cells: estimateCells(raw.vbatStart) },
   };
   return flight;
 }

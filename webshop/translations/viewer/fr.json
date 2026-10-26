@@ -368,5 +368,21 @@
  "Der markierte Bereich liegt außerhalb des Videos – Versatz im Tab „Video-Sync“ prüfen.": "La zone marquée est en dehors de la vidéo – vérifie le décalage dans l'onglet « Synchro vidéo ».",
  "Senden an den Admin geht nur mit Video: das Flugvideo laden und im Tab „Video-Sync“ synchronisieren. Ohne Video bleibt die Markierung lokal.": "L'envoi à l'admin nécessite une vidéo : charge la vidéo du vol et synchronise-la dans l'onglet « Synchro vidéo ». Sans vidéo, le marquage reste local.",
  "Senden an den Admin geht nur mit geladenem Flugvideo.": "L'envoi à l'admin nécessite une vidéo du vol chargée.",
- "Prüfe, ob der Flug schon eingereicht wurde …": "Vérification : ce vol a-t-il déjà été envoyé …"
+ "Prüfe, ob der Flug schon eingereicht wurde …": "Vérification : ce vol a-t-il déjà été envoyé …",
+ "Versatz & Drift": "Décalage et dérive",
+ "Videozeit = Versatz + Logzeit × (1 + Drift)": "Temps vidéo = décalage + temps du log × (1 + dérive)",
+ "% Drift": "% dérive",
+ "Läuft das Video mit der Zeit davon, ist die Uhr der Videoaufnahme schneller oder langsamer als die des Flugcontrollers.": "Si la vidéo se décale avec le temps, l'horloge de l'enregistreur est plus rapide ou plus lente que celle du contrôleur de vol.",
+ "Läuft das Video im Lauf des Flugs davon, gleicht die Drift das aus – automatisch per Audio oder mit zwei Ankern.": "Si la vidéo se décale pendant le vol, la dérive le compense – automatiquement via l'audio ou avec deux ancres.",
+ "Ein Anker setzt den Versatz. Ein zweiter Anker möglichst weit entfernt (z. B. am Ende des Flugs) berechnet zusätzlich die Drift.": "Une ancre fixe le décalage. Une deuxième ancre aussi éloignée que possible (p. ex. en fin de vol) calcule en plus la dérive.",
+ "Anker zurücksetzen": "Réinitialiser les ancres",
+ "Anker {0}: Log {1} s ↔ Video {2} s": "Ancre {0} : log {1} s ↔ vidéo {2} s",
+ "Anker {0}: Log {1} s ↔ Video {2} s · Anker {3}: Log {4} s ↔ Video {5} s": "Ancre {0} : log {1} s ↔ vidéo {2} s · ancre {3} : log {4} s ↔ vidéo {5} s",
+ "Versatz {0} s · Konfidenz {1}σ {2} · Drift {3} %": "Décalage {0} s · confiance {1}σ {2} · dérive {3} %",
+ "Versatz {0} s · Konfidenz {1}σ {2} · Drift nicht messbar – bei Bedarf zweiten Anker setzen": "Décalage {0} s · confiance {1}σ {2} · dérive non mesurable – place une deuxième ancre si besoin",
+ "Video: {0}{1} – Log {2} bei Videozeit {3} s. Drift {4} % (Video läuft langsamer als der Log).": "Vidéo : {0}{1} – log {2} au temps vidéo {3} s. Dérive {4} % (la vidéo est plus lente que le log).",
+ "Video: {0}{1} – Log {2} bei Videozeit {3} s. Drift {4} % (Video läuft schneller als der Log).": "Vidéo : {0}{1} – log {2} au temps vidéo {3} s. Dérive {4} % (la vidéo est plus rapide que le log).",
+ "Die beiden Anker passen nicht zusammen (Drift {0} %). Bitte die Stellen prüfen.": "Les deux ancres ne concordent pas (dérive {0} %). Vérifie les positions.",
+ "Versatz {0} s, Drift {1} % aus zwei Ankern.": "Décalage {0} s, dérive {1} % à partir de deux ancres.",
+ "Versatz gesetzt: {0} s – für die Drift einen zweiten Anker weiter hinten im Flug setzen.": "Décalage réglé : {0} s – pour la dérive, place une deuxième ancre plus loin dans le vol."
 }

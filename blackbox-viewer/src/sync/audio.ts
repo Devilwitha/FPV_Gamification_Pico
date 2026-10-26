@@ -170,6 +170,40 @@ export function correlate(video: Float32Array, log: Float32Array, minOverlapSec 
   return { offset: bestK / SYNC_FS, confidence: (best - m) / sd, curve, curveStart: kMin / SYNC_FS, curveStep: 1 / SYNC_FS };
 }
 
+export interface DriftResult {
+  /** videoTime = offset + speed · logTime */
+  offset: number;
+  speed: number;
+  /** offsets measured in the two windows: [log time of window centre, offset] */
+  windows: [number, number][];
+}
+
+/**
+ * Clock drift between video and log: the offset is measured separately in an early and a late window of
+ * the log (each correlated against the whole audio envelope). Video recorders often run a little fast or
+ * slow – a constant offset then drifts apart over a long flight. Returns null if the flight is too short
+ * or the windows are not clearly matched near the global offset.
+ */
+export function estimateDrift(video: Float32Array, log: Float32Array, globalOffset: number): DriftResult | null {
+  const n = log.length;
+  const dur = n / SYNC_FS;
+  if (dur < 75) return null;
+  const winLen = Math.min(Math.round(dur * 0.4), 120);
+  const starts = [Math.round(dur * 0.05), Math.round(dur * 0.95) - winLen];
+  const windows: [number, number][] = [];
+  for (const s0 of starts) {
+    const part = log.subarray(s0 * SYNC_FS, (s0 + winLen) * SYNC_FS);
+    const r = correlate(video, part, Math.min(20, winLen * 0.8));
+    const offset = r.offset - s0;
+    if (r.confidence < 4 || Math.abs(offset - globalOffset) > 3) return null;
+    windows.push([s0 + winLen / 2, offset]);
+  }
+  const [[c1, o1], [c2, o2]] = windows;
+  const drift = (o2 - o1) / (c2 - c1);
+  if (Math.abs(drift) > 0.05) return null;
+  return { speed: 1 + drift, offset: o1 - drift * c1, windows };
+}
+
 /** Times (s) where the throttle is punched up quickly – handy sync anchors. */
 export function throttlePunches(f: FlightData): number[] {
   const out: number[] = [];

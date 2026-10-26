@@ -369,5 +369,21 @@
  "Der markierte Bereich liegt außerhalb des Videos – Versatz im Tab „Video-Sync“ prüfen.": "El tramo marcado está fuera del vídeo – revisa el desfase en la pestaña «Sincronización de vídeo».",
  "Senden an den Admin geht nur mit Video: das Flugvideo laden und im Tab „Video-Sync“ synchronisieren. Ohne Video bleibt die Markierung lokal.": "Enviar al admin requiere un vídeo: carga el vídeo del vuelo y sincronízalo en la pestaña «Sincronización de vídeo». Sin vídeo, la marca queda en local.",
  "Senden an den Admin geht nur mit geladenem Flugvideo.": "Enviar al admin requiere un vídeo del vuelo cargado.",
- "Prüfe, ob der Flug schon eingereicht wurde …": "Comprobando si el vuelo ya se envió …"
+ "Prüfe, ob der Flug schon eingereicht wurde …": "Comprobando si el vuelo ya se envió …",
+ "Versatz & Drift": "Desfase y deriva",
+ "Videozeit = Versatz + Logzeit × (1 + Drift)": "Tiempo de vídeo = desfase + tiempo del log × (1 + deriva)",
+ "% Drift": "% deriva",
+ "Läuft das Video mit der Zeit davon, ist die Uhr der Videoaufnahme schneller oder langsamer als die des Flugcontrollers.": "Si el vídeo se desfasa con el tiempo, el reloj de la grabadora va más rápido o más lento que el de la controladora.",
+ "Läuft das Video im Lauf des Flugs davon, gleicht die Drift das aus – automatisch per Audio oder mit zwei Ankern.": "Si el vídeo se desfasa durante el vuelo, la deriva lo compensa – automáticamente por audio o con dos anclas.",
+ "Ein Anker setzt den Versatz. Ein zweiter Anker möglichst weit entfernt (z. B. am Ende des Flugs) berechnet zusätzlich die Drift.": "Un ancla fija el desfase. Una segunda ancla lo más lejos posible (p. ej. al final del vuelo) calcula además la deriva.",
+ "Anker zurücksetzen": "Restablecer anclas",
+ "Anker {0}: Log {1} s ↔ Video {2} s": "Ancla {0}: log {1} s ↔ vídeo {2} s",
+ "Anker {0}: Log {1} s ↔ Video {2} s · Anker {3}: Log {4} s ↔ Video {5} s": "Ancla {0}: log {1} s ↔ vídeo {2} s · ancla {3}: log {4} s ↔ vídeo {5} s",
+ "Versatz {0} s · Konfidenz {1}σ {2} · Drift {3} %": "Desfase {0} s · confianza {1}σ {2} · deriva {3} %",
+ "Versatz {0} s · Konfidenz {1}σ {2} · Drift nicht messbar – bei Bedarf zweiten Anker setzen": "Desfase {0} s · confianza {1}σ {2} · deriva no medible – pon una segunda ancla si hace falta",
+ "Video: {0}{1} – Log {2} bei Videozeit {3} s. Drift {4} % (Video läuft langsamer als der Log).": "Vídeo: {0}{1} – log {2} en el tiempo de vídeo {3} s. Deriva {4} % (el vídeo va más lento que el log).",
+ "Video: {0}{1} – Log {2} bei Videozeit {3} s. Drift {4} % (Video läuft schneller als der Log).": "Vídeo: {0}{1} – log {2} en el tiempo de vídeo {3} s. Deriva {4} % (el vídeo va más rápido que el log).",
+ "Die beiden Anker passen nicht zusammen (Drift {0} %). Bitte die Stellen prüfen.": "Las dos anclas no coinciden (deriva {0} %). Revisa los puntos.",
+ "Versatz {0} s, Drift {1} % aus zwei Ankern.": "Desfase {0} s, deriva {1} % a partir de dos anclas.",
+ "Versatz gesetzt: {0} s – für die Drift einen zweiten Anker weiter hinten im Flug setzen.": "Desfase fijado: {0} s – para la deriva, pon una segunda ancla más adelante en el vuelo."
 }

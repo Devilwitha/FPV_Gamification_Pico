@@ -368,5 +368,21 @@
  "Der markierte Bereich liegt außerhalb des Videos – Versatz im Tab „Video-Sync“ prüfen.": "Il tratto segnato è fuori dal video – controlla l'offset nella scheda «Sincronizzazione video».",
  "Senden an den Admin geht nur mit Video: das Flugvideo laden und im Tab „Video-Sync“ synchronisieren. Ohne Video bleibt die Markierung lokal.": "L'invio all'admin richiede un video: carica il video del volo e sincronizzalo nella scheda «Sincronizzazione video». Senza video il segno resta locale.",
  "Senden an den Admin geht nur mit geladenem Flugvideo.": "L'invio all'admin richiede un video del volo caricato.",
- "Prüfe, ob der Flug schon eingereicht wurde …": "Verifica se il volo è già stato inviato …"
+ "Prüfe, ob der Flug schon eingereicht wurde …": "Verifica se il volo è già stato inviato …",
+ "Versatz & Drift": "Offset e deriva",
+ "Videozeit = Versatz + Logzeit × (1 + Drift)": "Tempo video = offset + tempo log × (1 + deriva)",
+ "% Drift": "% deriva",
+ "Läuft das Video mit der Zeit davon, ist die Uhr der Videoaufnahme schneller oder langsamer als die des Flugcontrollers.": "Se il video si sfasa col tempo, l'orologio del registratore è più veloce o più lento di quello del flight controller.",
+ "Läuft das Video im Lauf des Flugs davon, gleicht die Drift das aus – automatisch per Audio oder mit zwei Ankern.": "Se il video si sfasa durante il volo, la deriva lo compensa – automaticamente via audio o con due ancore.",
+ "Ein Anker setzt den Versatz. Ein zweiter Anker möglichst weit entfernt (z. B. am Ende des Flugs) berechnet zusätzlich die Drift.": "Un'ancora imposta l'offset. Una seconda ancora il più lontano possibile (ad es. alla fine del volo) calcola anche la deriva.",
+ "Anker zurücksetzen": "Azzera ancore",
+ "Anker {0}: Log {1} s ↔ Video {2} s": "Ancora {0}: log {1} s ↔ video {2} s",
+ "Anker {0}: Log {1} s ↔ Video {2} s · Anker {3}: Log {4} s ↔ Video {5} s": "Ancora {0}: log {1} s ↔ video {2} s · ancora {3}: log {4} s ↔ video {5} s",
+ "Versatz {0} s · Konfidenz {1}σ {2} · Drift {3} %": "Offset {0} s · confidenza {1}σ {2} · deriva {3} %",
+ "Versatz {0} s · Konfidenz {1}σ {2} · Drift nicht messbar – bei Bedarf zweiten Anker setzen": "Offset {0} s · confidenza {1}σ {2} · deriva non misurabile – se serve imposta una seconda ancora",
+ "Video: {0}{1} – Log {2} bei Videozeit {3} s. Drift {4} % (Video läuft langsamer als der Log).": "Video: {0}{1} – log {2} al tempo video {3} s. Deriva {4} % (il video è più lento del log).",
+ "Video: {0}{1} – Log {2} bei Videozeit {3} s. Drift {4} % (Video läuft schneller als der Log).": "Video: {0}{1} – log {2} al tempo video {3} s. Deriva {4} % (il video è più veloce del log).",
+ "Die beiden Anker passen nicht zusammen (Drift {0} %). Bitte die Stellen prüfen.": "Le due ancore non corrispondono (deriva {0} %). Controlla i punti.",
+ "Versatz {0} s, Drift {1} % aus zwei Ankern.": "Offset {0} s, deriva {1} % da due ancore.",
+ "Versatz gesetzt: {0} s – für die Drift einen zweiten Anker weiter hinten im Flug setzen.": "Offset impostato: {0} s – per la deriva imposta una seconda ancora più avanti nel volo."
 }

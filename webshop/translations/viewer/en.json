@@ -362,5 +362,21 @@
  "Der markierte Bereich liegt außerhalb des Videos – Versatz im Tab „Video-Sync“ prüfen.": "The marked span is outside the video – check the offset in the “Video sync” tab.",
  "Senden an den Admin geht nur mit Video: das Flugvideo laden und im Tab „Video-Sync“ synchronisieren. Ohne Video bleibt die Markierung lokal.": "Sending to the admin requires a video: load the flight video and sync it in the “Video sync” tab. Without a video the mark stays local.",
  "Senden an den Admin geht nur mit geladenem Flugvideo.": "Sending to the admin requires a loaded flight video.",
- "Prüfe, ob der Flug schon eingereicht wurde …": "Checking whether this flight was already submitted …"
+ "Prüfe, ob der Flug schon eingereicht wurde …": "Checking whether this flight was already submitted …",
+ "Versatz & Drift": "Offset & drift",
+ "Videozeit = Versatz + Logzeit × (1 + Drift)": "Video time = offset + log time × (1 + drift)",
+ "% Drift": "% drift",
+ "Läuft das Video mit der Zeit davon, ist die Uhr der Videoaufnahme schneller oder langsamer als die des Flugcontrollers.": "If the video drifts away over time, the video recorder's clock runs faster or slower than the flight controller's.",
+ "Läuft das Video im Lauf des Flugs davon, gleicht die Drift das aus – automatisch per Audio oder mit zwei Ankern.": "If the video drifts away during the flight, the drift compensates for it – automatically via audio or with two anchors.",
+ "Ein Anker setzt den Versatz. Ein zweiter Anker möglichst weit entfernt (z. B. am Ende des Flugs) berechnet zusätzlich die Drift.": "One anchor sets the offset. A second anchor as far away as possible (e.g. at the end of the flight) also calculates the drift.",
+ "Anker zurücksetzen": "Reset anchors",
+ "Anker {0}: Log {1} s ↔ Video {2} s": "Anchor {0}: log {1} s ↔ video {2} s",
+ "Anker {0}: Log {1} s ↔ Video {2} s · Anker {3}: Log {4} s ↔ Video {5} s": "Anchor {0}: log {1} s ↔ video {2} s · anchor {3}: log {4} s ↔ video {5} s",
+ "Versatz {0} s · Konfidenz {1}σ {2} · Drift {3} %": "Offset {0} s · confidence {1}σ {2} · drift {3} %",
+ "Versatz {0} s · Konfidenz {1}σ {2} · Drift nicht messbar – bei Bedarf zweiten Anker setzen": "Offset {0} s · confidence {1}σ {2} · drift not measurable – set a second anchor if needed",
+ "Video: {0}{1} – Log {2} bei Videozeit {3} s. Drift {4} % (Video läuft langsamer als der Log).": "Video: {0}{1} – log {2} at video time {3} s. Drift {4} % (video runs slower than the log).",
+ "Video: {0}{1} – Log {2} bei Videozeit {3} s. Drift {4} % (Video läuft schneller als der Log).": "Video: {0}{1} – log {2} at video time {3} s. Drift {4} % (video runs faster than the log).",
+ "Die beiden Anker passen nicht zusammen (Drift {0} %). Bitte die Stellen prüfen.": "The two anchors don't match (drift {0} %). Please check the positions.",
+ "Versatz {0} s, Drift {1} % aus zwei Ankern.": "Offset {0} s, drift {1} % from two anchors.",
+ "Versatz gesetzt: {0} s – für die Drift einen zweiten Anker weiter hinten im Flug setzen.": "Offset set: {0} s – for the drift, set a second anchor later in the flight."
 }

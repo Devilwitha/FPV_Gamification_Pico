@@ -3,6 +3,7 @@ import { simulateFlight } from '../src/demo/simulate.ts';
 import { DEFAULT_SETTINGS, detectTricks, registerCustomTricks, scoreTricks, summarize } from '../src/analysis/tricks.ts';
 import type { Trick } from '../src/types.ts';
 import { estimateCells } from '../src/pipeline/columns.ts';
+import { SYNC_FS, correlate, estimateDrift, logSignal } from '../src/sync/audio.ts';
 import { fingerprints } from '../src/ui/leaderboard.ts';
 import { testBblRoundTrip } from './bbl.test.ts';
 
@@ -44,6 +45,31 @@ scoreTricks(apart, DEFAULT_SETTINGS);
 check('Wiederholung: lange Pause zählt nicht', apart[1].repeat === 0 && apart[1].basePoints === 100);
 const demoRepeats = tricks.filter((t) => t.repeat > 0).map((t) => `${t.name}@${t.start.toFixed(1)}×${t.repeatMult}`);
 check('Wiederholung: Demo-Flug (Roll → Double Roll)', demoRepeats.length >= 1, demoRepeats.join(', '));
+
+// --- video sync: offset + clock drift (videoTime = offset + speed · logTime) ---
+{
+  const sig = logSignal(flight);
+  let seed = 7;
+  const noise = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648 - 0.5) * 0.3;
+  const synth = (offset: number, speed: number) => {
+    const n = Math.round((offset + speed * flight.info.duration + 5) * SYNC_FS);
+    const env = new Float32Array(n);
+    for (let m = 0; m < n; m++) {
+      const lt = (m / SYNC_FS - offset) / speed;
+      const k = Math.round(lt * SYNC_FS);
+      env[m] = (k >= 0 && k < sig.length ? sig[k] : 0) + noise();
+    }
+    return env;
+  };
+  for (const [off, speed] of [[3.2, 0.993], [-1.5, 1.006], [2, 1]] as const) {
+    const env = synth(off, speed);
+    const g = correlate(env, sig);
+    const d = estimateDrift(env, sig, g.offset);
+    const endErr = d ? Math.abs(d.offset + d.speed * flight.info.duration - (off + speed * flight.info.duration)) : Infinity;
+    check(`Sync: Drift ${((speed - 1) * 100).toFixed(1)} % erkannt`, !!d && Math.abs(d.speed - speed) < 0.0015 && endErr < 0.15,
+      d ? `speed ${d.speed.toFixed(5)}, offset ${d.offset.toFixed(3)}, Fehler am Ende ${endErr.toFixed(3)} s` : 'nicht erkannt');
+  }
+}
 
 // --- battery class from the start voltage ---
 const cellCases: [number | null, number | null][] = [

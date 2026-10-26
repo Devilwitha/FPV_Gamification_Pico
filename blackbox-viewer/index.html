@@ -193,8 +193,8 @@
           <p class="muted" id="videoStatus">Kein Video geladen. Ohne Video zeigt die Bühne eine synthetische FPV-Ansicht aus den Lagedaten.</p>
           <div class="grid3">
             <div class="group">
-              <h3>Versatz</h3>
-              <p class="muted small">Videozeit = Logzeit + Versatz</p>
+              <h3>Versatz &amp; Drift</h3>
+              <p class="muted small">Videozeit = Versatz + Logzeit × (1 + Drift)</p>
               <div class="row">
                 <input type="number" id="offset" step="0.01" value="0" />
                 <span>s</span>
@@ -207,6 +207,12 @@
                 <button class="btn tiny" data-nudge="0.1">+0.1</button>
                 <button class="btn tiny" data-nudge="1">+1 s</button>
               </div>
+              <div class="row">
+                <input type="number" id="drift" step="0.01" value="0" title="Läuft das Video mit der Zeit davon, ist die Uhr der Videoaufnahme schneller oder langsamer als die des Flugcontrollers." />
+                <span>% Drift</span>
+                <button class="btn tiny" id="btnDriftReset" type="button">0</button>
+              </div>
+              <p class="muted small">Läuft das Video im Lauf des Flugs davon, gleicht die Drift das aus – automatisch per Audio oder mit zwei Ankern.</p>
             </div>
             <div class="group">
               <h3>Auto-Sync (Audio)</h3>
@@ -229,6 +235,9 @@
                 <span class="small" id="markLog">–</span>
               </div>
               <button class="btn primary tiny" id="btnApplyAnchor" disabled>Anker anwenden</button>
+              <p class="small" id="anchorList"></p>
+              <p class="muted small">Ein Anker setzt den Versatz. Ein zweiter Anker möglichst weit entfernt (z. B. am Ende des Flugs) berechnet zusätzlich die Drift.</p>
+              <button class="btn tiny" id="btnAnchorReset" type="button" hidden>Anker zurücksetzen</button>
             </div>
           </div>
         </div>

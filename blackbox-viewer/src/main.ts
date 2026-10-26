@@ -10,7 +10,7 @@ import {
 } from './analysis/tricks.ts';
 import { MspClient, serialSupported } from './decoder/msp.ts';
 import { simulateFlight } from './demo/simulate.ts';
-import { audioEnvelope, correlate, logSignal, throttlePunches } from './sync/audio.ts';
+import { audioEnvelope, correlate, estimateDrift, logSignal, throttlePunches } from './sync/audio.ts';
 import type { FlightData, Trick, TrickType, WorkerRequest, WorkerResponse } from './types.ts';
 import { DEFAULT_HUD, Hud, type HudOptions } from './ui/hud.ts';
 import {
@@ -73,6 +73,10 @@ const state = {
   hud: load<HudOptions>('bba.hud', DEFAULT_HUD),
   userLabels: new Map<string, TrickType>(),
   offset: 0,
+  /** video clock / log clock: videoTime = offset + speed · logTime (1 = no drift) */
+  speed: 1,
+  /** applied sync anchors (video time ↔ log time); two of them also fix the drift */
+  anchors: [] as { v: number; l: number }[],
   videoFile: null as File | null,
   videoUrl: '',
   clockT: 0,
@@ -231,7 +235,7 @@ function setFlight(f: FlightData) {
   updateVideoUi();
   updateAnchorUi();
   updateSubmit();
-  if (state.videoUrl) seek(Math.max(0, -state.offset));
+  if (state.videoUrl) seek(Math.max(0, -state.offset / state.speed));
   else seek(0);
 }
 
@@ -389,14 +393,18 @@ function highlightActive(t: number) {
 const hasVideo = () => !!state.videoUrl && video.readyState >= 1;
 const duration = () => state.flight?.info.duration ?? 0;
 
+/** Video time ↔ log time, with clock drift: videoTime = offset + speed · logTime. */
+const toVideoTime = (t: number) => state.offset + state.speed * t;
+const toLogTime = (v: number) => (v - state.offset) / state.speed;
+
 function logTime() {
-  return hasVideo() ? video.currentTime - state.offset : state.clockT;
+  return hasVideo() ? toLogTime(video.currentTime) : state.clockT;
 }
 
 function seek(t: number) {
   if (!state.flight) return;
   t = Math.max(0, Math.min(duration(), t));
-  if (hasVideo()) video.currentTime = Math.max(0, Math.min(video.duration || 0, t + state.offset));
+  if (hasVideo()) video.currentTime = Math.max(0, Math.min(video.duration || 0, toVideoTime(t)));
   state.clockT = t;
 }
 
@@ -595,24 +603,31 @@ function loadVideo(file: File) {
   video.addEventListener('error', () => toast('Video kann in diesem Browser nicht abgespielt werden.', 'error'), { once: true });
 }
 
-function setOffset(v: number) {
+function setOffset(v: number, speed = state.speed) {
+  const t = logTime();
   state.offset = Math.round(v * 1000) / 1000;
+  state.speed = Math.round(Math.min(1.1, Math.max(0.9, speed)) * 1e6) / 1e6;
   $<HTMLInputElement>('offset').value = state.offset.toFixed(3);
+  $<HTMLInputElement>('drift').value = ((state.speed - 1) * 100).toFixed(3);
   updateVideoUi();
   updateMarkUi();
+  if (state.flight && hasVideo() && !state.playing) seek(t);
 }
 
 function updateVideoUi() {
   const has = !!state.videoFile;
   $('videoStatus').textContent = has
-    ? `Video: ${state.videoFile!.name}${video.duration ? ` (${fmtTime(video.duration)})` : ''} – Log ${state.offset >= 0 ? 'startet' : 'beginnt'} bei Videozeit ${state.offset.toFixed(2)} s.`
+    ? `Video: ${state.videoFile!.name}${Number.isFinite(video.duration) && video.duration ? ` (${fmtTime(video.duration)})` : ''} – Log ${state.offset >= 0 ? 'startet' : 'beginnt'} bei Videozeit ${state.offset.toFixed(2)} s.` +
+      (state.speed !== 1 ? ` Drift ${((state.speed - 1) * 100).toFixed(2)} % (Video läuft ${state.speed > 1 ? 'langsamer' : 'schneller'} als der Log).` : '')
     : 'Kein Video geladen. Ohne Video zeigt die Bühne eine synthetische FPV-Ansicht aus den Lagedaten.';
   $<HTMLButtonElement>('btnAutoSync').disabled = !(has && state.flight);
   $<HTMLButtonElement>('btnMarkVideo').disabled = !has;
-  timeline.setVideoSpan(has && video.duration ? [-state.offset, video.duration - state.offset] : null);
+  timeline.setVideoSpan(has && video.duration ? [toLogTime(0), toLogTime(video.duration)] : null);
 }
 
 $<HTMLInputElement>('offset').addEventListener('change', (e) => setOffset(Number((e.target as HTMLInputElement).value) || 0));
+$<HTMLInputElement>('drift').addEventListener('change', (e) => setOffset(state.offset, 1 + (Number((e.target as HTMLInputElement).value) || 0) / 100));
+$('btnDriftReset').addEventListener('click', () => setOffset(state.offset, 1));
 document.querySelectorAll<HTMLButtonElement>('[data-nudge]').forEach((b) =>
   b.addEventListener('click', () => setOffset(state.offset + Number(b.dataset.nudge))),
 );
@@ -626,10 +641,16 @@ $('btnAutoSync').addEventListener('click', async () => {
   try {
     if (state.videoFile.size > 1.5e9) throw new Error('Video > 1,5 GB – bitte Anker-Methode verwenden.');
     const env = await audioEnvelope(state.videoFile, (m) => (out.textContent = m));
-    const res = correlate(env, logSignal(f));
-    setOffset(res.offset);
+    const sig = logSignal(f);
+    const res = correlate(env, sig);
+    // Drift: Versatz am Anfang und am Ende des Flugs getrennt messen
+    const drift = res.confidence >= 5 ? estimateDrift(env, sig, res.offset) : null;
+    setOffset(drift ? drift.offset : res.offset, drift ? drift.speed : 1);
+    state.anchors = [];
+    updateAnchorUi();
     const sure = res.confidence >= 5;
-    out.textContent = `Versatz ${res.offset.toFixed(2)} s · Konfidenz ${res.confidence.toFixed(1)}σ ${sure ? '✓' : '– unsicher, bitte prüfen / Anker verwenden'}`;
+    out.textContent = `Versatz ${state.offset.toFixed(2)} s · Konfidenz ${res.confidence.toFixed(1)}σ ${sure ? '✓' : '– unsicher, bitte prüfen / Anker verwenden'}` +
+      (drift ? ` · Drift ${((drift.speed - 1) * 100).toFixed(2)} %` : sure && f.info.duration >= 75 ? ' · Drift nicht messbar – bei Bedarf zweiten Anker setzen' : '');
     drawSyncCurve(res.curve, res.curveStart, res.curveStep, res.offset);
     seek(logTime());
   } catch (err) {
@@ -676,7 +697,14 @@ function updateAnchorUi() {
   $<HTMLButtonElement>('btnSnap').disabled = !f;
   $<HTMLButtonElement>('btnBeep').disabled = !f?.events.some((e) => e.type === 'sync_beep');
   $<HTMLButtonElement>('btnApplyAnchor').disabled = state.markVideo === null || state.markLog === null;
+  $('anchorList').textContent = state.anchors.map((a, i) => `Anker ${i + 1}: Log ${a.l.toFixed(2)} s ↔ Video ${a.v.toFixed(2)} s`).join(' · ');
+  $('btnAnchorReset').hidden = !state.anchors.length;
 }
+$('btnAnchorReset').addEventListener('click', () => {
+  state.anchors = [];
+  setOffset(state.offset, 1);
+  updateAnchorUi();
+});
 $('btnMarkVideo').addEventListener('click', () => {
   state.markVideo = video.currentTime;
   updateAnchorUi();
@@ -705,8 +733,28 @@ $('btnSnap').addEventListener('click', () => {
 });
 $('btnApplyAnchor').addEventListener('click', () => {
   if (state.markVideo === null || state.markLog === null) return;
-  setOffset(state.markVideo - state.markLog);
-  toast(`Versatz gesetzt: ${state.offset.toFixed(3)} s`);
+  const anchor = { v: state.markVideo, l: state.markLog };
+  // ein Anker in der Nähe (< 20 s) wird ersetzt, sonst kommt er dazu – höchstens zwei
+  const others = state.anchors.filter((a) => Math.abs(a.l - anchor.l) >= 20);
+  const pair = others.length ? [others[others.length - 1], anchor].sort((a, b) => a.l - b.l) : [anchor];
+  if (pair.length === 2) {
+    const speed = (pair[1].v - pair[0].v) / (pair[1].l - pair[0].l);
+    if (!(speed > 0.95 && speed < 1.05)) {
+      toast(`Die beiden Anker passen nicht zusammen (Drift ${((speed - 1) * 100).toFixed(1)} %). Bitte die Stellen prüfen.`, 'error', 7000);
+      return;
+    }
+    state.anchors = pair;
+    setOffset(pair[0].v - speed * pair[0].l, speed);
+    toast(`Versatz ${state.offset.toFixed(3)} s, Drift ${((speed - 1) * 100).toFixed(2)} % aus zwei Ankern.`);
+  } else {
+    state.anchors = pair;
+    setOffset(anchor.v - state.speed * anchor.l);
+    toast(`Versatz gesetzt: ${state.offset.toFixed(3)} s – für die Drift einen zweiten Anker weiter hinten im Flug setzen.`);
+  }
+  state.markVideo = null;
+  state.markLog = null;
+  timeline.setMarker(null);
+  updateAnchorUi();
 });
 
 // ---------- detection settings ----------
@@ -1387,7 +1435,7 @@ function rangeFeatures() {
 function videoCoversRange(): boolean {
   const r = marking.range;
   if (!hasVideo() || !r) return hasVideo();
-  return r[0] + state.offset >= -0.05 && r[1] + state.offset <= (video.duration || 0) + 0.05;
+  return toVideoTime(r[0]) >= -0.05 && toVideoTime(r[1]) <= (video.duration || 0) + 0.05;
 }
 const canSend = () => catalog.online && catalog.loggedIn && !isDemoFlight() && hasVideo() && videoCoversRange();
 

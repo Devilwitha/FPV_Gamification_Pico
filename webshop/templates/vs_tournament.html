@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% from "_vs_macros.html" import user_search, user_search_script with context %}
+
+{% block title %}{{ t.name }} – {{ _("Turnier") }} – Bollisoft{% endblock %}
+
+{% block content %}
+  <section class="vs-page">
+    <nav class="forum-breadcrumbs" aria-label="{{ _("Pfad") }}">
+      <a href="{{ url_for('vs.index') }}">{{ _("Duelle & Turniere") }}</a> <span>›</span> <span>{{ t.name }}</span>
+    </nav>
+
+    <div class="forum-hero">
+      <p class="forum-kicker">{{ _("Turnier") }} · {{ _("K.-o.-System") }}</p>
+      <h1>{{ t.name }}</h1>
+      <p class="license-intro">
+        {% if t.status == "signup" %}{{ _("Anmeldung") }}{% if not t.signup_open %} ({{ _("geschlossen") }}){% endif %}
+        {% elif t.status == "running" %}{{ _("läuft") }}{% else %}{{ _("beendet") }}{% endif %}
+        · {{ players|length }}/{{ t.max_players }} {{ _("Piloten") }} · {{ _("Wertungszeit") }} {{ t.limit_s|match_limit }}
+        · {{ _("Leitung") }}: {{ t.organizer_username or "–" }}
+      </p>
+      {% if t.description %}<div class="vs-description">{{ t.description|forum_text }}</div>{% endif %}
+      {% if t.status == "done" and t.winner_username %}<p class="vs-champion">🏆 {{ _("Turniersieger") }}: <a href="{{ url_for('community.profile', username=t.winner_username) }}">{{ t.winner_username }}</a></p>{% endif %}
+    </div>
+
+    <div class="vs-actions">
+      {% if can_join %}
+        <form method="post" action="{{ url_for('vs.join', tournament_id=t.id) }}"><button class="btn btn-primary" type="submit">{{ _("Anmelden") }}</button></form>
+      {% elif joined and t.status == "signup" %}
+        <form method="post" action="{{ url_for('vs.leave', tournament_id=t.id) }}"><button class="btn btn-secondary" type="submit">{{ _("Abmelden") }}</button></form>
+      {% elif not session.get("account_email") and t.status == "signup" %}
+        <a class="btn btn-secondary" href="{{ url_for('login', next=request.path) }}">{{ _("Zum Anmelden einloggen") }}</a>
+      {% endif %}
+    </div>
+
+    {% if manager and t.status == "signup" %}
+      <section class="profile-card">
+        <h2>{{ _("Turnierleitung") }}</h2>
+        <form class="vs-form" method="post" action="{{ url_for('vs.add_player', tournament_id=t.id) }}">
+          <label class="form-field"><span>{{ _("Pilot hinzufügen") }}</span>{{ user_search("username", "vs-add-player", _("Benutzername suchen …")) }}</label>
+          <button class="btn btn-secondary" type="submit">{{ _("Hinzufügen") }}</button>
+        </form>
+        <div class="vs-actions">
+          <form method="post" action="{{ url_for('vs.toggle_signup', tournament_id=t.id) }}">
+            <button class="btn btn-secondary" type="submit">{{ _("Anmeldung schließen") if t.signup_open else _("Anmeldung öffnen") }}</button>
+          </form>
+          <form method="post" action="{{ url_for('vs.start', tournament_id=t.id) }}" data-confirm="{{ _("Jetzt auslosen und starten? Danach können keine Piloten mehr dazukommen.") }}">
+            <button class="btn btn-primary" type="submit"{% if players|length < 2 %} disabled{% endif %}>{{ _("Auslosen & starten") }}</button>
+          </form>
+          <form method="post" action="{{ url_for('vs.cancel_tournament', tournament_id=t.id) }}" data-confirm="{{ _("Turnier absagen?") }}">
+            <button class="btn btn-secondary" type="submit">{{ _("Turnier absagen") }}</button>
+          </form>
+        </div>
+        <p class="form-hint">{{ _("Beim Start werden die Piloten zufällig gesetzt. Ist die Zahl keine Zweierpotenz, bekommen die ersten Gesetzten ein Freilos.") }}</p>
+      </section>
+    {% elif manager and t.status == "running" %}
+      <div class="vs-actions">
+        <form method="post" action="{{ url_for('vs.cancel_tournament', tournament_id=t.id) }}" data-confirm="{{ _("Turnier absagen? Alle Spiele und Flüge werden gelöscht.") }}">
+          <button class="btn btn-secondary btn-small" type="submit">{{ _("Turnier absagen") }}</button>
+        </form>
+      </div>
+    {% endif %}
+
+    {% if bracket %}
+      <section class="vs-bracket" aria-label="{{ _("Turnierbaum") }}">
+        {% for r in bracket %}
+          <div class="vs-round">
+            <h3>{{ r.label }}</h3>
+            {% for g in r.games %}
+              <div class="vs-game{% if g.status == 'done' %} vs-game-done{% endif %}">
+                {% for side in ("a", "b") %}
+                  {% set name = g[side] %}
+                  <div class="vs-game-pilot{% if g.winner and name == g.winner %} vs-game-win{% endif %}">
+                    <span>{{ name if name else (_("Freilos") if g.bye else "–") }}</span>
+                    <b>{{ g[side ~ "_score"] if g[side ~ "_score"] is not none else "" }}</b>
+                  </div>
+                {% endfor %}
+                <div class="vs-game-foot">
+                  {% if g.bye %}<small>{{ _("Freilos") }}</small>
+                  {% elif g.a and g.b %}<a href="{{ url_for('vs.match_page', match_id=g.id) }}">{{ _("Zum Duell") }} →</a>{% endif %}
+                  {% if g.note == "kampflos" %}<small>{{ _("kampflos") }}</small>{% endif %}
+                </div>
+                {% if manager and g.status == "open" and g.a and g.b %}
+                  <form class="vs-walkover" method="post" action="{{ url_for('vs.walkover_route', tournament_id=t.id, match_id=g.id) }}" data-confirm="{{ _("Kampflosen Sieg vergeben?") }}">
+                    <select name="winner" aria-label="{{ _("Kampfloser Sieg für") }}"><option value="{{ g.a }}">{{ g.a }}</option><option value="{{ g.b }}">{{ g.b }}</option></select>
+                    <button class="btn btn-secondary btn-small" type="submit">{{ _("kampflos") }}</button>
+                  </form>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    <section class="profile-card">
+      <h2>{{ _("Teilnehmer") }} ({{ players|length }})</h2>
+      {% if players %}
+        <ol class="vs-players">
+          {% for p in players %}
+            <li>
+              {% if p.seed %}<span class="vs-seed">#{{ p.seed }}</span>{% endif %}
+              <a href="{{ url_for('community.profile', username=p.username) }}">{{ p.username }}</a>
+              <small>Elo {{ (p.elo or 1000)|round|int }}</small>
+              {% if manager and t.status == "signup" %}
+                <form method="post" action="{{ url_for('vs.remove_player', tournament_id=t.id) }}">
+                  <input type="hidden" name="username" value="{{ p.username }}" />
+                  <button class="btn btn-secondary btn-small" type="submit" aria-label="{{ _("Entfernen") }}">×</button>
+                </form>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        <p class="form-hint">{{ _("Noch niemand angemeldet.") }}</p>
+      {% endif %}
+    </section>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  {{ user_search_script() }}
+  <script>
+    document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+      form.addEventListener("submit", function (event) { if (!window.confirm(form.dataset.confirm)) event.preventDefault(); });
+    });
+  </script>
+{% endblock %}

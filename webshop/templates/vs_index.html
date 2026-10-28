@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% from "_vs_macros.html" import match_row, user_search, user_search_script with context %}
+
+{% block title %}{{ _("Duelle & Turniere – Bollisoft") }}{% endblock %}
+
+{% block head %}
+  <meta name="description" content="{{ _("FPV-Duelle 1 gegen 1 und K.-o.-Turniere: Blackbox-Logs auswerten, Tricks vergleichen, Elo-Rangliste.") }}" />
+{% endblock %}
+
+{% block content %}
+  <section class="vs-page">
+    <div class="forum-hero">
+      <p class="forum-kicker">{{ _("Blackbox Viewer") }}</p>
+      <h1>{{ _("Duelle & Turniere") }}</h1>
+      <p class="license-intro">
+        {{ _("Fordere einen Piloten heraus oder spiel ein K.-o.-Turnier. Gezählt werden die Tricks ab dem Abheben innerhalb der Wertungszeit – beide Flüge laufen im VS-Viewer nebeneinander.") }}
+      </p>
+      <p class="vs-links">
+        <a href="{{ url_for('leaderboard_pages.page', kategorie='vs') }}">{{ _("VS-Rangliste (Elo)") }} →</a>
+        <a href="{{ url_for('leaderboard_pages.page', kategorie='turnier') }}">{{ _("Turnier-Rangliste") }} →</a>
+        <a href="/blackbox-viewer/vs.html">{{ _("Zwei eigene Flüge vergleichen") }} →</a>
+      </p>
+    </div>
+
+    <div class="vs-grid">
+      <div class="vs-main">
+        <section class="profile-card">
+          <h2>{{ _("Neues Duell") }}</h2>
+          {% if logged_in %}
+            <form class="vs-form" method="post" action="{{ url_for('vs.new_match') }}">
+              <label class="form-field">
+                <span>{{ _("Gegner") }}</span>
+                {{ user_search("opponent", "vs-opponent", _("Benutzername suchen …"), prefill) }}
+              </label>
+              <label class="form-field">
+                <span>{{ _("Wertungszeit") }}</span>
+                <select name="limit">
+                  {% for l in limits %}<option value="{{ l }}"{% if l == default_limit %} selected{% endif %}>{{ l|match_limit }}</option>{% endfor %}
+                </select>
+              </label>
+              <button class="btn btn-primary" type="submit">{{ _("Herausfordern") }}</button>
+            </form>
+            <p class="form-hint">{{ _("Danach reicht jeder im Blackbox Viewer seinen Flug ein. Du kannst auch den Flug deines Gegners hochladen – der zählt, sobald er ihn bestätigt.") }}</p>
+          {% else %}
+            <p>{{ _("Für Duelle brauchst du ein Konto.") }} <a href="{{ url_for('login', next=request.path) }}">{{ _("Einloggen") }}</a> · <a href="{{ url_for('register') }}">{{ _("Konto erstellen") }}</a></p>
+          {% endif %}
+        </section>
+
+        {% if logged_in %}
+          <section class="profile-card">
+            <h2>{{ _("Meine Duelle") }}</h2>
+            {% if mine_open or mine_done %}
+              {% if mine_open %}
+                <h3 class="vs-sub">{{ _("Offen") }}</h3>
+                <ul class="vs-list">{% for m in mine_open %}{{ match_row(m) }}{% endfor %}</ul>
+              {% endif %}
+              {% if mine_done %}
+                <h3 class="vs-sub">{{ _("Entschieden") }}</h3>
+                <ul class="vs-list">{% for m in mine_done %}{{ match_row(m) }}{% endfor %}</ul>
+              {% endif %}
+            {% else %}
+              <p class="form-hint">{{ _("Noch keine Duelle – fordere oben jemanden heraus.") }}</p>
+            {% endif %}
+          </section>
+        {% endif %}
+
+        <section class="profile-card">
+          <h2>{{ _("Zuletzt entschieden") }}</h2>
+          {% if recent %}
+            <ul class="vs-list">{% for m in recent %}{{ match_row(m) }}{% endfor %}</ul>
+          {% else %}
+            <p class="form-hint">{{ _("Noch kein Duell entschieden.") }}</p>
+          {% endif %}
+        </section>
+      </div>
+
+      <aside class="vs-side">
+        <section class="profile-card">
+          <h2>{{ _("Turniere") }}</h2>
+          {% if tournaments %}
+            <ul class="vs-list">
+              {% for t in tournaments %}
+                <li class="vs-row">
+                  <a class="vs-row-link" href="{{ url_for('vs.tournament_page', tournament_id=t.id) }}">
+                    <span class="vs-row-names"><b>{{ t.name }}</b></span>
+                    <span class="vs-row-meta">
+                      {% if t.status == "signup" %}{{ _("Anmeldung") }} · {{ t.player_count }}/{{ t.max_players }}
+                      {% elif t.status == "running" %}{{ _("läuft") }} · {{ t.player_count }} {{ _("Piloten") }}
+                      {% else %}{{ _("beendet") }}{% if t.winner_username %} · 🏆 {{ t.winner_username }}{% endif %}{% endif %}
+                      · {{ t.limit_s|match_limit }}
+                    </span>
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="form-hint">{{ _("Noch keine Turniere.") }}</p>
+          {% endif %}
+        </section>
+
+        {% if logged_in %}
+          <section class="profile-card">
+            <h2>{{ _("Turnier anlegen") }}</h2>
+            <form class="vs-form vs-form-stack" method="post" action="{{ url_for('vs.new_tournament') }}">
+              <label class="form-field"><span>{{ _("Name") }}</span><input type="text" name="name" maxlength="80" required /></label>
+              <label class="form-field"><span>{{ _("Beschreibung (optional)") }}</span><textarea name="description" rows="3" maxlength="1000"></textarea></label>
+              <div class="form-row">
+                <label class="form-field"><span>{{ _("Max. Teilnehmer") }}</span>
+                  <select name="max_players">{% for s in sizes %}<option{% if s == 16 %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+                </label>
+                <label class="form-field"><span>{{ _("Wertungszeit") }}</span>
+                  <select name="limit">{% for l in limits %}<option value="{{ l }}"{% if l == default_limit %} selected{% endif %}>{{ l|match_limit }}</option>{% endfor %}</select>
+                </label>
+              </div>
+              <label class="checkbox-label"><input type="checkbox" name="join" value="1" checked /> {{ _("Ich spiele selbst mit") }}</label>
+              <button class="btn btn-primary" type="submit">{{ _("Turnier anlegen") }}</button>
+            </form>
+            <p class="form-hint">{{ _("Bei einer Teilnehmerzahl, die keine Zweierpotenz ist (z. B. 10), bekommen die ersten Gesetzten in Runde 1 ein Freilos.") }}</p>
+          </section>
+        {% endif %}
+      </aside>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}{{ user_search_script() }}{% endblock %}

@@ -123,6 +123,17 @@
             Punkte einreichen geht nur mit Konto. <a id="loginLink" href="/login">Jetzt einloggen</a>
           </p>
         </div>
+        <div class="card match-card" id="matchCard" hidden>
+          <div class="card-head">
+            <h2>Duell</h2>
+            <a class="small" id="matchPageLink" href="/vs">Zur Duell-Seite</a>
+          </div>
+          <p class="small" id="matchInfo"></p>
+          <label class="check" id="matchPilotWrap" hidden>Flug von <select id="matchPilot"></select></label>
+          <div class="match-score"><span id="matchScore">–</span><small id="matchDetail">Log laden, um die Duell-Wertung zu sehen.</small></div>
+          <button class="btn primary" id="btnMatchSubmit" type="button" disabled>Ins Duell einreichen</button>
+          <p class="login-hint" id="matchHint" hidden></p>
+        </div>
         <div class="card tricks-card">
           <div class="card-head">
             <h2>Erkannte Tricks</h2>

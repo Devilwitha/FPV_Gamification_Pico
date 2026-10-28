@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _("Bollisoft – Leaderboard") }} – {{ _("VS") if kategorie == "vs" else _("Turnier") }}{% endblock %}
+
+{% block content %}
+  <section class="lb-page">
+    <div class="forum-hero">
+      <p class="forum-kicker">{{ _("Blackbox Viewer") }}</p>
+      <h1>{{ _("Leaderboard") }} · {{ _("VS") if kategorie == "vs" else _("Turnier") }}</h1>
+      <p class="license-intro">
+        {% if kategorie == "vs" %}
+          {{ _("Elo-Wertung aus Duellen 1 gegen 1: Start bei {start}, ein Sieg gegen Stärkere bringt mehr. Gezählt werden alle entschiedenen Duelle mit zwei Flügen.", start=elo_start) }}
+        {% else %}
+          {{ _("Turnierpunkte: {win} je gewonnenes Spiel, {final} für eine Finalteilnahme, {title} für den Turniersieg.", win=points.win, final=points.final, title=points.title) }}
+        {% endif %}
+        <a href="{{ url_for('vs.index') }}">{{ _("Zu den Duellen & Turnieren") }} →</a>
+      </p>
+    </div>
+
+    {% include "_lb_tabs.html" %}
+
+    {% if rows %}
+      <div class="lb-table-wrap">
+        <table class="lb-table">
+          <thead>
+            {% if kategorie == "vs" %}
+              <tr><th>{{ _("Platz") }}</th><th>{{ _("Pilot") }}</th><th class="lb-num">{{ _("Elo") }}</th><th class="lb-num">{{ _("Siege") }}</th><th class="lb-num">{{ _("Niederlagen") }}</th><th class="lb-num">{{ _("Unentschieden") }}</th><th class="lb-num">{{ _("Siegquote") }}</th><th class="lb-num">{{ _("Bester Duell-Score") }}</th></tr>
+            {% else %}
+              <tr><th>{{ _("Platz") }}</th><th>{{ _("Pilot") }}</th><th class="lb-num">{{ _("Punkte") }}</th><th class="lb-num">{{ _("Turniersiege") }}</th><th class="lb-num">{{ _("Finals") }}</th><th class="lb-num">{{ _("Gewonnene Spiele") }}</th><th class="lb-num">{{ _("Turniere") }}</th></tr>
+            {% endif %}
+          </thead>
+          <tbody>
+            {% for r in rows %}
+              <tr class="{% if r.rank <= 3 %}lb-top lb-top-{{ r.rank }}{% endif %}">
+                <td class="lb-rank"><span class="lb-medal">{{ r.rank }}</span></td>
+                <td>
+                  <div class="lb-pilot">
+                    <span class="avatar avatar-sm">{% if r.avatar %}<img src="{{ r.avatar }}" alt="" width="36" height="36" loading="lazy" />{% else %}<span>{{ initials(r.username) }}</span>{% endif %}</span>
+                    <span>
+                      <a class="lb-user" href="{{ url_for('community.profile', username=r.username) }}">{{ r.username }}</a>
+                      {% if r.country %}<span class="lb-flag" title="{{ r.country|country_name }}">{{ r.country }}</span>{% endif %}
+                    </span>
+                  </div>
+                </td>
+                {% if kategorie == "vs" %}
+                  <td class="lb-num lb-score">{{ r.elo }}</td>
+                  <td class="lb-num">{{ r.wins }}</td>
+                  <td class="lb-num">{{ r.losses }}</td>
+                  <td class="lb-num">{{ r.draws }}</td>
+                  <td class="lb-num">{{ r.winRate }} %</td>
+                  <td class="lb-num">{{ "{:,}".format(r.bestScore).replace(",", "'") }}</td>
+                {% else %}
+                  <td class="lb-num lb-score">{{ r.points }}</td>
+                  <td class="lb-num">{{ r.titles }}</td>
+                  <td class="lb-num">{{ r.finals }}</td>
+                  <td class="lb-num">{{ r.wins }}</td>
+                  <td class="lb-num">{{ r.tournaments }}</td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="form-hint">
+        {% if kategorie == "vs" %}{{ _("Noch kein Duell entschieden – fordere jemanden heraus!") }}{% else %}{{ _("Noch keine Turnierspiele gewertet.") }}{% endif %}
+        <a href="{{ url_for('vs.index') }}">{{ _("Zu den Duellen & Turnieren") }}</a>
+      </p>
+    {% endif %}
+  </section>
+{% endblock %}

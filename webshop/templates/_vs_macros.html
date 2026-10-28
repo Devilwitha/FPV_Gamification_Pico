@@ -1,0 +1,126 @@
+{# Gemeinsame Bausteine der VS-Seiten (vs_index, vs_match, vs_tournament) #}
+{% macro pilot_chip(p, winner=None) -%}
+  {%- if p -%}
+    <a class="vs-pilot{% if winner and winner == p.username %} vs-pilot-win{% endif %}" href="{{ url_for('community.profile', username=p.username) }}">
+      <span class="avatar avatar-sm">{% if p.avatar %}<img src="{{ p.avatar }}" alt="" width="36" height="36" loading="lazy" />{% else %}<span>{{ p.initials }}</span>{% endif %}</span>
+      <span>{{ p.username }}</span>
+    </a>
+  {%- else -%}
+    <span class="vs-pilot vs-pilot-empty">{{ _("noch offen") }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro match_row(m) -%}
+  <li class="vs-row">
+    <a class="vs-row-link" href="{{ m.pageUrl }}">
+      <span class="vs-row-names">
+        <b>{{ m.a.username if m.a else "–" }}</b> <span class="vs-vs">vs</span> <b>{{ m.b.username if m.b else _("Freilos") }}</b>
+      </span>
+      <span class="vs-row-meta">
+        {% if m.tournament %}{{ m.tournament.name }} · {% endif %}{{ m.limit|match_limit }}
+        {% if m.status == "done" %}
+          · {% if m.draw %}{{ _("Unentschieden") }}{% elif m.note %}{{ m.winner }} ({{ _(m.note) }}){% else %}{{ _("Sieg") }}: {{ m.winner }}{% endif %}
+        {% else %}
+          · {{ _("{n} von 2 Flügen", n=m.entries|length) }}
+        {% endif %}
+      </span>
+      {% if m.entries.a is defined or m.entries.b is defined %}
+        <span class="vs-row-score">{{ m.entries.a.score if m.entries.a is defined else "–" }} : {{ m.entries.b.score if m.entries.b is defined else "–" }}</span>
+      {% endif %}
+    </a>
+  </li>
+{%- endmacro %}
+
+{% macro user_search(name, id, placeholder, value="") -%}
+  <span class="vs-search">
+    <input type="text" name="{{ name }}" id="{{ id }}" autocomplete="off" maxlength="40" required
+           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="{{ id }}-list"
+           placeholder="{{ placeholder }}" value="{{ value }}" data-user-search />
+    <ul class="vs-suggest" id="{{ id }}-list" role="listbox" hidden></ul>
+  </span>
+{%- endmacro %}
+
+{% macro user_search_script() -%}
+  <script>
+    // Benutzersuche: Liste unter dem Feld – Namen, die so anfangen, die es enthalten
+    // oder aehnlich geschrieben sind (Tippfehler). Pfeiltasten + Enter oder Klick waehlen.
+    document.querySelectorAll("[data-user-search]").forEach(function (input) {
+      var list = document.getElementById(input.getAttribute("aria-controls"));
+      var timer = 0, active = -1, items = [], lastQuery = "";
+      var noHit = {{ _("Kein Pilot gefunden")|tojson }};
+      function close() {
+        list.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+        active = -1;
+      }
+      function choose(i) {
+        if (!items[i]) return;
+        input.value = items[i].username;
+        close();
+      }
+      function highlight(i) {
+        active = i;
+        Array.prototype.forEach.call(list.children, function (li, n) {
+          li.setAttribute("aria-selected", String(n === i));
+          if (n === i) li.scrollIntoView({ block: "nearest" });
+        });
+      }
+      function render(users) {
+        items = users;
+        list.replaceChildren();
+        if (!users.length) {
+          var empty = document.createElement("li");
+          empty.className = "vs-suggest-empty";
+          empty.textContent = noHit;
+          list.append(empty);
+        }
+        users.forEach(function (u, i) {
+          var li = document.createElement("li");
+          li.setAttribute("role", "option");
+          li.id = input.id + "-opt-" + i;
+          var av = document.createElement("span");
+          av.className = "avatar avatar-sm";
+          if (u.avatar) {
+            var img = document.createElement("img");
+            img.src = u.avatar; img.alt = ""; img.width = 28; img.height = 28;
+            av.append(img);
+          } else {
+            var ini = document.createElement("span");
+            ini.textContent = (u.username || "?").slice(0, 2).toUpperCase();
+            av.append(ini);
+          }
+          var name = document.createElement("strong");
+          name.textContent = u.username;
+          var meta = document.createElement("small");
+          meta.textContent = (u.country ? u.country + " · " : "") + "Elo " + u.elo;
+          li.append(av, name, meta);
+          li.addEventListener("mousedown", function (e) { e.preventDefault(); choose(i); });
+          list.append(li);
+        });
+        list.hidden = false;
+        input.setAttribute("aria-expanded", "true");
+        active = -1;
+      }
+      input.addEventListener("input", function () {
+        clearTimeout(timer);
+        var q = input.value.trim();
+        if (q.length < 2) { close(); return; }
+        timer = setTimeout(function () {
+          lastQuery = q;
+          fetch("/api/vs/benutzer?q=" + encodeURIComponent(q), { headers: { Accept: "application/json" } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) { if (lastQuery === input.value.trim()) render(data.users || []); })
+            .catch(function () {});
+        }, 150);
+      });
+      input.addEventListener("keydown", function (e) {
+        if (list.hidden || !items.length) return;
+        if (e.key === "ArrowDown") { e.preventDefault(); highlight((active + 1) % items.length); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); highlight((active - 1 + items.length) % items.length); }
+        else if (e.key === "Enter" && active >= 0) { e.preventDefault(); choose(active); }
+        else if (e.key === "Escape") { close(); }
+      });
+      input.addEventListener("blur", function () { setTimeout(close, 120); });
+    });
+  </script>
+{%- endmacro %}

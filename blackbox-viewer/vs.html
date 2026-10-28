@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VS-Viewer – Blackbox Arena</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23080b0d'/%3E%3Cpath d='M9 9l14 14M23 9L9 23' stroke='%2358f0a8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cg fill='none' stroke='%2358f0a8' stroke-width='2'%3E%3Ccircle cx='8' cy='8' r='4'/%3E%3Ccircle cx='24' cy='8' r='4'/%3E%3Ccircle cx='8' cy='24' r='4'/%3E%3Ccircle cx='24' cy='24' r='4'/%3E%3C/g%3E%3C/svg%3E" />
+    <script src="/static/js/i18n-dom.js" data-bundle="viewer" data-canvas></script>
+    <script src="/site-nav.js" defer></script>
+  </head>
+  <body class="vs-body">
+    <header class="topbar">
+      <a class="home" href="/vs">← Duelle &amp; Turniere</a>
+      <div class="brand">
+        <div>
+          <strong>VS-Viewer</strong>
+          <small id="vsSubtitle">Zwei Flüge im direkten Vergleich</small>
+        </div>
+      </div>
+      <nav class="actions">
+        <a class="btn" href="./">Einzel-Viewer</a>
+        <a class="btn" id="matchLink" href="/vs" hidden>Zur Duell-Seite</a>
+      </nav>
+    </header>
+
+    <main class="vs-layout">
+      <section class="card vs-scoreboard" aria-live="polite">
+        <div class="vs-team" data-side="a">
+          <span class="vs-name" id="nameA">Pilot A</span>
+          <span class="vs-total" id="scoreA">0</span>
+          <span class="vs-last" id="lastA"></span>
+        </div>
+        <div class="vs-center">
+          <span class="vs-clock" id="vsClock">0:00 / 2:00</span>
+          <div class="vs-bar" aria-hidden="true"><i id="barA"></i><i id="barB"></i></div>
+          <span class="vs-result" id="vsResult"></span>
+        </div>
+        <div class="vs-team" data-side="b">
+          <span class="vs-name" id="nameB">Pilot B</span>
+          <span class="vs-total" id="scoreB">0</span>
+          <span class="vs-last" id="lastB"></span>
+        </div>
+      </section>
+
+      <section class="vs-stages">
+        <div class="vs-stage-wrap" data-side="a">
+          <div class="stage vs-stage"><canvas id="canvasA"></canvas><video id="videoA" playsinline preload="auto" hidden></video>
+            <div class="vs-empty" id="emptyA">Noch kein Flug</div>
+          </div>
+          <div class="vs-local" id="localA" hidden>
+            <label class="btn tiny">Log<input type="file" data-log="a" accept=".bbl,.bfl,.txt,.csv,.BBL,.BFL,.TXT,.CSV" hidden /></label>
+            <label class="btn tiny">Video<input type="file" data-video="a" accept="video/*" hidden /></label>
+            <button class="btn tiny" type="button" data-autosync="a" disabled>Audio-Sync</button>
+            <span class="small muted" data-info="a"></span>
+          </div>
+          <div class="vs-shift" id="shiftA">
+            <span class="small muted">Start</span>
+            <button class="btn tiny" type="button" data-shift="a" data-delta="-1">−1 s</button>
+            <button class="btn tiny" type="button" data-shift="a" data-delta="-0.1">−0.1</button>
+            <span class="small" data-shiftlabel="a">±0.0 s</span>
+            <button class="btn tiny" type="button" data-shift="a" data-delta="0.1">+0.1</button>
+            <button class="btn tiny" type="button" data-shift="a" data-delta="1">+1 s</button>
+          </div>
+          <ol class="vs-tricks" id="tricksA"></ol>
+        </div>
+        <div class="vs-stage-wrap" data-side="b">
+          <div class="stage vs-stage"><canvas id="canvasB"></canvas><video id="videoB" playsinline preload="auto" hidden></video>
+            <div class="vs-empty" id="emptyB">Noch kein Flug</div>
+          </div>
+          <div class="vs-local" id="localB" hidden>
+            <label class="btn tiny">Log<input type="file" data-log="b" accept=".bbl,.bfl,.txt,.csv,.BBL,.BFL,.TXT,.CSV" hidden /></label>
+            <label class="btn tiny">Video<input type="file" data-video="b" accept="video/*" hidden /></label>
+            <button class="btn tiny" type="button" data-autosync="b" disabled>Audio-Sync</button>
+            <span class="small muted" data-info="b"></span>
+          </div>
+          <div class="vs-shift" id="shiftB">
+            <span class="small muted">Start</span>
+            <button class="btn tiny" type="button" data-shift="b" data-delta="-1">−1 s</button>
+            <button class="btn tiny" type="button" data-shift="b" data-delta="-0.1">−0.1</button>
+            <span class="small" data-shiftlabel="b">±0.0 s</span>
+            <button class="btn tiny" type="button" data-shift="b" data-delta="0.1">+0.1</button>
+            <button class="btn tiny" type="button" data-shift="b" data-delta="1">+1 s</button>
+          </div>
+          <ol class="vs-tricks" id="tricksB"></ol>
+        </div>
+      </section>
+
+      <section class="card vs-controls">
+        <button class="btn primary" id="vsPlay" type="button" disabled>▶</button>
+        <button class="btn" id="vsBack" type="button" title="2 s zurück">⟲</button>
+        <button class="btn" id="vsFwd" type="button" title="2 s vor">⟳</button>
+        <input type="range" id="vsScrub" min="-1" max="120" step="0.05" value="-1" aria-label="Zeit im Duell" />
+        <select id="vsSpeed" aria-label="Wiedergabe-Tempo">
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+        </select>
+        <label class="small muted" id="limitWrap" hidden>Wertungszeit
+          <select id="vsLimit">
+            <option value="60">1 min</option>
+            <option value="90">1:30 min</option>
+            <option value="120" selected>2 min</option>
+            <option value="180">3 min</option>
+          </select>
+        </label>
+        <label class="check small"><input type="checkbox" id="vsMute" checked /> Ton aus</label>
+      </section>
+
+      <p class="small muted vs-hint" id="vsHint">
+        Beide Flüge starten synchron beim Abheben (Gas über 15 %). Gezählt werden nur Tricks innerhalb der Wertungszeit.
+        Mit „Start“ verschiebst du einen Flug, falls das Abheben nicht ganz gleich erkannt wurde.
+      </p>
+    </main>
+
+    <div class="busy vs-busy" id="busy" hidden><div class="spinner"></div><span id="busyLabel">Lade…</span><div class="bar"><div id="busyBar"></div></div></div>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/src/vs.ts"></script>
+  </body>
+</html>

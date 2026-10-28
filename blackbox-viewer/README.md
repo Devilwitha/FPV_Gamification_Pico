@@ -138,6 +138,8 @@ einem Reverse Proxy). Auf bollisoft.ch startet `webshop/serve_production.py` den
 
 | Ordner | Inhalt |
 | --- | --- |
+| `src/core/` | Gemeinsamer Kern für Einzel- und VS-Viewer: `FlightPlayer` (Wiedergabe, Video-Sync mit Drift, Analyse, Rendering), `LogDecoder` (Worker), `match.ts` (Duell-Wertung: Abheben, Wertungsfenster, Live-Score) |
+| `src/vs.ts`, `vs.html` | VS-Viewer: zwei `FlightPlayer` nebeneinander auf einer gemeinsamen Duell-Uhr |
 | `src/decoder/` | `.bbl`-Decoder, CSV-Import, USB/MSP-Download |
 | `src/pipeline/` | Spalten-Zuordnung, Resampling, Lageberechnung |
 | `src/analysis/` | Filter, Lage, Trick-Erkennung, ML-Klassifizierung |

@@ -210,6 +210,17 @@ $lbFiltering = Get-OrCreateChild (Get-OrCreateChild (Get-OrCreateChild $leaderbo
 $lbLimits = Get-OrCreateChild $lbFiltering 'requestLimits'
 $lbLimits.SetAttribute('maxAllowedContentLength', [string]$LeaderboardUploadLimit)
 
+# VS-Duelle: Clip der Wertungszeit mit Overlay plus Log (siehe VS_MAX_VIDEO_BYTES in vs.py).
+$vsLocation = $config.DocumentElement.SelectSingleNode("location[@path='api/vs']")
+if (-not $vsLocation) {
+    $vsLocation = $config.CreateElement('location')
+    $vsLocation.SetAttribute('path', 'api/vs')
+    [void]$config.DocumentElement.AppendChild($vsLocation)
+}
+$vsFiltering = Get-OrCreateChild (Get-OrCreateChild (Get-OrCreateChild $vsLocation 'system.webServer') 'security') 'requestFiltering'
+$vsLimits = Get-OrCreateChild $vsFiltering 'requestLimits'
+$vsLimits.SetAttribute('maxAllowedContentLength', [string]$LeaderboardUploadLimit)
+
 # Forenbeitraege mit mehreren Bildern/Videos (siehe MAX_POST_UPLOAD_BYTES in community.py).
 $forumLocation = $config.DocumentElement.SelectSingleNode("location[@path='forum']")
 if (-not $forumLocation) {

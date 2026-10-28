@@ -32,6 +32,7 @@ import leaderboard
 import pilot_license
 import trick_labels
 import hub
+import vs
 import orders_db
 import simulator_manager
 import tx15_backups
@@ -145,6 +146,7 @@ leaderboard.backfill_log_hashes()
 app.register_blueprint(community.bp)
 app.register_blueprint(pilot_license.bp)
 app.register_blueprint(trick_labels.bp)
+vs.register(app)
 app.register_blueprint(admin_users.bp)
 community.register(app)
 admin_users.register(app)

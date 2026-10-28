@@ -17,4 +17,6 @@ export default defineConfig({
     },
   ],
   worker: { format: 'es' },
+  // two pages: single viewer (index.html) and VS viewer (vs.html) share src/core
+  build: { rollupOptions: { input: { main: 'index.html', vs: 'vs.html' } } },
 });

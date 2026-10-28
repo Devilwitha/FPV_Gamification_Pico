@@ -4205,3 +4205,377 @@ a.avatar-team {
     transition: none;
   }
 }
+
+/* ---------- Duelle & Turniere (vs.py, templates/vs_*.html) ---------- */
+.vs-page {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.vs-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 10px 0 0;
+}
+
+.vs-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.vs-main,
+.vs-side {
+  display: grid;
+  gap: 20px;
+}
+
+.vs-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-end;
+}
+
+.vs-form .form-field {
+  margin: 0;
+  flex: 1 1 200px;
+}
+
+.vs-form-stack {
+  display: grid;
+  align-items: stretch;
+}
+
+.vs-sub {
+  margin: 14px 0 6px;
+  font: 600 12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.vs-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vs-row-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-medium);
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.vs-row-link:hover {
+  border-color: var(--color-accent);
+  text-decoration: none;
+}
+
+.vs-row-meta {
+  grid-column: 1;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.vs-row-score {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  font: 600 16px var(--font-mono);
+  color: var(--color-accent);
+}
+
+.vs-vs {
+  font: 600 12px var(--font-mono);
+  color: var(--color-muted);
+}
+
+.vs-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  margin: 18px 0;
+}
+
+.vs-side-card {
+  padding: 20px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-large);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.vs-side-card.vs-side-win {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent) inset;
+}
+
+.vs-side-card form {
+  margin-top: 8px;
+}
+
+.vs-pilot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.vs-pilot-empty {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+.vs-score {
+  margin: 10px 0 2px;
+  font: 700 40px var(--font-mono);
+  color: var(--color-accent);
+}
+
+.vs-score-empty {
+  color: var(--color-muted);
+}
+
+.vs-mid {
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.vs-mid span {
+  font: 700 28px var(--font-serif);
+  color: var(--color-muted);
+}
+
+.vs-mid small {
+  color: var(--color-muted);
+}
+
+.vs-status {
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+}
+
+.vs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.vs-actions form {
+  margin: 0;
+}
+
+.vs-champion {
+  font-size: 18px;
+}
+
+.vs-description {
+  max-width: 50em;
+  color: var(--color-muted);
+}
+
+.vs-bracket {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(200px, 1fr);
+  gap: 16px;
+  margin: 20px 0;
+  padding-bottom: 8px;
+  overflow-x: auto;
+}
+
+.vs-round {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  gap: 12px;
+}
+
+.vs-round h3 {
+  margin: 0 0 4px;
+  font: 600 12px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.vs-game {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.vs-game-pilot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-line);
+  font-size: 14px;
+}
+
+.vs-game-pilot b {
+  font-family: var(--font-mono);
+  color: var(--color-muted);
+}
+
+.vs-game-win {
+  background: var(--color-accent-soft);
+  font-weight: 600;
+}
+
+.vs-game-win b {
+  color: var(--color-accent);
+}
+
+.vs-game-foot {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.vs-walkover {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+
+.vs-walkover select {
+  flex: 1;
+  min-width: 0;
+}
+
+.vs-players {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vs-players li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vs-players small {
+  color: var(--color-muted);
+}
+
+.vs-players form {
+  margin-left: auto;
+}
+
+.vs-seed {
+  font: 12px var(--font-mono);
+  color: var(--color-muted);
+}
+
+.lb-categories {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 4px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: var(--color-surface);
+}
+
+.lb-categories a {
+  padding: 6px 18px;
+  border-radius: 999px;
+  color: var(--color-muted);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.lb-categories a[aria-current="page"] {
+  background: var(--color-accent);
+  color: #07100b;
+}
+
+@media (max-width: 860px) {
+  .vs-grid,
+  .vs-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Benutzersuche (Gegner, Turnier-Teilnehmer): eigene Vorschlagsliste */
+.vs-search {
+  position: relative;
+  display: block;
+}
+
+.vs-search input {
+  width: 100%;
+}
+
+.vs-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 320px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface-alt);
+  box-shadow: var(--shadow-card);
+}
+
+.vs-suggest li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.vs-suggest li:hover,
+.vs-suggest li[aria-selected="true"] {
+  background: var(--color-accent-soft);
+}
+
+.vs-suggest small {
+  color: var(--color-muted);
+}
+
+.vs-suggest .avatar {
+  width: 28px;
+  height: 28px;
+}
+
+.vs-suggest-empty {
+  color: var(--color-muted);
+  cursor: default;
+}

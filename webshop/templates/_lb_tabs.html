@@ -1,0 +1,6 @@
+{# Kategorien der Rangliste: Solo (Trick-Score), VS (Elo aus Duellen), Turnier (Titel, Finals, Punkte) #}
+<nav class="lb-categories" aria-label="{{ _("Kategorie") }}">
+  <a href="{{ url_for('leaderboard_pages.page') }}"{% if kategorie == "solo" %} aria-current="page"{% endif %}>{{ _("Solo") }}</a>
+  <a href="{{ url_for('leaderboard_pages.page', kategorie='vs') }}"{% if kategorie == "vs" %} aria-current="page"{% endif %}>{{ _("VS") }}</a>
+  <a href="{{ url_for('leaderboard_pages.page', kategorie='turnier') }}"{% if kategorie == "turnier" %} aria-current="page"{% endif %}>{{ _("Turnier") }}</a>
+</nav>

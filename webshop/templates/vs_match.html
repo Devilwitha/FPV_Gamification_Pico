@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_vs_macros.html" import pilot_chip with context %}
+
+{% block title %}{{ _("Duell") }}: {{ m.a.username if m.a else "?" }} vs {{ m.b.username if m.b else "?" }} – Bollisoft{% endblock %}
+
+{% block content %}
+  <section class="vs-page">
+    <nav class="forum-breadcrumbs" aria-label="{{ _("Pfad") }}">
+      <a href="{{ url_for('vs.index') }}">{{ _("Duelle & Turniere") }}</a>
+      {% if m.tournament %}<span>›</span> <a href="{{ url_for('vs.tournament_page', tournament_id=m.tournament.id) }}">{{ m.tournament.name }}</a>{% endif %}
+      <span>›</span> <span>{{ _("Duell") }} #{{ m.id }}</span>
+    </nav>
+
+    <div class="vs-head">
+      {% for side in ("a", "b") %}
+        {% set p = m[side] %}
+        {% set e = m.entries[side] if side in m.entries else None %}
+        <div class="vs-side-card{% if m.winner and p and m.winner == p.username %} vs-side-win{% endif %}">
+          {{ pilot_chip(p, m.winner) }}
+          {% if e %}
+            <p class="vs-score">{{ "{:,}".format(e.score).replace(",", "'") }}</p>
+            <p class="form-hint">
+              {{ _("{n} Tricks", n=e.tricks) }}{% if e.best %} · {{ _("bester") }}: {{ e.best }}{% endif %}{% if e.cells %} · {{ e.cells }}S{% endif %}
+            </p>
+            {% if not e.confirmed %}<p class="license-warning">{{ _("Hochgeladen von {name} – wartet auf Bestätigung.", name=e.uploadedBy) }}</p>{% endif %}
+          {% elif p %}
+            <p class="vs-score vs-score-empty">–</p>
+            <p class="form-hint">{{ _("Flug noch nicht eingereicht") }}</p>
+          {% else %}
+            <p class="form-hint">{{ _("Gegner steht noch nicht fest") }}</p>
+          {% endif %}
+          {% if e and m.status == "open" and e.canDelete %}
+            <form method="post" action="{{ url_for('vs.remove_entry', match_id=m.id, entry_id=e.id) }}" data-confirm="{{ _("Flug zurückziehen?") }}">
+              <button class="btn btn-secondary btn-small" type="submit">{{ _("Zurückziehen") }}</button>
+            </form>
+          {% endif %}
+        </div>
+        {% if loop.first %}<div class="vs-mid"><span>VS</span><small>{{ m.limit|match_limit }}</small></div>{% endif %}
+      {% endfor %}
+    </div>
+
+    <div class="vs-status">
+      {% if m.status == "done" %}
+        {% if m.draw %}<strong>{{ _("Unentschieden") }}</strong>
+        {% elif m.note %}<strong>{{ _("{name} kommt weiter", name=m.winner) }}</strong> ({{ _(m.note) }})
+        {% else %}<strong>🏆 {{ _("{name} gewinnt", name=m.winner) }}</strong>{% endif %}
+      {% else %}
+        <strong>{{ _("Läuft") }}</strong> · {{ _("Gezählt werden die Tricks in {limit} ab dem Abheben.", limit=m.limit|match_limit) }}
+      {% endif %}
+    </div>
+
+    <div class="vs-actions">
+      {% if m.entries %}<a class="btn btn-primary" href="{{ m.watchUrl }}">▶ {{ _("Duell im VS-Viewer ansehen") }}</a>{% endif %}
+      {% if m.canUploadFor %}
+        <a class="btn {% if m.entries %}btn-secondary{% else %}btn-primary{% endif %}" href="{{ m.submitUrl }}">{{ _("Flug im Blackbox Viewer einreichen") }}</a>
+      {% endif %}
+      {% if m.needsConfirm %}
+        <form method="post" action="{{ url_for('vs.confirm', match_id=m.id) }}">
+          <button class="btn btn-primary" type="submit">{{ _("Hochgeladenen Flug bestätigen") }}</button>
+        </form>
+      {% endif %}
+      {% if m.canCancel %}
+        <form method="post" action="{{ url_for('vs.cancel_match', match_id=m.id) }}" data-confirm="{{ _("Duell absagen? Eingereichte Flüge werden gelöscht.") }}">
+          <button class="btn btn-secondary" type="submit">{{ _("Duell absagen") }}</button>
+        </form>
+      {% endif %}
+    </div>
+    {% if not session.get("account_email") and m.status == "open" %}
+      <p class="form-hint"><a href="{{ url_for('login', next=request.path) }}">{{ _("Einloggen") }}</a>, {{ _("um deinen Flug einzureichen.") }}</p>
+    {% endif %}
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+      form.addEventListener("submit", function (event) { if (!window.confirm(form.dataset.confirm)) event.preventDefault(); });
+    });
+  </script>
+{% endblock %}

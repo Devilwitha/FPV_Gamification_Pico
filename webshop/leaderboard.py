@@ -604,6 +604,17 @@ def _ranking(view, land, cells=None):
 
 @pages.get("/leaderboard")
 def page():
+    kategorie = request.args.get("kategorie")
+    if kategorie in ("vs", "turnier"):
+        import vs  # Kreisimport vermeiden: vs.py nutzt Hilfen aus diesem Modul
+
+        return render_template(
+            "leaderboard_vs.html",
+            kategorie=kategorie,
+            rows=vs.vs_rankings() if kategorie == "vs" else vs.tournament_rankings(),
+            elo_start=vs.ELO_START,
+            points={"win": vs.POINTS_WIN, "final": vs.POINTS_FINAL, "title": vs.POINTS_TITLE},
+        )
     view = "fluege" if request.args.get("ansicht") == "fluege" else "piloten"
     land = (request.args.get("land") or "").upper()
     if land and not countries.is_valid(land):

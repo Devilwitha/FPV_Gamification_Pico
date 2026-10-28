@@ -114,6 +114,24 @@ textarea { font-family: var(--f-mono); font-size: 12px; line-height: 1.5; resize
 .info h3 { font: 600 16px var(--f-display); letter-spacing: .04em; text-transform: uppercase; margin: 14px 0 6px; }
 .info ol { margin: 0; padding-left: 20px; }
 .info li { margin-bottom: 4px; }
+.info p { margin: 0 0 8px; }
+.info ul { margin: 0; padding-left: 20px; }
+
+/* Bibliothek: fertige Skripte */
+.libgroup { font: 600 13px var(--f-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
+.liblist { display: grid; gap: 6px; }
+.libitem { text-align: left; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); cursor: pointer; }
+.libitem b { font-weight: 600; }
+.libitem .kind { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 0 7px; align-self: start; }
+.libitem small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.libitem:hover { border-color: var(--accent); }
+.libitem[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.libitem[aria-pressed="true"] b { color: var(--accent); }
+.libshot { display: block; width: 100%; max-width: 960px; height: auto; }
+.libnote { color: #aab4bc; font-size: 12px; margin: 10px 0 0; }
+.libopts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+.libopts dt, .libopts dd { margin: 0; }
+.libopts dd { color: var(--muted); }
 
 .inputs-table { display: grid; gap: 6px; margin-bottom: 10px; }
 .irow { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.1fr) repeat(3, minmax(0, .8fr)) 28px; gap: 4px; align-items: center; }
@@ -156,6 +174,7 @@ input[type="file"] { display: none; }
   <button type="button" data-type="tool" aria-pressed="false"><b>Tool</b><small>Eigene Vollbild-Seite unter SYS → Tools · <code>SCRIPTS/TOOLS/</code></small></button>
   <button type="button" data-type="func" aria-pressed="false"><b>Funktion</b><small>Läuft per Schalter über Spezialfunktionen · <code>SCRIPTS/FUNCTIONS/</code></small></button>
   <button type="button" data-type="mix" aria-pressed="false"><b>Mischer</b><small>Eigene Mischer-Logik pro Modell · <code>SCRIPTS/MIXES/</code></small></button>
+  <button type="button" data-type="lib" aria-pressed="false"><b>Bibliothek</b><small>Fertige Skripte von Bollisoft · sofort einsetzbar</small></button>
 </nav>
 
 <main class="wrap">
@@ -213,6 +232,7 @@ input[type="file"] { display: none; }
 </datalist>
 <input type="file" id="themeFile" accept=".yml,.yaml,text/plain">
 
+<script src="lua-bibliothek/bibliothek.js"></script>
 <script src="konto.js"></script>
 <script src="sdkarte.js"></script>
 <script>
@@ -265,6 +285,7 @@ const DEFAULT = () => ({
   tool: sampleTool(),
   func: { file: 'akku', tpl: 'announce', source: 'VFAS', interval: 30, unit: 'UNIT_VOLTS', decimals: 1, limit: 14.0, sound: '', haptic: true },
   mix: { file: 'limit', tpl: 'limiter', inputs: [{ name: 'Gas', type: 'SOURCE', min: 0, max: 0, def: 0 }, { name: 'Limit', type: 'VALUE', min: 0, max: 100, def: 80 }], outputs: 'Gas', body: '' },
+  lib: 'elrs-finder',
   theme: { ...EDGETX_THEME },
 });
 let S = load();
@@ -285,6 +306,27 @@ function load() {
 function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) {} }
 
 const isDesign = () => S.type === 'widget' || S.type === 'tool';
+
+// ---------- Bibliothek: fertige Skripte aus lua-bibliothek/ (bibliothek.js) ----------
+const LIB = Array.isArray(window.LUA_BIBLIOTHEK) ? window.LUA_BIBLIOTHEK : [];
+const LIB_FORUM = window.LUA_BIBLIOTHEK_FORUM || '/forum';
+const LIB_KIND = { widget: 'Widget', tool: 'Tool', func: 'Funktion', mix: 'Mischer' };
+const libEntry = () => LIB.find(e => e.id === S.lib) || LIB[0] || null;
+const libCode = new Map();   // id -> Lua-Code
+async function ensureLibCode(e = libEntry()) {
+  if (!e) throw new Error('Die Bibliothek konnte nicht geladen werden.');
+  if (libCode.has(e.id)) return libCode.get(e.id);
+  const res = await fetch('lua-bibliothek/' + e.path, { cache: 'no-cache' });
+  if (!res.ok) throw new Error(`Skript konnte nicht geladen werden (HTTP ${res.status}).`);
+  const code = (await res.text()).replace(/\r\n/g, '\n');
+  libCode.set(e.id, code);
+  return code;
+}
+function loadLibCode() {
+  const e = libEntry();
+  if (!e || libCode.has(e.id)) return;
+  ensureLibCode(e).then(() => { if (S.type === 'lib') changed(); }).catch(err => toast(err.message, 'err'));
+}
 const doc = () => S.type === 'tool' ? S.tool : S.widget;
 const zoneW = () => S.type === 'tool' ? 480 : S.widget.zw;
 const zoneH = () => S.type === 'tool' ? 320 : S.widget.zh;
@@ -341,8 +383,21 @@ const ICONS = {
 };
 const KIND_LABEL = { text: 'Text', value: 'Wert', bar: 'Balken', timer: 'Timer', rect: 'Rechteck', circle: 'Kreis', image: 'Bild' };
 
+function buildLibSide() {
+  const cur = libEntry();
+  const groups = [...new Set(LIB.map(e => e.group))];
+  $('side').innerHTML = `<div class="panel"><h2>Bibliothek</h2>
+    <p class="hint">Fertige Skripte von Bollisoft: auswählen, ansehen und direkt auf die SD-Karte schreiben oder als ZIP herunterladen.</p>
+    ${groups.map(g => `<h3 class="libgroup">${esc(g)}</h3><div class="liblist">${LIB.filter(e => e.group === g).map(e =>
+      `<button type="button" class="libitem" data-lib="${esc(e.id)}" aria-pressed="${cur && e.id === cur.id}"><b>${esc(e.name)}</b><span class="kind">${esc(LIB_KIND[e.kind] || e.kind)}</span><small>${esc(e.summary)}</small></button>`).join('')}</div>`).join('')}
+    ${LIB.length ? '' : '<p class="warnline">Die Bibliothek konnte nicht geladen werden.</p>'}
+  </div>`;
+  document.querySelectorAll('[data-lib]').forEach(b => b.onclick = () => { S.lib = b.dataset.lib; loadLibCode(); buildAll(); changed(); });
+}
+
 function buildSide() {
   const side = $('side');
+  if (S.type === 'lib') return buildLibSide();
   if (S.type === 'widget') {
     const w = S.widget;
     side.innerHTML = `<div class="panel"><h2>Widget</h2>
@@ -556,6 +611,22 @@ function buildCenter() {
     $('themeBtn').onclick = () => $('themeFile').click();
     $('resetBtn').onclick = () => { if (S.type === 'tool') S.tool = sampleTool(); else S.widget = sampleWidget(); selId = null; buildAll(); changed(); toast('Beispiel geladen.', 'ok'); };
     bindCanvas();
+  } else if (S.type === 'lib') {
+    const e = libEntry();
+    if (!e) { c.innerHTML = '<div class="panel"><p class="warnline">Die Bibliothek konnte nicht geladen werden.</p></div>'; return; }
+    c.innerHTML = (e.preview ? `<div class="radio">
+        <div class="brandline"><span>RadioMaster <em>TX15</em></span><span><span>${esc(LIB_KIND[e.kind] || e.kind)}</span> · <span>${esc(e.name)}</span></span></div>
+        <div class="stage"><img class="libshot" src="lua-bibliothek/${esc(e.preview)}" alt="Vorschau: ${esc(e.name)} auf dem Display"></div>
+        <p class="libnote">Vorschau mit Beispieldaten aus einem EdgeTX-Nachbau.</p></div>` : '') +
+      `<div class="panel info"${e.preview ? ' style="margin-top:16px"' : ''}><h2>${esc(e.name)}</h2>
+        ${e.desc.map(x => `<p>${esc(x)}</p>`).join('')}
+        <h3>Einrichten</h3><ol>
+          <li>ZIP ins Hauptverzeichnis der SD-Karte entpacken. Es entsteht <code>${esc(e.path)}</code>.</li>
+          ${e.setup.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+        ${e.options.length ? `<h3>Optionen</h3><dl class="libopts">${e.options.map(([k, v]) => `<dt><code>${esc(k)}</code></dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}
+        <h3>Voraussetzungen</h3><ul>${e.needs.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+        <p class="hint" style="margin-top:14px">Fragen oder Erfahrungen vom Feld? <a href="${esc(LIB_FORUM)}">Zum Forumsthema</a></p>
+      </div>`;
   } else if (S.type === 'func') {
     c.innerHTML = `<div class="panel info"><h2>So läuft ein Funktions-Skript</h2>
       <p>Ein Funktions-Skript startet über eine <b>Spezialfunktion</b>. Solange der zugeordnete Schalter aktiv ist, ruft EdgeTX <code>run()</code> etwa 20-mal pro Sekunde auf. Ist er aus, läuft <code>background()</code>.</p>
@@ -888,8 +959,12 @@ function genMix() {
   o += 'return { input = input, output = output, init = init, run = run }\n';
   return o;
 }
-function generate() { return { widget: genWidget, tool: genTool, func: genFunc, mix: genMix }[S.type](); }
-function filePath() { return { widget: `WIDGETS/${widgetFolder()}/main.lua`, tool: `SCRIPTS/TOOLS/${toolFile()}.lua`, func: `SCRIPTS/FUNCTIONS/${funcFile()}.lua`, mix: `SCRIPTS/MIXES/${mixFile()}.lua` }[S.type]; }
+function genLib() { const e = libEntry(); return (e && libCode.get(e.id)) || '-- Skript wird geladen …\n'; }
+function generate() { return { widget: genWidget, tool: genTool, func: genFunc, mix: genMix, lib: genLib }[S.type](); }
+function filePath() {
+  if (S.type === 'lib') { const e = libEntry(); return e ? e.path : 'SCRIPTS/TOOLS/bibliothek.lua'; }
+  return { widget: `WIDGETS/${widgetFolder()}/main.lua`, tool: `SCRIPTS/TOOLS/${toolFile()}.lua`, func: `SCRIPTS/FUNCTIONS/${funcFile()}.lua`, mix: `SCRIPTS/MIXES/${mixFile()}.lua` }[S.type];
+}
 
 // Einfache Lua-Syntaxfärbung
 const KW = new Set('and break do else elseif end false for function goto if in local nil not or repeat return then true until while'.split(' '));
@@ -935,12 +1010,14 @@ function changed() {
   save();
   const code = generate(), path = filePath();
   $('code').innerHTML = highlight(code);
-  $('tree').textContent = textTree([path, ...[...files.values()].map(fullPath)]);
+  const isLib = S.type === 'lib';
+  $('tree').textContent = textTree(isLib ? [path] : [path, ...[...files.values()].map(fullPath)]);
+  $('filesPanel').hidden = isLib;
   const lines = code.split('\n').length, bytes = new TextEncoder().encode(code).length;
   const warn = warnings();
   $('stats').innerHTML = `<span><b>${lines}</b> Zeilen</span><span><b>${(bytes / 1024).toFixed(1)}</b> KB</span>` +
     (isDesign() ? `<span><b>${doc().elements.length}</b> Elemente</span>` : '') +
-    (files.size ? `<span><b>${files.size}</b> Dateien · ${fmtSize(filesTotal())}</span>` : '') +
+    (files.size && !isLib ? `<span><b>${files.size}</b> Dateien · ${fmtSize(filesTotal())}</span>` : '') +
     warn.map(x => `<span style="color:var(--bad);flex-basis:100%">${esc(x)}</span>`).join('');
   if (isDesign()) { layoutCanvas(); buildLayers(); } else buildCenter();
   renderFiles();
@@ -961,7 +1038,8 @@ let files = new Map();          // key -> { scope, path, type, blob, size, iw, i
 const imgCache = new Map();     // key -> ImageBitmap (Vorschau)
 const thumbUrls = new Map();    // key -> Objekt-URL fürs Vorschaubild
 const fileKey = (scope, path) => scope + ':' + path;
-const projectDir = () => ({ widget: `WIDGETS/${widgetFolder()}/`, tool: `SCRIPTS/TOOLS/${toolFile()}/`, func: 'SCRIPTS/FUNCTIONS/', mix: 'SCRIPTS/MIXES/' }[S.type]);
+const projectDir = () => S.type === 'lib' ? filePath().replace(/[^/]*$/, '')
+  : ({ widget: `WIDGETS/${widgetFolder()}/`, tool: `SCRIPTS/TOOLS/${toolFile()}/`, func: 'SCRIPTS/FUNCTIONS/', mix: 'SCRIPTS/MIXES/' }[S.type]);
 const fullPath = f => (f.scope === 'project' ? projectDir() : '') + f.path;
 const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(2) + ' MB';
 const imgH = e => e.iw ? Math.max(1, Math.round(e.w * e.ih / e.iw)) : e.h;
@@ -1104,7 +1182,7 @@ async function fileAction(act, key) {
   }
 }
 function renderFiles() {
-  if (!$('exTree')) return;
+  if (!$('exTree') || S.type === 'lib') return;
   buildTargetOptions();
   const code = generate();
   const rows = [{ locked: true, full: filePath(), size: new TextEncoder().encode(code).length },
@@ -1178,15 +1256,21 @@ async function saveFile(filename, blob) {
   toast(`${filename} gespeichert.`, 'ok');
 }
 async function buildZip() {
+  if (S.type === 'lib') await ensureLibCode();
   const path = filePath(), parts = path.split('/'), enc = new TextEncoder(), entries = [], dirs = new Set();
   const addDirs = p => { const ps = p.split('/'); for (let i = 1; i < ps.length; i++) { const d = ps.slice(0, i).join('/') + '/'; if (!dirs.has(d)) { dirs.add(d); entries.push({ name: d, data: new Uint8Array() }); } } };
   addDirs(path); entries.push({ name: path, data: enc.encode(generate().replace(/\n/g, '\r\n')) });
-  for (const f of files.values()) { const fp = fullPath(f); if (fp === path) continue; addDirs(fp); entries.push({ name: fp, data: new Uint8Array(await f.blob.arrayBuffer()) }); }
+  for (const f of (S.type === 'lib' ? [] : files.values())) { const fp = fullPath(f); if (fp === path) continue; addDirs(fp); entries.push({ name: fp, data: new Uint8Array(await f.blob.arrayBuffer()) }); }
   const base = parts[parts.length - 1] === 'main.lua' ? parts[parts.length - 2] : parts[parts.length - 1].replace('.lua', '');
   return { base, path, entries, blob: makeZip(entries) };
 }
-$('dlZip').onclick = async () => { const z = await buildZip(); saveFile(`${z.base}.zip`, z.blob); };
-$('dlLua').onclick = () => { const p = filePath().split('/'); saveFile(p[p.length - 1], new Blob([generate()], { type: 'text/plain' })); };
+$('dlZip').onclick = async () => {
+  try { const z = await buildZip(); saveFile(`${z.base}.zip`, z.blob); } catch (e) { toast(e.message, 'err'); }
+};
+$('dlLua').onclick = async () => {
+  try { if (S.type === 'lib') await ensureLibCode(); } catch (e) { return toast(e.message, 'err'); }
+  const p = filePath().split('/'); saveFile(p[p.length - 1], new Blob([generate()], { type: 'text/plain' }));
+};
 $('copyLua').onclick = () => {
   navigator.clipboard.writeText(generate()).then(() => toast('Code kopiert.', 'ok')).catch(() => {
     const r = document.createRange(); r.selectNodeContents($('code')); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
@@ -1212,7 +1296,11 @@ async function writeToCard(pickNew) {
     const entries = (await buildZip()).entries;
     const r = await window.WerkstattSD.write(entries, { pickNew, onProgress: (v, name) => { if (name) toast(`Schreibe ${name} …`); } });
     if (r.cancelled) toast('Abgebrochen – es wurde nichts geschrieben.');
-    else toast(`${filePath()} ${files.size ? `und ${files.size} Datei${files.size === 1 ? '' : 'en'} ` : ''}auf die Karte geschrieben${r.replaced ? ` (${r.replaced} ersetzt)` : ''}. Karte auswerfen, dann: ${SD_NEXT[S.type]}`, 'ok');
+    else {
+      const extra = S.type !== 'lib' && files.size ? `und ${files.size} Datei${files.size === 1 ? '' : 'en'} ` : '';
+      const next = SD_NEXT[S.type === 'lib' ? (libEntry() || {}).kind : S.type] || '';
+      toast(`${filePath()} ${extra}auf die Karte geschrieben${r.replaced ? ` (${r.replaced} ersetzt)` : ''}. Karte auswerfen, dann: ${next}`, 'ok');
+    }
   } catch (e) { toast(e.message || 'Schreiben fehlgeschlagen. Ist die Karte noch verbunden?', 'err'); }
   btn.disabled = false;
 }
@@ -1220,7 +1308,7 @@ $('sdWrite').onclick = () => writeToCard(false);
 $('sdOther').onclick = () => writeToCard(true);
 
 // ---------- Im Bollisoft-Konto speichern (konto.js) ----------
-const TYPE_LABEL = { widget: 'Widget', tool: 'Tool', func: 'Funktion', mix: 'Mischer' };
+const TYPE_LABEL = { widget: 'Widget', tool: 'Tool', func: 'Funktion', mix: 'Mischer', lib: 'Bibliothek' };
 async function applyState(saved) {
   const { files: savedFiles, ...s } = saved || {};
   const d = DEFAULT();
@@ -1237,6 +1325,7 @@ async function applyState(saved) {
     if (path) files.set(fileKey(scope, path), { scope, path, type: f.type || '', blob, size: blob.size, iw: f.iw || 0, ih: f.ih || 0 });
   }
   imgCache.clear(); clearThumbs(); await persistFiles();
+  if (S.type === 'lib') loadLibCode();
   selId = null; buildAll(); changed();
 }
 if (window.WerkstattKonto && !window.claude) {
@@ -1259,6 +1348,10 @@ function buildAll() {
   buildSide(); buildCenter();
 }
 if (!S.mix.body) S.mix.body = MIX_TPL[S.mix.tpl]?.body || MIX_TPL.limiter.body;
+// Direktlink: lua-studio.html?bibliothek=<id> öffnet ein Skript der Bibliothek
+const wantedLib = new URLSearchParams(location.search).get('bibliothek');
+if (wantedLib && LIB.some(e => e.id === wantedLib)) { S.type = 'lib'; S.lib = wantedLib; }
+if (S.type === 'lib') loadLibCode();
 buildAll(); changed();
 loadFiles().then(() => changed());
 if (document.fonts && document.fonts.load) document.fonts.load('400 16px Roboto').then(draw, () => {});

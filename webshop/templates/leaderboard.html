@@ -16,6 +16,9 @@
       </p>
     </div>
 
+    {% set kategorie = "solo" %}
+    {% include "_lb_tabs.html" %}
+
     <form class="lb-filters" method="get" action="{{ url_for('leaderboard_pages.page') }}">
       <div class="lb-toggle" role="group" aria-label="{{ _("Ansicht") }}">
         <a href="{{ url_for('leaderboard_pages.page', land=land or None, klasse=klasse) }}"{% if view == "piloten" %} aria-current="true"{% endif %}>{{ _("Beste pro Pilot") }}</a>

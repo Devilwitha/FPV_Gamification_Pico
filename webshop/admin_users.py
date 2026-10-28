@@ -31,6 +31,7 @@ import leaderboard
 import pilot_license
 import roles
 import trick_labels
+import vs
 import tx15_backups
 import tx15_projects
 from tx15_backups import remove_file
@@ -280,6 +281,7 @@ def delete_account(email, with_posts=True):
         _delete_item(email, "copter", row["id"])
     for row in db.leaderboard_rows_for(email):
         _delete_item(email, "leaderboard", row["id"])
+    vs.delete_user_data(email)
     for mark in trick_labels.labels_of(email):
         _delete_item(email, "trickmarke", mark["id"])
     _delete_item(email, "ausweis", 0)

@@ -405,6 +405,108 @@ def init_db():
         )
         connection.execute("CREATE INDEX IF NOT EXISTS idx_trick_labels_status ON trick_labels (status, id)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_trick_labels_email ON trick_labels (email, id)")
+        # VS-Duelle und Turniere (vs.py): ein Match hat zwei Piloten und je eine Einreichung
+        # (Clip mit Overlay + Log); Turnier-Matches haben Runde und Platz im K.-o.-Baum.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tournaments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                organizer TEXT NOT NULL COLLATE NOCASE,
+                max_players INTEGER NOT NULL DEFAULT 16,
+                limit_s INTEGER NOT NULL DEFAULT 120,
+                status TEXT NOT NULL DEFAULT 'signup',
+                signup_open INTEGER NOT NULL DEFAULT 1,
+                winner TEXT COLLATE NOCASE,
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tournament_players (
+                tournament_id INTEGER NOT NULL REFERENCES tournaments (id) ON DELETE CASCADE,
+                email TEXT NOT NULL COLLATE NOCASE,
+                seed INTEGER,
+                joined_at TEXT NOT NULL,
+                PRIMARY KEY (tournament_id, email)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vs_matches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_by TEXT NOT NULL COLLATE NOCASE,
+                pilot_a TEXT COLLATE NOCASE,
+                pilot_b TEXT COLLATE NOCASE,
+                limit_s INTEGER NOT NULL DEFAULT 120,
+                status TEXT NOT NULL DEFAULT 'open',
+                winner TEXT COLLATE NOCASE,
+                result_note TEXT NOT NULL DEFAULT '',
+                tournament_id INTEGER REFERENCES tournaments (id) ON DELETE CASCADE,
+                round INTEGER NOT NULL DEFAULT 0,
+                slot INTEGER NOT NULL DEFAULT 0,
+                rated INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            )
+            """
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_vs_matches_pilots ON vs_matches (pilot_a, pilot_b)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_vs_matches_tournament ON vs_matches (tournament_id, round, slot)")
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vs_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id INTEGER NOT NULL REFERENCES vs_matches (id) ON DELETE CASCADE,
+                pilot TEXT NOT NULL COLLATE NOCASE,
+                uploaded_by TEXT NOT NULL COLLATE NOCASE,
+                confirmed INTEGER NOT NULL DEFAULT 1,
+                score INTEGER NOT NULL DEFAULT 0,
+                tricks INTEGER NOT NULL DEFAULT 0,
+                best TEXT NOT NULL DEFAULT '',
+                max_combo INTEGER NOT NULL DEFAULT 0,
+                cells INTEGER,
+                craft TEXT NOT NULL DEFAULT '',
+                window_start REAL NOT NULL DEFAULT 0,
+                tricks_json TEXT NOT NULL DEFAULT '[]',
+                settings_json TEXT NOT NULL DEFAULT '{}',
+                source TEXT NOT NULL DEFAULT '',
+                log_name TEXT NOT NULL DEFAULT '',
+                log_index INTEGER NOT NULL DEFAULT 0,
+                log_filename TEXT,
+                log_size INTEGER NOT NULL DEFAULT 0,
+                video_filename TEXT,
+                video_size INTEGER NOT NULL DEFAULT 0,
+                video_mime TEXT NOT NULL DEFAULT '',
+                video_start REAL NOT NULL DEFAULT 0,
+                log_hash TEXT,
+                flight_hash TEXT,
+                video_hash TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE (match_id, pilot)
+            )
+            """
+        )
+        for column in ("log_hash", "flight_hash"):
+            connection.execute(f"CREATE INDEX IF NOT EXISTS idx_vs_entries_{column} ON vs_entries ({column})")
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vs_ratings (
+                email TEXT PRIMARY KEY COLLATE NOCASE,
+                elo REAL NOT NULL DEFAULT 1000,
+                wins INTEGER NOT NULL DEFAULT 0,
+                losses INTEGER NOT NULL DEFAULT 0,
+                draws INTEGER NOT NULL DEFAULT 0,
+                best_score INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS leaderboard_reports (
@@ -1614,6 +1716,309 @@ def trick_examples(limit=5000):
 def trick_label_filenames():
     with _get_connection() as connection:
         return {row[0] for row in connection.execute("SELECT clip_filename FROM trick_labels WHERE clip_filename IS NOT NULL")}
+
+
+# --- VS-Duelle und Turniere (vs.py) -----------------------------------------------
+
+_MATCH_SELECT = """
+    SELECT m.*, a.username AS username_a, b.username AS username_b, w.username AS username_winner,
+           pa.avatar_filename AS avatar_a, pb.avatar_filename AS avatar_b, t.name AS tournament_name
+    FROM vs_matches m
+    LEFT JOIN accounts a ON a.email = m.pilot_a COLLATE NOCASE
+    LEFT JOIN accounts b ON b.email = m.pilot_b COLLATE NOCASE
+    LEFT JOIN accounts w ON w.email = m.winner COLLATE NOCASE
+    LEFT JOIN account_profiles pa ON pa.email = m.pilot_a COLLATE NOCASE
+    LEFT JOIN account_profiles pb ON pb.email = m.pilot_b COLLATE NOCASE
+    LEFT JOIN tournaments t ON t.id = m.tournament_id
+"""
+
+
+def search_candidates(exclude_email, limit=20000):
+    """Alle Konten mit Benutzername fuer die unscharfe Suche (vs.rank_users)."""
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT a.username, a.email, p.avatar_filename,
+                   CASE WHEN COALESCE(p.show_country, 1) = 1 THEN NULLIF(a.country, '') END AS country,
+                   r.elo
+            FROM accounts a
+            LEFT JOIN account_profiles p ON p.email = a.email COLLATE NOCASE
+            LEFT JOIN vs_ratings r ON r.email = a.email COLLATE NOCASE
+            WHERE a.username IS NOT NULL AND a.username <> '' AND a.email <> ? COLLATE NOCASE
+            LIMIT ?
+            """,
+            (exclude_email or "", limit),
+        ).fetchall()
+
+
+def vs_create_match(fields):
+    fields = {"created_at": _now_iso(), **fields}
+    columns = ", ".join(fields)
+    placeholders = ", ".join("?" for _ in fields)
+    with _get_connection() as connection:
+        return connection.execute(
+            f"INSERT INTO vs_matches ({columns}) VALUES ({placeholders})", tuple(fields.values())
+        ).lastrowid
+
+
+def vs_get_match(match_id):
+    with _get_connection() as connection:
+        return connection.execute(_MATCH_SELECT + " WHERE m.id = ?", (match_id,)).fetchone()
+
+
+def vs_update_match(match_id, **fields):
+    assignments = ", ".join(f"{column} = ?" for column in fields)
+    with _get_connection() as connection:
+        connection.execute(f"UPDATE vs_matches SET {assignments} WHERE id = ?", (*fields.values(), match_id))
+
+
+def vs_matches_for(email, limit=100):
+    with _get_connection() as connection:
+        return connection.execute(
+            _MATCH_SELECT + " WHERE (m.pilot_a = ? COLLATE NOCASE OR m.pilot_b = ? COLLATE NOCASE OR m.created_by = ? COLLATE NOCASE)"
+            " AND m.status <> 'cancelled' ORDER BY m.status = 'open' DESC, COALESCE(m.completed_at, m.created_at) DESC LIMIT ?",
+            (email, email, email, limit),
+        ).fetchall()
+
+
+def vs_recent_matches(limit=20):
+    """Zuletzt entschiedene Duelle mit zwei Fluegen (ohne Freilose und kampflose Siege)."""
+    with _get_connection() as connection:
+        return connection.execute(
+            _MATCH_SELECT + " WHERE m.status = 'done' AND m.result_note = '' ORDER BY m.completed_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+
+
+def vs_open_count(email):
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT COUNT(*) FROM vs_matches WHERE created_by = ? COLLATE NOCASE AND status = 'open' AND tournament_id IS NULL",
+            (email,),
+        ).fetchone()[0]
+
+
+def vs_add_entry(fields):
+    fields = {"created_at": _now_iso(), **fields}
+    columns = ", ".join(fields)
+    placeholders = ", ".join("?" for _ in fields)
+    with _get_connection() as connection:
+        return connection.execute(
+            f"INSERT INTO vs_entries ({columns}) VALUES ({placeholders})", tuple(fields.values())
+        ).lastrowid
+
+
+def vs_entries(match_id):
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT e.*, a.username AS pilot_username, u.username AS uploader_username
+            FROM vs_entries e
+            LEFT JOIN accounts a ON a.email = e.pilot COLLATE NOCASE
+            LEFT JOIN accounts u ON u.email = e.uploaded_by COLLATE NOCASE
+            WHERE e.match_id = ? ORDER BY e.id
+            """,
+            (match_id,),
+        ).fetchall()
+
+
+def vs_get_entry(entry_id):
+    with _get_connection() as connection:
+        return connection.execute("SELECT * FROM vs_entries WHERE id = ?", (entry_id,)).fetchone()
+
+
+def vs_confirm_entry(entry_id):
+    with _get_connection() as connection:
+        connection.execute("UPDATE vs_entries SET confirmed = 1 WHERE id = ?", (entry_id,))
+
+
+def vs_delete_entry(entry_id):
+    with _get_connection() as connection:
+        row = connection.execute("SELECT * FROM vs_entries WHERE id = ?", (entry_id,)).fetchone()
+        if row is not None:
+            connection.execute("DELETE FROM vs_entries WHERE id = ?", (entry_id,))
+        return row
+
+
+def vs_entry_with_hash(log_hash=None, flight_hash=None):
+    """Erste VS-Einreichung mit demselben Log oder denselben Flugdaten."""
+    with _get_connection() as connection:
+        for column, value in (("log_hash", log_hash), ("flight_hash", flight_hash)):
+            if value:
+                row = connection.execute(f"SELECT * FROM vs_entries WHERE {column} = ? LIMIT 1", (value,)).fetchone()
+                if row is not None:
+                    return row
+    return None
+
+
+def vs_entry_filenames():
+    with _get_connection() as connection:
+        names = set()
+        for row in connection.execute("SELECT video_filename, log_filename FROM vs_entries"):
+            names.update(name for name in row if name)
+        return names
+
+
+def vs_entries_by(email):
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT * FROM vs_entries WHERE pilot = ? COLLATE NOCASE OR uploaded_by = ? COLLATE NOCASE", (email, email)
+        ).fetchall()
+
+
+def vs_get_rating(email):
+    with _get_connection() as connection:
+        return connection.execute("SELECT * FROM vs_ratings WHERE email = ? COLLATE NOCASE", (email,)).fetchone()
+
+
+def vs_save_rating(email, elo, wins, losses, draws, best_score):
+    with _get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO vs_ratings (email, elo, wins, losses, draws, best_score, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (email) DO UPDATE SET elo = excluded.elo, wins = excluded.wins, losses = excluded.losses,
+                draws = excluded.draws, best_score = excluded.best_score, updated_at = excluded.updated_at
+            """,
+            (email, elo, wins, losses, draws, best_score, _now_iso()),
+        )
+
+
+def vs_ratings_list(limit=500):
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT r.*, a.username, p.avatar_filename,
+                   CASE WHEN COALESCE(p.show_country, 1) = 1 THEN NULLIF(a.country, '') END AS country
+            FROM vs_ratings r
+            JOIN accounts a ON a.email = r.email COLLATE NOCASE
+            LEFT JOIN account_profiles p ON p.email = r.email COLLATE NOCASE
+            WHERE r.wins + r.losses + r.draws > 0
+            ORDER BY r.elo DESC, r.wins DESC, a.username COLLATE NOCASE
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+
+def tournament_create(fields):
+    fields = {"created_at": _now_iso(), **fields}
+    columns = ", ".join(fields)
+    placeholders = ", ".join("?" for _ in fields)
+    with _get_connection() as connection:
+        return connection.execute(
+            f"INSERT INTO tournaments ({columns}) VALUES ({placeholders})", tuple(fields.values())
+        ).lastrowid
+
+
+_TOURNAMENT_SELECT = """
+    SELECT t.*, o.username AS organizer_username, w.username AS winner_username,
+           (SELECT COUNT(*) FROM tournament_players p WHERE p.tournament_id = t.id) AS player_count
+    FROM tournaments t
+    LEFT JOIN accounts o ON o.email = t.organizer COLLATE NOCASE
+    LEFT JOIN accounts w ON w.email = t.winner COLLATE NOCASE
+"""
+
+
+def tournament_get(tournament_id):
+    with _get_connection() as connection:
+        return connection.execute(_TOURNAMENT_SELECT + " WHERE t.id = ?", (tournament_id,)).fetchone()
+
+
+def tournament_list(limit=100):
+    with _get_connection() as connection:
+        return connection.execute(
+            _TOURNAMENT_SELECT + " WHERE t.status <> 'cancelled'"
+            " ORDER BY CASE t.status WHEN 'running' THEN 0 WHEN 'signup' THEN 1 ELSE 2 END, t.created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+
+def tournament_update(tournament_id, **fields):
+    assignments = ", ".join(f"{column} = ?" for column in fields)
+    with _get_connection() as connection:
+        connection.execute(f"UPDATE tournaments SET {assignments} WHERE id = ?", (*fields.values(), tournament_id))
+
+
+def tournament_players(tournament_id):
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT tp.*, a.username, pr.avatar_filename, r.elo
+            FROM tournament_players tp
+            LEFT JOIN accounts a ON a.email = tp.email COLLATE NOCASE
+            LEFT JOIN account_profiles pr ON pr.email = tp.email COLLATE NOCASE
+            LEFT JOIN vs_ratings r ON r.email = tp.email COLLATE NOCASE
+            WHERE tp.tournament_id = ? ORDER BY COALESCE(tp.seed, 999), tp.joined_at
+            """,
+            (tournament_id,),
+        ).fetchall()
+
+
+def tournament_add_player(tournament_id, email):
+    with _get_connection() as connection:
+        connection.execute(
+            "INSERT OR IGNORE INTO tournament_players (tournament_id, email, joined_at) VALUES (?, ?, ?)",
+            (tournament_id, email, _now_iso()),
+        )
+
+
+def tournament_remove_player(tournament_id, email):
+    with _get_connection() as connection:
+        connection.execute(
+            "DELETE FROM tournament_players WHERE tournament_id = ? AND email = ? COLLATE NOCASE", (tournament_id, email)
+        )
+
+
+def tournament_set_seed(tournament_id, email, seed):
+    with _get_connection() as connection:
+        connection.execute(
+            "UPDATE tournament_players SET seed = ? WHERE tournament_id = ? AND email = ? COLLATE NOCASE",
+            (seed, tournament_id, email),
+        )
+
+
+def tournament_matches(tournament_id):
+    with _get_connection() as connection:
+        return connection.execute(
+            _MATCH_SELECT + " WHERE m.tournament_id = ? ORDER BY m.round, m.slot", (tournament_id,)
+        ).fetchall()
+
+
+def tournament_match_at(tournament_id, round_number, slot):
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT * FROM vs_matches WHERE tournament_id = ? AND round = ? AND slot = ?", (tournament_id, round_number, slot)
+        ).fetchone()
+
+
+def tournament_stats_rows():
+    """Alle Turnier-Matches mit Runde, Rundenzahl des Turniers und Sieger (fuer die Turnier-Rangliste)."""
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            SELECT m.tournament_id, m.round, m.pilot_a, m.pilot_b, m.winner, m.status, m.result_note, t.status AS t_status,
+                   t.winner AS t_winner, (SELECT MAX(round) FROM vs_matches x WHERE x.tournament_id = m.tournament_id) AS rounds
+            FROM vs_matches m JOIN tournaments t ON t.id = m.tournament_id
+            WHERE t.status IN ('running', 'done')
+            """
+        ).fetchall()
+
+
+def accounts_by_emails(emails):
+    emails = [e for e in emails if e]
+    if not emails:
+        return {}
+    marks = ", ".join("?" for _ in emails)
+    with _get_connection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT a.email, a.username, p.avatar_filename,
+                   CASE WHEN COALESCE(p.show_country, 1) = 1 THEN NULLIF(a.country, '') END AS country
+            FROM accounts a LEFT JOIN account_profiles p ON p.email = a.email COLLATE NOCASE
+            WHERE lower(a.email) IN ({marks})
+            """,
+            [e.lower() for e in emails],
+        ).fetchall()
+        return {row["email"].lower(): row for row in rows}
 
 
 def leaderboard_add_report(entry_id, email, reason):

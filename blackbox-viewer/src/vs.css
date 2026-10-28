@@ -1,0 +1,185 @@
+/* VS viewer (vs.html): scoreboard, two stages side by side, shared controls */
+.vs-layout {
+  display: grid;
+  gap: 16px;
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: 20px 24px 40px;
+}
+
+.vs-scoreboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.vs-team {
+  display: grid;
+  gap: 2px;
+}
+
+.vs-team[data-side="b"] {
+  text-align: right;
+}
+
+.vs-name {
+  font: 600 18px var(--f-body);
+}
+
+.vs-total {
+  font: 700 clamp(32px, 4vw, 52px) / 1.05 var(--f-mono);
+  color: var(--muted);
+  transition: color 0.2s;
+}
+
+.vs-team.lead .vs-total {
+  color: var(--accent);
+}
+
+.vs-last {
+  min-height: 1.4em;
+  font-size: 13px;
+  color: var(--warn);
+}
+
+.vs-center {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+}
+
+.vs-clock {
+  font: 600 18px var(--f-mono);
+}
+
+.vs-bar {
+  display: flex;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--line);
+}
+
+.vs-bar i {
+  display: block;
+  height: 100%;
+  transition: width 0.25s;
+}
+
+.vs-bar i:first-child {
+  background: var(--accent);
+}
+
+.vs-bar i:last-child {
+  background: #4cc9f0;
+}
+
+.vs-result {
+  min-height: 1.4em;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.vs-stages {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.vs-stage-wrap {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+
+.vs-stage video {
+  display: none;
+}
+
+.vs-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.vs-local,
+.vs-shift {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.vs-tricks {
+  display: grid;
+  gap: 2px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.vs-tricks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.vs-tricks li.done {
+  color: var(--text);
+}
+
+.vs-tricks li.done b {
+  color: var(--accent);
+}
+
+.vs-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.vs-controls input[type="range"] {
+  flex: 1 1 260px;
+  accent-color: var(--accent);
+}
+
+.vs-hint {
+  margin: 0;
+}
+
+.vs-busy {
+  position: fixed;
+  z-index: 40;
+}
+
+@media (max-width: 900px) {
+  .vs-stages,
+  .vs-scoreboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vs-team[data-side="b"] {
+    text-align: left;
+  }
+
+  .vs-layout {
+    padding: 12px 16px 24px;
+  }
+}

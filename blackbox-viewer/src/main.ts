@@ -12,13 +12,15 @@ import { MspClient, serialSupported } from './decoder/msp.ts';
 import { simulateFlight } from './demo/simulate.ts';
 import { audioEnvelope, correlate, estimateDrift, logSignal, throttlePunches } from './sync/audio.ts';
 import type { FlightData, Trick, TrickType, WorkerRequest, WorkerResponse } from './types.ts';
-import { DEFAULT_HUD, Hud, type HudOptions } from './ui/hud.ts';
+import { DEFAULT_HUD, type HudOptions } from './ui/hud.ts';
 import {
   SubmitRejectedError, checkDuplicate, deleteEntry, fetchAuth, fingerprints, fetchEntry, fetchLeaderboard, reportEntry, submitScore, verifyEntry,
   type AuthState, type EntryDetail, type SubmitMeta,
 } from './ui/leaderboard.ts';
-import { SimView, computeTrack, type Track } from './ui/simview.ts';
 import { Timeline } from './ui/timeline.ts';
+import { LogDecoder, largestLog } from './core/decoder.ts';
+import { FlightPlayer } from './core/player.ts';
+import { matchScore, type MatchScore } from './core/match.ts';
 import { deleteOwnMark, fetchCatalog, fetchOwnMarks, submitMark, type OwnMark, type TrickCatalog } from './ui/tricklabels.ts';
 
 // ---------- helpers ----------
@@ -65,23 +67,10 @@ function toast(msg: string, kind: 'info' | 'error' = 'info', ms = 4000) {
 }
 
 // ---------- state ----------
+// Flight, analysis, video sync and playback live in the shared FlightPlayer (core/player.ts).
 const state = {
-  flight: null as FlightData | null,
-  analysis: null as Analysis | null,
-  track: null as Track | null,
-  settings: load<DetectSettings>('bba.settings', DEFAULT_SETTINGS),
-  hud: load<HudOptions>('bba.hud', DEFAULT_HUD),
-  userLabels: new Map<string, TrickType>(),
-  offset: 0,
-  /** video clock / log clock: videoTime = offset + speed · logTime (1 = no drift) */
-  speed: 1,
   /** applied sync anchors (video time ↔ log time); two of them also fix the drift */
   anchors: [] as { v: number; l: number }[],
-  videoFile: null as File | null,
-  videoUrl: '',
-  clockT: 0,
-  playing: false,
-  rate: 1,
   markVideo: null as number | null,
   markLog: null as number | null,
   activeTrickId: -1,
@@ -111,6 +100,22 @@ const marking = {
   playUntil: null as number | null,
 };
 let catalog: TrickCatalog = { online: false, loggedIn: false, custom: [], mine: [], examples: [] };
+/** VS duel from ?match=<id> (see loadDuel) */
+interface MatchInfo {
+  id: number;
+  limit: number;
+  status: string;
+  a: { username: string } | null;
+  b: { username: string } | null;
+  canUploadFor: string[];
+  pageUrl: string;
+  watchUrl: string;
+  tournament: { name: string } | null;
+}
+const matchId = Number(new URLSearchParams(location.search).get('match')) || 0;
+let duel: MatchInfo | null = null;
+let duelScore: MatchScore | null = null;
+
 let communityEnabled = (() => {
   try {
     return localStorage.getItem('bba.community') !== 'off';
@@ -132,13 +137,14 @@ const trickColor = (t: string) => TRICK_COLOR[t] ?? '#f15bb5';
 /** log index to open next (admin: re-open a submitted log exactly as submitted) */
 let pendingLogIndex: number | null = null;
 const ml = new TrickClassifier();
-const hud = new Hud();
-const sim = new SimView();
 const video = $<HTMLVideoElement>('video');
 const stage = $<HTMLCanvasElement>('stageCanvas');
-const sctx = stage.getContext('2d')!;
 stage.width = 1280;
 stage.height = 720;
+const player = new FlightPlayer(stage, video, {
+  settings: load<DetectSettings>('bba.settings', DEFAULT_SETTINGS),
+  hud: load<HudOptions>('bba.hud', DEFAULT_HUD),
+});
 
 const timeline = new Timeline($<HTMLCanvasElement>('timeline'), {
   onSeek: (t) => seek(t),
@@ -152,46 +158,21 @@ const timeline = new Timeline($<HTMLCanvasElement>('timeline'), {
   onRange: (t0, t1) => setMarkRange(t0, t1),
 });
 
-// ---------- worker ----------
-const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-const send = (msg: WorkerRequest, transfer: Transferable[] = []) => worker.postMessage(msg, transfer);
-let logSizes: number[] = [];
+// ---------- decoding (core/decoder.ts) ----------
+const decoder = new LogDecoder();
+decoder.onProgress = (label, value) => busy(label, value);
 
-worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
-  const msg = e.data;
-  switch (msg.type) {
-    case 'progress':
-      busy(msg.label, msg.value);
-      break;
-    case 'logs': {
-      logSizes = msg.logs.map((l) => l.bytes);
-      const sel = $<HTMLSelectElement>('logSelect');
-      sel.replaceChildren(...msg.logs.map((l) => el('option', { value: String(l.index), textContent: `Log ${l.index + 1} (${(l.bytes / 1024).toFixed(0)} KB)` })));
-      $('logSelectRow').hidden = msg.logs.length < 2;
-      // default: the largest log (usually the actual flight)
-      const best = msg.logs.reduce((a, b) => (b.bytes > a.bytes ? b : a), msg.logs[0]);
-      const pick = pendingLogIndex !== null && msg.logs.some((l) => l.index === pendingLogIndex) ? pendingLogIndex : best.index;
-      if (msg.logs.length > 1 && pendingLogIndex === null) toast(`${msg.logs.length} Logs in der Datei gefunden – zeige Log ${best.index + 1}. Auswahl unter „Log-Info“.`);
-      pendingLogIndex = null;
-      sel.value = String(pick);
-      state.logIndex = pick;
-      send({ type: 'process', index: pick });
-      break;
-    }
-    case 'flight':
-      busy(null);
-      setFlight(msg.flight);
-      break;
-    case 'csv':
-      busy(null);
-      download(msg.blob, msg.name);
-      break;
-    case 'error':
-      busy(null);
-      toast(msg.message, 'error', 7000);
-      break;
+/** Decode one log of the opened file and show it. */
+async function openLog(index: number) {
+  busy('Dekodiere…', 0);
+  try {
+    setFlight(await decoder.decode(index));
+  } catch (err) {
+    toast(err instanceof Error ? err.message : String(err), 'error', 7000);
+  } finally {
+    busy(null);
   }
-};
+}
 
 function busy(label: string | null, value = 0) {
   $('busy').hidden = label === null;
@@ -205,17 +186,31 @@ async function loadLogFile(file: File | Blob, name: string) {
   busy('Lese Datei…', 0.02);
   state.logFile = file;
   state.logName = name;
-  const buffer = await file.arrayBuffer();
-  send({ type: 'load', name, buffer }, [buffer]);
+  let logs;
+  try {
+    ({ logs } = await decoder.open(file, name));
+  } catch (err) {
+    busy(null);
+    toast(err instanceof Error ? err.message : String(err), 'error', 7000);
+    return;
+  }
+  const sel = $<HTMLSelectElement>('logSelect');
+  sel.replaceChildren(...logs.map((l) => el('option', { value: String(l.index), textContent: `Log ${l.index + 1} (${(l.bytes / 1024).toFixed(0)} KB)` })));
+  $('logSelectRow').hidden = logs.length < 2;
+  // default: the largest log (usually the actual flight)
+  const best = largestLog(logs);
+  const pick = pendingLogIndex !== null && logs.some((l) => l.index === pendingLogIndex) ? pendingLogIndex : best;
+  if (logs.length > 1 && pendingLogIndex === null) toast(`${logs.length} Logs in der Datei gefunden – zeige Log ${best + 1}. Auswahl unter „Log-Info“.`);
+  pendingLogIndex = null;
+  sel.value = String(pick);
+  state.logIndex = pick;
+  await openLog(pick);
 }
 
 // ---------- flight / analysis ----------
 function setFlight(f: FlightData) {
-  state.flight = f;
-  state.userLabels = new Map();
-  state.track = computeTrack(f);
-  state.clockT = 0;
-  state.playing = false;
+  player.setFlight(f);
+  $('btnPlay').textContent = '▶';
   state.markLog = null;
   timeline.setMarker(null);
   marking.marks = [];
@@ -235,19 +230,19 @@ function setFlight(f: FlightData) {
   updateVideoUi();
   updateAnchorUi();
   updateSubmit();
-  if (state.videoUrl) seek(Math.max(0, -state.offset / state.speed));
+  if (player.videoUrl) seek(Math.max(0, -player.offset / player.speed));
   else seek(0);
 }
 
 function reanalyze(resetView = false) {
-  const f = state.flight;
+  const f = player.flight;
   if (!f) return;
-  state.analysis = detectTricks(f, state.settings, {
+  player.analyze({
     labeler: ml.ready ? (feat) => ml.predict(feat) : null,
-    userLabels: state.userLabels,
     learned: learnedExamples(),
   });
-  timeline.setData(f, state.analysis, resetView);
+  if (!player.analysis) return;
+  timeline.setData(f, player.analysis, resetView);
   timeline.setMarks(marking.marks.map((m) => ({ start: m.start, end: m.end, label: m.name, color: m.type ? trickColor(m.type) : '#f15bb5' })));
   renderTricks();
   renderScore();
@@ -256,7 +251,7 @@ function reanalyze(resetView = false) {
 }
 
 function renderScore() {
-  const a = state.analysis;
+  const a = player.analysis;
   const s = summarize(a?.tricks ?? []);
   $('scoreTotal').textContent = s.total.toLocaleString('de-DE');
   $('statTricks').textContent = String(s.count);
@@ -295,7 +290,7 @@ function trickRow(tr: Trick, rejected: boolean) {
   select.addEventListener('click', (e) => e.stopPropagation());
   select.addEventListener('change', () => {
     const label = select.value as TrickType;
-    state.userLabels.set(tr.key, label);
+    player.userLabels.set(tr.key, label);
     ml.add(tr.features, label);
     reanalyze();
     toast(`Als „${trickLabel(label)}“ markiert – ${ml.examples.length} Trainingsbeispiele.`);
@@ -362,7 +357,7 @@ function markRow(m: Mark) {
 
 function renderTricks() {
   const list = $('trickList');
-  const a = state.analysis;
+  const a = player.analysis;
   if (!a) return list.replaceChildren();
   const rows = [
     ...a.tricks.map((t) => ({ start: t.start, node: () => trickRow(t, false) })),
@@ -376,7 +371,7 @@ function renderTricks() {
 }
 
 function highlightActive(t: number) {
-  const a = state.analysis;
+  const a = player.analysis;
   if (!a) return;
   const cur = a.tricks.find((tr) => t >= tr.start - 0.05 && t <= tr.end + 1.5);
   const id = cur ? cur.id : -1;
@@ -385,49 +380,40 @@ function highlightActive(t: number) {
   for (const li of $('trickList').children) {
     const on = (li as HTMLElement).dataset.id === String(id);
     li.classList.toggle('active', on);
-    if (on && state.playing) li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (on && player.playing) li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 }
 
-// ---------- playback ----------
-const hasVideo = () => !!state.videoUrl && video.readyState >= 1;
-const duration = () => state.flight?.info.duration ?? 0;
-
+// ---------- playback (core/player.ts) ----------
+function hasVideo() {
+  return player.hasVideo();
+}
+function duration() {
+  return player.duration;
+}
 /** Video time ↔ log time, with clock drift: videoTime = offset + speed · logTime. */
-const toVideoTime = (t: number) => state.offset + state.speed * t;
-const toLogTime = (v: number) => (v - state.offset) / state.speed;
-
+function toVideoTime(t: number) {
+  return player.toVideoTime(t);
+}
+function toLogTime(v: number) {
+  return player.toLogTime(v);
+}
 function logTime() {
-  return hasVideo() ? toLogTime(video.currentTime) : state.clockT;
+  return player.logTime();
 }
-
 function seek(t: number) {
-  if (!state.flight) return;
-  t = Math.max(0, Math.min(duration(), t));
-  if (hasVideo()) video.currentTime = Math.max(0, Math.min(video.duration || 0, toVideoTime(t)));
-  state.clockT = t;
+  player.seek(t);
 }
-
 function setPlaying(on: boolean) {
-  if (!state.flight) return;
-  state.playing = on;
-  if (hasVideo()) {
-    if (on) video.play().catch(() => (state.playing = false));
-    else video.pause();
-  } else if (on && state.clockT >= duration() - 0.01) {
-    state.clockT = 0;
-  }
-  $('btnPlay').textContent = on ? '❚❚' : '▶';
+  player.setPlaying(on);
 }
-
-video.addEventListener('ended', () => {
-  setPlaying(false);
+player.onPlayingChange = (on) => {
+  $('btnPlay').textContent = on ? '❚❚' : '▶';
+};
+player.onEnded = () => {
   if (recorder) stopRecording();
   subRec?.finish();
-});
-video.addEventListener('pause', () => {
-  if (state.playing && !video.ended) setPlaying(false);
-});
+};
 
 let lastNow = performance.now();
 let lastLabel = '';
@@ -435,50 +421,19 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const dt = (now - lastNow) / 1000;
   lastNow = now;
-  const f = state.flight;
-  const W = stage.width, H = stage.height;
-  if (!f) {
-    sctx.fillStyle = '#000';
-    sctx.fillRect(0, 0, W, H);
+  if (!player.flight) {
+    player.render();
     return;
   }
-  if (!hasVideo() && state.playing) {
-    state.clockT += dt * state.rate;
-    if (state.clockT >= duration()) {
-      state.clockT = duration();
-      setPlaying(false);
-      if (recorder) stopRecording();
-    }
-  }
+  // without video the player's clock runs; at the end an ongoing recording stops
+  if (player.advance(dt) && recorder) stopRecording();
   const t = logTime();
   subRec?.tick(t);
   if (marking.playUntil !== null && t >= marking.playUntil) {
     marking.playUntil = null;
     setPlaying(false);
   }
-  const i = indexAt(f.t, t);
-  if (hasVideo() && video.videoWidth) {
-    sctx.fillStyle = '#000';
-    sctx.fillRect(0, 0, W, H);
-    const k = Math.min(W / video.videoWidth, H / video.videoHeight);
-    const vw = video.videoWidth * k, vh = video.videoHeight * k;
-    sctx.drawImage(video, (W - vw) / 2, (H - vh) / 2, vw, vh);
-    if (t < 0 || t > duration()) {
-      sctx.fillStyle = 'rgba(0,0,0,0.5)';
-      sctx.fillRect(0, H - 40, W, 40);
-      sctx.fillStyle = '#fee440';
-      sctx.font = '600 18px system-ui';
-      sctx.fillText('Außerhalb des Logs – Versatz prüfen', 20, H - 14);
-    }
-  } else {
-    sim.draw(sctx, W, H, f, i, state.track);
-    sctx.fillStyle = 'rgba(255,255,255,0.55)';
-    sctx.font = '600 14px system-ui';
-    sctx.fillText('SIM-ANSICHT (kein Video)', 24, H - 128);
-  }
-  if (t >= 0 && t <= duration() + 0.05 && state.analysis) {
-    hud.draw(sctx, W, H, f, i, t, state.analysis, state.settings.comboWindow, state.hud);
-  }
+  player.render(t);
   timeline.setCursor(t);
   const label = `${fmtTime(t)} / ${fmtTime(duration())}`;
   if (label !== lastLabel) {
@@ -489,19 +444,18 @@ function frame(now: number) {
 }
 requestAnimationFrame(frame);
 
-$('btnPlay').addEventListener('click', () => setPlaying(!state.playing));
+$('btnPlay').addEventListener('click', () => setPlaying(!player.playing));
 $('btnBack').addEventListener('click', () => seek(logTime() - 2));
 $('btnFwd').addEventListener('click', () => seek(logTime() + 2));
 $<HTMLSelectElement>('speed').addEventListener('change', (e) => {
-  state.rate = Number((e.target as HTMLSelectElement).value);
-  video.playbackRate = state.rate;
+  player.setRate(Number((e.target as HTMLSelectElement).value));
 });
 document.addEventListener('keydown', (e) => {
   const tag = (e.target as HTMLElement).tagName;
-  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || !state.flight) return;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || !player.flight) return;
   if (e.code === 'Space') {
     e.preventDefault();
-    setPlaying(!state.playing);
+    setPlaying(!player.playing);
   } else if (e.code === 'ArrowLeft') seek(logTime() - (e.shiftKey ? 0.1 : 2));
   else if (e.code === 'ArrowRight') seek(logTime() + (e.shiftKey ? 0.1 : 2));
 });
@@ -517,10 +471,10 @@ const HUD_LABELS: Record<keyof HudOptions, string> = {
 };
 $('hudToggles').append(
   ...(Object.keys(HUD_LABELS) as (keyof HudOptions)[]).map((k) => {
-    const cb = el('input', { type: 'checkbox', checked: state.hud[k] });
+    const cb = el('input', { type: 'checkbox', checked: player.hudOptions[k] });
     cb.addEventListener('change', () => {
-      state.hud[k] = cb.checked;
-      store('bba.hud', state.hud);
+      player.hudOptions[k] = cb.checked;
+      store('bba.hud', player.hudOptions);
     });
     return el('label', { className: 'check' }, cb, HUD_LABELS[k]);
   }),
@@ -575,72 +529,60 @@ const startDemo = () => {
 $('btnDemo').addEventListener('click', startDemo);
 $('btnDemo2').addEventListener('click', startDemo);
 $<HTMLSelectElement>('logSelect').addEventListener('change', (e) => {
-  busy('Dekodiere…', 0);
   state.logIndex = Number((e.target as HTMLSelectElement).value);
-  send({ type: 'process', index: state.logIndex });
+  void openLog(state.logIndex);
 });
 
 // ---------- video & sync ----------
 function loadVideo(file: File) {
-  if (state.videoUrl) URL.revokeObjectURL(state.videoUrl);
-  state.videoFile = file;
-  state.videoUrl = URL.createObjectURL(file);
-  video.src = state.videoUrl;
-  video.playbackRate = state.rate;
-  video.addEventListener(
-    'loadedmetadata',
+  player.loadVideo(file).then(
     () => {
-      const big = video.videoHeight >= 1000;
-      stage.width = big ? 1920 : 1280;
-      stage.height = big ? 1080 : 720;
       updateVideoUi();
       updateMarkUi();
       seek(logTime());
       toast(`Video geladen: ${file.name}`);
     },
-    { once: true },
+    (err) => toast(err instanceof Error ? err.message : String(err), 'error'),
   );
-  video.addEventListener('error', () => toast('Video kann in diesem Browser nicht abgespielt werden.', 'error'), { once: true });
 }
 
-function setOffset(v: number, speed = state.speed) {
+function setOffset(v: number, speed = player.speed) {
   const t = logTime();
-  state.offset = Math.round(v * 1000) / 1000;
-  state.speed = Math.round(Math.min(1.1, Math.max(0.9, speed)) * 1e6) / 1e6;
-  $<HTMLInputElement>('offset').value = state.offset.toFixed(3);
-  $<HTMLInputElement>('drift').value = ((state.speed - 1) * 100).toFixed(3);
+  player.setSync(v, speed);
+  $<HTMLInputElement>('offset').value = player.offset.toFixed(3);
+  $<HTMLInputElement>('drift').value = ((player.speed - 1) * 100).toFixed(3);
   updateVideoUi();
   updateMarkUi();
-  if (state.flight && hasVideo() && !state.playing) seek(t);
+  if (player.flight && hasVideo() && !player.playing) seek(t);
 }
 
 function updateVideoUi() {
-  const has = !!state.videoFile;
+  const has = !!player.videoFile;
   $('videoStatus').textContent = has
-    ? `Video: ${state.videoFile!.name}${Number.isFinite(video.duration) && video.duration ? ` (${fmtTime(video.duration)})` : ''} – Log ${state.offset >= 0 ? 'startet' : 'beginnt'} bei Videozeit ${state.offset.toFixed(2)} s.` +
-      (state.speed !== 1 ? ` Drift ${((state.speed - 1) * 100).toFixed(2)} % (Video läuft ${state.speed > 1 ? 'langsamer' : 'schneller'} als der Log).` : '')
+    ? `Video: ${(player.videoFile as File).name || "Video"}${Number.isFinite(video.duration) && video.duration ? ` (${fmtTime(video.duration)})` : ''} – Log ${player.offset >= 0 ? 'startet' : 'beginnt'} bei Videozeit ${player.offset.toFixed(2)} s.` +
+      (player.speed !== 1 ? ` Drift ${((player.speed - 1) * 100).toFixed(2)} % (Video läuft ${player.speed > 1 ? 'langsamer' : 'schneller'} als der Log).` : '')
     : 'Kein Video geladen. Ohne Video zeigt die Bühne eine synthetische FPV-Ansicht aus den Lagedaten.';
-  $<HTMLButtonElement>('btnAutoSync').disabled = !(has && state.flight);
+  $<HTMLButtonElement>('btnAutoSync').disabled = !(has && player.flight);
   $<HTMLButtonElement>('btnMarkVideo').disabled = !has;
   timeline.setVideoSpan(has && video.duration ? [toLogTime(0), toLogTime(video.duration)] : null);
 }
 
 $<HTMLInputElement>('offset').addEventListener('change', (e) => setOffset(Number((e.target as HTMLInputElement).value) || 0));
-$<HTMLInputElement>('drift').addEventListener('change', (e) => setOffset(state.offset, 1 + (Number((e.target as HTMLInputElement).value) || 0) / 100));
-$('btnDriftReset').addEventListener('click', () => setOffset(state.offset, 1));
+$<HTMLInputElement>('drift').addEventListener('change', (e) => setOffset(player.offset, 1 + (Number((e.target as HTMLInputElement).value) || 0) / 100));
+$('btnDriftReset').addEventListener('click', () => setOffset(player.offset, 1));
 document.querySelectorAll<HTMLButtonElement>('[data-nudge]').forEach((b) =>
-  b.addEventListener('click', () => setOffset(state.offset + Number(b.dataset.nudge))),
+  b.addEventListener('click', () => setOffset(player.offset + Number(b.dataset.nudge))),
 );
 
 $('btnAutoSync').addEventListener('click', async () => {
-  const f = state.flight;
-  if (!f || !state.videoFile) return;
+  const f = player.flight;
+  if (!f || !player.videoFile) return;
   const btn = $<HTMLButtonElement>('btnAutoSync');
   btn.disabled = true;
   const out = $('syncResult');
   try {
-    if (state.videoFile.size > 1.5e9) throw new Error('Video > 1,5 GB – bitte Anker-Methode verwenden.');
-    const env = await audioEnvelope(state.videoFile, (m) => (out.textContent = m));
+    if (player.videoFile.size > 1.5e9) throw new Error('Video > 1,5 GB – bitte Anker-Methode verwenden.');
+    const env = await audioEnvelope(player.videoFile, (m) => (out.textContent = m));
     const sig = logSignal(f);
     const res = correlate(env, sig);
     // Drift: Versatz am Anfang und am Ende des Flugs getrennt messen
@@ -649,7 +591,7 @@ $('btnAutoSync').addEventListener('click', async () => {
     state.anchors = [];
     updateAnchorUi();
     const sure = res.confidence >= 5;
-    out.textContent = `Versatz ${state.offset.toFixed(2)} s · Konfidenz ${res.confidence.toFixed(1)}σ ${sure ? '✓' : '– unsicher, bitte prüfen / Anker verwenden'}` +
+    out.textContent = `Versatz ${player.offset.toFixed(2)} s · Konfidenz ${res.confidence.toFixed(1)}σ ${sure ? '✓' : '– unsicher, bitte prüfen / Anker verwenden'}` +
       (drift ? ` · Drift ${((drift.speed - 1) * 100).toFixed(2)} %` : sure && f.info.duration >= 75 ? ' · Drift nicht messbar – bei Bedarf zweiten Anker setzen' : '');
     drawSyncCurve(res.curve, res.curveStart, res.curveStep, res.offset);
     seek(logTime());
@@ -690,7 +632,7 @@ function drawSyncCurve(curve: Float32Array, start: number, step: number, best: n
 }
 
 function updateAnchorUi() {
-  const f = state.flight;
+  const f = player.flight;
   $('markVideo').textContent = state.markVideo === null ? '–' : `Video ${state.markVideo.toFixed(3)} s`;
   $('markLog').textContent = state.markLog === null ? '–' : `Log ${state.markLog.toFixed(3)} s`;
   $<HTMLButtonElement>('btnPickLog').disabled = !f;
@@ -702,7 +644,7 @@ function updateAnchorUi() {
 }
 $('btnAnchorReset').addEventListener('click', () => {
   state.anchors = [];
-  setOffset(state.offset, 1);
+  setOffset(player.offset, 1);
   updateAnchorUi();
 });
 $('btnMarkVideo').addEventListener('click', () => {
@@ -714,14 +656,14 @@ $('btnPickLog').addEventListener('click', () => {
   $('btnPickLog').textContent = timeline.picking ? 'Klick in die Timeline…' : 'In Timeline wählen';
 });
 $('btnBeep').addEventListener('click', () => {
-  const beep = state.flight?.events.find((e) => e.type === 'sync_beep');
+  const beep = player.flight?.events.find((e) => e.type === 'sync_beep');
   if (!beep) return;
   state.markLog = beep.time;
   timeline.setMarker(beep.time);
   updateAnchorUi();
 });
 $('btnSnap').addEventListener('click', () => {
-  const f = state.flight;
+  const f = player.flight;
   if (!f) return;
   const punches = throttlePunches(f);
   if (!punches.length) return toast('Keine deutlichen Gas-Stöße im Log gefunden.', 'error');
@@ -745,11 +687,11 @@ $('btnApplyAnchor').addEventListener('click', () => {
     }
     state.anchors = pair;
     setOffset(pair[0].v - speed * pair[0].l, speed);
-    toast(`Versatz ${state.offset.toFixed(3)} s, Drift ${((speed - 1) * 100).toFixed(2)} % aus zwei Ankern.`);
+    toast(`Versatz ${player.offset.toFixed(3)} s, Drift ${((speed - 1) * 100).toFixed(2)} % aus zwei Ankern.`);
   } else {
     state.anchors = pair;
-    setOffset(anchor.v - state.speed * anchor.l);
-    toast(`Versatz gesetzt: ${state.offset.toFixed(3)} s – für die Drift einen zweiten Anker weiter hinten im Flug setzen.`);
+    setOffset(anchor.v - player.speed * anchor.l);
+    toast(`Versatz gesetzt: ${player.offset.toFixed(3)} s – für die Drift einen zweiten Anker weiter hinten im Flug setzen.`);
   }
   state.markVideo = null;
   state.markLog = null;
@@ -792,13 +734,13 @@ let reanalyzeTimer = 0;
 function renderSettings() {
   $('settings').replaceChildren(
     ...SETTING_DEFS.map((d) => {
-      const out = el('output', { textContent: d.fmt(state.settings[d.key]) });
-      const input = el('input', { type: 'range', min: String(d.min), max: String(d.max), step: String(d.step), value: String(state.settings[d.key]) });
+      const out = el('output', { textContent: d.fmt(player.settings[d.key]) });
+      const input = el('input', { type: 'range', min: String(d.min), max: String(d.max), step: String(d.step), value: String(player.settings[d.key]) });
       input.setAttribute('aria-label', d.label);
       input.addEventListener('input', () => {
-        state.settings[d.key] = Number(input.value);
-        out.textContent = d.fmt(state.settings[d.key]);
-        store('bba.settings', state.settings);
+        player.settings[d.key] = Number(input.value);
+        out.textContent = d.fmt(player.settings[d.key]);
+        store('bba.settings', player.settings);
         clearTimeout(reanalyzeTimer);
         reanalyzeTimer = window.setTimeout(() => reanalyze(), 120);
       });
@@ -808,8 +750,8 @@ function renderSettings() {
 }
 renderSettings();
 $('btnResetSettings').addEventListener('click', () => {
-  state.settings = { ...DEFAULT_SETTINGS };
-  store('bba.settings', state.settings);
+  player.settings = { ...DEFAULT_SETTINGS };
+  store('bba.settings', player.settings);
   renderSettings();
   reanalyze();
 });
@@ -860,7 +802,7 @@ async function loadCatalog() {
   renderMarkTypes();
   renderCommunity();
   updateMarkUi();
-  if (state.flight) reanalyze();
+  if (player.flight) reanalyze();
 }
 
 let ownMarks: OwnMark[] = [];
@@ -973,7 +915,7 @@ $('btnCopyCli').addEventListener('click', async () => {
 
 // ---------- info ----------
 function renderInfo() {
-  const f = state.flight;
+  const f = player.flight;
   if (!f) return;
   const i = f.info;
   const rows: [string, string][] = [
@@ -1017,16 +959,16 @@ function trickJson(t: Trick) {
 }
 exportMenu.addEventListener('click', (e) => {
   const kind = (e.target as HTMLElement).dataset.export;
-  const f = state.flight;
+  const f = player.flight;
   if (!kind || !f) return;
   const base = f.info.fileName.replace(/\.[^.]+$/, '');
-  const tricks = state.analysis?.tricks ?? [];
+  const tricks = player.analysis?.tricks ?? [];
   if (kind === 'csv') {
     if (f.info.source === 'demo') return toast('Der Demo-Flug hat keine Rohdaten – JSON-Export verwenden.');
     busy('Exportiere CSV…', 0);
-    send({ type: 'csv' });
+    decoder.csv().then(({ blob, name }) => download(blob, name), (err) => toast(err instanceof Error ? err.message : String(err), 'error')).finally(() => busy(null));
   } else if (kind === 'tricks') {
-    const data = { file: f.info.fileName, score: summarize(tricks).total, settings: state.settings, tricks: tricks.map(trickJson) };
+    const data = { file: f.info.fileName, score: summarize(tricks).total, settings: player.settings, tricks: tricks.map(trickJson) };
     download(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), `${base}.tricks.json`);
   } else if (kind === 'json') {
     const r = (a: ArrayLike<number>, d = 2) => Array.from(a, (v) => +v.toFixed(d));
@@ -1058,7 +1000,7 @@ exportMenu.addEventListener('click', (e) => {
 let recorder: MediaRecorder | null = null;
 let recChunks: Blob[] = [];
 function startRecording() {
-  if (!state.flight || typeof MediaRecorder === 'undefined') return toast('Aufnahme wird von diesem Browser nicht unterstützt.', 'error');
+  if (!player.flight || typeof MediaRecorder === 'undefined') return toast('Aufnahme wird von diesem Browser nicht unterstützt.', 'error');
   const stream = stage.captureStream(30);
   if (hasVideo()) {
     const v = video as HTMLVideoElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream };
@@ -1070,14 +1012,14 @@ function startRecording() {
   recChunks = [];
   recorder.ondataavailable = (e) => e.data.size && recChunks.push(e.data);
   recorder.onstop = () => {
-    const base = state.flight?.info.fileName.replace(/\.[^.]+$/, '') ?? 'flight';
+    const base = player.flight?.info.fileName.replace(/\.[^.]+$/, '') ?? 'flight';
     download(new Blob(recChunks, { type: 'video/webm' }), `${base}.hud.webm`);
     toast('Aufnahme gespeichert.');
   };
   recorder.start(1000);
   $('btnRec').classList.add('active');
   $('btnRec').textContent = '■ Stopp';
-  if (!state.playing) setPlaying(true);
+  if (!player.playing) setPlaying(true);
 }
 function stopRecording() {
   if (recorder?.state === 'recording') recorder.stop();
@@ -1106,12 +1048,13 @@ async function refreshAuth() {
   showAuth();
 }
 // Demo flights are synthetic and must not end up in the leaderboard.
-const isDemoFlight = () => state.flight?.info.source === 'demo';
+const isDemoFlight = () => player.flight?.info.source === 'demo';
 function updateSubmit() {
+  updateMatchCard();
   $('demoHint').hidden = !isDemoFlight();
   $<HTMLButtonElement>('btnSubmit').disabled =
-    loginBlocked() || isDemoFlight() || !state.flight || !pilotInput.value.trim() || !cellsSelect.value || !(state.analysis?.tricks.length);
-  $<HTMLButtonElement>('btnSubmit').title = cellsSelect.value || !state.flight ? '' : 'Bitte zuerst die Akku-Klasse wählen.';
+    loginBlocked() || isDemoFlight() || !player.flight || !pilotInput.value.trim() || !cellsSelect.value || !(player.analysis?.tricks.length);
+  $<HTMLButtonElement>('btnSubmit').title = cellsSelect.value || !player.flight ? '' : 'Bitte zuerst die Akku-Klasse wählen.';
 }
 pilotInput.addEventListener('input', () => {
   try {
@@ -1151,9 +1094,8 @@ async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions
   // a running "▶ Bereich abspielen" preview would pause the video mid-recording
   marking.playUntil = null;
   setPlaying(false);
-  const prevRate = state.rate;
-  state.rate = 1;
-  video.playbackRate = 1;
+  const prevRate = player.rate;
+  player.setRate(1);
   seek(opts.range?.[0] ?? 0);
   await waitSeeked();
   const videoStart = Math.max(0, logTime());
@@ -1198,8 +1140,7 @@ async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions
       subRec = null;
       document.removeEventListener('visibilitychange', onVisibility);
       setPlaying(false);
-      state.rate = prevRate;
-      video.playbackRate = prevRate;
+      player.setRate(prevRate);
       [stage.width, stage.height] = prevSize;
       rec.onstop = () => {
         stream.getTracks().forEach((tr) => tr.stop());
@@ -1241,7 +1182,7 @@ function exportSize(): [number, number] {
   return [1920, 1080];
 }
 $('btnExportVideo').addEventListener('click', async () => {
-  const f = state.flight;
+  const f = player.flight;
   if (!f || submitting) return;
   const [w, h] = exportSize();
   const mp4 = typeof MediaRecorder !== 'undefined' && MP4_TYPES.some((m) => MediaRecorder.isTypeSupported(m));
@@ -1274,8 +1215,8 @@ $('btnExportVideo').addEventListener('click', async () => {
 
 $('submitForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const f = state.flight;
-  const analysis = state.analysis;
+  const f = player.flight;
+  const analysis = player.analysis;
   if (!f || !analysis || submitting) return;
   if (f.info.source === 'demo') return toast('Demo-Flüge können nicht eingereicht werden.', 'error');
   const s = summarize(analysis.tricks);
@@ -1296,7 +1237,7 @@ $('submitForm').addEventListener('submit', async (e) => {
   };
   try {
     // each log / flight / video only once – checked before the long recording
-    const prints = await fingerprints(f, state.logFile, state.logIndex, state.videoFile);
+    const prints = await fingerprints(f, state.logFile, state.logIndex, player.videoFile);
     const duplicate = await checkDuplicate(prints);
     if (duplicate) throw new SubmitRejectedError(duplicate, false, '');
     if (ctl.signal.aborted) throw new Error('Abgebrochen.');
@@ -1321,7 +1262,7 @@ $('submitForm').addEventListener('submit', async (e) => {
         type: t.type, name: t.name, count: t.count, start: +t.start.toFixed(3), end: +t.end.toFixed(3),
         points: t.points, comboMultiplier: t.comboMult, source: t.source,
       })),
-      settings: { ...state.settings },
+      settings: { ...player.settings },
       videoStart,
       flightHash: prints.flightHash,
       videoHash: prints.videoHash,
@@ -1389,6 +1330,137 @@ async function refreshBoard() {
   );
 }
 
+// ---------- duel (VS): ?match=<id> – submit the flight's scoring window to a match ----------
+
+async function loadDuel() {
+  if (!matchId) return;
+  try {
+    const res = await fetch(`../api/vs/matches/${matchId}`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status === 404 ? 'Duell nicht gefunden.' : `Duell konnte nicht geladen werden (HTTP ${res.status}).`);
+    duel = (await res.json()).match as MatchInfo;
+  } catch (err) {
+    toast(err instanceof Error ? err.message : String(err), 'error', 7000);
+    return;
+  }
+  $('matchCard').hidden = false;
+  $<HTMLAnchorElement>('matchPageLink').href = duel.pageUrl;
+  const names = `${duel.a?.username ?? '?'} vs ${duel.b?.username ?? '?'}`;
+  $('matchInfo').textContent = `${names}${duel.tournament ? ` · ${duel.tournament.name}` : ''} · Wertungszeit ${duel.limit >= 60 && duel.limit % 60 === 0 ? `${duel.limit / 60} min` : `${duel.limit} s`}`;
+  const sel = $<HTMLSelectElement>('matchPilot');
+  sel.replaceChildren(...duel.canUploadFor.map((u) => el('option', { value: u, textContent: u })));
+  $('matchPilotWrap').hidden = duel.canUploadFor.length < 2;
+  updateMatchCard();
+}
+
+function updateMatchCard() {
+  if (!duel) return;
+  const f = player.flight, a = player.analysis;
+  duelScore = f && a ? matchScore(f, a, player.settings, duel.limit) : null;
+  $('matchScore').textContent = duelScore ? duelScore.summary.total.toLocaleString('de-CH') : '–';
+  $('matchDetail').textContent = duelScore
+    ? `${duelScore.summary.count} Tricks in ${duel.limit} s ab dem Abheben (${fmtTime(duelScore.start)})`
+    : 'Log laden, um die Duell-Wertung zu sehen.';
+  const hint = $('matchHint');
+  const problem =
+    duel.status !== 'open' ? 'Dieses Duell ist schon entschieden.'
+    : !duel.canUploadFor.length ? (auth.loggedIn ? 'Du kannst in diesem Duell keinen Flug (mehr) einreichen.' : 'Zum Einreichen bitte einloggen.')
+    : isDemoFlight() ? 'Demo-Flüge zählen nicht – lade dein eigenes Blackbox-Log.'
+    : '';
+  hint.textContent = problem;
+  hint.hidden = !problem;
+  $<HTMLButtonElement>('btnMatchSubmit').disabled = !!problem || !duelScore || submitting;
+}
+
+function uploadForm(url: string, form: FormData, onProgress: (v: number) => void): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.setRequestHeader('X-Requested-With', 'blackbox-viewer');
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () => {
+      let data: Record<string, unknown> = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        /* not JSON */
+      }
+      if (xhr.status === 201) resolve(data);
+      else reject(new Error(typeof data.error === 'string' ? data.error : xhr.status === 413 ? 'Zu groß für den Server.' : `Einreichen fehlgeschlagen (HTTP ${xhr.status}).`));
+    };
+    xhr.onerror = () => reject(new Error('Server nicht erreichbar – bitte später erneut versuchen.'));
+    xhr.send(form);
+  });
+}
+
+$('btnMatchSubmit').addEventListener('click', async () => {
+  const f = player.flight, score = duelScore;
+  if (!duel || !f || !score || submitting) return;
+  const pilot = $<HTMLSelectElement>('matchPilot').value || duel.canUploadFor[0];
+  $('submitTitle').textContent = 'Ins Duell einreichen';
+  $('submitText').textContent =
+    `Die Wertungszeit (${duel.limit} s ab dem Abheben) wird einmal mit Overlay abgespielt und als Clip aufgenommen – ` +
+    'das dauert so lange wie die Wertungszeit. Lass diesen Tab geöffnet.';
+  $('submitCancel').hidden = false;
+  $('submitView').hidden = true;
+  $('submitClose').hidden = true;
+  submitPhase('Aufnahme startet …', 0);
+  submitDialog.showModal();
+  submitting = true;
+  updateMatchCard();
+  $('submitCancel').onclick = () => subRec?.cancel();
+  try {
+    const prints = await fingerprints(f, state.logFile, state.logIndex, player.videoFile);
+    const range: [number, number] = [Math.max(0, score.start - 1), Math.min(duration(), score.end + 1)];
+    const { blob, videoStart } = await recordFlight((v) => submitPhase(`Aufnahme läuft … ${Math.round(v * 100)} %`, v * 0.7), {
+      maxHeight: 720, bitrate: 2_500_000, preferMp4: false, range,
+    });
+    const meta = {
+      pilot,
+      source: f.info.source,
+      score: score.summary.total,
+      tricks: score.summary.count,
+      best: score.summary.best?.name ?? '',
+      maxCombo: score.summary.maxCombo,
+      cells: Number(cellsSelect.value) || f.info.cells || null,
+      craft: f.info.craft,
+      windowStart: +score.start.toFixed(3),
+      limit: duel.limit,
+      logName: state.logName || f.info.fileName,
+      logIndex: state.logIndex,
+      videoStart,
+      trickList: score.tricks.map((t) => ({
+        type: t.type, name: t.name, count: t.count, start: +t.start.toFixed(3), end: +t.end.toFixed(3),
+        points: t.points, comboMultiplier: t.comboMult, source: t.source,
+      })),
+      settings: { ...player.settings },
+      flightHash: prints.flightHash,
+      videoHash: prints.videoHash,
+    };
+    const form = new FormData();
+    form.append('meta', JSON.stringify(meta));
+    form.append('video', blob, blob.type.includes('mp4') ? 'duell.mp4' : 'duell.webm');
+    if (state.logFile) form.append('log', state.logFile, state.logName || 'flug.bbl');
+    submitPhase(`Lade hoch (${(blob.size / 1048576).toFixed(1)} MB) …`, 0.7);
+    const data = await uploadForm(`../api/vs/matches/${duel.id}/flug`, form, (v) => submitPhase(`Lade hoch … ${Math.round(v * 100)} %`, 0.7 + v * 0.3));
+    duel = (data.match as MatchInfo) ?? duel;
+    submitPhase(
+      duel.status === 'done' ? 'Eingereicht – das Duell ist entschieden!' : `Eingereicht${pilot !== auth.username ? ` – ${pilot} muss den Flug noch bestätigen` : ''}. Sobald beide Flüge da sind, steht der Sieger fest.`,
+      1,
+    );
+    $('submitView').hidden = false;
+    $('submitView').textContent = 'Zur Duell-Seite';
+    $('submitView').onclick = () => (location.href = duel!.pageUrl);
+  } catch (err) {
+    submitPhase((err as Error).message || 'Einreichen fehlgeschlagen.', 0);
+  } finally {
+    submitting = false;
+    $('submitCancel').hidden = true;
+    $('submitClose').hidden = false;
+    updateMatchCard();
+  }
+});
+void refreshAuth().then(() => loadDuel());
+
 // ---------- marking: span → trick (or new trick request), sent with a short clip ----------
 const MARK_MIN = 0.1;
 const MARK_MAX = 30;
@@ -1413,7 +1485,7 @@ function setMarking(on: boolean) {
 }
 
 function setMarkRange(t0: number | null, t1?: number) {
-  if (t0 === null || t1 === undefined || !state.flight) {
+  if (t0 === null || t1 === undefined || !player.flight) {
     marking.range = null;
   } else {
     const a = Math.max(0, Math.min(t0, t1)), b = Math.min(duration(), Math.max(t0, t1));
@@ -1425,7 +1497,7 @@ function setMarkRange(t0: number | null, t1?: number) {
 
 /** Angles etc. of the marked span (same features as the classifier uses). */
 function rangeFeatures() {
-  const f = state.flight, a = state.analysis, r = marking.range;
+  const f = player.flight, a = player.analysis, r = marking.range;
   if (!f || !a || !r) return null;
   const i0 = indexAt(f.t, r[0]), i1 = indexAt(f.t, r[1]);
   return i1 > i0 ? spanFeatures(f, a, i0, i1) : null;
@@ -1492,7 +1564,7 @@ markSend.addEventListener('change', updateMarkUi);
 $('markNewName').addEventListener('input', updateMarkUi);
 
 $('btnMarkSave').addEventListener('click', async () => {
-  const f = state.flight, r = marking.range, sf = rangeFeatures();
+  const f = player.flight, r = marking.range, sf = rangeFeatures();
   if (!f || !r || !sf || submitting) return;
   const choice = markType.value;
   const isNew = choice === '__new';
@@ -1718,7 +1790,7 @@ function renderEntryAdmin(e: EntryDetail) {
       if (!res.ok) throw new Error('Log konnte nicht geladen werden.');
       const blob = await res.blob();
       entryDialog.close();
-      state.settings = { ...DEFAULT_SETTINGS, ...(e.settings as Partial<DetectSettings>) };
+      player.settings = { ...DEFAULT_SETTINGS, ...(e.settings as Partial<DetectSettings>) };
       renderSettings();
       pendingLogIndex = e.logIndex ?? null;
       await loadLogFile(blob, e.logName || `eintrag-${e.id}.bbl`);

@@ -1233,5 +1233,7 @@
  "Gewonnene Spiele": "Partite vinte",
  "Noch kein Duell entschieden – fordere jemanden heraus!": "Ancora nessun duello deciso – sfida qualcuno!",
  "Noch keine Turnierspiele gewertet.": "Ancora nessuna partita di torneo valutata.",
- "Kein Pilot gefunden": "Nessun pilota trovato"
+ "Kein Pilot gefunden": "Nessun pilota trovato",
+ "Acro üben im Browser: Betaflight-Rates und -PIDs, Propwash, Akku-Sag, Fisheye-Kamera und eine Rennstrecke mit Rundenzeiten.": "Allenarsi in acro nel browser: rates e PID Betaflight, propwash, calo di tensione, camera fisheye e un circuito con tempi sul giro.",
+ "Im Simulator üben, Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen.": "Allenarsi nel simulatore, analizzare i log Blackbox, riconoscere i trick e confrontarsi con gli altri."
 }

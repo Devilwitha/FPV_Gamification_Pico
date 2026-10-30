@@ -1233,5 +1233,7 @@
  "Gewonnene Spiele": "Matchs gagnés",
  "Noch kein Duell entschieden – fordere jemanden heraus!": "Aucun duel décidé – défie quelqu'un !",
  "Noch keine Turnierspiele gewertet.": "Aucun match de tournoi noté pour l'instant.",
- "Kein Pilot gefunden": "Aucun pilote trouvé"
+ "Kein Pilot gefunden": "Aucun pilote trouvé",
+ "Acro üben im Browser: Betaflight-Rates und -PIDs, Propwash, Akku-Sag, Fisheye-Kamera und eine Rennstrecke mit Rundenzeiten.": "S'entraîner en acro dans le navigateur : rates et PID Betaflight, propwash, chute de tension, caméra fisheye et circuit avec temps au tour.",
+ "Im Simulator üben, Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen.": "S'entraîner dans le simulateur, analyser les logs Blackbox, reconnaître les figures et se comparer aux autres."
 }

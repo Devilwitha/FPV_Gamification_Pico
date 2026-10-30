@@ -313,6 +313,20 @@ SHOOTER_TEMPLATE_FILES = ("manifest.json", "main.py", "ir_emitter.py", "ir_recei
 # source/mods/<eigener_name>/.
 PLUGIN_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "template", "plugin_template")
 PLUGIN_TEMPLATE_FILES = ("manifest.json", "main.py")
+# Propwash FPV-Simulator als Offline-Download (/fpv-simulator.zip): Quellen
+# und fertige Offline-Datei liegen in drohnen-tools/fpv-simulator/ (gebaut mit
+# dessen build.py). (Quelle relativ zu diesem Ordner, Pfad im ZIP)
+FPV_SIMULATOR_DIR = os.path.join(PROJECT_ROOT, "drohnen-tools", "fpv-simulator")
+FPV_SIMULATOR_ZIP_FILES = (
+    ("offline/propwash-fpv-simulator.html", "propwash-fpv-simulator.html"),
+    ("LIESMICH.md", "LIESMICH.md"),
+    ("vendor/LICENSE-three.js.txt", "LICENSE-three.js.txt"),
+    ("sim-core.js", "quellcode/sim-core.js"),
+    ("simulator.src.html", "quellcode/simulator.src.html"),
+    ("build.py", "quellcode/build.py"),
+    ("vendor/three.module.min.js", "quellcode/vendor/three.module.min.js"),
+    ("vendor/LICENSE-three.js.txt", "quellcode/vendor/LICENSE-three.js.txt"),
+)
 
 
 def _list_store_plugins():
@@ -685,6 +699,31 @@ def plugins_plugin_template():
         mimetype="application/zip",
         as_attachment=True,
         download_name="plugin_template.zip",
+    )
+
+
+@app.route("/fpv-simulator.zip")
+def fpv_simulator_download():
+    """Propwash FPV-Simulator als eigenstaendiger Download: die Offline-Datei
+    (laeuft per Doppelklick ohne Internet), Anleitung, three.js-Lizenz und
+    die Quellen samt build.py. Wie plugins_plugin_template() bei jedem Request
+    frisch von der Platte gepackt, bleibt also nach einem Neubau automatisch
+    aktuell. Kein Shop-Artikel, daher auch bei abgeschaltetem Shop verfuegbar."""
+    missing = [source for source, _arcname in FPV_SIMULATOR_ZIP_FILES
+               if not os.path.isfile(os.path.join(FPV_SIMULATOR_DIR, source))]
+    if missing:
+        app.logger.error("FPV-Simulator-Download unvollstaendig, es fehlen: %s", ", ".join(missing))
+        abort(404)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for source, arcname in FPV_SIMULATOR_ZIP_FILES:
+            archive.write(os.path.join(FPV_SIMULATOR_DIR, source), arcname="propwash-fpv-simulator/" + arcname)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="propwash-fpv-simulator.zip",
     )
 
 

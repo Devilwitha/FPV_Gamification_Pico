@@ -210,6 +210,7 @@ footer .container { display: flex; flex-wrap: wrap; justify-content: space-betwe
       <a data-tool="backup" href="backup-studio.html">Backup Studio</a>
       <a data-tool="build" href="build-studio.html">Build Studio</a>
       <a data-tool="blackbox" data-feature="blackbox" href="/blackbox-viewer/" hidden>Blackbox</a>
+      <a data-tool="simulator" href="fpv-simulator.html">Simulator</a>
       <a href="#ablauf">Ablauf</a>
       <a href="#sd-karte">SD-Karte</a>
     </nav>
@@ -424,7 +425,7 @@ footer .container { display: flex; flex-wrap: wrap; justify-content: space-betwe
       <div class="tool-group" id="nach-dem-flug">
         <div class="group-head">
           <div><p class="group-label">C / Nach dem Flug</p><h3>Nach dem Flug</h3></div>
-          <p>Afterflight: Blackbox-Logs auswerten, Tricks erkennen und mit dem Flugvideo vergleichen.</p>
+          <p>Üben und auswerten: im Simulator Acro trainieren, Blackbox-Logs auswerten, Tricks erkennen und mit dem Flugvideo vergleichen.</p>
         </div>
         <div class="tools">
         <article class="tool" data-feature="blackbox" hidden>
@@ -452,6 +453,31 @@ footer .container { display: flex; flex-wrap: wrap; justify-content: space-betwe
               <li>Flash des Flugcontrollers direkt per USB auslesen</li>
             </ul>
             <a class="btn primary" data-tool="blackbox" href="/blackbox-viewer/">Blackbox Viewer öffnen</a>
+          </div>
+        </article>
+        <article class="tool">
+          <div class="tool-visual">
+            <div class="flash-visual" aria-hidden="true">
+              <svg class="bb-plot" viewBox="0 0 300 96" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M0 70 Q150 40 300 70" stroke="#58f0a8"/>
+                <rect x="110" y="18" width="80" height="58" rx="3" stroke="#ff7a1a" stroke-width="5"/>
+                <path d="M136 47h10M154 47h10M150 41v3" stroke="#e6edf3" stroke-width="2"/>
+              </svg>
+              <div class="term">25.1V · 4.18V/S · <i>LAP 0:21.84</i><br>-61dBm · 112 km/h · Gate 4</div>
+            </div>
+          </div>
+          <div class="tool-body">
+            <span class="num">Werkzeug</span>
+            <h3>FPV-Simulator</h3>
+            <p>Acro fliegen im Browser mit echter Physik: Motor- und Akku-Modell, Propwash und ein Flight Controller mit Betaflight-Rates und -PIDs.</p>
+            <div class="chips"><span class="chip">Acro</span><span class="chip">EdgeTX-Joystick</span><span class="chip">Analog &amp; HD</span><span class="chip">Rundenzeiten</span></div>
+            <ul>
+              <li>Whoop, 3,5", 5" und 7" mit realistischem Flugverhalten</li>
+              <li>Fernsteuerung per USB, Gamepad oder Tastatur</li>
+              <li>Rennstrecke mit Dive-Gate, Ghost und Blackbox-Graph</li>
+            </ul>
+            <a class="btn primary" data-tool="simulator" href="fpv-simulator.html">Simulator starten</a>
+            <a class="btn" href="/fpv-simulator.zip" download>Offline-Version (ZIP)</a>
           </div>
         </article>
         </div>
@@ -570,9 +596,9 @@ document.querySelectorAll('.tool-group').forEach(group => {
 // Abläufe nur für sichtbare Gruppen, Kennzahl = Anzahl der Werkzeuge
 document.querySelectorAll('[data-flow]').forEach(f => { const g = document.getElementById(f.dataset.flow); f.hidden = !g || g.hidden; });
 document.getElementById('statTools').textContent = String(visibleTools.length);
-document.getElementById('toolCount').textContent = ['', 'Ein', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs', 'Sieben', 'Acht'][visibleTools.length] || String(visibleTools.length);
+document.getElementById('toolCount').textContent = ['', 'Ein', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs', 'Sieben', 'Acht', 'Neun', 'Zehn'][visibleTools.length] || String(visibleTools.length);
 
-const ONLINE = { theme: 'https://claude.ai/artifact/ChEip3M9VTVKBTe52yZ84z', lua: 'https://claude.ai/artifact/NqNAfXKkzoAaimnJWVsEsb', backup: 'https://claude.ai/artifact/TCs6tidxPkAh8dBvptW5Md', elrs: 'https://claude.ai/artifact/4uwyvsqHaX8CLSAWAY3FAz', esc: 'https://esc-configurator.com', betaflight: 'https://app.betaflight.com', blackbox: 'https://www.bollisoft.ch/blackbox-viewer/', build: 'https://www.bollisoft.ch/tx15-werkstatt/build-studio.html' };
+const ONLINE = { theme: 'https://claude.ai/artifact/ChEip3M9VTVKBTe52yZ84z', lua: 'https://claude.ai/artifact/NqNAfXKkzoAaimnJWVsEsb', backup: 'https://claude.ai/artifact/TCs6tidxPkAh8dBvptW5Md', elrs: 'https://claude.ai/artifact/4uwyvsqHaX8CLSAWAY3FAz', esc: 'https://esc-configurator.com', betaflight: 'https://app.betaflight.com', blackbox: 'https://www.bollisoft.ch/blackbox-viewer/', build: 'https://www.bollisoft.ch/tx15-werkstatt/build-studio.html', simulator: 'https://claude.ai/artifact/2rLECggoy6zacqtk2uStja' };
 if (window.claude && typeof window.claude.use === 'function') {
   document.querySelectorAll('[data-tool]').forEach(a => { a.href = ONLINE[a.dataset.tool]; a.target = '_blank'; a.rel = 'noopener'; });
 }

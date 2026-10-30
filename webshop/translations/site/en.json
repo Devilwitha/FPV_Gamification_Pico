@@ -1233,5 +1233,7 @@
  "Gewonnene Spiele": "Games won",
  "Noch kein Duell entschieden – fordere jemanden heraus!": "No duel decided yet – challenge someone!",
  "Noch keine Turnierspiele gewertet.": "No tournament games scored yet.",
- "Kein Pilot gefunden": "No pilot found"
+ "Kein Pilot gefunden": "No pilot found",
+ "Acro üben im Browser: Betaflight-Rates und -PIDs, Propwash, Akku-Sag, Fisheye-Kamera und eine Rennstrecke mit Rundenzeiten.": "Practise acro in the browser: Betaflight rates and PIDs, propwash, battery sag, fisheye camera and a race track with lap times.",
+ "Im Simulator üben, Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen.": "Practise in the simulator, analyse Blackbox logs, detect tricks and compare with others."
 }

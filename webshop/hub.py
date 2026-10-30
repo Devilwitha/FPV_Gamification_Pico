@@ -23,7 +23,7 @@ GROUPS = (
     ("bauen", "Planen & bauen", "Teile zusammenstellen, Gewicht und Flugzeit abschätzen, die Verkabelung planen."),
     ("drohne", "Drohne einrichten", "Flugcontroller, Regler und Empfänger per USB konfigurieren und flashen."),
     ("sender", "Sender (EdgeTX)", "Für die RadioMaster TX15 und andere EdgeTX-Sender mit Farbdisplay."),
-    ("fliegen", "Fliegen & auswerten", "Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen."),
+    ("fliegen", "Fliegen & auswerten", "Im Simulator üben, Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen."),
 )
 
 # key, Gruppe, Name, Kurzbeschreibung, Link, Schlagworte, Schalter in config.js (None = immer)
@@ -44,6 +44,8 @@ TOOLS = (
      TOOLS_URL + "backup-studio.html", ("Backup", "Firmware", "SD-Karte"), None),
     ("blackbox", "fliegen", "Blackbox Viewer", "Blackbox-Logs auswerten: Tricks erkennen und bepunkten, Video mit HUD-Overlay synchronisieren.",
      "/blackbox-viewer/", (".bbl", "Tricks", "HUD"), "blackbox"),
+    ("simulator", "fliegen", "FPV-Simulator", "Acro üben im Browser: Betaflight-Rates und -PIDs, Propwash, Akku-Sag, Fisheye-Kamera und eine Rennstrecke mit Rundenzeiten.",
+     TOOLS_URL + "fpv-simulator.html", ("Acro", "Fernsteuerung", "Rennstrecke"), None),
     ("leaderboard", "fliegen", "Leaderboard", "Die besten Trick-Flüge mit Video – weltweit, nach Land und nach Akku-Klasse.",
      "/leaderboard", ("Rangliste", "Video", "1S–8S"), None),
 )

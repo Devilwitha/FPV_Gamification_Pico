@@ -33,6 +33,7 @@ import pilot_license
 import trick_labels
 import hub
 import vs
+import musik
 import orders_db
 import simulator_manager
 import tx15_backups
@@ -147,6 +148,8 @@ app.register_blueprint(community.bp)
 app.register_blueprint(pilot_license.bp)
 app.register_blueprint(trick_labels.bp)
 vs.register(app)
+# Musik-Bibliothek fuer den Blackbox Viewer (Ordner <Repo>/musik, musik.py)
+musik.register(app)
 app.register_blueprint(admin_users.bp)
 community.register(app)
 admin_users.register(app)
@@ -1517,6 +1520,7 @@ def admin_dashboard():
         message=request.args.get("ok"),
         leaderboard=leaderboard.admin_overview(),
         tricks=trick_labels.admin_overview(),
+        musik=musik.admin_overview(),
         ausweise=pilot_license.admin_overview(),
         online_accounts=db.list_online_accounts(online_since),
         online_minutes=int(ONLINE_WINDOW.total_seconds() // 60),

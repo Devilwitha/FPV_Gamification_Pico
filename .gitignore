@@ -34,3 +34,7 @@ android_app/tempCodeRunnerFile.ps1
 /private_media
 # Video-Ausschnitte der Trick-Markierungen (webshop/trick_labels.py) - Nutzerdaten.
 /trick_clips
+# Flug-Videos und Logs der Duelle (webshop/vs.py) - Nutzerdaten.
+/vs_media
+# Musik-Bibliothek fuer den Blackbox Viewer (webshop/musik.py) - Dateien des Betreibers.
+/musik

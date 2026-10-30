@@ -6,6 +6,7 @@ import { estimateCells } from '../src/pipeline/columns.ts';
 import { SYNC_FS, correlate, estimateDrift, logSignal } from '../src/sync/audio.ts';
 import { fingerprints } from '../src/ui/leaderboard.ts';
 import { testBblRoundTrip } from './bbl.test.ts';
+import { DEFAULT_AUDIO, clampOffset, gainPlan, playlistPlan, sanitizeAudio, usesMixer } from '../src/core/audiomix.ts';
 
 let failed = 0;
 function check(name: string, cond: boolean, info = '') {
@@ -119,6 +120,32 @@ other.gyro[0][5000] += 400;
 const fp3 = await fingerprints(other, null, 0, null);
 check('Fingerabdruck: anderer Flug anders', fp3.flightHash !== fp1.flightHash);
 check('Fingerabdruck: Video', /^[0-9a-f]{64}$/.test(fp1.videoHash ?? '') && fp2.videoHash === null && fp2.logHash === null);
+
+// --- Ton & Musik: Lautstärkeverlauf, Stelle im Song, Einstellungen ---
+const plan = gainPlan(0.8, 30, true);
+check('Musik: ein- und ausblenden', JSON.stringify(plan) === JSON.stringify([
+  { at: 0, value: 0, ramp: false }, { at: 1, value: 0.8, ramp: true }, { at: 28, value: 0.8, ramp: false }, { at: 30, value: 0, ramp: true },
+]), JSON.stringify(plan));
+const short = gainPlan(1, 4, true);
+check('Musik: kurze Clips blenden kürzer', short[1].at === 1 && short[2].at === 3 && short[3].at === 4, JSON.stringify(short));
+check('Musik: ohne Länge nur einblenden', gainPlan(1, null, true).length === 2);
+check('Musik: ohne Blenden feste Lautstärke', JSON.stringify(gainPlan(0.5, 10, false)) === JSON.stringify([{ at: 0, value: 0.5, ramp: false }]));
+check('Musik: Startstelle begrenzt', clampOffset(-3, 100) === 0 && clampOffset(250, 100) === 99.5 && clampOffset(NaN, 100) === 0);
+const segs = (d: number[], off: number, pos: number, span: number, loop: boolean) =>
+  playlistPlan(d, off, pos, span, loop).map((s) => `${s.index}@${+s.at.toFixed(2)}:${+s.from.toFixed(2)}+${+s.dur.toFixed(2)}`).join(' ');
+check('Playlist: Songs nacheinander', segs([30, 20, 40], 0, 0, 60, false) === '0@0:0+30 1@30:0+20 2@50:0+40', segs([30, 20, 40], 0, 0, 60, false));
+check('Playlist: Startstelle nur im ersten Song', segs([30, 20], 10, 0, 100, false) === '0@0:10+20 1@20:0+20', segs([30, 20], 10, 0, 100, false));
+check('Playlist: ohne Wiederholen Schluss nach dem letzten Song', segs([30, 20], 0, 60, 30, false) === '' && segs([30, 20], 0, 45, 30, false) === '1@0:15+5');
+check('Playlist: mittendrin weiter', segs([30, 20, 40], 0, 35, 10, false) === '1@0:5+15', segs([30, 20, 40], 0, 35, 10, false));
+check('Playlist: kurze Songs im langen Video wiederholt', segs([10, 5], 2, 0, 40, true) === '0@0:2+8 1@8:0+5 0@13:0+10 1@23:0+5 0@28:0+10 1@38:0+5', segs([10, 5], 2, 0, 40, true));
+check('Playlist: wiederholt ab beliebiger Stelle', segs([10, 5], 0, 31, 3, true) === '0@0:1+9', segs([10, 5], 0, 31, 3, true));
+check('Playlist: leer oder ohne Länge', segs([], 0, 0, 10, true) === '' && segs([0], 0, 0, 10, true) === '');
+check('Playlist: begrenzte Anzahl', playlistPlan([1], 0, 0, 1e6, true).length === 500);
+check('Musik: Mischung nur bei Bedarf', !usesMixer(DEFAULT_AUDIO, false) && usesMixer(DEFAULT_AUDIO, true)
+  && usesMixer({ ...DEFAULT_AUDIO, original: 'remove' }, false) && usesMixer({ ...DEFAULT_AUDIO, originalVolume: 0.5 }, false));
+const saved = sanitizeAudio({ original: 'separate', originalVolume: 9, musicVolume: -1, musicOffset: 'x', loop: false, monitor: 1 });
+check('Musik: gespeicherte Einstellungen bereinigt', saved.original === 'separate' && saved.originalVolume === 1.5 && saved.musicVolume === 0
+  && saved.musicOffset === 0 && saved.loop === false && saved.monitor === true && sanitizeAudio(null).original === 'keep', JSON.stringify(saved));
 
 // --- .bbl decoder round trip ---
 failed += testBblRoundTrip(check);

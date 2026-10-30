@@ -84,6 +84,28 @@ h3 { font-size: 13px; margin-bottom: 4px; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .btn.primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
 .btn.tiny { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
+
+/* ---------- Ton & Musik ---------- */
+.audio-slider { display: grid; grid-template-columns: auto minmax(0, 1fr) 3.5em; align-items: center; gap: 8px; color: var(--muted); }
+.audio-slider input { width: 100%; accent-color: var(--accent); }
+.audio-slider span { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.audio-badge { border: 1px solid var(--line); background: var(--panel-2); color: var(--accent); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audio-badge:hover { border-color: var(--accent); }
+.playlist, .music-lib { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.playlist { counter-reset: song; }
+.playlist:empty { display: none; }
+.playlist li, .music-lib li { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 12px; min-width: 0; }
+.playlist li { counter-increment: song; }
+.playlist li::before { content: counter(song) "."; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 1.6em; }
+.playlist .pl-title, .music-lib .lib-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.playlist .pl-dur { color: var(--muted); font-variant-numeric: tabular-nums; }
+.playlist button, .music-lib .lib-play { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 5px; width: 24px; height: 24px; padding: 0; cursor: pointer; flex: none; }
+.playlist button:hover, .music-lib .lib-play:hover { border-color: var(--accent); }
+.playlist button:disabled { opacity: .35; cursor: default; }
+.music-lib { max-height: 260px; overflow-y: auto; }
+.music-lib .lib-title small { display: block; color: var(--muted); font-size: 11px; }
+.music-lib li.playing .lib-play { border-color: var(--accent); color: var(--accent); }
+#libFilter { width: 100%; }
 .btn.danger { color: var(--accent-2); }
 .btn.danger:hover:not(:disabled) { border-color: var(--accent-2); }
 .btn.rec { color: var(--accent-2); }

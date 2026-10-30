@@ -85,6 +85,7 @@
             <summary>HUD</summary>
             <div id="hudToggles"></div>
           </details>
+          <button class="audio-badge" id="audioBadge" type="button" title="Ton &amp; Musik der Aufnahmen" hidden></button>
           <button class="btn rec" id="btnRec" title="Video inkl. HUD als WebM aufnehmen" disabled>● Aufnehmen</button>
           <button class="btn" id="btnExportVideo" title="Flug in Originalauflösung mit Overlay als MP4 speichern" disabled>⬇ Video mit Overlay</button>
         </div>
@@ -193,6 +194,7 @@
       <section class="panels card">
         <div class="tabs" role="tablist">
           <button role="tab" data-tab="sync" aria-selected="true">Video-Sync</button>
+          <button role="tab" data-tab="audio" id="tabAudio">Ton &amp; Musik</button>
           <button role="tab" data-tab="detect">Erkennung</button>
           <button role="tab" data-tab="ml">ML-Training</button>
           <button role="tab" data-tab="board">Leaderboard</button>
@@ -249,6 +251,50 @@
               <p class="small" id="anchorList"></p>
               <p class="muted small">Ein Anker setzt den Versatz. Ein zweiter Anker möglichst weit entfernt (z. B. am Ende des Flugs) berechnet zusätzlich die Drift.</p>
               <button class="btn tiny" id="btnAnchorReset" type="button" hidden>Anker zurücksetzen</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab" data-panel="audio" hidden>
+          <p class="muted">Musik und Originalton für alle Aufnahmen: Aufnehmen, Video mit Overlay, Einreichen und Duell. Die Musik wird fest ins Video gemischt und mit ihm gespeichert. Markierungen für den Admin bleiben ohne Musik.</p>
+          <div class="grid3">
+            <div class="group">
+              <h3>Musik (Playlist)</h3>
+              <p class="muted small">Die Songs laufen nacheinander. Reicht die Musik nicht fürs ganze Video, beginnt die Playlist auf Wunsch wieder von vorn.</p>
+              <ol class="playlist" id="playlist"></ol>
+              <p class="small" id="musicInfo">Keine Musik gewählt.</p>
+              <div class="row wrap">
+                <label class="btn tiny">Eigene Dateien …<input type="file" id="musicFile" accept="audio/*,.mp3,.m4a,.aac,.ogg,.opus,.wav,.flac" multiple hidden /></label>
+                <button class="btn tiny" id="btnMusicClear" type="button" disabled>Alle entfernen</button>
+              </div>
+              <label class="audio-slider small">Lautstärke <input type="range" id="musicVolume" min="0" max="150" step="5" /> <span id="musicVolumeOut"></span></label>
+              <div class="row">
+                <span class="small">Start im ersten Song</span>
+                <input type="number" id="musicOffset" min="0" step="1" value="0" />
+                <span>s</span>
+              </div>
+              <label class="check"><input type="checkbox" id="musicLoop" /> Playlist wiederholen, wenn die Musik kürzer als das Video ist</label>
+              <label class="check"><input type="checkbox" id="musicFade" /> Ein- und ausblenden</label>
+            </div>
+            <div class="group">
+              <h3>Musik vom Server</h3>
+              <p class="muted small" id="libInfo">Lade Liste …</p>
+              <input type="search" id="libFilter" placeholder="Titel suchen …" hidden />
+              <ul class="music-lib" id="musicLib"></ul>
+            </div>
+            <div class="group">
+              <h3>Originalton des Videos</h3>
+              <label class="check"><input type="radio" name="origAudio" value="keep" /> Mitaufnehmen</label>
+              <label class="check"><input type="radio" name="origAudio" value="remove" /> Entfernen</label>
+              <label class="check"><input type="radio" name="origAudio" value="separate" /> Vom Video lösen und separat speichern</label>
+              <label class="audio-slider small" id="origVolumeWrap">Lautstärke <input type="range" id="origVolume" min="0" max="150" step="5" /> <span id="origVolumeOut"></span></label>
+              <p class="muted small">Separat: Beim Aufnehmen und beim Export mit Overlay entsteht zusätzlich eine eigene Tondatei (.originalton). Beim Einreichen und im Duell kommt der Originalton dann nicht ins Video.</p>
+            </div>
+            <div class="group">
+              <h3>Anhören</h3>
+              <label class="check"><input type="checkbox" id="audioMonitor" /> Mischung beim Abspielen mithören</label>
+              <p class="muted small">Die Musik beginnt beim Abspielen wie in der Aufnahme an der gewählten Stelle im Song. Nach dem Spulen fängt sie dort wieder an.</p>
+              <p class="muted small">Eingereichte Videos sind öffentlich: Nimm nur Musik, die du teilen darfst, zum Beispiel lizenzfreie Musik.</p>
             </div>
           </div>
         </div>
@@ -399,6 +445,7 @@ save</pre>
       <div class="dialog-body">
         <h2 id="submitTitle">Score einreichen</h2>
         <p class="muted small" id="submitText"></p>
+        <p class="small" id="submitAudio" hidden></p>
         <div class="bar"><div id="submitBar"></div></div>
         <p class="small" id="submitPhase"></p>
         <div class="row wrap">

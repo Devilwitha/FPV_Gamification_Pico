@@ -21,6 +21,7 @@ import { Timeline } from './ui/timeline.ts';
 import { LogDecoder, largestLog } from './core/decoder.ts';
 import { FlightPlayer } from './core/player.ts';
 import { matchScore, type MatchScore } from './core/match.ts';
+import { AUDIO_TYPES, AudioMixer, decodeMusic, sanitizeAudio, usesMixer, type OriginalMode, type RecordingAudio } from './core/audiomix.ts';
 import { deleteOwnMark, fetchCatalog, fetchOwnMarks, submitMark, type OwnMark, type TrickCatalog } from './ui/tricklabels.ts';
 
 // ---------- helpers ----------
@@ -145,6 +146,8 @@ const player = new FlightPlayer(stage, video, {
   settings: load<DetectSettings>('bba.settings', DEFAULT_SETTINGS),
   hud: load<HudOptions>('bba.hud', DEFAULT_HUD),
 });
+// Ton & Musik der Aufnahmen (Reiter "Ton & Musik")
+const mixer = new AudioMixer(video, sanitizeAudio(load<unknown>('bba.audio', null)));
 
 const timeline = new Timeline($<HTMLCanvasElement>('timeline'), {
   onSeek: (t) => seek(t),
@@ -403,12 +406,15 @@ function logTime() {
 }
 function seek(t: number) {
   player.seek(t);
+  mixer.restart(player.playing, player.rate);
 }
 function setPlaying(on: boolean) {
   player.setPlaying(on);
 }
 player.onPlayingChange = (on) => {
   $('btnPlay').textContent = on ? '❚❚' : '▶';
+  if (on) mixer.onPlay(player.rate);
+  else mixer.onPause();
 };
 player.onEnded = () => {
   if (recorder) stopRecording();
@@ -449,6 +455,7 @@ $('btnBack').addEventListener('click', () => seek(logTime() - 2));
 $('btnFwd').addEventListener('click', () => seek(logTime() + 2));
 $<HTMLSelectElement>('speed').addEventListener('change', (e) => {
   player.setRate(Number((e.target as HTMLSelectElement).value));
+  mixer.restart(player.playing, player.rate);
 });
 document.addEventListener('keydown', (e) => {
   const tag = (e.target as HTMLElement).tagName;
@@ -892,6 +899,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((btn) =>
     document.querySelectorAll<HTMLElement>('[data-panel]').forEach((p) => (p.hidden = p.dataset.panel !== btn.dataset.tab));
     if (btn.dataset.tab === 'board') refreshBoard();
     if (btn.dataset.tab === 'ml') void refreshOwnMarks();
+    if (btn.dataset.tab === 'audio') void loadMusicLibrary();
   }),
 );
 // Betaflight-Hinweis: vom Startbildschirm (und per #betaflight) direkt in den Tab springen
@@ -997,24 +1005,61 @@ exportMenu.addEventListener('click', (e) => {
 });
 
 // ---------- recording ----------
-let recorder: MediaRecorder | null = null;
-let recChunks: Blob[] = [];
-function startRecording() {
-  if (!player.flight || typeof MediaRecorder === 'undefined') return toast('Aufnahme wird von diesem Browser nicht unterstützt.', 'error');
-  const stream = stage.captureStream(30);
+/** Ton der Aufnahme: Mischung aus Musik und Originalton (core/audiomix.ts) oder wie bisher direkt der Videoton. */
+function recordingAudio(stream: MediaStream, length: number | null, separate: boolean, plain = false): RecordingAudio | null {
+  // Hängt das Video schon am AudioContext, läuft sein Ton nur noch über die Mischung.
+  if (mixer.active || (!plain && usesMixer(mixer.settings, mixer.hasMusic))) {
+    const mix = mixer.beginRecording(length, separate, plain);
+    if (mix.track) stream.addTrack(mix.track);
+    return mix;
+  }
   if (hasVideo()) {
     const v = video as HTMLVideoElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream };
     const vs = v.captureStream?.() ?? v.mozCaptureStream?.();
     vs?.getAudioTracks().forEach((tr) => stream.addTrack(tr));
   }
+  return null;
+}
+
+/** Originalton als eigene Tondatei mitschneiden ("separat speichern") */
+interface AudioCapture { pause(): void; resume(): void; stop(): Promise<Blob | null> }
+function captureAudio(stream: MediaStream): AudioCapture {
+  const mime = AUDIO_TYPES.find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  const chunks: Blob[] = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  rec.start(1000);
+  const blob = () => (chunks.length ? new Blob(chunks, { type: (rec.mimeType || 'audio/webm').split(';')[0] }) : null);
+  return {
+    pause: () => rec.state === 'recording' && rec.pause(),
+    resume: () => rec.state === 'paused' && rec.resume(),
+    stop: () => new Promise((resolve) => {
+      if (rec.state === 'inactive') return resolve(blob());
+      rec.onstop = () => resolve(blob());
+      rec.stop();
+    }),
+  };
+}
+const audioExt = (b: Blob) => (b.type.includes('mp4') ? 'm4a' : b.type.includes('ogg') ? 'ogg' : 'webm');
+
+let recorder: MediaRecorder | null = null;
+let recChunks: Blob[] = [];
+function startRecording() {
+  if (!player.flight || typeof MediaRecorder === 'undefined') return toast('Aufnahme wird von diesem Browser nicht unterstützt.', 'error');
+  const stream = stage.captureStream(30);
+  const mix = recordingAudio(stream, null, true);
+  const sep = mix?.separate ? captureAudio(mix.separate) : null;
   const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
   recorder = new MediaRecorder(stream, { mimeType: mime || undefined, videoBitsPerSecond: 8_000_000 });
   recChunks = [];
   recorder.ondataavailable = (e) => e.data.size && recChunks.push(e.data);
-  recorder.onstop = () => {
+  recorder.onstop = async () => {
     const base = player.flight?.info.fileName.replace(/\.[^.]+$/, '') ?? 'flight';
     download(new Blob(recChunks, { type: 'video/webm' }), `${base}.hud.webm`);
-    toast('Aufnahme gespeichert.');
+    const original = sep ? await sep.stop() : null;
+    mix?.stop();
+    if (original) download(original, `${base}.originalton.${audioExt(original)}`);
+    toast(original ? 'Aufnahme und Originalton gespeichert.' : 'Aufnahme gespeichert.');
   };
   recorder.start(1000);
   $('btnRec').classList.add('active');
@@ -1028,6 +1073,212 @@ function stopRecording() {
   $('btnRec').textContent = '● Aufnehmen';
 }
 $('btnRec').addEventListener('click', () => (recorder ? stopRecording() : startRecording()));
+
+// ---------- Ton & Musik (core/audiomix.ts) ----------
+/** Hinweis im Aufnahme-Dialog: Musik und Originalton dieser Aufnahme */
+function showAudioNote(upload: boolean) {
+  const s = mixer.settings;
+  const music = mixer.tracks.length === 1 ? `„${mixer.tracks[0].title}“` : mixer.tracks.length ? `${mixer.tracks.length} Songs` : '';
+  const original: OriginalMode | null = hasVideo() && s.original !== 'keep' ? (upload ? 'remove' : s.original) : null;
+  let text = '';
+  if (music && original === 'remove') text = `Mit Musik ${music}, ohne Originalton.`;
+  else if (music && original === 'separate') text = `Mit Musik ${music}, Originalton zusätzlich als eigene Datei.`;
+  else if (music) text = `Mit Musik ${music}.`;
+  else if (original === 'remove') text = 'Ohne Originalton.';
+  else if (original === 'separate') text = 'Originalton zusätzlich als eigene Datei.';
+  $('submitAudio').textContent = text;
+  $('submitAudio').hidden = !text;
+}
+
+function saveAudio() {
+  try {
+    localStorage.setItem('bba.audio', JSON.stringify(mixer.settings));
+  } catch {
+    /* ignore */
+  }
+}
+function fmtSong(sec: number) {
+  return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+}
+function renderPlaylist() {
+  const list = $('playlist');
+  list.replaceChildren(
+    ...mixer.tracks.map((tr, i) => {
+      const li = el('li', {});
+      const btn = (text: string, label: string, disabled: boolean, act: () => void) => {
+        const b = el('button', { type: 'button', textContent: text, title: label, disabled });
+        b.setAttribute('aria-label', label);
+        b.addEventListener('click', () => {
+          act();
+          audioChanged(true);
+        });
+        return b;
+      };
+      li.append(
+        el('span', { className: 'pl-title', textContent: tr.title, title: tr.title }),
+        el('span', { className: 'pl-dur', textContent: fmtSong(tr.buffer.duration) }),
+        btn('↑', 'Nach oben', i === 0, () => mixer.moveTrack(i, -1)),
+        btn('↓', 'Nach unten', i === mixer.tracks.length - 1, () => mixer.moveTrack(i, 1)),
+        btn('✕', 'Aus der Playlist entfernen', false, () => mixer.removeTrack(i)),
+      );
+      return li;
+    }),
+  );
+}
+function renderAudio() {
+  const s = mixer.settings;
+  $<HTMLInputElement>('musicVolume').value = String(Math.round(s.musicVolume * 100));
+  $('musicVolumeOut').textContent = `${Math.round(s.musicVolume * 100)} %`;
+  $<HTMLInputElement>('origVolume').value = String(Math.round(s.originalVolume * 100));
+  $('origVolumeOut').textContent = `${Math.round(s.originalVolume * 100)} %`;
+  $<HTMLInputElement>('musicOffset').value = String(s.musicOffset);
+  $<HTMLInputElement>('musicLoop').checked = s.loop;
+  $<HTMLInputElement>('musicFade').checked = s.fade;
+  $<HTMLInputElement>('audioMonitor').checked = s.monitor;
+  document.querySelectorAll<HTMLInputElement>('input[name="origAudio"]').forEach((r) => (r.checked = r.value === s.original));
+  $('origVolumeWrap').hidden = s.original !== 'keep';
+  renderPlaylist();
+  const n = mixer.tracks.length;
+  $('musicInfo').textContent = n === 0 ? 'Keine Musik gewählt.' : n === 1 ? `1 Song · ${fmtSong(mixer.musicDuration)}` : `${n} Songs · ${fmtSong(mixer.musicDuration)}`;
+  $<HTMLButtonElement>('btnMusicClear').disabled = !n;
+  // Hinweis neben "Aufnehmen", wenn die Aufnahmen vom Videoton abweichen
+  const badge = $('audioBadge');
+  const parts = [n ? `♪ ${mixer.musicLabel}` : '', s.original === 'remove' ? 'ohne Originalton' : s.original === 'separate' ? 'Originalton separat' : ''].filter(Boolean);
+  badge.textContent = parts.join(' · ');
+  badge.hidden = !parts.length;
+}
+/** restart: die Vorschau neu planen (Playlist, Startstelle, Wiederholen); sonst nur Lautstärken */
+function audioChanged(restart = true) {
+  saveAudio();
+  renderAudio();
+  mixer.refresh(player.playing, player.rate, restart);
+}
+$<HTMLInputElement>('musicFile').addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement;
+  const files = [...(input.files ?? [])];
+  input.value = '';
+  let added = 0;
+  for (const file of files) {
+    $('musicInfo').textContent = `Lade „${file.name}“ …`;
+    try {
+      const buffer = await decodeMusic(await file.arrayBuffer(), file.name);
+      mixer.addTrack({ title: file.name.replace(/\.[^.]+$/, ''), origin: 'file', buffer });
+      added++;
+    } catch (err) {
+      toast((err as Error).message, 'error', 7000);
+    }
+  }
+  if (added) toast(added === 1 ? 'Song zur Playlist hinzugefügt.' : `${added} Songs zur Playlist hinzugefügt.`);
+  audioChanged();
+});
+$('btnMusicClear').addEventListener('click', () => {
+  mixer.clearMusic();
+  audioChanged();
+});
+$<HTMLInputElement>('musicVolume').addEventListener('input', (e) => {
+  mixer.settings.musicVolume = Number((e.target as HTMLInputElement).value) / 100;
+  audioChanged(false);
+});
+$<HTMLInputElement>('origVolume').addEventListener('input', (e) => {
+  mixer.settings.originalVolume = Number((e.target as HTMLInputElement).value) / 100;
+  audioChanged(false);
+});
+$<HTMLInputElement>('musicOffset').addEventListener('change', (e) => {
+  const v = Number((e.target as HTMLInputElement).value);
+  mixer.settings.musicOffset = Number.isFinite(v) ? Math.max(0, Math.min(3600, v)) : 0;
+  audioChanged();
+});
+$<HTMLInputElement>('musicLoop').addEventListener('change', (e) => {
+  mixer.settings.loop = (e.target as HTMLInputElement).checked;
+  audioChanged();
+});
+$<HTMLInputElement>('musicFade').addEventListener('change', (e) => {
+  mixer.settings.fade = (e.target as HTMLInputElement).checked;
+  audioChanged(false);
+});
+$<HTMLInputElement>('audioMonitor').addEventListener('change', (e) => {
+  mixer.settings.monitor = (e.target as HTMLInputElement).checked;
+  audioChanged();
+});
+document.querySelectorAll<HTMLInputElement>('input[name="origAudio"]').forEach((r) =>
+  r.addEventListener('change', () => {
+    if (r.checked) mixer.settings.original = r.value as OriginalMode;
+    audioChanged(false);
+  }),
+);
+$('audioBadge').addEventListener('click', () => $('tabAudio').click());
+$('submitDialog').addEventListener('close', () => ($('submitAudio').hidden = true));
+renderAudio();
+
+// Musik vom Server (webshop/musik.py: Ordner <Repo>/musik)
+interface LibraryTrack { id: string; title: string; group: string; size: number }
+let library: LibraryTrack[] | null = null;
+const libAudio = new Audio();
+let libPlaying = '';
+const libUrl = (id: string) => `../api/musik/datei/${id.split('/').map(encodeURIComponent).join('/')}`;
+function stopLibPreview() {
+  libAudio.pause();
+  libPlaying = '';
+  renderLibrary();
+}
+libAudio.addEventListener('ended', stopLibPreview);
+function renderLibrary() {
+  const list = $('musicLib');
+  if (!library) return;
+  const q = $<HTMLInputElement>('libFilter').value.trim().toLowerCase();
+  const shown = library.filter((t) => !q || `${t.group} ${t.title}`.toLowerCase().includes(q));
+  list.replaceChildren(
+    ...shown.map((t) => {
+      const li = el('li', {});
+      li.classList.toggle('playing', libPlaying === t.id);
+      const play = el('button', { type: 'button', className: 'lib-play', textContent: libPlaying === t.id ? '■' : '▶', title: 'Reinhören' });
+      play.setAttribute('aria-label', 'Reinhören');
+      play.addEventListener('click', () => {
+        if (libPlaying === t.id) return stopLibPreview();
+        libAudio.src = libUrl(t.id);
+        libPlaying = t.id;
+        void libAudio.play().catch(() => stopLibPreview());
+        renderLibrary();
+      });
+      const title = el('span', { className: 'lib-title', textContent: t.title, title: t.title });
+      if (t.group) title.append(el('small', { textContent: t.group }));
+      const add = el('button', { type: 'button', className: 'btn tiny', textContent: '+ Hinzufügen' });
+      add.addEventListener('click', async () => {
+        add.disabled = true;
+        add.textContent = 'Lädt …';
+        try {
+          const res = await fetch(libUrl(t.id));
+          if (!res.ok) throw new Error(`„${t.title}“ konnte nicht geladen werden (HTTP ${res.status}).`);
+          const buffer = await decodeMusic(await res.arrayBuffer(), t.title);
+          mixer.addTrack({ title: t.title, origin: 'server', serverId: t.id, buffer });
+          toast(`„${t.title}“ zur Playlist hinzugefügt.`);
+          audioChanged();
+        } catch (err) {
+          toast((err as Error).message, 'error', 7000);
+        }
+        add.disabled = false;
+        add.textContent = '+ Hinzufügen';
+      });
+      li.append(play, title, add);
+      return li;
+    }),
+  );
+}
+async function loadMusicLibrary() {
+  if (library) return;
+  try {
+    const res = await fetch('../api/musik', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    if (!res.ok) throw new Error(String(res.status));
+    library = ((await res.json()).tracks ?? []) as LibraryTrack[];
+  } catch {
+    $('libInfo').textContent = 'Die Musik-Liste des Servers ist gerade nicht erreichbar.';
+    return;
+  }
+  $('libInfo').textContent = library.length ? `${library.length} Songs auf dem Server – mit ▶ reinhören, mit + zur Playlist.` : 'Auf dem Server liegt noch keine Musik.';
+  $('libFilter').hidden = library.length < 8;
+  renderLibrary();
+}
+$<HTMLInputElement>('libFilter').addEventListener('input', () => renderLibrary());
 
 // ---------- leaderboard ----------
 const pilotInput = $<HTMLInputElement>('pilotName');
@@ -1082,11 +1333,16 @@ interface RecordOptions {
   preferMp4: boolean;
   /** only this log span (trick marks), otherwise the whole flight */
   range?: [number, number];
+  /** 'original' = Videoton unverändert, ohne Musik (Markierungen für den Admin) */
+  audio?: 'mix' | 'original';
+  /** Originalton bei "separat speichern" als eigene Datei zurückgeben (Export) */
+  separate?: boolean;
 }
+interface Recorded { blob: Blob; videoStart: number; originalAudio: Blob | null }
 const MP4_TYPES = ['video/mp4;codecs=avc1.640033,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4'];
 const WEBM_TYPES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
 
-async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions): Promise<{ blob: Blob; videoStart: number }> {
+async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions): Promise<Recorded> {
   if (typeof MediaRecorder === 'undefined' || !stage.captureStream) {
     throw new Error('Dieser Browser kann kein Video aufnehmen. Bitte Chrome, Edge oder Firefox verwenden.');
   }
@@ -1112,11 +1368,8 @@ async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions
     stage.height = opts.maxHeight;
   }
   const stream = stage.captureStream(30);
-  if (hasVideo()) {
-    const v = video as HTMLVideoElement & { captureStream?: () => MediaStream; mozCaptureStream?: () => MediaStream };
-    const vs = v.captureStream?.() ?? v.mozCaptureStream?.();
-    vs?.getAudioTracks().forEach((tr) => stream.addTrack(tr));
-  }
+  const mix = recordingAudio(stream, Math.max(0.5, stopAt - videoStart), !!opts.separate, opts.audio === 'original');
+  const sep = mix?.separate ? captureAudio(mix.separate) : null;
   const mime = (opts.preferMp4 ? [...MP4_TYPES, ...WEBM_TYPES] : [...WEBM_TYPES, ...MP4_TYPES]).find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
   const rec = new MediaRecorder(stream, { mimeType: mime || undefined, videoBitsPerSecond: opts.bitrate });
   const chunks: Blob[] = [];
@@ -1129,7 +1382,11 @@ async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions
       if (document.hidden) {
         setPlaying(false);
         if (rec.state === 'recording') rec.pause();
+        sep?.pause();
+        mix?.pause();
       } else if (rec.state === 'paused') {
+        mix?.resume();
+        sep?.resume();
         rec.resume();
         setPlaying(true);
       }
@@ -1142,10 +1399,12 @@ async function recordFlight(onProgress: (v: number) => void, opts: RecordOptions
       setPlaying(false);
       player.setRate(prevRate);
       [stage.width, stage.height] = prevSize;
-      rec.onstop = () => {
+      rec.onstop = async () => {
+        const originalAudio = sep ? await sep.stop() : null;
+        mix?.stop();
         stream.getTracks().forEach((tr) => tr.stop());
         if (err) reject(err);
-        else resolve({ blob: new Blob(chunks, { type: (rec.mimeType || 'video/webm').split(';')[0] }), videoStart });
+        else resolve({ blob: new Blob(chunks, { type: (rec.mimeType || 'video/webm').split(';')[0] }), videoStart, originalAudio });
       };
       if (rec.state !== 'inactive') rec.stop();
       else (rec.onstop as (ev: Event) => void).call(rec, new Event('stop'));
@@ -1191,6 +1450,7 @@ $('btnExportVideo').addEventListener('click', async () => {
     `${hasVideo() ? `Dein Video wird in Originalauflösung (${w}×${h})` : `Die Sim-Ansicht wird in ${w}×${h}`} mit Overlay einmal abgespielt und ` +
     `als ${mp4 ? 'MP4' : 'WebM (dieser Browser kann kein MP4 aufnehmen)'} aufgenommen – das dauert so lange wie der Flug (${fmtTime(duration())}). ` +
     'Die Datei bleibt auf deinem PC, es wird nichts hochgeladen.';
+  showAudioNote(false);
   $('submitCancel').hidden = false;
   $('submitView').hidden = true;
   $('submitClose').hidden = true;
@@ -1200,10 +1460,15 @@ $('btnExportVideo').addEventListener('click', async () => {
   $('submitCancel').onclick = () => subRec?.cancel();
   try {
     const bitrate = Math.round(Math.min(40e6, Math.max(6e6, w * h * 30 * 0.12)));
-    const { blob } = await recordFlight((v) => submitPhase(`Aufnahme läuft … ${Math.round(v * 100)} %`, v), { maxHeight: null, bitrate, preferMp4: true });
+    const { blob, originalAudio } = await recordFlight((v) => submitPhase(`Aufnahme läuft … ${Math.round(v * 100)} %`, v), {
+      maxHeight: null, bitrate, preferMp4: true, separate: true,
+    });
     const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
-    download(blob, `${f.info.fileName.replace(/\.[^.]+$/, '') || 'flug'}.overlay.${ext}`);
+    const base = f.info.fileName.replace(/\.[^.]+$/, '') || 'flug';
+    download(blob, `${base}.overlay.${ext}`);
+    if (originalAudio) download(originalAudio, `${base}.originalton.${audioExt(originalAudio)}`);
     submitPhase(`Gespeichert: ${(blob.size / 1048576).toFixed(1)} MB als ${ext.toUpperCase()} in ${w}×${h}.`, 1);
+    if (originalAudio) $('submitAudio').textContent = `Originalton separat gespeichert (${audioExt(originalAudio).toUpperCase()}, ${(originalAudio.size / 1048576).toFixed(1)} MB).`;
   } catch (err) {
     submitPhase((err as Error).message || 'Aufnahme fehlgeschlagen.', 0);
   } finally {
@@ -1223,6 +1488,7 @@ $('submitForm').addEventListener('submit', async (e) => {
   $('submitText').textContent =
     `Dein Flug (${fmtTime(duration())}) wird jetzt einmal mit Overlay abgespielt und als Video aufgenommen – ` +
     'das dauert so lange wie der Flug. Lass diesen Tab geöffnet; im Hintergrund pausiert die Aufnahme.';
+  showAudioNote(true);
   $('submitCancel').hidden = false;
   $('submitView').hidden = true;
   $('submitClose').hidden = true;
@@ -1400,6 +1666,7 @@ $('btnMatchSubmit').addEventListener('click', async () => {
   $('submitText').textContent =
     `Die Wertungszeit (${duel.limit} s ab dem Abheben) wird einmal mit Overlay abgespielt und als Clip aufgenommen – ` +
     'das dauert so lange wie die Wertungszeit. Lass diesen Tab geöffnet.';
+  showAudioNote(true);
   $('submitCancel').hidden = false;
   $('submitView').hidden = true;
   $('submitClose').hidden = true;
@@ -1619,7 +1886,7 @@ $('btnMarkSave').addEventListener('click', async () => {
   try {
     const range: [number, number] = [Math.max(0, r[0] - 1), Math.min(duration(), r[1] + 1)];
     const { blob, videoStart } = await recordFlight((v) => submitPhase(`Aufnahme läuft … ${Math.round(v * 100)} %`, v * 0.6), {
-      maxHeight: 720, bitrate: 2_500_000, preferMp4: false, range,
+      maxHeight: 720, bitrate: 2_500_000, preferMp4: false, range, audio: 'original',
     });
     meta.clipStart = +videoStart.toFixed(3);
     submitPhase(`Lade hoch (${(blob.size / 1048576).toFixed(1)} MB) …`, 0.6);

@@ -28,7 +28,9 @@ param(
     # Upload-Grenze (Bytes) fuer Leaderboard-Einreichungen (Video + Log).
     [long]$LeaderboardUploadLimit = 720000000,
     # Upload-Grenze (Bytes) fuer Forenbeitraege mit Bildern/Videos (community.py: 100 MB).
-    [long]$ForumUploadLimit = 110000000
+    [long]$ForumUploadLimit = 110000000,
+    # Upload-Grenze (Bytes) fuer Musik im Admin-Dashboard (musik.py: 900 MB je Upload).
+    [long]$MusicUploadLimit = 950000000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -231,6 +233,17 @@ if (-not $forumLocation) {
 $forumFiltering = Get-OrCreateChild (Get-OrCreateChild (Get-OrCreateChild $forumLocation 'system.webServer') 'security') 'requestFiltering'
 $forumLimits = Get-OrCreateChild $forumFiltering 'requestLimits'
 $forumLimits.SetAttribute('maxAllowedContentLength', [string]$ForumUploadLimit)
+
+# Musik fuer den Blackbox Viewer, hochgeladen im Admin-Dashboard (siehe MAX_UPLOAD_BYTES in musik.py).
+$musicLocation = $config.DocumentElement.SelectSingleNode("location[@path='admin/musik']")
+if (-not $musicLocation) {
+    $musicLocation = $config.CreateElement('location')
+    $musicLocation.SetAttribute('path', 'admin/musik')
+    [void]$config.DocumentElement.AppendChild($musicLocation)
+}
+$musicFiltering = Get-OrCreateChild (Get-OrCreateChild (Get-OrCreateChild $musicLocation 'system.webServer') 'security') 'requestFiltering'
+$musicLimits = Get-OrCreateChild $musicFiltering 'requestLimits'
+$musicLimits.SetAttribute('maxAllowedContentLength', [string]$MusicUploadLimit)
 
 $config.Save($configPath)
 Write-Host "IIS-Site '$SiteName': Proxy-Regeln in $configPath aktualisiert (Sicherung: web.config.bak)."

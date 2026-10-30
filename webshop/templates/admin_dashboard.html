@@ -89,6 +89,9 @@
       <button type="button" class="admin-tab-button" data-tab-target="tricks">
         Trick-Markierungen <span class="admin-tab-count">{{ tricks.pending|length }} offen</span>
       </button>
+      <button type="button" class="admin-tab-button" data-tab-target="musik">
+        Musik <span class="admin-tab-count">{{ musik.tracks|length }}</span>
+      </button>
       {% set reported = leaderboard.entries|selectattr("report_count")|list %}
       <button type="button" class="admin-tab-button" data-tab-target="leaderboard">
         Leaderboard <span class="admin-tab-count">{{ leaderboard.entries|length }}{% if reported %} · {{ reported|length }} gemeldet{% endif %}</span>
@@ -567,6 +570,70 @@
       {% endif %}
     </div>
 
+    <div id="tab-musik" class="admin-tab-panel">
+      <p class="admin-empty-hint">
+        Musik für den Blackbox Viewer (Reiter „Ton &amp; Musik“ → „Musik vom Server“). Die Liste und die Dateien sind für
+        alle Besucher abrufbar, Videos mit Musik landen im öffentlichen Leaderboard – nur Musik hochladen, die geteilt
+        werden darf (z. B. lizenzfrei). Ordner auf dem Server: <code>{{ musik.dir }}</code> – dort abgelegte Dateien
+        erscheinen hier ebenfalls.
+      </p>
+      <form class="music-upload" method="post" action="{{ url_for('musik.admin_upload') }}" enctype="multipart/form-data">
+        <label>
+          <span>Musikdateien (MP3, M4A, AAC, OGG, OPUS, WAV, FLAC – je höchstens {{ musik.max_file_mb }} MB, zusammen {{ musik.max_upload_mb }} MB)</span>
+          <input type="file" name="musik" multiple required accept=".mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac,.weba,audio/*" />
+        </label>
+        <label>
+          <span>Ordner (optional, erscheint im Viewer als Gruppe)</span>
+          <input type="text" name="ordner" list="musicFolders" maxlength="120" placeholder="z. B. Chill" />
+        </label>
+        <label class="music-upload-check"><input type="checkbox" name="ueberschreiben" value="1" /> Gleichnamige Dateien überschreiben (sonst „Name (2)“)</label>
+        <button type="submit" class="btn btn-primary">Hochladen</button>
+        <p class="music-upload-progress" hidden>Lade hoch … bitte warten, bis die Seite neu lädt.</p>
+      </form>
+      <datalist id="musicFolders">
+        {% for folder in musik.folders %}<option value="{{ folder }}"></option>{% endfor %}
+      </datalist>
+
+      {% if musik.tracks %}
+        <p class="admin-empty-hint">{{ musik.tracks|length }} Songs · {{ musik.total_bytes|filesizeformat }}</p>
+        <input type="search" class="admin-search" data-search-for="music-table" placeholder="Titel oder Ordner suchen…" aria-label="Musik durchsuchen" />
+        <div class="admin-table-wrapper">
+          <table class="admin-table" id="music-table">
+            <thead>
+              <tr><th>Titel</th><th>Ordner</th><th>Grösse</th><th>Anhören</th><th>Umbenennen / verschieben</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for t in musik.tracks %}
+                <tr>
+                  <td>{{ t.title }}<br /><small class="music-id">{{ t.id }}</small></td>
+                  <td>{{ t.group or "–" }}</td>
+                  <td>{{ t.size|filesizeformat }}</td>
+                  <td><audio class="music-preview" src="{{ url_for('musik.api_file', name=t.id) }}" controls preload="none"></audio></td>
+                  <td>
+                    <form class="music-rename" method="post" action="{{ url_for('musik.admin_change') }}">
+                      <input type="hidden" name="id" value="{{ t.id }}" />
+                      <input type="text" name="name" value="{{ t.id.rsplit('/', 1)[-1].rsplit('.', 1)[0] }}" maxlength="120" required aria-label="Dateiname" />
+                      <input type="text" name="ordner" value="{{ t.group }}" list="musicFolders" maxlength="120" placeholder="Hauptordner" aria-label="Ordner" />
+                      <button type="submit" class="btn btn-secondary btn-small">Speichern</button>
+                    </form>
+                  </td>
+                  <td>
+                    <form method="post" action="{{ url_for('musik.admin_change') }}" data-confirm="„{{ t.title }}“ endgültig löschen?">
+                      <input type="hidden" name="id" value="{{ t.id }}" />
+                      <input type="hidden" name="aktion" value="loeschen" />
+                      <button type="submit" class="btn btn-secondary btn-small">Löschen</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="admin-empty-hint">Noch keine Musik auf dem Server.</p>
+      {% endif %}
+    </div>
+
     <div id="tab-leaderboard" class="admin-tab-panel">
       <p class="admin-empty-hint">
         Blackbox-Viewer-Leaderboard, gemeldete Einträge zuerst. Ab {{ leaderboard.threshold }} Meldungen
@@ -653,6 +720,14 @@
           if (!window.confirm(form.dataset.confirm)) {
             event.preventDefault();
           }
+        });
+      });
+
+      // Musik-Upload: grosse Dateien brauchen Zeit - Knopf sperren, Hinweis zeigen
+      document.querySelectorAll("form.music-upload").forEach(function (form) {
+        form.addEventListener("submit", function () {
+          form.querySelector("button[type=submit]").disabled = true;
+          form.querySelector(".music-upload-progress").hidden = false;
         });
       });
 

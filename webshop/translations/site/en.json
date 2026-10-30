@@ -1233,5 +1233,10 @@
  "Gewonnene Spiele": "Games won",
  "Noch kein Duell entschieden – fordere jemanden heraus!": "No duel decided yet – challenge someone!",
  "Noch keine Turnierspiele gewertet.": "No tournament games scored yet.",
- "Kein Pilot gefunden": "No pilot found"
+ "Kein Pilot gefunden": "No pilot found",
+ "Im Simulator üben, Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen.": "Practise in the simulator, analyse Blackbox logs, detect tricks and compare with others.",
+ "Im Browser fliegen: 2-kHz-Physik, Betaflight-Regler und Rennstrecke mit Ghost – mit dem Sender per USB oder Gamepad.": "Fly in the browser: 2 kHz physics, Betaflight controller and a race track with ghost – with your radio via USB or a gamepad.",
+ "Fliegen üben": "Practise flying",
+ "Im Simulator trainieren, dann echte Flüge auswerten.": "Train in the simulator, then analyse real flights.",
+ "Im Simulator fliegen": "Fly the simulator"
 }

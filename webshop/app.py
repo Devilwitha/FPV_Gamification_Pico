@@ -34,6 +34,7 @@ import trick_labels
 import hub
 import vs
 import musik
+import fpv_simulator
 import orders_db
 import simulator_manager
 import tx15_backups
@@ -150,6 +151,8 @@ app.register_blueprint(trick_labels.bp)
 vs.register(app)
 # Musik-Bibliothek fuer den Blackbox Viewer (Ordner <Repo>/musik, musik.py)
 musik.register(app)
+# Propwash FPV-Simulator: Offline-ZIP (/fpv-simulator.zip, fpv_simulator.py)
+app.register_blueprint(fpv_simulator.bp)
 app.register_blueprint(admin_users.bp)
 community.register(app)
 admin_users.register(app)

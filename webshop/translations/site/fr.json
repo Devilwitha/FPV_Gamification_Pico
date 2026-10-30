@@ -1233,5 +1233,10 @@
  "Gewonnene Spiele": "Matchs gagnés",
  "Noch kein Duell entschieden – fordere jemanden heraus!": "Aucun duel décidé – défie quelqu'un !",
  "Noch keine Turnierspiele gewertet.": "Aucun match de tournoi noté pour l'instant.",
- "Kein Pilot gefunden": "Aucun pilote trouvé"
+ "Kein Pilot gefunden": "Aucun pilote trouvé",
+ "Im Simulator üben, Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen.": "S'entraîner au simulateur, analyser les logs Blackbox, détecter les figures et se comparer aux autres.",
+ "Im Browser fliegen: 2-kHz-Physik, Betaflight-Regler und Rennstrecke mit Ghost – mit dem Sender per USB oder Gamepad.": "Voler dans le navigateur : physique à 2 kHz, contrôleur Betaflight et circuit avec ghost – avec ta radio en USB ou une manette.",
+ "Fliegen üben": "S'entraîner à voler",
+ "Im Simulator trainieren, dann echte Flüge auswerten.": "S'entraîner au simulateur, puis analyser de vrais vols.",
+ "Im Simulator fliegen": "Voler au simulateur"
 }

@@ -23,7 +23,7 @@ GROUPS = (
     ("bauen", "Planen & bauen", "Teile zusammenstellen, Gewicht und Flugzeit abschätzen, die Verkabelung planen."),
     ("drohne", "Drohne einrichten", "Flugcontroller, Regler und Empfänger per USB konfigurieren und flashen."),
     ("sender", "Sender (EdgeTX)", "Für die RadioMaster TX15 und andere EdgeTX-Sender mit Farbdisplay."),
-    ("fliegen", "Fliegen & auswerten", "Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen."),
+    ("fliegen", "Fliegen & auswerten", "Im Simulator üben, Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen."),
 )
 
 # key, Gruppe, Name, Kurzbeschreibung, Link, Schlagworte, Schalter in config.js (None = immer)
@@ -42,6 +42,8 @@ TOOLS = (
      TOOLS_URL + "lua-studio.html", ("Widgets", "Tools", "Skripte"), None),
     ("backup", "sender", "Backup Studio", "SD-Karte sichern und gezielt zurückspielen, Firmware installieren, doppelte Tools aufräumen.",
      TOOLS_URL + "backup-studio.html", ("Backup", "Firmware", "SD-Karte"), None),
+    ("simulator", "fliegen", "FPV-Simulator", "Im Browser fliegen: 2-kHz-Physik, Betaflight-Regler und Rennstrecke mit Ghost – mit dem Sender per USB oder Gamepad.",
+     TOOLS_URL + "fpv-simulator.html", ("Acro", "Rates", "Offline"), None),
     ("blackbox", "fliegen", "Blackbox Viewer", "Blackbox-Logs auswerten: Tricks erkennen und bepunkten, Video mit HUD-Overlay synchronisieren.",
      "/blackbox-viewer/", (".bbl", "Tricks", "HUD"), "blackbox"),
     ("leaderboard", "fliegen", "Leaderboard", "Die besten Trick-Flüge mit Video – weltweit, nach Land und nach Akku-Klasse.",
@@ -52,6 +54,7 @@ TOOLS = (
 PATHS = (
     ("Neue Drohne bauen", "Teile planen, verkabeln, einrichten.", ("build", "betaflight", "esc", "elrs")),
     ("Sender einrichten", "Sichern, gestalten, Skripte aufspielen.", ("backup", "theme", "lua")),
+    ("Fliegen üben", "Im Simulator trainieren, dann echte Flüge auswerten.", ("simulator", "blackbox")),
     ("Flug auswerten", "Log laden, Tricks sehen, vergleichen.", ("blackbox", "leaderboard")),
 )
 

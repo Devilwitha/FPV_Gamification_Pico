@@ -507,6 +507,35 @@ def init_db():
             )
             """
         )
+        # Einstellungen des FPV-Simulators je Konto (fpv_simulator.py), als JSON
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sim_settings (
+                email TEXT PRIMARY KEY COLLATE NOCASE,
+                data TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        # Maps aus dem Map-Editor des FPV-Simulators (fpv_simulator.py); shared = fuer alle sichtbar
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sim_maps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_email TEXT NOT NULL COLLATE NOCASE,
+                name TEXT NOT NULL,
+                data TEXT NOT NULL,
+                gates INTEGER NOT NULL DEFAULT 0,
+                objects INTEGER NOT NULL DEFAULT 0,
+                shared INTEGER NOT NULL DEFAULT 0,
+                plays INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_sim_maps_owner ON sim_maps (owner_email)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_sim_maps_shared ON sim_maps (shared, updated_at)")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS leaderboard_reports (
@@ -1353,6 +1382,8 @@ def delete_account_rows(email):
     with _get_connection() as connection:
         connection.execute("DELETE FROM leaderboard_reports WHERE email = ? COLLATE NOCASE", (email,))
         connection.execute("DELETE FROM copters WHERE email = ? COLLATE NOCASE", (email,))
+        connection.execute("DELETE FROM sim_settings WHERE email = ? COLLATE NOCASE", (email,))
+        connection.execute("DELETE FROM sim_maps WHERE owner_email = ? COLLATE NOCASE", (email,))
         connection.execute("DELETE FROM account_profiles WHERE email = ? COLLATE NOCASE", (email,))
         connection.execute("DELETE FROM accounts WHERE email = ? COLLATE NOCASE", (email,))
 
@@ -2328,3 +2359,97 @@ def account_countries():
 def set_account_country(account_id, code):
     with _get_connection() as connection:
         connection.execute("UPDATE accounts SET country = ? WHERE id = ?", (code, account_id))
+
+
+# --- FPV-Simulator: Einstellungen je Konto (fpv_simulator.py) ---------------
+
+def sim_settings_get(email):
+    with _get_connection() as connection:
+        return connection.execute(
+            "SELECT data, updated_at FROM sim_settings WHERE email = ? COLLATE NOCASE", (email,)
+        ).fetchone()
+
+
+def sim_settings_save(email, data):
+    now = _now_iso()
+    with _get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO sim_settings (email, data, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(email) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+            """,
+            (email, data, now),
+        )
+    return now
+
+
+def sim_settings_delete(email):
+    with _get_connection() as connection:
+        connection.execute("DELETE FROM sim_settings WHERE email = ? COLLATE NOCASE", (email,))
+
+
+# --- FPV-Simulator: Maps aus dem Map-Editor (fpv_simulator.py) ---------------
+
+# {data}: ", m.data" nur beim Laden einer einzelnen Map (Listen ohne die Map-Daten)
+_SIM_MAP_SELECT = """
+    SELECT m.id, m.owner_email, m.name, m.gates, m.objects, m.shared, m.plays, m.created_at, m.updated_at{data},
+           a.username AS author
+    FROM sim_maps m LEFT JOIN accounts a ON a.email = m.owner_email COLLATE NOCASE
+"""
+
+
+def sim_map_create(email, name, data, gates, objects, shared):
+    now = _now_iso()
+    with _get_connection() as connection:
+        return connection.execute(
+            """
+            INSERT INTO sim_maps (owner_email, name, data, gates, objects, shared, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (email, name, data, gates, objects, 1 if shared else 0, now, now),
+        ).lastrowid
+
+
+def sim_map_update(map_id, name, data, gates, objects, shared):
+    with _get_connection() as connection:
+        connection.execute(
+            "UPDATE sim_maps SET name = ?, data = ?, gates = ?, objects = ?, shared = ?, updated_at = ? WHERE id = ?",
+            (name, data, gates, objects, 1 if shared else 0, _now_iso(), map_id),
+        )
+
+
+def sim_map_get(map_id, with_data=True):
+    with _get_connection() as connection:
+        return connection.execute(
+            _SIM_MAP_SELECT.format(data=", m.data" if with_data else "") + " WHERE m.id = ?", (map_id,)
+        ).fetchone()
+
+
+def sim_map_list_mine(email):
+    with _get_connection() as connection:
+        return connection.execute(
+            _SIM_MAP_SELECT.format(data="") + " WHERE m.owner_email = ? COLLATE NOCASE ORDER BY m.updated_at DESC", (email,)
+        ).fetchall()
+
+
+def sim_map_list_shared(order="neu", limit=100):
+    by = "m.plays DESC, m.updated_at DESC" if order == "beliebt" else "m.updated_at DESC"
+    with _get_connection() as connection:
+        return connection.execute(
+            _SIM_MAP_SELECT.format(data="") + f" WHERE m.shared = 1 ORDER BY {by} LIMIT ?", (int(limit),)
+        ).fetchall()
+
+
+def sim_map_count(email):
+    with _get_connection() as connection:
+        return connection.execute("SELECT COUNT(*) FROM sim_maps WHERE owner_email = ? COLLATE NOCASE", (email,)).fetchone()[0]
+
+
+def sim_map_played(map_id):
+    with _get_connection() as connection:
+        connection.execute("UPDATE sim_maps SET plays = plays + 1 WHERE id = ?", (map_id,))
+
+
+def sim_map_delete(map_id):
+    with _get_connection() as connection:
+        connection.execute("DELETE FROM sim_maps WHERE id = ?", (map_id,))

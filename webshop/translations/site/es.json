@@ -1233,5 +1233,10 @@
  "Gewonnene Spiele": "Partidas ganadas",
  "Noch kein Duell entschieden – fordere jemanden heraus!": "Aún no hay duelos decididos – ¡desafía a alguien!",
  "Noch keine Turnierspiele gewertet.": "Aún no se ha puntuado ninguna partida de torneo.",
- "Kein Pilot gefunden": "No se encontró ningún piloto"
+ "Kein Pilot gefunden": "No se encontró ningún piloto",
+ "Im Simulator üben, Blackbox-Logs auswerten, Tricks erkennen und mit anderen vergleichen.": "Practicar en el simulador, analizar logs de Blackbox, detectar trucos y compararse con otros.",
+ "Im Browser fliegen: 2-kHz-Physik, Betaflight-Regler und Rennstrecke mit Ghost – mit dem Sender per USB oder Gamepad.": "Volar en el navegador: física a 2 kHz, controladora Betaflight y circuito con ghost, con tu emisora por USB o un mando.",
+ "Fliegen üben": "Practicar el vuelo",
+ "Im Simulator trainieren, dann echte Flüge auswerten.": "Entrena en el simulador y luego analiza vuelos reales.",
+ "Im Simulator fliegen": "Volar en el simulador"
 }
